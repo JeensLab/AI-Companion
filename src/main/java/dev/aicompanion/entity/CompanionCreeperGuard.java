@@ -9,6 +9,7 @@ import net.minecraft.world.entity.ai.util.LandRandomPos;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.level.PathNavigationRegion;
+import net.minecraft.world.level.pathfinder.NodeEvaluator;
 import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.level.pathfinder.PathFinder;
 import net.minecraft.world.level.pathfinder.WalkNodeEvaluator;
@@ -20,7 +21,9 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.WeakHashMap;
 
 /**
  * The watch against a creeper that sees him: a goal of its own at the top priority, so that nothing (an order, a pickup, a fight)
@@ -102,11 +105,15 @@ final class CompanionCreeperGuard {
     private static final float REACH_RANGE = 24;
     /** The search for a creeper's walk to him: the blocks round it, and the nodes, of a vanilla creeper's own search (follow range 16). */
     private static final int SEARCH_SPAN = 16, SEARCH_NODES = 256;
+    /** A walk that ends this near his stand is near enough: the fuse is lit at three blocks, and he steps about his stand. */
+    private static final double LIGHTS_WITHIN = 4;
 
     private final CompanionEntity owner;
-    private boolean active, finished, noBlock, fighting, shielded, dashing, leading, mayStrike, room = true, walks;
-    private long begun, lastSeen, nextLook, nextPlan, nextProbe, lastRetreat, lastFlee, fuseSince, fuseLook, leadAgainAt, pathAgain;
-    private Creeper pathOf;
+    private boolean active, finished, noBlock, fighting, shielded, dashing, leading, mayStrike, room = true;
+    private long begun, lastSeen, nextLook, nextPlan, nextProbe, lastRetreat, lastFlee, fuseSince, fuseLook, leadAgainAt;
+    /** What {@link #walksTo} found for a creeper, for which stand, and until when it holds. */
+    private record Walk(BlockPos stand, boolean near, long until) { }
+    private final Map<Creeper, Walk> walks = new WeakHashMap<>();
     private int tries, retreats, flees, leadTried;
     private List<BlockPos> cells = List.of();
     /** His stand on the route when the cells were chosen: a step back is to it. */
@@ -299,29 +306,45 @@ final class CompanionCreeperGuard {
     }
 
     /**
-     * The creeper can walk to his stand, by its own rules of walking (a search of his own: its navigation, and with it where it is headed, is
-     * left alone), held for a few ticks. One in a pit or a cave below with no way up is no reason to act: a block set against it the walk takes
-     * up again with no creeper near it, and a step away from it he walks back from, both for ever.
+     * The creeper can walk to his stand, or near enough to light its fuse at him, by its own rules of walking (a search of his own: its
+     * navigation, and with it where it is headed, is left alone); the answer is held a few ticks for that stand. One in a pit or a cave below
+     * with no way up is no reason to act: a block set against it the walk takes up again with no creeper near it, and a step away from it he
+     * walks back from, both for ever.
      */
     private boolean walksTo(ServerLevel level, Creeper creeper, BlockPos stand) {
         long now = level.getGameTime();
-        if (creeper != pathOf || now >= pathAgain) {
-            BlockPos from = creeper.blockPosition();
-            var region = new PathNavigationRegion(level, from.offset(-SEARCH_SPAN, -SEARCH_SPAN, -SEARCH_SPAN), from.offset(SEARCH_SPAN, SEARCH_SPAN, SEARCH_SPAN));
-            Path path = new PathFinder(new WalkNodeEvaluator(), SEARCH_NODES).findPath(region, creeper, Set.of(stand), SEARCH_SPAN, 1, 1);
-            walks = path != null && path.canReach();
-            pathOf = creeper;
-            pathAgain = now + PLAN_EVERY;
-        }
-        return walks;
+        Walk known = walks.get(creeper);
+        if (known != null && known.stand().equals(stand) && now < known.until()) return known.near();
+        BlockPos from = creeper.blockPosition();
+        var region = new PathNavigationRegion(level, from.offset(-SEARCH_SPAN, -SEARCH_SPAN, -SEARCH_SPAN), from.offset(SEARCH_SPAN, SEARCH_SPAN, SEARCH_SPAN));
+        NodeEvaluator its = creeper.getNavigation().getNodeEvaluator();
+        WalkNodeEvaluator walker = new WalkNodeEvaluator();
+        walker.setCanFloat(its.canFloat());
+        walker.setCanPassDoors(its.canPassDoors());
+        walker.setCanOpenDoors(its.canOpenDoors());
+        Path path = new PathFinder(walker, SEARCH_NODES).findPath(region, creeper, Set.of(stand), SEARCH_SPAN, 1, 1);
+        boolean near = path != null && path.getEndNode() != null
+                && (path.canReach() || Vec3.atBottomCenterOf(path.getEndNode().asBlockPos()).distanceTo(Vec3.atBottomCenterOf(stand)) < LIGHTS_WITHIN);
+        walks.put(creeper, new Walk(stand.immutable(), near, now + PLAN_EVERY));
+        return near;
     }
 
-    /** The nearest creeper with a way to hurt him that he can see (one with a lit fuse first); one with its AI off can neither walk nor swell. */
+    /** An unlit creeper found just now with no walk to him: passed over for one that can come (see {@link #walksTo}). */
+    private boolean letBe(Creeper creeper, long now) {
+        Walk known = walks.get(creeper);
+        return known != null && !known.near() && now < known.until() && !lit(creeper);
+    }
+
+    /**
+     * The nearest creeper with a way to hurt him that he can see (one with a lit fuse first, none that is let be); one with its AI off can
+     * neither walk nor swell.
+     */
     private Creeper seen(ServerLevel level) {
         Creeper nearest = null;
         double best = Double.MAX_VALUE;
+        long now = level.getGameTime();
         for (Creeper creeper : level.getEntitiesOfClass(Creeper.class, owner.getBoundingBox().inflate(NEAR),
-                creeper -> creeper.isAlive() && !creeper.isNoAi() && creeper.distanceTo(owner) < NEAR && owner.hasLineOfSight(creeper))) {
+                creeper -> creeper.isAlive() && !creeper.isNoAi() && creeper.distanceTo(owner) < NEAR && owner.hasLineOfSight(creeper) && !letBe(creeper, now))) {
             double distance = creeper.distanceToSqr(owner) - (lit(creeper) ? LIT_FIRST : 0);
             if (distance < best) { nearest = creeper; best = distance; }
         }
