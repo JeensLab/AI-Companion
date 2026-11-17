@@ -117,14 +117,16 @@ final class CompanionGathering {
         BlockState state = serverLevel.getBlockState(pos);
         if (!ground.matches(state) || !ground.safeCell(serverLevel, pos, c)) return false;
         if (!CompanionMiningNavigation.preservesAutonomousReturn(c, pos)) return false;
-        if (ground != CompanionGround.FLINT) c.selectToolForBlock(state);
+        // Gravel for flint is no exception: the tool of the block goes into his hand here too.
+        c.takeToolForBlock(state);
         ItemStack tool = c.getMainHandItem();
         var drops = CompanionTools.drops(state, serverLevel, pos, serverLevel.getBlockEntity(pos), c, tool);
-        if (!canStoreDrops(drops)) return false;
-        if (!serverLevel.destroyBlock(pos, false, c, 512)) return false;
+        if (!canStoreDrops(drops)) { c.putToolAway(); return false; }
+        if (!serverLevel.destroyBlock(pos, false, c, 512)) { c.putToolAway(); return false; }
         tool.getItem().mineBlock(tool, serverLevel, state, pos, c);
         c.swing(InteractionHand.MAIN_HAND);
         c.dropHarvest(pos, drops);
+        c.putToolAway();
         return true;
     }
 

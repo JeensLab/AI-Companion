@@ -421,22 +421,20 @@ final class CompanionRecovery {
     }
     private void dig(ServerLevel level) {
         BlockState state = level.getBlockState(digTarget);
-        if (CompanionQuarry.soil(state)) {
-            CompanionTools.equip(owner, ItemTags.SHOVELS, state);
-            if (!owner.getMainHandItem().isEmpty() && !owner.getMainHandItem().is(ItemTags.SHOVELS)) owner.unequipForSupport("mainhand");
-        } else if (rock(state)) {
-            // Netherrack goes in 2 s by hand: a pickaxe in the bag is taken, but no wood and bench are spent on one (review 05.11).
-            if (!CompanionTools.equip(owner, ItemTags.PICKAXES, state) && !state.is(Blocks.NETHERRACK) && makePickaxe(level, state)) return;
-        }
+        // Stone with no pickaxe of his: one is made of the wood in the bag (netherrack goes in 2 s by hand: no wood and bench
+        // spent on it), then the rule takes the tool for the block.
+        if (rock(state) && CompanionTools.count(owner, ItemTags.PICKAXES) == 0 && !state.is(Blocks.NETHERRACK) && makePickaxe(level, state)) return;
+        owner.takeToolForBlock(state);
         owner.getLookControl().setLookAt(digTarget.getX() + .5, digTarget.getY() + .5, digTarget.getZ() + .5);
         owner.workStatus(digTarget.equals(owner.blockPosition().below()) ? "Спускаюсь: раскапываю блок под ногами." : "Расчищаю небольшой проход, чтобы выбраться.");
         if (!breaking.tick(level, digTarget)) return;
         var tool = owner.getMainHandItem();
         var drops = CompanionTools.drops(state, level, digTarget, null, owner, tool);
-        if (!owner.canStoreDrops(drops)) { stop(false); return; }
+        if (!owner.canStoreDrops(drops)) { owner.putToolAway(); stop(false); return; }
         if (safeTarget(level, digTarget) && level.destroyBlock(digTarget, false, owner, 512)) {
             tool.getItem().mineBlock(tool, level, state, digTarget, owner); owner.dropHarvest(digTarget, drops); dug++;
         }
+        owner.putToolAway();
         breaking.reset(); digTarget = null;
     }
     /**

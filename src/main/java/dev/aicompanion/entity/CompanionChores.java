@@ -642,13 +642,20 @@ final class CompanionChores {
     /** The order is called off: his log is not left standing. */
     void cancel() { takeBack(); }
 
-    /** His log still stands (the axe broke, the bag is full, the order was called off): broken by hand at once, its drop his to pick up. */
+    /** His log still stands (the axe broke, the bag is full, the order was called off): taken back at once with the tool of the log, its drop his to pick up. */
     private void takeBack() {
         if (placed != null && c.level() instanceof ServerLevel level) {
             BlockState state = level.getBlockState(placed);
             if (state.is(raw) || state.is(bare)) {
-                var drops = Block.getDrops(state, level, placed, null, c, ItemStack.EMPTY);
-                if (level.destroyBlock(placed, false, c, 512)) c.dropHarvest(placed, drops);
+                // No swing to count: the block goes at once, but with the tool he has for it, not with whatever is in his hand.
+                c.takeToolForBlock(state);
+                ItemStack tool = c.getMainHandItem();
+                var drops = CompanionTools.drops(state, level, placed, null, c, tool);
+                if (level.destroyBlock(placed, false, c, 512)) {
+                    tool.getItem().mineBlock(tool, level, state, placed, c);
+                    c.dropHarvest(placed, drops);
+                }
+                c.putToolAway();
             }
         }
         placed = null; stripped = false;
