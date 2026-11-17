@@ -220,7 +220,13 @@ public final class CompanionLocalCommands {
         // " give" is not a container: the step is parsed without it, or it would be read as the place to store into.
         boolean give = command.endsWith(" give");
         PlannedAction action = action(give ? command.substring(0, command.length() - " give".length()) : command);
-        return give ? java.util.List.of(action, new PlannedAction("give_items", 0, action.count(), action.item())) : java.util.List.of(action);
+        java.util.List<PlannedAction> steps = new java.util.ArrayList<>();
+        steps.add(action);
+        // «Добудь листву» ends with the shears in his hand: the gather puts the tool away after every cut, the leaves stay in the bag.
+        if ("obtain_item".equals(action.type()) && dev.aicompanion.entity.CompanionLeaves.isFamily(action.item()))
+            steps.add(new PlannedAction("equip_item", 0, 1, "minecraft:shears", "mainhand"));
+        if (give) steps.add(new PlannedAction("give_items", 0, action.count(), action.item()));
+        return java.util.List.copyOf(steps);
     }
 
     /**

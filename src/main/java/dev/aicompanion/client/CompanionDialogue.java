@@ -273,6 +273,8 @@ public final class CompanionDialogue {
     public static String itemName(String id) {
         // «Всё, что лежит» has no item of its own in the registry: its name is the word, not the raw id.
         if (dev.aicompanion.entity.CompanionPickUp.ANY_ITEM.equals(id)) return "вещи";
+        // «Листва» is the family word of the orders until the world names the tree's own leaf block.
+        if (dev.aicompanion.entity.CompanionLeaves.isFamily(id)) return "листва";
         var key = net.minecraft.resources.ResourceLocation.tryParse(id);
         if (key == null) return id;
         return net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(key)

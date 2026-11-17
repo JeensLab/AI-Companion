@@ -66,6 +66,7 @@ public final class CompanionLeavesTests {
         h.assertTrue(plan.steps().stream().anyMatch(step -> step.type().equals("gather_block") && new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(step.item()))).is(ItemTags.LEAVES)),
                 "The chain gathers no leaf block: " + plan);
         h.assertTrue(plan.steps().stream().noneMatch(step -> step.type().equals("gather_wood")), "The chain chops logs: " + plan);
+        h.succeed();
     }
 
     /**
@@ -109,8 +110,9 @@ public final class CompanionLeavesTests {
             h.assertTrue(command != null, "«" + phrase + "» went to the model");
             PlannedAction action = CompanionLocalCommands.actions(command).getFirst();
             h.assertTrue(action.type().equals("gather_wood"), "«" + phrase + "» is no wood order: " + command);
-            h.assertTrue(action.item().isEmpty(), "«" + phrase + "» names an item: " + action.item());
+            h.assertTrue(dev.aicompanion.entity.CompanionWoodKind.of(action.item()) == null, "«" + phrase + "» names a species: " + action.item());
         }
+        h.succeed();
     }
 
     /** A spruce by him: the order names spruce leaves, not oak. */
@@ -126,6 +128,7 @@ public final class CompanionLeavesTests {
         h.assertTrue("minecraft:spruce_leaves".equals(found), "The spruce is not named: " + found);
         h.assertTrue("minecraft:spruce_leaves".equals(CompanionLeaves.resolve(h.getLevel(), c.blockPosition(), c.getSearchRadius(), CompanionLeaves.FAMILY)),
                 "The order did not resolve to the spruce");
+        h.succeed();
     }
 
     /** Nothing of a tree about: no species is invented, and the order falls back to oak alone. */
@@ -138,6 +141,7 @@ public final class CompanionLeavesTests {
                 "No fallback: " + CompanionLeaves.resolve(h.getLevel(), c.blockPosition(), c.getSearchRadius(), CompanionLeaves.FAMILY));
         h.assertTrue("minecraft:birch_leaves".equals(CompanionLeaves.resolve(h.getLevel(), c.blockPosition(), c.getSearchRadius(), "minecraft:birch_leaves")),
                 "An item of its own was rewritten");
+        h.succeed();
     }
 
     /** The owner's bag (in game 16.11): the stone pickaxe in his hand, an iron pickaxe, an axe, shears and a shovel in the bag. */
