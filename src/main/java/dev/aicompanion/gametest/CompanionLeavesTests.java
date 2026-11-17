@@ -99,6 +99,8 @@ public final class CompanionLeavesTests {
             h.assertTrue(damage(c, Items.SHEARS) >= 16, "The shears did not cut the leaves: " + damage(c, Items.SHEARS) + ", " + report);
             h.assertTrue(damage(c, Items.STONE_PICKAXE) == 0 && damage(c, Items.IRON_PICKAXE) == 0 && damage(c, Items.IRON_AXE) == 0,
                     "Another tool was worn: pickaxe " + damage(c, Items.STONE_PICKAXE) + ", axe " + damage(c, Items.IRON_AXE) + ", " + report);
+            h.assertTrue(dev.aicompanion.client.CompanionDialogue.summarize(plan, report).equals("Собрал 16 листьев."),
+                    "The answer is not the count: " + dev.aicompanion.client.CompanionDialogue.summarize(plan, report));
         });
     }
 
@@ -183,6 +185,55 @@ public final class CompanionLeavesTests {
             h.assertTrue(!said.contains("Рядом листвы не вижу") && !report.contains("Рядом не вижу"), "The leaves were refused: " + report);
             h.assertTrue(!report.contains("Еловая"), "The spruce was named in the failure: " + report);
         });
+    }
+
+    /** No reachable leaf of any tree: one short line, «листву» and no species he could not come at. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void noReachableLeafIsRefusedShortWithoutASpecies(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
+        for (int up = 0; up < 6; up++) h.setBlock(trunk.above(up), Blocks.SPRUCE_LOG);
+        h.setBlock(trunk.above(5).west(), Blocks.SPRUCE_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1));
+        CompanionEntity c = withTheOwnersTools(h);
+        String command = CompanionLocalCommands.route("добудь листву", "Олег");
+        h.assertTrue(command != null, "«добудь листву» went to the model");
+        List<PlannedAction> plan = CompanionLocalCommands.actions(command);
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-leaves-none", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            String said = dev.aicompanion.client.CompanionDialogue.summarize(plan, report);
+            h.assertTrue(said.equals("Рядом листвы не вижу."), "Not the short line: " + said);
+            h.assertTrue(!said.contains("Остальное сделал") && !said.contains("Еловая") && !said.contains("Дубовая"), "Species or the old prefix: " + said);
+            h.assertTrue(count(c, Items.SPRUCE_LEAVES) == 0, "A leaf was gathered out of reach: " + report);
+        });
+    }
+
+    /** The equip step of a plan says nothing; a standalone «надень ножницы» still answers. */
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void theEquipStepOfAPlanIsSilentWhileAStandaloneEquipAnswers(GameTestHelper h) {
+        List<PlannedAction> plan = List.of(new PlannedAction("obtain_item", 0, 16, CompanionLeaves.FAMILY),
+                new PlannedAction("equip_item", 0, 1, "minecraft:shears", "mainhand"));
+        String said = dev.aicompanion.client.CompanionDialogue.summarize(plan, "Собрал: «Дубовая листва», 16 шт.\nВзял в правую руку: Shears.");
+        h.assertTrue(said.equals("Собрал 16 листьев."), "The equip line was spoken in a plan: " + said);
+        String alone = dev.aicompanion.client.CompanionDialogue.summarize(List.of(new PlannedAction("equip_item", 0, 1, "minecraft:shears", "mainhand")),
+                "Уже экипирован: Shears.");
+        h.assertTrue(alone.equals("Уже экипирован: Shears."), "A standalone equip does not answer: " + alone);
+        h.succeed();
+    }
+
+    /** A leaf order reports the count it really gathered; «Остальное сделал» is no part of it. */
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void aLeafOrderReportsTheCountItGathered(GameTestHelper h) {
+        String said = dev.aicompanion.client.CompanionDialogue.summarize(List.of(new PlannedAction("obtain_item", 0, 16, CompanionLeaves.FAMILY)),
+                "Собрал: «Дубовая листва», 16 шт.");
+        h.assertTrue(said.equals("Собрал 16 листьев.") && !said.contains("Остальное сделал"), said);
+        List<PlannedAction> plan = List.of(new PlannedAction("obtain_item", 0, 16, CompanionLeaves.FAMILY),
+                new PlannedAction("equip_item", 0, 1, "minecraft:shears", "mainhand"));
+        String refused = dev.aicompanion.client.CompanionDialogue.summarize(plan,
+                dev.aicompanion.client.CompanionDialogue.PARTIAL_PREFIX + "«Листва»: Рядом листвы не вижу.\nУже экипирован: Shears.");
+        h.assertTrue(refused.equals("Рядом листвы не вижу."), "The old prefix came back: " + refused);
+        h.succeed();
     }
 
     /** The owner's bag (in game 16.11): the stone pickaxe in his hand, an iron pickaxe, an axe, shears and a shovel in the bag. */

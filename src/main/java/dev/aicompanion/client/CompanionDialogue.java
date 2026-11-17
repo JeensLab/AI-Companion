@@ -106,7 +106,9 @@ public final class CompanionDialogue {
             case "farm_crops" -> "Ага, сделаю грядки у воды.";
             case "harvest_crops" -> "Ага, пойду соберу урожай.";
             case "use_bone_meal" -> "sapling".equals(actions.getFirst().item()) ? "Ага, посыплю саженец костной мукой." : "Ага, посыплю грядки костной мукой.";
-            case "obtain_item" -> "Ага, добуду.";
+            case "obtain_item" -> dev.aicompanion.entity.CompanionLeaves.isFamily(actions.getFirst().item())
+                    ? "Ага, добуду " + actions.getFirst().count() + " " + leavesWord(actions.getFirst().count()) + "."
+                    : "Ага, добуду.";
             case "pick_up" -> "Ага, подберу, что лежит рядом.";
             case "repair_item" -> "Сейчас сложу две в одну.";
             case "disenchant_item" -> "Ага, сниму чары на точиле.";
@@ -292,6 +294,10 @@ public final class CompanionDialogue {
         // The guitar's answer is the server's own line, built from the recording that really started: it names that recording by
         // its mood number and its file name, and nothing else. Said as it is, not through the generic step summary.
         if (actions.stream().allMatch(action -> "campfire_song".equals(action.type()))) return speakable(report);
+        // A leaf order answers with what it brought; the step that wears the shears at its end is bookkeeping, not the answer.
+        if (isLeafOrder(actions)) return leafReport(report);
+        // The equip step of a plan is bookkeeping too: «Уже экипирован» answers a standalone order, not a plan that did other work.
+        if (actions.size() > 1) report = withoutEquipmentLines(report);
         String skipped = "";
         int marker = report.lastIndexOf(SKIPPED_PREFIX);
         if (marker >= 0 && (marker == 0 || report.charAt(marker - 1) == '\n')) {
@@ -311,6 +317,51 @@ public final class CompanionDialogue {
         String spoken = summarizeSteps(actions, report);
         // Unstarted steps remain visible in Tasks. Reading them aloud turns one problem into a roll call.
         return spoken.isBlank() && !skipped.isEmpty() ? "Пока получилось выполнить только часть поручения." : spoken;
+    }
+
+    /** Whether the plan is only a leaf order and its bookkeeping (the shears at its end, the bag check). */
+    private static boolean isLeafOrder(List<PlannedAction> actions) {
+        boolean leaf = false;
+        for (PlannedAction action : actions) {
+            if ("obtain_item".equals(action.type()) && dev.aicompanion.entity.CompanionLeaves.isFamily(action.item())) leaf = true;
+            else if (!isBookkeeping(action)) return false;
+        }
+        return leaf;
+    }
+
+    private static boolean isBookkeeping(PlannedAction action) {
+        return "equip_item".equals(action.type()) || "unequip_item".equals(action.type()) || "verify_item".equals(action.type());
+    }
+
+    /**
+     * What a leaf order brought: the count that really landed in the bag, not the step that wore the shears. With none,
+     * the refusal is the one short line the order was given; a partial gather says how many it got.
+     */
+    private static String leafReport(String report) {
+        int got = 0;
+        var gather = Pattern.compile("Собрал: «[^»]*», (\\d+) шт\\.").matcher(report);
+        while (gather.find()) got += Integer.parseInt(gather.group(1));
+        var partial = Pattern.compile("Собрал «[^»]*»: (\\d+) из (\\d+)").matcher(report);
+        while (partial.find()) got += Integer.parseInt(partial.group(1));
+        if (got > 0) return "Собрал " + got + " " + leavesWord(got) + ".";
+        if (report.contains("Рядом листвы не вижу")) return "Рядом листвы не вижу.";
+        String failure = dev.aicompanion.CompanionFailureMessages.primary(report);
+        if (failure.contains("не нашёл") || failure.contains("не вижу")) return "Листвы рядом не нашёл.";
+        return report.contains("План остановлен:") ? speakable(failure) : "Листвы рядом не нашёл.";
+    }
+
+    /** «лист», «листа», «листьев»: how a Russian player counts leaves. */
+    private static String leavesWord(int count) {
+        int lastTwo = count % 100, last = count % 10;
+        if (lastTwo >= 11 && lastTwo <= 14) return "листьев";
+        return last == 1 ? "лист" : last >= 2 && last <= 4 ? "листа" : "листьев";
+    }
+
+    /** The success lines of an equip step: «Уже экипирован», «Взял в правую руку», «Надел», «Убрал в сумку». */
+    private static String withoutEquipmentLines(String report) {
+        return java.util.Arrays.stream(report.split("\n"))
+                .filter(line -> !line.startsWith("Уже экипирован: ") && !line.startsWith("Взял в ") && !line.startsWith("Надел: ") && !line.startsWith("Убрал в сумку: "))
+                .collect(java.util.stream.Collectors.joining("\n"));
     }
 
     private static boolean stoppedOnLastPart(String report) {
