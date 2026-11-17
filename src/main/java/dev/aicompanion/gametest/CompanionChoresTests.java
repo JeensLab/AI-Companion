@@ -247,6 +247,34 @@ public final class CompanionChoresTests {
         });
     }
 
+    /** The log left standing by a called-off order is taken back with the axe he has, not by hand: the axe wears on it. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void theLogLeftByACancelledStripIsTakenBackWithTheAxe(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.STONE_AXE));
+        c.setItem(1, new ItemStack(Items.OAK_LOG, 2));
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        boolean[] stopped = {false};
+        h.onEachTick(() -> {
+            if (stopped[0]) return;
+            for (int x = 8; x <= 16; x++) for (int z = 12; z <= 20; z++) for (int y = GROUND + 1; y <= GROUND + 3; y++)
+                if (h.getBlockState(new BlockPos(x, y, z)).is(Blocks.OAK_LOG)) {
+                    stopped[0] = CompanionEvents.executeAction(owner, "stop", "", 1).success();
+                    return;
+                }
+        });
+        run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:stripped_oak_log\",\"count\":2}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(stopped[0], "No log was ever left standing to be called off");
+            h.assertTrue(!c.isWorking(), "Still working: " + c.getLastTaskResult());
+            for (int x = 8; x <= 16; x++) for (int z = 12; z <= 20; z++) for (int y = GROUND + 1; y <= GROUND + 3; y++)
+                h.assertTrue(h.getBlockState(new BlockPos(x, y, z)).isAir(), "A log is left standing at " + x + " " + y + " " + z);
+            h.assertTrue(count(c, Items.STRIPPED_OAK_LOG) == 0 && count(c, Items.OAK_LOG) == 2, "A log of his is lost: " + c.getStoredItemsSummary());
+            h.assertTrue(damage(c, Items.STONE_AXE) >= 1, "The log was taken back by hand: " + c.getStoredItemsSummary());
+        });
+    }
+
     private static void ground(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= GROUND + 6; y++) {
             boolean border = x == 0 || x == 31 || z == 0 || z == 31;
@@ -272,6 +300,14 @@ public final class CompanionChoresTests {
     private static CompletableFuture<CompanionPlanRunner.Outcome> run(GameTestHelper h, CompanionEntity c, String json) {
         var plan = CompanionPlanCodec.parsePlan(JsonParser.parseString(json));
         return CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-chores", () -> false));
+    }
+
+    /** The wear on the stack of this item, in the bag or in either hand; -1 when he has none. */
+    private static int damage(CompanionEntity c, Item item) {
+        int found = -1;
+        for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(item)) found = Math.max(found, c.getItem(slot).getDamageValue());
+        if (c.getMainHandItem().is(item)) found = Math.max(found, c.getMainHandItem().getDamageValue());
+        return found;
     }
 
     private static int count(CompanionEntity c, Item item) {

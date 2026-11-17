@@ -193,6 +193,45 @@ public final class CompanionGatherBlockTests {
         });
     }
 
+    /**
+     * The crown is cut block after block: the leaf after the first one comes down while the first one's drop still lies on the
+     * ground, so the pickup comes after the cutting and not between two leaves.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void leavesAreCutWithoutWaitingForEachDrop(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.DISTANCE, 1);
+        List<BlockPos> crown = List.of(trunk.above().west(), trunk.above().east(), trunk.above().north(), trunk.above(2).west());
+        for (BlockPos cell : crown) h.setBlock(cell, leaves);
+        for (int up = 0; up < 3; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
+        CompanionEntity c = withTheOwnersTools(h);
+        int[] standing = {crown.size()}, broken = {0};
+        boolean[] keptCutting = {false};
+        h.onEachTick(() -> {
+            int left = 0;
+            for (BlockPos cell : crown) if (h.getBlockState(cell).is(Blocks.OAK_LEAVES)) left++;
+            if (left < standing[0]) {
+                broken[0] += standing[0] - left;
+                // A second leaf gone with the first one's drop still lying there: the drop did not hold the work up.
+                if (broken[0] >= 2 && leafDrops(h) >= 2) keptCutting[0] = true;
+            }
+            standing[0] = left;
+        });
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":3}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            h.assertTrue(count(c, Items.OAK_LEAVES) >= 3, "The leaves did not drop: " + count(c, Items.OAK_LEAVES) + ", " + future.join().report());
+            h.assertTrue(keptCutting[0], "He waited for each leaf's drop before the next leaf");
+        });
+    }
+
+    /** Leaf items of his harvest lying in the test: what a cut leaf leaves on the ground for a while. */
+    private static int leafDrops(GameTestHelper h) {
+        return h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, h.getBounds().inflate(3),
+                item -> item.getItem().is(Items.OAK_LEAVES)).stream().mapToInt(item -> item.getItem().getCount()).sum();
+    }
+
     /** The owner's bag (in game 16.11): the stone pickaxe in his hand, an iron pickaxe, an axe, shears and a shovel in the bag. */
     private static CompanionEntity withTheOwnersTools(GameTestHelper h) {
         CompanionEntity c = spawn(h, 12, 16);

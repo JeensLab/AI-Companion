@@ -563,6 +563,21 @@ public final class CompanionLooseTests {
         stack.enchant(helper.getLevel().registryAccess().holderOrThrow(enchantment), level);
         return stack;
     }
+    /** Gravel for flint is dug with the shovel he has, as every other block: the shovel wears on it. */
+    @GameTest(template = "tall_tree", timeoutTicks = 4000)
+    public static void theGravelForFlintIsDugWithTheShovel(GameTestHelper helper) {
+        CompanionEntity companion = setupClear(helper);
+        companion.setItem(0, new ItemStack(Items.OAK_LOG, 2));
+        companion.setItem(1, new ItemStack(Items.IRON_SHOVEL));
+        gravelPatch(helper);
+        var started = CompanionEvents.executeAction(owner(helper, companion), "gather_loose", "minecraft:flint", 1);
+        helper.assertTrue(started.success(), "Flint order rejected: " + started.message());
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.isGatheringTask() && !companion.isWorking(), "Still working: " + diagnostic(companion));
+            helper.assertTrue(damage(companion, Items.IRON_SHOVEL) >= 1, "The gravel was dug without the shovel: " + diagnostic(companion));
+        });
+    }
+
     private static void gravelPatch(GameTestHelper helper) {
         for (int x = 18; x <= 22; x++) for (int z = 19; z <= 23; z++) helper.setBlock(new BlockPos(x, 1, z), Blocks.GRAVEL);
     }
@@ -656,6 +671,13 @@ public final class CompanionLooseTests {
     private static boolean hasShovel(CompanionEntity companion) {
         for (int slot = 0; slot < companion.getContainerSize(); slot++) if (companion.getItem(slot).is(ItemTags.SHOVELS)) return true;
         return companion.getMainHandItem().is(ItemTags.SHOVELS) || companion.getOffhandItem().is(ItemTags.SHOVELS);
+    }
+    /** The wear on the stack of this item, in the bag or in either hand; -1 when he has none. */
+    private static int damage(CompanionEntity companion, Item item) {
+        int found = -1;
+        for (int slot = 0; slot < companion.getContainerSize(); slot++) if (companion.getItem(slot).is(item)) found = Math.max(found, companion.getItem(slot).getDamageValue());
+        for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND}) if (companion.getItemBySlot(slot).is(item)) found = Math.max(found, companion.getItemBySlot(slot).getDamageValue());
+        return found;
     }
     private static int count(CompanionEntity companion, Item item) {
         int count = 0; for (int slot = 0; slot < companion.getContainerSize(); slot++) if (companion.getItem(slot).is(item)) count += companion.getItem(slot).getCount();

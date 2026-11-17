@@ -81,6 +81,26 @@ public final class CompanionFarmTests {
         });
     }
 
+    /** A pumpkin at its stem is the axe's block: taken with the axe he has, which wears on it, not by hand. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200, batch = "farm")
+    public static void aPumpkinIsTakenWithTheAxe(GameTestHelper h) {
+        ground(h); pond(h, 16, 16);
+        h.setBlock(new BlockPos(12, GROUND, 12), Blocks.FARMLAND.defaultBlockState().setValue(FarmBlock.MOISTURE, 7));
+        h.setBlock(new BlockPos(13, GROUND, 12), Blocks.FARMLAND.defaultBlockState().setValue(FarmBlock.MOISTURE, 7));
+        h.setBlock(new BlockPos(12, GROUND + 1, 12), Blocks.PUMPKIN);
+        h.setBlock(new BlockPos(13, GROUND + 1, 12), Blocks.ATTACHED_PUMPKIN_STEM.defaultBlockState()
+                .setValue(net.minecraft.world.level.block.AttachedStemBlock.FACING, net.minecraft.core.Direction.WEST));
+        CompanionEntity companion = spawn(h, 9, 9, 10, 10, 16);
+        companion.setItem(0, new ItemStack(Items.IRON_AXE));
+        long id = order(h, companion, "harvest_crops", "pumpkin", 1);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = result(h, companion, id);
+            h.assertTrue(result.success(), result.message());
+            h.assertTrue(count(companion, Items.PUMPKIN) == 1, "No pumpkin in the bag: " + companion.getStoredItemsSummary());
+            h.assertTrue(damage(companion, Items.IRON_AXE) >= 1, "The pumpkin was taken by hand: " + companion.getStoredItemsSummary());
+        });
+    }
+
     /**
      * A 4x4 patch of ripe wheat, one carrot and two crops still growing; the middle of the patch is not reachable from its edge, so the
      * drops there are picked up from the farmland. The ripe ones are broken and sown again in the same place; the young are left alone.
@@ -624,6 +644,13 @@ public final class CompanionFarmTests {
         return ItemStack.EMPTY;
     }
 
+    /** The wear on the stack of this item, in the bag or in either hand; -1 when he has none. */
+    static int damage(CompanionEntity companion, Item item) {
+        int found = -1;
+        for (int slot = 0; slot < companion.getContainerSize(); slot++) if (companion.getItem(slot).is(item)) found = Math.max(found, companion.getItem(slot).getDamageValue());
+        for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND}) if (companion.getItemBySlot(slot).is(item)) found = Math.max(found, companion.getItemBySlot(slot).getDamageValue());
+        return found;
+    }
     static int count(CompanionEntity companion, Item item) {
         int count = 0;
         for (int slot = 0; slot < companion.getContainerSize(); slot++) if (companion.getItem(slot).is(item)) count += companion.getItem(slot).getCount();

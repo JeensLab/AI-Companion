@@ -322,6 +322,93 @@ public final class CompanionRightToolTests {
         h.succeed();
     }
 
+    /** Two pickaxes of one kind: the fresh one wears, not the nearly broken one that happens to lie first in the bag. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void theFresherOfTwoEqualToolsIsTheOneThatWears(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        ItemStack worn = new ItemStack(Items.STONE_PICKAXE);
+        worn.setDamageValue(worn.getMaxDamage() - 1);
+        c.setItem(0, worn);
+        c.setItem(1, new ItemStack(Items.STONE_PICKAXE));
+        BlockPos stone = new BlockPos(16, GROUND, 18);
+        h.setBlock(stone, Blocks.STONE);
+        List<ItemStack> drops = breakWithTool(h, c, stone);
+        h.assertTrue(drops.stream().anyMatch(drop -> drop.is(Items.COBBLESTONE)), "Stone did not give its cobblestone: " + drops);
+        // The worn one had one use left: it would be gone had it been the one taken.
+        h.assertTrue(count(c, Items.STONE_PICKAXE) == 2, "The nearly broken pickaxe was worn out on the block: " + c.getStoredItemsSummary());
+        h.assertTrue(wornBy(c, Items.STONE_PICKAXE, 1), "Neither pickaxe wore: " + c.getStoredItemsSummary());
+        h.assertTrue(wornBy(c, Items.STONE_PICKAXE, worn.getMaxDamage() - 1), "The nearly broken pickaxe wore instead of the fresh one");
+        h.succeed();
+    }
+
+    /** No pickaxe for the stone: the axe and the shovel he has are no faster than a hand, and the block is still broken by hand. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void withNoToolForItHeUsesWhateverHeHas(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.IRON_AXE));
+        c.setItem(1, new ItemStack(Items.IRON_SHOVEL));
+        BlockPos stone = new BlockPos(16, GROUND, 18);
+        h.setBlock(stone, Blocks.STONE);
+        List<ItemStack> drops = breakWithTool(h, c, stone);
+        h.assertBlockNotPresent(Blocks.STONE, stone);
+        h.assertTrue(drops.isEmpty(), "A hand gave stone a drop: " + drops);
+        h.assertTrue(c.getMainHandItem().isEmpty(), "A tool of another class was put in his hand: " + c.getMainHandItem());
+        h.assertTrue(damage(c, Items.IRON_AXE) == 0 && damage(c, Items.IRON_SHOVEL) == 0, "A tool of another class wore on the stone");
+        h.assertTrue(count(c, Items.IRON_AXE) == 1 && count(c, Items.IRON_SHOVEL) == 1, "A tool of his was lost");
+        h.succeed();
+    }
+
+    /** The leaf he must cut comes down on the shears' own tick, not on the pickaxe's six in his hand. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void aLeafComesDownInOneTickWithTheShears(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        c.setItem(0, new ItemStack(Items.SHEARS));
+        BlockPos leaves = new BlockPos(16, GROUND, 18);
+        h.setBlock(leaves, Blocks.OAK_LEAVES);
+        breaksInVanillaTicks(h, c, leaves, 1);
+    }
+
+    /** Stone with a pickaxe: the vanilla time of that pickaxe, as a player's. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void stoneTakesTheVanillaTimeWithThePickaxe(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.IRON_PICKAXE));
+        BlockPos stone = new BlockPos(16, GROUND, 18);
+        h.setBlock(stone, Blocks.STONE);
+        breaksInVanillaTicks(h, c, stone, 8);
+    }
+
+    /** A log with an axe: the vanilla time of that axe. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void aLogTakesTheVanillaTimeWithTheAxe(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.IRON_AXE));
+        BlockPos log = new BlockPos(16, GROUND, 18);
+        h.setBlock(log, Blocks.OAK_LOG);
+        breaksInVanillaTicks(h, c, log, 10);
+    }
+
+    /** Earth with a shovel: the vanilla time of that shovel. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void earthTakesTheVanillaTimeWithTheShovel(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.IRON_SHOVEL));
+        BlockPos dirt = new BlockPos(16, GROUND, 18);
+        h.setBlock(dirt, Blocks.DIRT);
+        breaksInVanillaTicks(h, c, dirt, 3);
+    }
+
+    /** Efficiency V on the pickaxe is a player's speed: the stone comes down in two ticks, not in the six the bag's plain speed gives. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void anEnchantedPickaxeBreaksStoneAtTheVanillaSpeed(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        c.setItem(0, enchanted(h, Items.DIAMOND_PICKAXE, 5));
+        BlockPos stone = new BlockPos(16, GROUND, 18);
+        h.setBlock(stone, Blocks.STONE);
+        breaksInVanillaTicks(h, c, stone, 2);
+    }
+
     private static CompanionEntity spawn(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.STONE);
         CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), STAND.getX(), GROUND, STAND.getZ());
@@ -344,6 +431,36 @@ public final class CompanionRightToolTests {
         tool.getItem().mineBlock(tool, level, state, pos, c);
         c.putToolAway();
         return drops;
+    }
+
+    /**
+     * Holds him to the vanilla break time: the swing goes once a game tick, as the paths drive it, and the block comes down on
+     * exactly the tick a player's would with the tool he took — no delay of its own between the ticks.
+     */
+    private static void breaksInVanillaTicks(GameTestHelper h, CompanionEntity c, BlockPos at, int vanillaTicks) {
+        BlockPos pos = h.absolutePos(at);
+        BlockState state = h.getLevel().getBlockState(pos);
+        c.takeToolForBlock(state);
+        h.assertTrue(!c.getMainHandItem().isEmpty(), "No tool of his for " + state + ": " + c.getMainHandItem());
+        int[] ticks = {0};
+        h.succeedWhen(() -> {
+            ticks[0]++;
+            boolean down = swing(c, pos);
+            h.assertTrue(ticks[0] <= vanillaTicks, "Still swinging after the vanilla " + vanillaTicks + " ticks: " + state);
+            if (down) h.assertTrue(ticks[0] == vanillaTicks, state + " came down in " + ticks[0] + " ticks where vanilla takes " + vanillaTicks);
+        });
+    }
+
+    /** One swing of the breaking component he breaks blocks with, as the paths call it once a game tick. */
+    private static boolean swing(CompanionEntity c, BlockPos pos) {
+        try {
+            Object breaking = field(c, "woodBreaking");
+            var tick = breaking.getClass().getDeclaredMethod("tick", ServerLevel.class, BlockPos.class);
+            tick.setAccessible(true);
+            return (boolean) tick.invoke(breaking, c.level(), pos);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private static float speedOf(Item item, BlockState state) { return new ItemStack(item).getDestroySpeed(state); }
@@ -375,6 +492,13 @@ public final class CompanionRightToolTests {
         var found = target.getClass().getDeclaredField(name);
         found.setAccessible(true);
         return found.get(target);
+    }
+
+    /** Whether a stack of this item carries exactly this wear, in the bag or in a hand. */
+    private static boolean wornBy(CompanionEntity c, Item item, int wear) {
+        for (int slot = 0; slot < c.getContainerSize(); slot++)
+            if (c.getItem(slot).is(item) && c.getItem(slot).getDamageValue() == wear) return true;
+        return c.getMainHandItem().is(item) && c.getMainHandItem().getDamageValue() == wear;
     }
 
     private static int damage(CompanionEntity c, Item item) {
