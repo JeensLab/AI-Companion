@@ -423,6 +423,12 @@ public final class CompanionGatherBlockTests {
         var polished = CompanionObtain.plan(level, pick, true, "minecraft:polished_deepslate", 4, thing -> thing == Items.COBBLED_DEEPSLATE);
         h.assertTrue(polished.steps().equals(List.of(new CompanionObtain.Step("gather_block", "minecraft:cobbled_deepslate", 4), new CompanionObtain.Step("craft_item", "minecraft:polished_deepslate", 4))),
                 "Polished deepslate of the deepslate about him, not of any stone: " + polished);
+        // «Добудь 2 диорита» given to gather_stone (in game 17.11: two of plain stone dug, and «готово»): that action digs any stone,
+        // so a stone named is obtain_item's; its own kinds stay with it.
+        var given = CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"gather_stone\",\"item\":\"minecraft:diorite\",\"count\":2},"
+                + "{\"action\":\"gather_stone\",\"item\":\"minecraft:cobblestone\",\"count\":3},{\"action\":\"gather_stone\",\"item\":\"minecraft:deepslate\",\"count\":3}]"));
+        h.assertTrue(given.size() == 3 && given.get(0).type().equals("obtain_item") && given.get(0).item().equals("minecraft:diorite") && given.get(0).count() == 2
+                && given.get(1).type().equals("gather_stone") && given.get(2).type().equals("gather_stone"), "Diorite given to gather_stone: " + given);
         h.succeed();
     }
 
