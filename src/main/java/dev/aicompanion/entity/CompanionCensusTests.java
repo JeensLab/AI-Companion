@@ -105,6 +105,30 @@ public final class CompanionCensusTests {
         for (String row : rows) System.out.println("CENSUS tool row: " + row);
         h.assertTrue(failed == 0, "tool census: states=" + states + " checked=" + checked + " noDrops=" + noDrops
                 + " failed=" + failed + " blocks=" + failedBlocks);
+        // The silk path the coral gametest covers, checked against the game's own tables here too: a silk tool in the bag takes
+        // a block that only Silk Touch gives as itself (a coral plant or fan, a grass block), not the block's plain drop.
+        List<Block> silkOnly = List.of(Blocks.TUBE_CORAL, Blocks.TUBE_CORAL_FAN, Blocks.BRAIN_CORAL, Blocks.BRAIN_CORAL_FAN,
+                Blocks.BUBBLE_CORAL, Blocks.BUBBLE_CORAL_FAN, Blocks.FIRE_CORAL, Blocks.FIRE_CORAL_FAN, Blocks.HORN_CORAL,
+                Blocks.HORN_CORAL_FAN, Blocks.GRASS_BLOCK, Blocks.MYCELIUM, Blocks.PODZOL);
+        List<ItemStack> silkBag = List.of(silk(h, Items.WOODEN_PICKAXE), silk(h, Items.SHEARS));
+        int silkStates = 0, silkFailed = 0;
+        List<String> silkRows = new ArrayList<>();
+        for (Block block : silkOnly) {
+            for (BlockState state : block.getStateDefinition().getPossibleStates()) {
+                silkStates++;
+                fill(c, silkBag);
+                ItemStack chosen = CompanionTools.bestSilkToolForBlock(c, state);
+                Item own = block.asItem();
+                if (chosen.isEmpty() || !potential(level, state, chosen, breaker).contains(own)) {
+                    silkFailed++;
+                    silkRows.add(name(block) + state.getValues() + " | expected a silk tool | chose " + describe(chosen)
+                            + " | the silk tool gives not the block itself");
+                }
+            }
+        }
+        System.out.println("CENSUS silk: states=" + silkStates + " failed=" + silkFailed);
+        for (String row : silkRows) System.out.println("CENSUS silk row: " + row);
+        h.assertTrue(silkFailed == 0, "silk census: states=" + silkStates + " failed=" + silkFailed + " rows=" + silkRows);
         h.succeed();
     }
 
@@ -241,6 +265,13 @@ public final class CompanionCensusTests {
 
     private static void fill(CompanionEntity c, List<ItemStack> bag) {
         for (int slot = 0; slot < c.getContainerSize(); slot++) c.setItem(slot, slot < bag.size() ? bag.get(slot).copy() : ItemStack.EMPTY);
+    }
+
+    /** The stack carrying Silk Touch, as this world's registry holds the enchantment. */
+    private static ItemStack silk(GameTestHelper h, Item item) {
+        ItemStack stack = new ItemStack(item);
+        stack.enchant(h.getLevel().registryAccess().holderOrThrow(net.minecraft.world.item.enchantment.Enchantments.SILK_TOUCH), 1);
+        return stack;
     }
 
     private static CompanionEntity spawn(GameTestHelper h) {
