@@ -92,8 +92,9 @@ final class CompanionPickable {
         // What a recipe makes is made (wool, planks, a clay block): only what the world alone gives is taken from it.
         Set<Item> made = new HashSet<>();
         for (var holder : level.getRecipeManager().getRecipes()) made.add(holder.value().getResultItem(level.registryAccess()).getItem());
-        // A layer of snow gives its snowballs to a shovel, but its loot table asks for the entity that broke it: a bare null breaker
-        // gives nothing there, and the layer was no source at all. A marker is an inert entity of the level, enough for that check.
+        // A layer of snow gives its snowballs to a shovel, and a chorus flower gives itself to a hand, but their loot tables ask
+        // for the entity that broke it: a bare null breaker gives nothing there, and both were no source at all. A marker is an
+        // inert entity of the level, enough for that check.
         Entity breaker = new Marker(EntityType.MARKER, level);
         for (Block block : BuiltInRegistries.BLOCK) {
             // The default state first: a door, a fence, a leaf gives the same item open or shut, along its axis or not. Only where
