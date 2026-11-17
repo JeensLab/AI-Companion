@@ -58,7 +58,10 @@ final class CompanionPicking {
     private static final double REACH = 4.5;
     /** Ticks over the block, down and up for air, before it is passed over. */
     private static final int DIVE = 900;
-    /** Faces of the stone dug by name he found no way to before he says so: one seen in a sealed hollow under him shows many. */
+    /**
+     * Faces of the stone dug by name he looked for a way to and found none, before he says so: one seen in a sealed hollow under him
+     * shows many. A face with no cell to work it from (its drop would fall into running water) is passed at once and not counted.
+     */
     private static final int STONE_TRIES = 8;
 
     private final CompanionWork w;
@@ -68,6 +71,8 @@ final class CompanionPicking {
     private List<CompanionPickable.Source> sources = List.of();
     /** The order is for the stone dug by name (granite, tuff…). */
     private boolean stone;
+    /** Stone faces he looked for a way to and found none. */
+    private int missed;
     /** Ordered, in his bag at the order, dropped by the blocks he broke (picked up or not). */
     private int wanted, before, due;
     private long settleAt;
@@ -93,6 +98,7 @@ final class CompanionPicking {
         if (sources.isEmpty()) return CompanionActionResult.failed("Такое я с земли не собираю: " + id + ".");
         item = asked; wanted = count; before = w.items.countCarried(item); due = 0; settleAt = 0; retried = false;
         stone = sources.stream().allMatch(source -> CompanionPickable.stone(source.block()));
+        missed = 0;
         release();
         passed.clear(); lavaKept.clear();
         return null;
@@ -304,7 +310,7 @@ final class CompanionPicking {
         if (due >= wanted) { collect(level, got); return; }
         Predicate<BlockPos> site = kept(c, level);
         if (target != null && (gives(sources, level.getBlockState(target)) == 0 || !takes(level, target, site) || lavaBeside(level, target))) release();
-        if (target == null && !(stone && passed.size() >= STONE_TRIES)) target = find(c, level, sources, site, passed, lavaKept);
+        if (target == null && !(stone && missed >= STONE_TRIES)) target = find(c, level, sources, site, passed, lavaKept);
         if (target == null) {
             // What he broke and has not picked up yet is picked up before he says how far he got.
             if (due > got) { collect(level, got); return; }
@@ -330,7 +336,7 @@ final class CompanionPicking {
         if (stands.isEmpty()) stands = standsFor(level, target);
         if (!stands.contains(c.blockPosition())) {
             c.workStatus("Иду за: " + name() + ".");
-            if (!walk()) { passed.add(target); release(); }
+            if (!walk()) { if (!stands.isEmpty()) missed++; passed.add(target); release(); }
             return;
         }
         c.getNavigation().stop();
