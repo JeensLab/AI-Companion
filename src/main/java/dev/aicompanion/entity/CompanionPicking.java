@@ -312,8 +312,10 @@ final class CompanionPicking {
             String lava = lavaKept.isEmpty() ? "" : " Рядом с лавой " + CompanionWorkItems.blocks(lavaKept.size()) + " — не трогал.";
             // Some gathered: obtain_item plans the rest again (red dye goes on with the tulips once the poppies are out). None: it ends here.
             if (got > 0) { release(); w.finish(CompanionActionResult.failed("Собрал «" + name() + "»: " + got + " из " + wanted + ", " + rest + "." + lava)); return; }
-            String ask = stone ? " Отведи меня к склону или в пещеру, где он есть." : "";
-            end(false, (passed.isEmpty() ? "Рядом не нашёл, где взять «" + name() + "»." : "Вижу, где взять «" + name() + "», но подойти не смог.") + lava + ask);
+            // The stone's ask said whole: a line this short is spoken as it is (CompanionDialogue), the lava on a line of its own.
+            if (stone) end(false, (passed.isEmpty() ? "Рядом не нашёл, где взять «" + name() + "»" : "«" + name() + "» вижу, но подойти не смог")
+                    + ": отведи меня к склону или в пещеру." + (lava.isEmpty() ? "" : "\n" + lava.strip()));
+            else end(false, (passed.isEmpty() ? "Рядом не нашёл, где взять «" + name() + "»." : "Вижу, где взять «" + name() + "», но подойти не смог.") + lava);
             return;
         }
         BlockState state = level.getBlockState(target);

@@ -379,7 +379,8 @@ public final class CompanionObtain {
             home = wasHome;
         }
         absent.add(name(item));
-        return refuse(ABSENT + ", где взять «" + name(item) + "»: отведи меня к склону или в пещеру, где он есть.");
+        // Short enough to be said whole with the longest name (cobbled deepslate).
+        return refuse(ABSENT + " «" + name(item) + "»: отведи меня к склону или в пещеру, где он есть.");
     }
 
     /**
