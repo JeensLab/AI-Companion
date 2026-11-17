@@ -2,6 +2,7 @@ package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.client.CompanionLocalCommands;
+import dev.aicompanion.client.CompanionPlanCodec;
 import dev.aicompanion.client.CompanionPlanRunner;
 import dev.aicompanion.client.CompanionServerPlanPort;
 import dev.aicompanion.client.PlannedAction;
@@ -187,6 +188,102 @@ public final class CompanionLeavesTests {
         });
     }
 
+    /**
+     * The owner's tall tree grown with bone meal (17.11): its whole crown stands six and seven blocks above the ground, no
+     * stand cell under it, and his bag carries soil. «Добудь листву»: he walks to the trunk, builds up on his own supports,
+     * cuts the crown from the top, and comes back down with the soil taken back — no fall hurts him and no block is left.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 4000)
+    public static void aCrownAboveEveryStandIsCutFromHisOwnColumn(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
+        for (int up = 0; up < 5; up++) h.setBlock(trunk.above(up), Blocks.SPRUCE_LOG);
+        var leaves = Blocks.SPRUCE_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = 5; dy <= 6; dy++)
+            h.setBlock(trunk.offset(dx, dy, dz), leaves);
+        CompanionEntity c = withTheOwnersTools(h);
+        c.setItem(4, new ItemStack(Items.DIRT, 8));
+        double groundY = c.getY();
+        double[] highest = {0};
+        int[] supports = {0};
+        h.onEachTick(() -> {
+            highest[0] = Math.max(highest[0], c.getY());
+            supports[0] = Math.max(supports[0], c.getTemporarySupportCount());
+        });
+        String command = CompanionLocalCommands.route("добудь листву", "Олег");
+        h.assertTrue(command != null, "«добудь листву» went to the model");
+        List<PlannedAction> plan = CompanionLocalCommands.actions(command);
+        h.assertTrue("minecraft:spruce_leaves".equals(CompanionLeaves.resolve(c, h.getLevel(), CompanionLeaves.FAMILY)),
+                "The crown above every stand was not named: " + CompanionLeaves.resolve(c, h.getLevel(), CompanionLeaves.FAMILY));
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-leaves-crown", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            String said = dev.aicompanion.client.CompanionDialogue.summarize(plan, report);
+            h.assertTrue(count(c, Items.SPRUCE_LEAVES) == 16, "Not sixteen leaves: " + count(c, Items.SPRUCE_LEAVES) + ", " + report);
+            h.assertTrue(said.equals("Собрал 16 листьев."), "The answer is not the count: " + said + ", " + report);
+            h.assertTrue(supports[0] > 0 && highest[0] > groundY + 2, "He never built up: supports " + supports[0] + ", highest y " + highest[0] + ", " + report);
+            h.assertTrue(c.onGround() && Math.abs(c.getY() - groundY) < 0.6, "He did not come back down: y " + c.getY() + ", " + report);
+            h.assertTrue(c.getHealth() == c.getMaxHealth(), "The climb hurt him: " + c.getHealth() + " of " + c.getMaxHealth() + ", " + report);
+            h.assertTrue(c.getTemporarySupportCount() == 0, "The column is still his: " + c.getTemporarySupportCount());
+            h.assertTrue(dirtAboveGround(h) == 0, "A pillar block was left standing");
+            h.assertTrue(count(c, Items.DIRT) == 8, "The soil of his column was lost: " + count(c, Items.DIRT));
+        });
+    }
+
+    /**
+     * The same tall crown and nothing to stand on: no soil in the bag, no other tree's leaves about. He cannot build up, so
+     * the order is refused in the short line — no species he could not come at, nothing gathered, no soil invented.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void aCrownAboveReachWithoutSoilIsRefusedShort(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
+        for (int up = 0; up < 5; up++) h.setBlock(trunk.above(up), Blocks.SPRUCE_LOG);
+        var leaves = Blocks.SPRUCE_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = 5; dy <= 6; dy++)
+            h.setBlock(trunk.offset(dx, dy, dz), leaves);
+        CompanionEntity c = withTheOwnersTools(h);
+        int[] supports = {0};
+        h.onEachTick(() -> supports[0] = Math.max(supports[0], c.getTemporarySupportCount()));
+        String command = CompanionLocalCommands.route("добудь листву", "Олег");
+        h.assertTrue(command != null, "«добудь листву» went to the model");
+        List<PlannedAction> plan = CompanionLocalCommands.actions(command);
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-leaves-crown-none", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            String said = dev.aicompanion.client.CompanionDialogue.summarize(plan, report);
+            h.assertTrue(said.equals("Рядом листвы не вижу."), "Not the short line: " + said + ", " + report);
+            h.assertTrue(count(c, Items.SPRUCE_LEAVES) == 0, "A leaf was gathered out of reach: " + report);
+            h.assertTrue(supports[0] == 0 && dirtAboveGround(h) == 0, "A column was built without soil");
+        });
+    }
+
+    /** A short tree is still cut from the ground: the soil in the bag raises no column, and nothing of it is spent. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void aShortTreeIsStillCutFromTheGroundWithSoilInTheBag(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        for (BlockPos cell : List.of(trunk.above().west(), trunk.above().east(), trunk.above().north(),
+                trunk.above(2).west(), trunk.above(2).east()))
+            h.setBlock(cell, leaves);
+        for (int up = 0; up < 3; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
+        CompanionEntity c = withTheOwnersTools(h);
+        c.setItem(4, new ItemStack(Items.DIRT, 8));
+        int[] supports = {0};
+        h.onEachTick(() -> supports[0] = Math.max(supports[0], c.getTemporarySupportCount()));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":5}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OAK_LEAVES) == 5, "Not five leaves: " + count(c, Items.OAK_LEAVES) + ", " + report);
+            h.assertTrue(supports[0] == 0 && dirtAboveGround(h) == 0, "A column was built to a crown he could reach: " + supports[0]);
+            h.assertTrue(count(c, Items.DIRT) == 8, "The soil was spent on a reachable crown: " + count(c, Items.DIRT));
+        });
+    }
+
     /** No reachable leaf of any tree: one short line, «листву» and no species he could not come at. */
     @GameTest(template = "tall_tree", timeoutTicks = 3000)
     public static void noReachableLeafIsRefusedShortWithoutASpecies(GameTestHelper h) {
@@ -254,6 +351,19 @@ public final class CompanionLeavesTests {
             else if (border) h.setBlock(new BlockPos(x, y, z), Blocks.BEDROCK);
             else h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
         }
+    }
+
+    /** The soil he stood on, over the ground of the test: what a column of his leaves behind if it is not taken back. */
+    private static int dirtAboveGround(GameTestHelper h) {
+        int count = 0;
+        for (int x = 1; x < 31; x++) for (int z = 1; z < 31; z++) for (int y = GROUND + 1; y <= GROUND + 12; y++)
+            if (h.getBlockState(new BlockPos(x, y, z)).is(Blocks.DIRT)) count++;
+        return count;
+    }
+
+    private static CompletableFuture<CompanionPlanRunner.Outcome> run(GameTestHelper h, CompanionEntity c, String json) {
+        var plan = CompanionPlanCodec.parsePlan(com.google.gson.JsonParser.parseString(json));
+        return CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-leaves", () -> false));
     }
 
     private static CompanionEntity spawn(GameTestHelper h, int x, int z) {
