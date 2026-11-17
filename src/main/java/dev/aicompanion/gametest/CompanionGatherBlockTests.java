@@ -57,7 +57,7 @@ public final class CompanionGatherBlockTests {
         h.assertTrue(!bare.refused() && bare.steps().getLast().equals(new CompanionObtain.Step("gather_block", "minecraft:snowball", 2))
                 && bare.steps().contains(new CompanionObtain.Step("craft_item", "minecraft:wooden_shovel", 1)), "Snowball with no shovel: " + bare);
         // Chance drops, the mine's stone, crops and saplings, someone's lamp, egg or trap: no block is broken for them.
-        for (String item : List.of("minecraft:tuff", "minecraft:wheat_seeds", "minecraft:oak_sapling", "minecraft:apple",
+        for (String item : List.of("minecraft:cobblestone", "minecraft:wheat_seeds", "minecraft:oak_sapling", "minecraft:apple",
                 "minecraft:glowstone_dust", "minecraft:prismarine_crystals", "minecraft:dragon_egg", "minecraft:sniffer_egg", "minecraft:ochre_froglight", "minecraft:stripped_bamboo_block", "minecraft:string")) {
             var plan = CompanionObtain.plan(level, List.of(), false, item, 1, thing -> true);
             h.assertTrue(plan.steps().stream().noneMatch(step -> step.type().equals("gather_block") && step.item().equals(item)), item + " is not picked: " + plan);
@@ -392,6 +392,64 @@ public final class CompanionGatherBlockTests {
             h.assertTrue(nether.getBlockState(hung[0]).is(block), "The block with nothing under it was broken");
             c[0].discard();
             nether.setChunkForced(chunk.x, chunk.z, false);
+        });
+    }
+
+    /**
+     * Plan only (the player 17.11): granite, diorite, andesite, tuff, calcite and cobbled deepslate are dug by name where a face of
+     * them shows about him, as a player does it; none in sight is said, never fetched by a trip to the Nether for quartz. Quartz in his
+     * bag makes them at home, a diorite about him makes andesite, the deepslate about him makes polished deepslate.
+     */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void stoneByNameIsDugWhereItShows(GameTestHelper h) {
+        var level = h.getLevel();
+        var portal = new CompanionObtain.Trip(h.absolutePos(new BlockPos(1, 2, 1)), false);
+        var pick = List.of(new ItemStack(Items.STONE_PICKAXE));
+        for (String item : List.of("minecraft:granite", "minecraft:diorite", "minecraft:andesite", "minecraft:tuff", "minecraft:calcite", "minecraft:cobbled_deepslate")) {
+            var plan = CompanionObtain.plan(level, pick, false, item, 6, thing -> true, null, portal);
+            h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("gather_block", item, 6))), item + " seen about him: " + plan);
+        }
+        var bare = CompanionObtain.plan(level, List.of(), false, "minecraft:granite", 2, thing -> true);
+        h.assertTrue(!bare.refused() && bare.steps().getLast().equals(new CompanionObtain.Step("gather_block", "minecraft:granite", 2))
+                && bare.steps().contains(new CompanionObtain.Step("craft_item", "minecraft:wooden_pickaxe", 1)), "Granite with no pickaxe: " + bare);
+        var unseen = CompanionObtain.plan(level, pick, false, "minecraft:granite", 2, thing -> false, null, portal);
+        h.assertTrue(unseen.refused() && unseen.steps().isEmpty() && unseen.refusal().contains("Рядом не вижу") && unseen.refusal().contains("пещер"), "Granite not seen: " + unseen);
+        var quartz = CompanionObtain.plan(level, List.of(new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.QUARTZ, 4)), false, "minecraft:granite", 1, thing -> false, null, portal);
+        h.assertTrue(!quartz.refused() && quartz.steps().getLast().equals(new CompanionObtain.Step("craft_item", "minecraft:granite", 1))
+                && quartz.steps().stream().noneMatch(step -> step.type().startsWith("nether_") || step.type().equals("mine_ore")), "Granite of the quartz he carries: " + quartz);
+        var andesite = CompanionObtain.plan(level, pick, false, "minecraft:andesite", 2, thing -> thing == Items.DIORITE, null, portal);
+        h.assertTrue(!andesite.refused() && andesite.steps().contains(new CompanionObtain.Step("gather_block", "minecraft:diorite", 1))
+                && andesite.steps().getLast().equals(new CompanionObtain.Step("craft_item", "minecraft:andesite", 2)), "Andesite of a diorite about him: " + andesite);
+        var polished = CompanionObtain.plan(level, pick, true, "minecraft:polished_deepslate", 4, thing -> thing == Items.COBBLED_DEEPSLATE);
+        h.assertTrue(polished.steps().equals(List.of(new CompanionObtain.Step("gather_block", "minecraft:cobbled_deepslate", 4), new CompanionObtain.Step("craft_item", "minecraft:polished_deepslate", 4))),
+                "Polished deepslate of the deepslate about him, not of any stone: " + polished);
+        h.succeed();
+    }
+
+    /**
+     * «Добудь 2 гранита, потом туф»: two blocks of granite show on the ground, a nearer one lies under the dirt: the two that show are
+     * dug with his pickaxe and the hidden one is left. Tuff lies only under the dirt: he says he sees none, and it is left whole.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void graniteThatShowsIsDugAndTheHiddenIsLeft(GameTestHelper h) {
+        ground(h);
+        BlockPos hidden = new BlockPos(14, GROUND - 2, 16);
+        h.setBlock(hidden, Blocks.GRANITE);
+        List<BlockPos> shown = List.of(new BlockPos(20, GROUND, 16), new BlockPos(20, GROUND + 1, 20));
+        for (BlockPos cell : shown) h.setBlock(cell, Blocks.GRANITE);
+        BlockPos tuff = new BlockPos(10, GROUND - 2, 12);
+        h.setBlock(tuff, Blocks.TUFF);
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:granite\",\"count\":2},{\"action\":\"obtain_item\",\"item\":\"minecraft:tuff\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.GRANITE) == 2, "Not two granite: " + count(c, Items.GRANITE) + ", " + report);
+            h.assertTrue(count(c, Items.TUFF) == 0 && report.contains("Рядом не вижу"), "Tuff under the dirt: " + report);
+            for (BlockPos cell : shown) h.assertBlockNotPresent(Blocks.GRANITE, cell);
+            h.assertBlockPresent(Blocks.GRANITE, hidden);
+            h.assertBlockPresent(Blocks.TUFF, tuff);
         });
     }
 

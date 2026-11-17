@@ -35,7 +35,8 @@ import java.util.function.Predicate;
  * the root is left to grow; cocoa is taken ripe; what only shears take (leaves, a vine, a cobweb) is cut with his shears, and a leaf
  * block someone set down (it does not fade) is left; nothing is taken where the player builds (his flower bed, his cane by the house),
  * but for a pumpkin or a melon at its stem there, his harvest (the stem stays to bear again), nor outside
- * the overworld, but for the Nether's own stone there (netherrack, basalt; never beside lava); the End is later work. What grows on the bed of the water (kelp, seagrass, a sea pickle, a coral
+ * the overworld, but for the Nether's own stone there (netherrack, basalt; never beside lava); the End is later work. Granite, tuff
+ * and the other stone dug by name are taken where a face of them shows, not out of the ground. What grows on the bed of the water (kelp, seagrass, a sea pickle, a coral
  * block) he swims over and dives for, as for a foe under water (CompanionSwimming): under open water no deeper than his breath
  * takes him, never under a roof; what only lies under water (clay in a pond) is left for the dry kind.
  */
@@ -153,6 +154,8 @@ final class CompanionPicking {
     /** A block of the kind he may take now: dry, not on a site of the player's (but the fruit of a stem), ripe, and not the root of a growing column. */
     private static boolean takes(ServerLevel level, BlockPos pos, Predicate<BlockPos> site) {
         BlockState state = level.getBlockState(pos);
+        // Stone dug by name where a face of it shows, as a player sees it: one hidden in the ground is not dug for (the player 17.11).
+        if (CompanionPickable.stone(state.getBlock()) && !shows(level, pos)) return false;
         if (site.test(pos) && !CompanionCrops.onStem(level, pos)) return false;
         // Clay on the bed of a pond has no water in its own cell: the water over it counts too. Only what grows there is dived for.
         // A coral block under another one, or a sea pickle sat on it, is not under open water: none of it is dived for.
@@ -167,6 +170,12 @@ final class CompanionPicking {
         // The block above the root, within his reach from the ground: the root grows again.
         if (column(state)) return kin(state, level.getBlockState(pos.below())) && !kin(state, level.getBlockState(pos.below(2)));
         return true;
+    }
+
+    /** A face of the block is open: nothing solid on one of its sides. */
+    private static boolean shows(ServerLevel level, BlockPos pos) {
+        for (Direction side : Direction.values()) if (level.getBlockState(pos.relative(side)).getCollisionShape(level, pos.relative(side)).isEmpty()) return true;
+        return false;
     }
 
     private static boolean wet(ServerLevel level, BlockPos pos) { return !level.getFluidState(pos).isEmpty() || !level.getFluidState(pos.above()).isEmpty(); }
