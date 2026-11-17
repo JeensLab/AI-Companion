@@ -519,8 +519,10 @@ public final class CompanionGatherBlockTests {
         ground(h);
         pond(h, 16, 14, 22, 20, GROUND);
         // On the bed, waterlogged as it stands there: a coral dies out of water, and the bed is what he dives to.
-        h.setBlock(new BlockPos(18, 1, 16), Blocks.TUBE_CORAL);
-        h.setBlock(new BlockPos(20, 1, 18), Blocks.TUBE_CORAL_FAN);
+        h.setBlock(new BlockPos(18, 1, 16), Blocks.TUBE_CORAL.defaultBlockState()
+                .setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.WATERLOGGED, true));
+        h.setBlock(new BlockPos(20, 1, 18), Blocks.TUBE_CORAL_FAN.defaultBlockState()
+                .setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.WATERLOGGED, true));
         CompanionEntity c = spawn(h, 12, 16);
         c.setItem(0, withSilk(h, Items.WOODEN_PICKAXE));
         c.setItem(1, withSilk(h, Items.SHEARS));
@@ -531,8 +533,9 @@ public final class CompanionGatherBlockTests {
             String report = future.join().report();
             h.assertTrue(count(c, Items.TUBE_CORAL) == 1 && count(c, Items.TUBE_CORAL_FAN) == 1,
                     "The coral or its fan did not land in the bag: coral " + count(c, Items.TUBE_CORAL) + ", fan " + count(c, Items.TUBE_CORAL_FAN) + ", " + report);
-            h.assertTrue(Math.max(damage(c, Items.SHEARS), damage(c, Items.WOODEN_PICKAXE)) >= 2,
-                    "No silk tool broke them: shears " + damage(c, Items.SHEARS) + ", pickaxe " + damage(c, Items.WOODEN_PICKAXE) + ", " + report);
+            // Two blocks, one wear each: whether one silk tool broke both or the two were split between them.
+            h.assertTrue(wear(c, Items.SHEARS) + wear(c, Items.WOODEN_PICKAXE) >= 2,
+                    "No silk tool broke them: shears " + wear(c, Items.SHEARS) + ", pickaxe " + wear(c, Items.WOODEN_PICKAXE) + ", " + report);
         });
     }
 
@@ -768,6 +771,15 @@ public final class CompanionGatherBlockTests {
         for (net.minecraft.world.entity.EquipmentSlot hand : net.minecraft.world.entity.EquipmentSlot.values())
             if (hand.getType() == net.minecraft.world.entity.EquipmentSlot.Type.HAND && c.getItemBySlot(hand).is(item)) found = Math.max(found, c.getItemBySlot(hand).getDamageValue());
         return found;
+    }
+
+    /** The total wear on his stacks of this item, in the bag or in either hand; 0 when he has none. */
+    private static int wear(CompanionEntity c, Item item) {
+        int total = 0;
+        for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(item)) total += c.getItem(slot).getDamageValue();
+        for (net.minecraft.world.entity.EquipmentSlot hand : net.minecraft.world.entity.EquipmentSlot.values())
+            if (hand.getType() == net.minecraft.world.entity.EquipmentSlot.Type.HAND && c.getItemBySlot(hand).is(item)) total += c.getItemBySlot(hand).getDamageValue();
+        return total;
     }
 
     /** The journalled swings of this companion: at this block (mining_started, with the tool in his hand then) and the tick they came down on. */
