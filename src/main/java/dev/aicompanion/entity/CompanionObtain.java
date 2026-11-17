@@ -340,9 +340,15 @@ public final class CompanionObtain {
         // A block gives it when broken (sugar cane, a flower, clay): found and picked, if one is to be had here.
         // What only shears take (leaves, a vine, a cobweb): his shears, made by the whole chain if he has none, as for a comb.
         // A coral block is mined for the dead one: any pickaxe of his, else a wooden one. Snow gives snowballs to a shovel only: the same.
-        if (picked(item)) return (!CompanionPickable.shorn(level, item) || hasShears() || need("minecraft:shears", 1, depth + 1))
-                && (!CompanionPickable.mined(level, item) || hasPickaxe() || need("minecraft:wooden_pickaxe", 1, depth + 1))
-                && (!CompanionPickable.shoveled(level, item) || hasShovel() || need("minecraft:wooden_shovel", 1, depth + 1)) && addSplit("gather_block", key, count, 64);
+        // What only Silk Touch gives (a coral, its fan, a live coral block) is picked only with a tool that carries it; none is
+        // made for it (silk is an enchantment, not a craft), so the chain refuses before the walk when he carries none.
+        if (picked(item)) {
+            if (silked(item) && !carriesSilk(item)) return refuse("Для «" + name(item) + "» нужен инструмент с «Шёлковым касанием»: в сумке такого нет.");
+            return (!CompanionPickable.shorn(level, item) || hasShears() || need("minecraft:shears", 1, depth + 1))
+                    && (!CompanionPickable.mined(level, item) || hasPickaxe() || need("minecraft:wooden_pickaxe", 1, depth + 1))
+                    && (!CompanionPickable.shoveled(level, item) || hasShovel() || need("minecraft:wooden_shovel", 1, depth + 1))
+                    && addSplit("gather_block", key, count, 64);
+        }
         // A monster drops it (string, a bone, gunpowder): fought for, if one is about.
         List<String> prey = CompanionMobDrops.names(level, item);
         // Not with bare hands (in game 12.11: five spiders, one killed, and he was dead): a wooden sword first, unless he carries a blade.
@@ -518,6 +524,25 @@ public final class CompanionObtain {
     private boolean hasPickaxe() { return hasTool("_pickaxe"); }
 
     private boolean hasShovel() { return hasTool("_shovel"); }
+
+    /** Whether every block that gives the item gives it only to Silk Touch (a coral, its fan, a live coral block). */
+    private boolean silked(Item item) {
+        List<CompanionPickable.Source> all = CompanionPickable.sources(level, item);
+        return !all.isEmpty() && all.stream().allMatch(CompanionPickable.Source::silk);
+    }
+
+    /** Whether he carries a tool with Silk Touch that takes one of the blocks giving the item as it stands (silk is never made). */
+    private boolean carriesSilk(Item item) {
+        for (ItemStack stack : carried) {
+            if (stack.isEmpty() || net.minecraft.world.item.enchantment.EnchantmentHelper.getItemEnchantmentLevel(
+                    level.registryAccess().holderOrThrow(net.minecraft.world.item.enchantment.Enchantments.SILK_TOUCH), stack) <= 0) continue;
+            for (CompanionPickable.Source source : CompanionPickable.sources(level, item)) {
+                var state = source.block().defaultBlockState();
+                if (!state.requiresCorrectToolForDrops() || stack.isCorrectToolForDrops(state)) return true;
+            }
+        }
+        return false;
+    }
 
     /** A tool of the kind ({@code _pickaxe}, {@code _shovel}) carried or made earlier in this plan. */
     private boolean hasTool(String suffix) {

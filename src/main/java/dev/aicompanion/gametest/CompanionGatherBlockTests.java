@@ -441,7 +441,8 @@ public final class CompanionGatherBlockTests {
     /**
      * Plan only: what grows on the bed of the sea is picked too: kelp, a sea pickle, seagrass (with shears), and a coral block
      * mined with a pickaxe for the dead block it gives. A coral itself and its fan give anything only to Silk Touch: they are
-     * sources of themselves for a silk tool, so the chain goes for them as they stand (the picking says when silk is missing).
+     * sources of themselves for a silk tool, so the chain goes for them as they stand when he carries such a tool, and refuses
+     * before the walk without one, as the picking would (silk is an enchantment and never made).
      */
     @GameTest(template = "empty", timeoutTicks = 40)
     public static void whatGrowsUnderWaterIsPlannedAsPicking(GameTestHelper h) {
@@ -459,10 +460,15 @@ public final class CompanionGatherBlockTests {
         var bare = CompanionObtain.plan(level, List.of(), false, "minecraft:dead_tube_coral_block", 1, thing -> true);
         h.assertTrue(!bare.refused() && bare.steps().getLast().equals(new CompanionObtain.Step("gather_block", "minecraft:dead_tube_coral_block", 1))
                 && bare.steps().stream().anyMatch(step -> step.type().equals("craft_item") && step.item().endsWith("_pickaxe")), "Dead coral block with no pickaxe: " + bare);
-        // A coral block and its fan are taken as they stand with Silk Touch: the source table knows them, and the chain goes for them.
+        // A coral, its fan and a live coral block are taken as they stand with Silk Touch: the source table knows them, and the
+        // chain goes for them when a silk tool is carried; with none it refuses at the plan, naming the silk the picking would ask for.
+        ItemStack silk = new ItemStack(Items.WOODEN_PICKAXE);
+        silk.enchant(level.registryAccess().holderOrThrow(net.minecraft.world.item.enchantment.Enchantments.SILK_TOUCH), 1);
         for (String item : List.of("minecraft:tube_coral", "minecraft:tube_coral_fan", "minecraft:tube_coral_block")) {
-            var plan = CompanionObtain.plan(level, List.of(new ItemStack(Items.WOODEN_PICKAXE)), false, item, 1, thing -> true);
+            var plan = CompanionObtain.plan(level, List.of(silk), false, item, 1, thing -> true);
             h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("gather_block", item, 1))), item + " is picked with silk: " + plan);
+            var plain = CompanionObtain.plan(level, List.of(new ItemStack(Items.WOODEN_PICKAXE)), false, item, 1, thing -> true);
+            h.assertTrue(plain.refused() && plain.refusal().contains("Шёлковым касанием"), item + " without silk: " + plain);
         }
         // The dead coral plant is the mine's own block (any pickaxe takes it): no source of the plant itself.
         var deadCoral = CompanionObtain.plan(level, List.of(new ItemStack(Items.WOODEN_PICKAXE)), false, "minecraft:dead_tube_coral", 1, thing -> true);
