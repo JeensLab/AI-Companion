@@ -83,7 +83,7 @@ final class CompanionTools {
             if (betterSilk(stack, speed, best, bestSpeed)) { best = stack; bestSpeed = speed; }
         }
         for (ItemStack held : new ItemStack[]{owner.getMainHandItem(), owner.getOffhandItem()}) {
-            if (!silkTouch(owner, held) || !takesTheDrop(held, state)) continue;
+            if (owner.carriedForPlayer(held) || !silkTouch(owner, held) || !takesTheDrop(held, state)) continue;
             float speed = breakSpeed(owner, held, state);
             if (betterSilk(held, speed, best, bestSpeed)) { best = held; bestSpeed = speed; }
         }
