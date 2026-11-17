@@ -25,8 +25,8 @@ import java.util.Set;
 
 /** Bounded server-side work. Prerequisites use real recipes, tools, blocks and inventories. */
 public final class CompanionWork {
-    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, FARM, EXPEDITION, COURSE, WATER, OBSIDIAN, PORTAL, COBBLE_GEN, GOLEM, PICK_UP, PLACE, GRIND, COMPOST, BLOCK, CHORE, ERRAND }
-    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, FARM, EXPEDITION, COURSE, WATER, OBSIDIAN, PORTAL, COBBLE, GOLEM, PICKUP, PLACE, GRIND, COMPOST, BLOCK, DROPS, CHORE, ERRAND }
+    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, SCOUT, FARM, EXPEDITION, COURSE, WATER, OBSIDIAN, PORTAL, COBBLE_GEN, GOLEM, PICK_UP, PLACE, GRIND, COMPOST, BLOCK, CHORE, ERRAND }
+    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, SCOUT, FARM, EXPEDITION, COURSE, WATER, OBSIDIAN, PORTAL, COBBLE, GOLEM, PICKUP, PLACE, GRIND, COMPOST, BLOCK, DROPS, CHORE, ERRAND }
     final CompanionEntity owner;
     final CompanionWorkItems items = new CompanionWorkItems(this);
     final CompanionHunting hunting = new CompanionHunting(this);
@@ -42,7 +42,7 @@ public final class CompanionWork {
     final CompanionHandOver handOver = new CompanionHandOver(this);
     final CompanionExpedition expedition;
     final CompanionHomeTrip trip = new CompanionHomeTrip(this);
-    final CompanionPen pen = new CompanionPen(this); final CompanionBreeding breeding = new CompanionBreeding(this);
+    final CompanionPen pen = new CompanionPen(this); final CompanionBreeding breeding = new CompanionBreeding(this); final CompanionScouting scouting = new CompanionScouting(this);
     final CompanionCourse course = new CompanionCourse(this);
     final CompanionHouse house;
     /** A building of the catalogue, kept apart from the plank house so that neither forgets the other. */
@@ -354,6 +354,7 @@ public final class CompanionWork {
             case IRON -> "подготовка железа";
             case EXPEDITION -> "шахта";
             case BREED -> "разведение животных";
+            case SCOUT -> "обход торговцев";
             case FARM -> "в поле";
             case COURSE -> "в пути";
             case WATER -> "за водой";
@@ -379,6 +380,7 @@ public final class CompanionWork {
             case HOUSE -> "стройку дома";
             case PEN -> "постройку загона";
             case BREED -> "разведение животных";
+            case SCOUT -> "обход торговцев";
             case DIRT -> "добычу " + ground.genitive();
             case COME -> "путь к тебе";
             case HUNT -> "бой с монстрами";
@@ -562,6 +564,7 @@ public final class CompanionWork {
             }
             case "build_pen" -> { CompanionActionResult refusal = pen.begin(item, count); if (refusal != null) return refusal; job = Job.PEN; phase = Phase.PEN; }
             case "breed_animals" -> { CompanionActionResult refusal = breeding.begin(item, count); if (refusal != null) return refusal; job = Job.BREED; phase = Phase.BREED; }
+            case "scout_traders" -> { CompanionActionResult refusal = scouting.begin(); if (refusal != null) return refusal; job = Job.SCOUT; phase = Phase.SCOUT; }
             case "mine_ore" -> {
                 ore = CompanionOre.Kind.of(item);
                 if (ore == null) return CompanionActionResult.failed("Не понял, какую руду добыть: уголь, железо, медь, лазурит, золото, редстоун, алмазы или изумруды.");
@@ -666,7 +669,7 @@ public final class CompanionWork {
         clearCracks();
         closeChest();
         if (job == Job.ERRAND) owner.errand.cancelled();
-        house.cancel(); templateHouse.cancel(); route.abandon(); expedition.reset(); pen.cancel(); breeding.cancel(); course.cancel(); trip.reset(); obsidian.cancel(); portal.cancel(); cobbleGen.cancel(); golem.cancel();
+        house.cancel(); templateHouse.cancel(); route.abandon(); expedition.reset(); pen.cancel(); breeding.cancel(); scouting.cancel(); course.cancel(); trip.reset(); obsidian.cancel(); portal.cancel(); cobbleGen.cancel(); golem.cancel();
         // The chest he set down served this order only: a later store order goes the old way again.
         if (job == Job.STORE) owner.lastPlacedPosition = null;
         job = null; phase = null; afterWood = null;
@@ -732,6 +735,7 @@ public final class CompanionWork {
             case EXPEDITION -> expedition.tick(level);
             case PEN -> pen.tick(level);
             case BREED -> breeding.tick(level);
+            case SCOUT -> scouting.tick(level);
             case FARM -> farming.tick(level);
             case COURSE -> course.tick(level);
             case WATER -> owner.waterFill.orderTick(level);

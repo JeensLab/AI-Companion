@@ -189,6 +189,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionDiagnosticState diagnostics = new CompanionDiagnosticState(this);
     private final CompanionEntityNbt nbt = new CompanionEntityNbt(this);
     final CompanionPlaces places = new CompanionPlaces(this);
+    private final CompanionTraders traders = new CompanionTraders();
+    public CompanionTraders traders() { return traders; }
     final CompanionDeeds deeds = new CompanionDeeds();
     final CompanionAutonomy autonomy = new CompanionAutonomy(this);
     final CompanionGoals goals = new CompanionGoals(this);
