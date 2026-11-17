@@ -37,11 +37,11 @@ import java.util.TreeMap;
 
 /**
  * A census of the whole registry, not a sample: every state of every block must take the fastest tool of a standard bag that
- * gives its drop (the expectation from the block tags and the game's own destroy speed, never from a list of blocks), and every
- * item must be classifiable. The gap check is narrower: it covers every state the picker takes, and the one item the table gives
- * on every roll (to a hand, the block's tool, the shears, or the block itself to Silk Touch), when no recipe makes it; a state
- * left to another skill, and an item a recipe makes, are counted, not required in the source table. The numbers are printed once
- * per test; a failure names the rows.
+ * gives its drop (the expectation from the game's own data — the loot tables and the recipes for a shears block, the block tags
+ * and destroy speed for the fastest tool — never from a list of blocks), and every item must be classifiable. The gap check is
+ * narrower: it covers every state the picker takes, and the one item the table gives on every roll (to a hand, the block's tool,
+ * the shears, or the block itself to Silk Touch), when no recipe makes it; a state left to another skill, and an item a recipe
+ * makes, are counted, not required in the source table. The numbers are printed once per test; a failure names the rows.
  */
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
