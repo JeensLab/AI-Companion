@@ -509,6 +509,34 @@ public final class CompanionGatherBlockTests {
     }
 
     /**
+     * A coral plant and its fan are taken as they stand with Silk Touch: he dives for them where they grow on the bed, and the
+     * block itself lands in the bag, broken with a silk tool of his. A silk wooden pickaxe and silk shears are as fast as a bare
+     * hand on them (a coral plant is no pickaxe's block, a fan no shears' block), yet silk is the drop and not the speed: the plan
+     * promises the block and the picking keeps the promise instead of ending the order over a tool he carries.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void coralAndItsFanArePickedWithASilkTool(GameTestHelper h) {
+        ground(h);
+        pond(h, 16, 14, 22, 20, GROUND);
+        // On the bed, waterlogged as it stands there: a coral dies out of water, and the bed is what he dives to.
+        h.setBlock(new BlockPos(18, 1, 16), Blocks.TUBE_CORAL);
+        h.setBlock(new BlockPos(20, 1, 18), Blocks.TUBE_CORAL_FAN);
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, withSilk(h, Items.WOODEN_PICKAXE));
+        c.setItem(1, withSilk(h, Items.SHEARS));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:tube_coral\",\"count\":1},"
+                + "{\"action\":\"obtain_item\",\"item\":\"minecraft:tube_coral_fan\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.TUBE_CORAL) == 1 && count(c, Items.TUBE_CORAL_FAN) == 1,
+                    "The coral or its fan did not land in the bag: coral " + count(c, Items.TUBE_CORAL) + ", fan " + count(c, Items.TUBE_CORAL_FAN) + ", " + report);
+            h.assertTrue(Math.max(damage(c, Items.SHEARS), damage(c, Items.WOODEN_PICKAXE)) >= 2,
+                    "No silk tool broke them: shears " + damage(c, Items.SHEARS) + ", pickaxe " + damage(c, Items.WOODEN_PICKAXE) + ", " + report);
+        });
+    }
+
+    /**
      * No dive under a roof, said at once: kelp in a lake of a cave (air over the water, rock over the air). Nor for a dry kind that
      * stands in water (mangrove roots in a pond, a coral block under another): those are not dived for.
      */
@@ -717,6 +745,13 @@ public final class CompanionGatherBlockTests {
     private static CompletableFuture<CompanionPlanRunner.Outcome> run(GameTestHelper h, CompanionEntity c, String json) {
         var plan = CompanionPlanCodec.parsePlan(JsonParser.parseString(json));
         return CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-gather-block", () -> false));
+    }
+
+    /** A stack of the item carrying Silk Touch, as the enchantment of this world's registry. */
+    private static ItemStack withSilk(GameTestHelper h, Item item) {
+        ItemStack stack = new ItemStack(item);
+        stack.enchant(h.getLevel().registryAccess().holderOrThrow(net.minecraft.world.item.enchantment.Enchantments.SILK_TOUCH), 1);
+        return stack;
     }
 
     private static int count(CompanionEntity c, Item item) {

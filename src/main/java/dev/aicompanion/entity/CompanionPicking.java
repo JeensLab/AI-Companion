@@ -177,11 +177,13 @@ final class CompanionPicking {
     private static boolean wet(ServerLevel level, BlockPos pos) { return !level.getFluidState(pos).isEmpty() || !level.getFluidState(pos.above()).isEmpty(); }
 
     /**
-     * What grows on the bed of the sea: kelp, seagrass, a sea pickle, a coral block. Not a dry kind that happens to stand in water
-     * (mangrove roots in a swamp, glow lichen, dripleaf): those are not dived for.
+     * What grows on the bed of the sea: kelp, seagrass, a sea pickle, a coral block, a coral plant or its fan (waterlogged, as it
+     * stands there). Not a dry kind that happens to stand in water (mangrove roots in a swamp, glow lichen, dripleaf): those are
+     * not dived for.
      */
     private static boolean grows(BlockState state) {
-        return kelp(state) || state.is(Blocks.SEAGRASS) || state.is(Blocks.TALL_SEAGRASS) || state.is(Blocks.SEA_PICKLE) || state.is(BlockTags.CORAL_BLOCKS);
+        return kelp(state) || state.is(Blocks.SEAGRASS) || state.is(Blocks.TALL_SEAGRASS) || state.is(Blocks.SEA_PICKLE)
+                || state.is(BlockTags.CORAL_BLOCKS) || state.is(BlockTags.CORALS) || state.is(BlockTags.WALL_CORALS);
     }
 
     /** Still water over the block he swims through, up to the sky: -1 under a roof (a cave's too), in running water or deeper than {@link #DEEP}. */

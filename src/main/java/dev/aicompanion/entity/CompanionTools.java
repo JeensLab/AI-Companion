@@ -69,8 +69,9 @@ final class CompanionTools {
     }
 
     /**
-     * The tool of his with Silk Touch that gives the block itself (a grass block, a coral block) — the fastest of them; empty
-     * when he has none. Silk is not a speed but the drop: only a stack that carries it takes the block as it stands.
+     * The tool of his with Silk Touch that gives the block itself (a grass block, a coral block, a coral plant) — the fastest of
+     * them; empty when he has none. Silk is not a speed but the drop: only a stack that carries it takes the block as it stands,
+     * and a silk tool no faster than a bare hand on the block (shears or a wooden pickaxe on a coral plant) still gives it.
      */
     static ItemStack bestSilkToolForBlock(CompanionEntity owner, BlockState state) {
         ItemStack best = ItemStack.EMPTY;
@@ -79,12 +80,12 @@ final class CompanionTools {
             ItemStack stack = owner.getItem(slot);
             if (owner.carriedForPlayer(stack) || !silkTouch(owner, stack) || !takesTheDrop(stack, state)) continue;
             float speed = breakSpeed(owner, stack, state);
-            if (better(stack, speed, best, bestSpeed)) { best = stack; bestSpeed = speed; }
+            if (betterSilk(stack, speed, best, bestSpeed)) { best = stack; bestSpeed = speed; }
         }
         for (ItemStack held : new ItemStack[]{owner.getMainHandItem(), owner.getOffhandItem()}) {
             if (!silkTouch(owner, held) || !takesTheDrop(held, state)) continue;
             float speed = breakSpeed(owner, held, state);
-            if (better(held, speed, best, bestSpeed)) { best = held; bestSpeed = speed; }
+            if (betterSilk(held, speed, best, bestSpeed)) { best = held; bestSpeed = speed; }
         }
         return best;
     }
@@ -101,6 +102,17 @@ final class CompanionTools {
      */
     private static boolean better(ItemStack stack, float speed, ItemStack best, float bestSpeed) {
         if (speed <= 1) return false;
+        if (best.isEmpty()) return true;
+        if (speed != bestSpeed) return speed > bestSpeed;
+        return left(stack) > left(best);
+    }
+
+    /**
+     * The better of two stacks carrying Silk Touch for a block: the faster one, and at the same speed the one with more use left.
+     * A speed of one is no reason to pass a stack over here, as {@link #better} does for a tool: Silk Touch gives the block
+     * itself whatever the speed, so a silk tool as slow as a hand on it is still the only one that gives it.
+     */
+    private static boolean betterSilk(ItemStack stack, float speed, ItemStack best, float bestSpeed) {
         if (best.isEmpty()) return true;
         if (speed != bestSpeed) return speed > bestSpeed;
         return left(stack) > left(best);
