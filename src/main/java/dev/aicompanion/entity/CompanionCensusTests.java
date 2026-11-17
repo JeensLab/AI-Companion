@@ -38,8 +38,10 @@ import java.util.TreeMap;
 /**
  * A census of the whole registry, not a sample: every state of every block must take the fastest tool of a standard bag that
  * gives its drop (the expectation from the block tags and the game's own destroy speed, never from a list of blocks), and every
- * item must be classifiable, so a block that gives an item the source table misses shows up as a failing row. The numbers are
- * printed once per test; a failure names the rows.
+ * item must be classifiable. The gap check is narrower: it covers every state the picker takes, and the one item the table gives
+ * on every roll (to a hand, the block's tool, the shears, or the block itself to Silk Touch), when no recipe makes it; a state
+ * left to another skill, and an item a recipe makes, are counted, not required in the source table. The numbers are printed once
+ * per test; a failure names the rows.
  */
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
@@ -58,6 +60,9 @@ public final class CompanionCensusTests {
         Entity breaker = new Marker(EntityType.MARKER, level);
         CompanionEntity c = spawn(h);
         List<ItemStack> bag = standardBag();
+        // What a recipe makes is made, as in the source table: a block's shears drop that a recipe gives is no shears-only drop.
+        Set<Item> made = new HashSet<>();
+        for (var holder : level.getRecipeManager().getRecipes()) made.add(holder.value().getResultItem(level.registryAccess()).getItem());
         int states = 0, checked = 0, noDrops = 0, failed = 0;
         Map<String, Integer> failedBlocks = new TreeMap<>();
         List<String> rows = new ArrayList<>();
@@ -68,7 +73,9 @@ public final class CompanionCensusTests {
                 fill(c, bag);
                 ItemStack chosen = CompanionTools.bestToolForBlock(c, state);
                 // What only shears give is the shears' block, however fast another tool of the bag is (an axe on grass gives seeds).
-                ItemStack expected = CompanionPickable.shorn(level, state) ? new ItemStack(Items.SHEARS) : fastest(c, bag, state);
+                // The expectation comes from the loot tables and the recipes, not from the rule under test: the sure drop only
+                // the shears give among a hand and the bag, which no recipe makes.
+                ItemStack expected = shornByTheTables(level, state, bag, made, breaker) ? new ItemStack(Items.SHEARS) : fastest(c, bag, state);
                 Set<Item> toChosen = potential(level, state, chosen, breaker);
                 if (toChosen.isEmpty()) {
                     // Nothing to the chosen tool: a block with no drop at all is out of this census; one that gives them to
@@ -174,6 +181,21 @@ public final class CompanionCensusTests {
         h.assertTrue(CompanionPickable.sources(level, Items.GRASS_BLOCK).stream().anyMatch(one -> one.block() == Blocks.GRASS_BLOCK && one.silk()),
                 "A grass block is no Silk Touch source of itself: " + CompanionPickable.sources(level, Items.GRASS_BLOCK));
         h.succeed();
+    }
+
+    /**
+     * Whether the block gives an item on every roll only to the shears of a hand and the standard bag, and no recipe makes that
+     * item: the shears rule's expectation from the game's own tables and recipes, never the rule itself. A drop that comes by
+     * chance (a vine gives itself to a hand one time in three) is no sure drop, so it does not make the shears wrong.
+     */
+    private static boolean shornByTheTables(ServerLevel level, BlockState state, List<ItemStack> bag, Set<Item> made, Entity breaker) {
+        ItemStack sheared = CompanionPickable.sure(level, state, new ItemStack(Items.SHEARS), breaker);
+        if (sheared.isEmpty() || made.contains(sheared.getItem())) return false;
+        if (!CompanionPickable.sure(level, state, ItemStack.EMPTY, breaker).isEmpty()) return false;
+        // The bag's own shears are the shears already asked: only another tool of the bag would make this no shears block.
+        for (ItemStack stack : bag)
+            if (!stack.is(net.neoforged.neoforge.common.Tags.Items.TOOLS_SHEAR) && !CompanionPickable.sure(level, state, stack, breaker).isEmpty()) return false;
+        return true;
     }
 
     /** The fastest stack of the bag that gives the block's drop: what the rule must choose, from the game's own numbers. */
