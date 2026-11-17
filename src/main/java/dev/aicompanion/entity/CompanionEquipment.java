@@ -172,6 +172,9 @@ final class CompanionEquipment {
      */
     private ItemStack handBeforeTool;
 
+    /** A kept hand the dig itself ended is no longer owed: the recovery restores its own hand instead. */
+    public void forgetKeptHand() { handBeforeTool = null; }
+
     /** The tool that breaks this block best goes into his hand and stays there: for the paths that break many blocks in a row. */
     public void selectToolForBlock(BlockState state) { takeToolForBlock(state, false); }
 

@@ -125,18 +125,19 @@ final class CompanionTools {
                 || stack.is(net.neoforged.neoforge.common.Tags.Items.TOOLS_SHEAR);
     }
     /** The better of two stacks of one tool class: the faster on this block, the one with more use left at the same speed. */
-    private static boolean fresher(ItemStack candidate, ItemStack best, BlockState state) {
+    private static boolean fresher(CompanionEntity owner, ItemStack candidate, ItemStack best, BlockState state) {
         if (best.isEmpty()) return true;
-        float mine = candidate.getDestroySpeed(state), theirs = best.getDestroySpeed(state);
+        // The effective speed, as the break itself uses it: a worn Efficiency tool is still faster than a fresh plain one.
+        float mine = breakSpeed(owner, candidate, state), theirs = breakSpeed(owner, best, state);
         return mine != theirs ? mine > theirs : left(candidate) > left(best);
     }
     static boolean equip(CompanionEntity owner, TagKey<Item> tag, BlockState state) {
         ItemStack best = owner.getMainHandItem().is(tag) ? owner.getMainHandItem() : ItemStack.EMPTY;
         for (int slot = 0; slot < owner.getContainerSize(); slot++) {
             ItemStack candidate = owner.getItem(slot);
-            if (candidate.is(tag) && fresher(candidate, best, state)) best = candidate;
+            if (candidate.is(tag) && fresher(owner, candidate, best, state)) best = candidate;
         }
-        if (owner.getOffhandItem().is(tag) && fresher(owner.getOffhandItem(), best, state)) {
+        if (owner.getOffhandItem().is(tag) && fresher(owner, owner.getOffhandItem(), best, state)) {
             String id = BuiltInRegistries.ITEM.getKey(owner.getOffhandItem().getItem()).toString();
             if (!owner.unequipForSupport("offhand").success()) return false;
             return owner.equipForWork(id).success();

@@ -492,6 +492,8 @@ final class CompanionRecovery {
         if (owner.hasActiveWorkOrder()) owner.workStatus(success ? "Выбрался, продолжаю задачу." : "Здесь пока не получилось выбраться безопасным способом.");
     }
     private void restoreHand() {
+        // The dig ends here: a hand kept for a break of the work is no longer owed, and its stale restore would fire on the next putToolAway.
+        owner.forgetKeptHand();
         if (previousHand == null) return;
         if (previousHand.isEmpty()) owner.unequipForSupport("mainhand");
         else owner.equipForSupport(previousHand);

@@ -932,6 +932,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** The right tool for the block goes into his hand; what was there is put back by putToolAway after the break. */
     public void takeToolForBlock(BlockState state) { equipment.takeToolForBlock(state); }
     public void putToolAway() { equipment.putToolAway(); }
+    /** A hand kept for a break that the recovery's own restore ended is no longer owed. */
+    public void forgetKeptHand() { equipment.forgetKeptHand(); }
     public void selectWeaponForCombat() { equipment.selectWeaponForCombat(); }
     public void setEquipmentByPlayer(EquipmentSlot slot, ItemStack stack) { equipment.setEquipmentByPlayer(slot, stack); }
 

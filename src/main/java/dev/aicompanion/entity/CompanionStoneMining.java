@@ -4,7 +4,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.FluidTags;
-import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
@@ -193,12 +192,7 @@ final class CompanionStoneMining {
             w.owner.selectToolForBlock(level.getBlockState(w.target));
             if (!w.items.usablePickaxe(w.owner.getMainHandItem())) { w.resetTarget(); w.phase = CompanionWork.Phase.PICKAXE; return; }
         }
-        if (soil && !stairStone) {
-            w.owner.selectToolForBlock(level.getBlockState(w.target));
-            if (!w.owner.getMainHandItem().isEmpty() && !w.owner.getMainHandItem().is(ItemTags.SHOVELS)) {
-                if (!w.owner.unequipForSupport("mainhand").success()) { w.finish(false, "Нет места в сумке, чтобы убрать кирку и освободить руку."); return; }
-            }
-        }
+        if (soil && !stairStone) w.owner.selectToolForBlock(level.getBlockState(w.target));
         w.owner.getLookControl().setLookAt(w.target.getX() + 0.5D, w.target.getY() + 0.5D, w.target.getZ() + 0.5D);
         if (w.owner.distanceToSqr(w.target.getCenter()) > 3.8D * 3.8D || !CompanionMiningNavigation.visible(w.owner, w.owner.getEyePosition(), w.target)
                 || !soil && !CompanionMiningNavigation.dropCollectable(level, w.target, w.owner.blockPosition())) {
