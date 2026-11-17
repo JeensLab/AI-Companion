@@ -117,8 +117,10 @@ final class CompanionGathering {
         BlockState state = serverLevel.getBlockState(pos);
         if (!ground.matches(state) || !ground.safeCell(serverLevel, pos, c)) return false;
         if (!CompanionMiningNavigation.preservesAutonomousReturn(c, pos)) return false;
-        // Gravel for flint is no exception: the tool of the block goes into his hand here too.
-        c.takeToolForBlock(state);
+        // In flint mode the hand is the plain shovel CompanionFlint.arm() chose: the tool of the block is not taken here, or a
+        // Silk Touch shovel from the bag (or an equal-speed one by the wear tie-break) would turn every gravel block back into
+        // gravel and never give flint.
+        if (ground != CompanionGround.FLINT) c.takeToolForBlock(state);
         ItemStack tool = c.getMainHandItem();
         var drops = CompanionTools.drops(state, serverLevel, pos, serverLevel.getBlockEntity(pos), c, tool);
         if (!canStoreDrops(drops)) { c.putToolAway(); return false; }

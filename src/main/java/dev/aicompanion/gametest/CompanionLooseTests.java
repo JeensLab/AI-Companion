@@ -516,23 +516,21 @@ public final class CompanionLooseTests {
         });
     }
 
-    /** Silk Touch would turn every gravel block into gravel for good: the plain shovel is the one in his hand at each break. */
+    /** Silk Touch would turn every gravel block into gravel for good: the plain shovel is the one that wears on the gravel. */
     @GameTest(template = "tall_tree", timeoutTicks = 4000)
     public static void flintIsNeverDugWithASilkTouchShovel(GameTestHelper helper) {
         CompanionEntity companion = setupClear(helper); companion.setItem(0, new ItemStack(Items.OAK_LOG, 2));
         companion.setItem(1, enchanted(helper, Items.IRON_SHOVEL, Enchantments.SILK_TOUCH, 1)); companion.setItem(2, new ItemStack(Items.WOODEN_SHOVEL));
         gravelPatch(helper);
-        int[] last = {blocksInWorld(helper, Blocks.GRAVEL)}; String[] silk = {null};
-        helper.onEachTick(() -> {
-            int now = blocksInWorld(helper, Blocks.GRAVEL);
-            if (now < last[0] && silk[0] == null && companion.getMainHandItem().is(Items.IRON_SHOVEL)) silk[0] = "Gravel was dug with " + companion.getMainHandItem();
-            last[0] = now;
-        });
+        int[] last = {blocksInWorld(helper, Blocks.GRAVEL)};
+        helper.onEachTick(() -> last[0] = blocksInWorld(helper, Blocks.GRAVEL));
         var started = CompanionEvents.executeAction(owner(helper, companion), "gather_loose", "minecraft:flint", 1);
         helper.assertTrue(started.success(), "Flint order rejected: " + started.message());
         helper.succeedWhen(() -> {
             helper.assertTrue(!companion.isGatheringTask() && !companion.isWorking(), "Still working: " + diagnostic(companion));
-            helper.assertTrue(silk[0] == null, silk[0]);
+            // The tool that broke the gravel is the one that wore: the plain shovel, not the silk one left in the bag.
+            helper.assertTrue(damage(companion, Items.IRON_SHOVEL) == 0, "The silk shovel wore on gravel: " + diagnostic(companion));
+            helper.assertTrue(damage(companion, Items.WOODEN_SHOVEL) >= 1, "The plain shovel did not wear on the gravel: " + diagnostic(companion));
             helper.assertTrue(last[0] < 25, "No gravel was dug");
         });
     }
