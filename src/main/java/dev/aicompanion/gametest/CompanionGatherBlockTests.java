@@ -423,6 +423,11 @@ public final class CompanionGatherBlockTests {
         var polished = CompanionObtain.plan(level, pick, true, "minecraft:polished_deepslate", 4, thing -> thing == Items.COBBLED_DEEPSLATE);
         h.assertTrue(polished.steps().equals(List.of(new CompanionObtain.Step("gather_block", "minecraft:cobbled_deepslate", 4), new CompanionObtain.Step("craft_item", "minecraft:polished_deepslate", 4))),
                 "Polished deepslate of the deepslate about him, not of any stone: " + polished);
+        // Four crafts deep and no pickaxe in the bag: the pickaxe is made too, it is no link of that chain.
+        var tiles = CompanionObtain.plan(level, List.of(), true, "minecraft:deepslate_tiles", 4, thing -> thing == Items.COBBLED_DEEPSLATE);
+        h.assertTrue(!tiles.refused() && tiles.steps().contains(new CompanionObtain.Step("gather_block", "minecraft:cobbled_deepslate", 4))
+                && tiles.steps().contains(new CompanionObtain.Step("craft_item", "minecraft:wooden_pickaxe", 1))
+                && tiles.steps().getLast().equals(new CompanionObtain.Step("craft_item", "minecraft:deepslate_tiles", 4)), "Deepslate tiles with no pickaxe: " + tiles);
         // «Добудь 2 диорита» given to gather_stone (in game 17.11: two of plain stone dug, and «готово»): that action digs any stone,
         // so a stone named is obtain_item's; its own kinds stay with it.
         var given = CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"gather_stone\",\"item\":\"minecraft:diorite\",\"count\":2},"

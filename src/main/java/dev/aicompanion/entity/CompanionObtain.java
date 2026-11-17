@@ -369,7 +369,8 @@ public final class CompanionObtain {
         // Cobbled deepslate is counted with the family in the bag: what he carries of it is taken off here, as for a stripped log.
         int lacking = key(item).equals(STONE) ? count - carried(carried, item) : count;
         if (lacking <= 0) return true;
-        if (picked(item)) return gather(item, key, lacking, depth);
+        // The pickaxe is no link of the stone's chain (deepslate tiles are four crafts deep): its own chain counts from the top.
+        if (picked(item)) return gather(item, key, lacking, 0);
         boolean wasHome = home;
         home = true;
         try {
