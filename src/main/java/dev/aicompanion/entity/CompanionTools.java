@@ -52,12 +52,12 @@ final class CompanionTools {
             ItemStack stack = owner.getItem(slot);
             if (owner.carriedForPlayer(stack) || !takesTheDrop(stack, state)) continue;
             float speed = breakSpeed(owner, stack, state);
-            if (speed > bestSpeed) { best = stack; bestSpeed = speed; }
+            if (better(stack, speed, best, bestSpeed)) { best = stack; bestSpeed = speed; }
         }
         for (ItemStack held : new ItemStack[]{owner.getMainHandItem(), owner.getOffhandItem()}) {
             if (!takesTheDrop(held, state)) continue;
             float speed = breakSpeed(owner, held, state);
-            if (speed > bestSpeed) { best = held; bestSpeed = speed; }
+            if (better(held, speed, best, bestSpeed)) { best = held; bestSpeed = speed; }
         }
         // What a hand takes by chance only (grass, a fern, a dead bush) gives itself to shears: no faster, but the only way to it.
         if (best.isEmpty() && owner.level() instanceof ServerLevel level && CompanionPickable.shorn(level, state)) {
@@ -65,6 +65,22 @@ final class CompanionTools {
             if (!shears.isEmpty()) best = shears;
         }
         return best;
+    }
+
+    /**
+     * The better of two stacks of tool for a block: the faster one, and at the same speed the one with more use left, so a fresh
+     * tool in the bag wears instead of a nearly broken one.
+     */
+    private static boolean better(ItemStack stack, float speed, ItemStack best, float bestSpeed) {
+        if (speed <= 1) return false;
+        if (best.isEmpty()) return true;
+        if (speed != bestSpeed) return speed > bestSpeed;
+        return left(stack) > left(best);
+    }
+
+    /** What is left of the tool before it breaks; a tool that does not wear is as good as a fresh one. */
+    private static int left(ItemStack stack) {
+        return stack.isDamageableItem() ? stack.getMaxDamage() - stack.getDamageValue() : Integer.MAX_VALUE;
     }
 
     /** The shears he carries, from the hand first; empty when he has none. */
@@ -108,13 +124,19 @@ final class CompanionTools {
         return stack.is(ItemTags.PICKAXES) || stack.is(ItemTags.AXES) || stack.is(ItemTags.SHOVELS) || stack.is(ItemTags.HOES)
                 || stack.is(net.neoforged.neoforge.common.Tags.Items.TOOLS_SHEAR);
     }
+    /** The better of two stacks of one tool class: the faster on this block, the one with more use left at the same speed. */
+    private static boolean fresher(ItemStack candidate, ItemStack best, BlockState state) {
+        if (best.isEmpty()) return true;
+        float mine = candidate.getDestroySpeed(state), theirs = best.getDestroySpeed(state);
+        return mine != theirs ? mine > theirs : left(candidate) > left(best);
+    }
     static boolean equip(CompanionEntity owner, TagKey<Item> tag, BlockState state) {
         ItemStack best = owner.getMainHandItem().is(tag) ? owner.getMainHandItem() : ItemStack.EMPTY;
         for (int slot = 0; slot < owner.getContainerSize(); slot++) {
             ItemStack candidate = owner.getItem(slot);
-            if (candidate.is(tag) && (best.isEmpty() || candidate.getDestroySpeed(state) > best.getDestroySpeed(state))) best = candidate;
+            if (candidate.is(tag) && fresher(candidate, best, state)) best = candidate;
         }
-        if (owner.getOffhandItem().is(tag) && (best.isEmpty() || owner.getOffhandItem().getDestroySpeed(state) > best.getDestroySpeed(state))) {
+        if (owner.getOffhandItem().is(tag) && fresher(owner.getOffhandItem(), best, state)) {
             String id = BuiltInRegistries.ITEM.getKey(owner.getOffhandItem().getItem()).toString();
             if (!owner.unequipForSupport("offhand").success()) return false;
             return owner.equipForWork(id).success();
