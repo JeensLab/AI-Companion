@@ -264,12 +264,15 @@ final class CompanionWorkItems {
     }
 
     /** Takes up to count of one kind (identical stacks only) from the bag, then the hands. */
-    ItemStack takeCarried(net.minecraft.world.item.Item item, int count) {
+    ItemStack takeCarried(net.minecraft.world.item.Item item, int count) { return takeCarried(stack -> stack.is(item), count); }
+
+    /** The same for whatever the test accepts (a price in a trade names components too). */
+    ItemStack takeCarried(java.util.function.Predicate<ItemStack> wanted, int count) {
         ItemStack taken = ItemStack.EMPTY;
         for (int index = 0; index < w.owner.getContainerSize() + 2 && taken.getCount() < count; index++) {
             EquipmentSlot hand = index == w.owner.getContainerSize() ? EquipmentSlot.MAINHAND : index == w.owner.getContainerSize() + 1 ? EquipmentSlot.OFFHAND : null;
             ItemStack stack = hand == null ? w.owner.getItem(index) : w.owner.getItemBySlot(hand);
-            if (!stack.is(item) || !taken.isEmpty() && !ItemStack.isSameItemSameComponents(stack, taken)) continue;
+            if (!wanted.test(stack) || !taken.isEmpty() && !ItemStack.isSameItemSameComponents(stack, taken)) continue;
             int amount = Math.min(count - taken.getCount(), stack.getCount());
             if (taken.isEmpty()) taken = stack.copyWithCount(amount); else taken.grow(amount);
             stack.shrink(amount);

@@ -291,7 +291,7 @@ public final class CompanionTraderTests {
         return villager;
     }
 
-    private static void ground(GameTestHelper h) {
+    static void ground(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= GROUND + 6; y++) {
             boolean border = x == 0 || x == 31 || z == 0 || z == 31;
             if (y <= GROUND) h.setBlock(new BlockPos(x, y, z), y == 0 || border ? Blocks.BEDROCK : y == GROUND ? Blocks.GRASS_BLOCK : Blocks.DIRT);

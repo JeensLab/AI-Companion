@@ -9,19 +9,13 @@ import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.entity.npc.VillagerProfession;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.Enchantment;
-import net.minecraft.world.level.ClipContext;
-import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.HitResult;
-import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -40,10 +34,7 @@ final class CompanionScouting {
     private static final int TRAVEL_LIMIT = 20 * 60 * 8;
     /** The work's own deadline (CompanionWork): the walk there, the round and a minute over, or the far scout is cut before its report. */
     static final int WORK_SECONDS = (TRAVEL_LIMIT + LIMIT) / 20 + 60;
-    private static final double REACH = 3.0;
     private static final int LOOK_TICKS = 30;
-    /** Without getting closer for this long the trader is given up (a wall, a fence all round, no way). */
-    private static final int STUCK_TICKS = 200;
     private static final int SHOWN_DEALS = 3;
     private static final Map<String, String> PROFESSIONS = new LinkedHashMap<>();
     static {
@@ -59,15 +50,14 @@ final class CompanionScouting {
     private final List<CompanionTraders.Entry> asked = new ArrayList<>();
     private UUID current;
     private int asleep, unreached;
-    private long startedAt, lookUntil, progressAt, nextPath;
-    private double best;
-    private Path path;
+    private long startedAt, lookUntil;
+    private final CompanionTraderWalk walk;
     /** The remembered spot he is walking to (null in the round itself), where the round is centred, and who was forgotten at the end. */
     private BlockPos far, centre;
     private boolean walked;
     private final List<String> forgotten = new ArrayList<>();
 
-    CompanionScouting(CompanionWork w) { this.w = w; }
+    CompanionScouting(CompanionWork w) { this.w = w; walk = new CompanionTraderWalk(w); }
 
     /** Null if the order is taken; no trader round him is a refusal that says so. */
     CompanionActionResult begin() {
@@ -90,16 +80,18 @@ final class CompanionScouting {
         return null;
     }
 
+    private List<UUID> scan(ServerLevel level) { return nearby(level, w.owner).stream().map(AbstractVillager::getUUID).toList(); }
+
     /** Traders within {@link #RADIUS} of him, nearest first. */
-    private List<UUID> scan(ServerLevel level) {
-        List<AbstractVillager> traders = level.getEntitiesOfClass(AbstractVillager.class, new AABB(w.owner.blockPosition()).inflate(RADIUS, RADIUS, RADIUS),
-                trader -> isTrader(trader) && trader.distanceToSqr(w.owner) <= RADIUS * RADIUS);
-        traders.sort(Comparator.comparingDouble(w.owner::distanceToSqr));
-        return traders.stream().map(AbstractVillager::getUUID).toList();
+    static List<AbstractVillager> nearby(ServerLevel level, CompanionEntity owner) {
+        List<AbstractVillager> traders = level.getEntitiesOfClass(AbstractVillager.class, new AABB(owner.blockPosition()).inflate(RADIUS, RADIUS, RADIUS),
+                trader -> isTrader(trader) && trader.distanceToSqr(owner) <= RADIUS * RADIUS);
+        traders.sort(Comparator.comparingDouble(owner::distanceToSqr));
+        return traders;
     }
 
     /** A villager with a profession (not jobless, not a nitwit, not a child) or a wandering trader. */
-    private static boolean isTrader(AbstractVillager trader) {
+    static boolean isTrader(AbstractVillager trader) {
         if (!trader.isAlive() || trader.isBaby()) return false;
         if (!(trader instanceof Villager villager)) return true;
         var profession = villager.getVillagerData().getProfession();
@@ -109,8 +101,8 @@ final class CompanionScouting {
     void cancel() {
         if (current != null || !queue.isEmpty() || far != null) w.route.stop();
         if (far != null) w.route.legsEnd(false);
-        queue.clear(); asked.clear(); forgotten.clear(); current = null; path = null; far = centre = null; walked = false;
-        asleep = unreached = 0; startedAt = lookUntil = progressAt = nextPath = 0;
+        queue.clear(); asked.clear(); forgotten.clear(); current = null; far = centre = null; walked = false;
+        asleep = unreached = 0; startedAt = lookUntil = 0;
     }
 
     void tick(ServerLevel level) {
@@ -120,12 +112,14 @@ final class CompanionScouting {
         if (now - startedAt > LIMIT) { finish(level, true); return; }
         if (current == null) {
             if (queue.isEmpty()) { finish(level, false); return; }
-            current = queue.removeFirst(); best = Double.MAX_VALUE; progressAt = now; nextPath = 0; lookUntil = 0; path = null;
+            current = queue.removeFirst(); walk.begin(now); lookUntil = 0;
         }
         if (!(level.getEntity(current) instanceof AbstractVillager trader) || !trader.isAlive()) { next(); return; }
         if (trader.isSleeping()) { asleep++; next(); return; }
-        double distance = trader.getBoundingBox().distanceToSqr(w.owner.getEyePosition());
-        if (distance > REACH * REACH || !w.owner.hasLineOfSight(trader)) { approach(level, trader, distance, now); return; }
+        if (!walk.inReach(trader)) {
+            if (walk.approach(level, trader, now) == CompanionTraderWalk.Step.GAVE_UP) { unreached++; next(); }
+            return;
+        }
         w.route.stop();
         w.owner.getLookControl().setLookAt(trader, 30, 30);
         trader.getLookControl().setLookAt(w.owner, 30, 30);
@@ -159,45 +153,7 @@ final class CompanionScouting {
         w.finish(false, message);
     }
 
-    private void next() { current = null; path = null; w.route.legsEnd(false); w.route.stop(); }
-
-    private void approach(ServerLevel level, AbstractVillager trader, double distance, long now) {
-        if (distance + .05 < best) { best = distance; progressAt = now; }
-        if (now - progressAt > STUCK_TICKS) { unreached++; next(); return; }
-        // Far off: the single route walks him in legs to a few blocks from the trader; the last steps are chosen for the hand's reach.
-        if (trader.distanceToSqr(w.owner) > 6 * 6) {
-            w.owner.workStatus("Иду к торговцу.");
-            switch (w.route.legs(trader.blockPosition(), 3)) {
-                case WALKING -> { }
-                case NEAR -> w.route.legsEnd(true);
-                case FAILED -> { unreached++; next(); }
-            }
-            return;
-        }
-        if (now >= nextPath && (path == null || w.route.legOver())) {
-            path = standPath(level, trader);
-            nextPath = now + 10;
-            if (path == null || !path.canReach()) { path = null; w.owner.workStatus("Не могу подойти к торговцу."); return; }
-        }
-        if (path == null) return;
-        w.owner.workStatus("Подхожу к торговцу.");
-        w.route.walk(path);
-    }
-
-    /** Cells within a hand's reach of the trader with a clear line to him, over a fence too. */
-    private Path standPath(ServerLevel level, AbstractVillager trader) {
-        Set<BlockPos> feet = new HashSet<>();
-        BlockPos at = trader.blockPosition();
-        for (int dy = -2; dy <= 1; dy++) for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) {
-            BlockPos pos = at.offset(dx, dy, dz);
-            if (!CompanionMiningNavigation.standable(w.owner, pos)) continue;
-            Vec3 eye = Vec3.atBottomCenterOf(pos).add(0, w.owner.getEyeHeight(), 0);
-            if (trader.getBoundingBox().distanceToSqr(eye) > (REACH - .2) * (REACH - .2)) continue;
-            if (level.clip(new ClipContext(eye, trader.getEyePosition(), ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, w.owner)).getType() != HitResult.Type.MISS) continue;
-            feet.add(pos);
-        }
-        return feet.isEmpty() ? null : w.route.toCells(feet);
-    }
+    private void next() { current = null; walk.end(); }
 
     private void finish(ServerLevel level, boolean timeUp) {
         int left = queue.size() + (current != null ? 1 : 0);
@@ -263,7 +219,7 @@ final class CompanionScouting {
     }
 
     /** «Изумруд × 15», «книга «Починка»»: the player's words, not ids. */
-    private static String text(ServerLevel level, CompanionTraders.Stack stack) {
+    static String text(ServerLevel level, CompanionTraders.Stack stack) {
         ItemStack item = new ItemStack(net.minecraft.core.registries.BuiltInRegistries.ITEM.get(ResourceLocation.parse(stack.item())));
         String name = item.getHoverName().getString();
         // Mid-sentence, as the breeding report says «пшеница × 2»: «за изумруд × 15», not «за Изумруд × 15».
@@ -276,5 +232,5 @@ final class CompanionScouting {
         return stack.count() > 1 ? name + " × " + stack.count() : name;
     }
 
-    private static String profession(String kind) { return PROFESSIONS.getOrDefault(kind, "Торговец"); }
+    static String profession(String kind) { return PROFESSIONS.getOrDefault(kind, "Торговец"); }
 }
