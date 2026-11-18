@@ -93,7 +93,7 @@ public final class GameContext {
     }
 
     private static String tradersPart(String message, List<CompanionEntity> companions) {
-        if (companions.isEmpty() || !CompanionTradeWords.about(message)) return "";
+        if (companions.isEmpty() || !CompanionTradeWords.relevant(message, System.currentTimeMillis())) return "";
         String traders = companions.getFirst().getTradersForAi();
         return ", торговцы=" + (traders.isEmpty() ? "список пуст: никого из торговцев он ещё не расспрашивал" : traders);
     }

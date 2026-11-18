@@ -319,6 +319,8 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
         if ("collect_smelt".equals(action.type())) return WORK_LIMIT_SECONDS + 10 * 64 + 120 + 180;
         // A walk until «стоп» ends on the server by its own bound (CompanionCourse.LIMIT_SECONDS).
         if ("walk_heading".equals(action.type())) return dev.aicompanion.entity.CompanionCourse.LIMIT_SECONDS + 120;
+        // A scout of a remembered village: the walk there has its own eight minutes on the server, the round three more (CompanionScouting).
+        if ("scout_traders".equals(action.type())) return 8 * 60 + 3 * 60 + 120;
         // Iron tools and gold or diamonds without an iron pickaxe: ore, furnace and bench in one order, each stage with its
         // own time on the server (review 22.10, М5); the client waits for all of them.
         var kind = "mine_ore".equals(action.type()) ? dev.aicompanion.entity.CompanionOre.Kind.of(action.item()) : null;
