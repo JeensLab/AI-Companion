@@ -399,6 +399,10 @@ public final class CompanionPlanRunner {
         boolean earlier = !run.dropped.isEmpty();
         run.dropped.add(obtain);
         run.dropped.addAll(same);
+        // A given-up obtain takes its bookkeeping with it: the shears it was to wear and the check it was to pass would only
+        // speak over the chain's own reason (the leaf order's equip step ran after its obtain had nothing to wear them for).
+        while (from < run.plan.size() && ("equip_item".equals(run.plan.get(from).type()) || "verify_item".equals(run.plan.get(from).type())))
+            run.plan.remove(from);
         boolean goesOn = from < run.plan.size();
         String name = obtain.item() == null ? "" : "«" + CompanionDialogue.itemName(obtain.item()) + "»: ";
         // The last part of a plan that gave parts up before is named too (the stop line follows with the same reason, said once by CompanionDialogue).
