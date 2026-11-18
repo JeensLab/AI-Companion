@@ -108,8 +108,8 @@ public final class CompanionRightToolTests {
         List<ItemStack> drops = breakWithTool(h, c, grass);
         // No tool is faster than a hand on grass: shears are taken because they are the only way to the plant itself.
         h.assertTrue(drops.stream().anyMatch(drop -> drop.is(Items.SHORT_GRASS)), "The grass did not give itself: " + drops);
-        // Grass comes down at once, as a crop does: the shears take no wear for it, as a player's do not.
-        h.assertTrue(damage(c, Items.SHEARS) == 0, "The shears wore on the grass: damage " + damage(c, Items.SHEARS));
+        // Shears wear on every block they cut but fire, grass included, as a player's do: one for the tuft, hardness zero or not.
+        h.assertTrue(damage(c, Items.SHEARS) == 1, "The shears were not the tool used: damage " + damage(c, Items.SHEARS));
         h.assertBlockNotPresent(Blocks.SHORT_GRASS, grass);
         h.succeed();
     }
@@ -347,7 +347,10 @@ public final class CompanionRightToolTests {
         h.succeed();
     }
 
-    /** A crop comes down at once: whatever tool is in his hands or his bag, none of them wears on the wheat. */
+    /**
+     * A crop comes down at once and he breaks it by hand: the axe he holds is put away as no faster than a hand, the sword and the
+     * shears stay in the bag, so none of them wears — the axe and the sword skip a hardness-zero block, and no shears are swung.
+     */
     @GameTest(template = "empty", timeoutTicks = 40)
     public static void wheatIsReapedWithNoWearOnAnyTool(GameTestHelper h) {
         CompanionEntity c = spawn(h);
@@ -368,7 +371,7 @@ public final class CompanionRightToolTests {
         h.succeed();
     }
 
-    /** A flower and a sapling come down at once: the shears take no wear for either, and the plant itself falls. */
+    /** A flower and a sapling come down at once and the shears are no faster on either, so they stay in the bag and take no wear; the plant itself falls. */
     @GameTest(template = "empty", timeoutTicks = 40)
     public static void aFlowerAndASaplingAreBrokenWithNoWear(GameTestHelper h) {
         CompanionEntity c = spawn(h);
