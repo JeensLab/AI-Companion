@@ -227,6 +227,20 @@ public final class CompanionTraderTests {
         });
     }
 
+    /**
+     * Game 18.11: walked to the nearest remembered trader, the round of 64 blocks took in the village's near edge only (2 of 5). The
+     * spot is the remembered trader nearest the middle of those around the nearest one, so the round takes in the village.
+     */
+    @GameTest(template = "empty")
+    public static void aFarScoutGoesToTheMiddleOfTheRememberedVillage(GameTestHelper h) {
+        BlockPos edge = new BlockPos(558, 63, 669), farmer = new BlockPos(551, 63, 637), mason = new BlockPos(546, 63, 600),
+                librarian = new BlockPos(560, 55, 583), other = new BlockPos(521, 66, 596), elsewhere = new BlockPos(900, 70, 900);
+        BlockPos spot = dev.aicompanion.entity.CompanionTraders.village(java.util.List.of(edge, farmer, mason, librarian, other, elsewhere), edge);
+        for (BlockPos trader : java.util.List.of(edge, farmer, mason, librarian, other))
+            h.assertTrue(spot.distSqr(trader) <= 64 * 64, "The round from " + spot.toShortString() + " misses " + trader.toShortString());
+        h.succeed();
+    }
+
     /** What the snapshot adds only for trade talk. */
     @GameTest(template = "empty")
     public static void tradeWordsPickTheMessagesAboutTrading(GameTestHelper h) {
