@@ -4,7 +4,7 @@ import net.minecraft.core.BlockPos;
 
 /**
  * The way to a remembered spot far off, shared by the scouting round and the trade order: in legs like any long walk, never a
- * teleport, with its own eight minutes (apart from the work's own limit, which starts on arrival).
+ * teleport, with its own eight minutes (apart from the three minutes of a round or an approach; the work's deadline covers both).
  */
 final class CompanionFarWalk {
     enum Step { WALKING, ARRIVED, FAILED, TIMEOUT }
