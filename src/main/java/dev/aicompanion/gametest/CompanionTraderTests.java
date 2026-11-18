@@ -238,6 +238,11 @@ public final class CompanionTraderTests {
         long t = 1_000_000L;
         h.assertTrue(CompanionTradeWords.relevant("купи стрелы", t) && CompanionTradeWords.relevant("да", t + 60_000), "The answer right after trade talk lost the list");
         h.assertTrue(!CompanionTradeWords.relevant("да", t + CompanionTradeWords.FOLLOW_UP_MILLIS + 1), "The list stayed long after trade talk");
+        // Game 18.11: «сходи в деревню, проверь торговцев» was taken for a walk to a marker «деревня» nobody set; it is the model's.
+        h.assertTrue(dev.aicompanion.client.CompanionPlaceSpeech.parse("Сходи в деревню, проверь, что сейчас у торговцев", "Олег", java.util.List.of(), true).question() == null,
+                "A trade errand to the village was asked about a marker");
+        h.assertTrue(dev.aicompanion.client.CompanionPlaceSpeech.parse("Сходи в деревню", "Олег", java.util.List.of(), true).question() != null,
+                "A plain walk to an unknown marker lost its question");
         h.succeed();
     }
 

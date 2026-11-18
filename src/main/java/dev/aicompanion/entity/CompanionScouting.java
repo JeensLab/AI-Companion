@@ -38,6 +38,8 @@ final class CompanionScouting {
     static final int FAR_RADIUS = 500;
     /** The walk there has its own time, apart from the round: eight minutes. */
     private static final int TRAVEL_LIMIT = 20 * 60 * 8;
+    /** The work's own deadline (CompanionWork): the walk there, the round and a minute over, or the far scout is cut before its report. */
+    static final int WORK_SECONDS = (TRAVEL_LIMIT + LIMIT) / 20 + 60;
     private static final double REACH = 3.0;
     private static final int LOOK_TICKS = 30;
     /** Without getting closer for this long the trader is given up (a wall, a fence all round, no way). */

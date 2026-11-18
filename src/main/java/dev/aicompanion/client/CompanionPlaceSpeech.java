@@ -176,6 +176,8 @@ public final class CompanionPlaceSpeech {
         }
         // No marker: «дом» and «домик» are the home he knows, not an unknown name to ask about.
         if (HOME_WORDS.contains(stemOfFirstHomeWord(words))) return Result.none();
+        // «Сходи в деревню, проверь торговцев» is a scout, not a walk to a marker nobody set (game 18.11): the model's.
+        if (CompanionTradeWords.about(target)) return Result.none();
         return new Result(Kind.UNKNOWN, target, unknown(target, knownNames));
     }
 

@@ -604,7 +604,7 @@ public final class CompanionWork {
         stoneCollectedBefore = owner.collectedStone(); lastHarvestStand = null;
         // Gathering wood, finishing its crown, collecting drops, returning and crafting are
         // real prerequisite stages. A single three-minute budget used to expire before mining began.
-        deadline = level.getGameTime() + 20 * (job == Job.COURSE ? CompanionCourse.LIMIT_SECONDS + 60 : 600);
+        deadline = level.getGameTime() + 20 * (job == Job.COURSE ? CompanionCourse.LIMIT_SECONDS + 60 : job == Job.SCOUT ? CompanionScouting.WORK_SECONDS : 600);
         rejected.clear(); triedChests.clear(); stoneCandidates = null; stoneLootRetried = false;
         lots.clear(); triedFurnaces.clear(); heading = furnaceRoom = null; ownFurnaceFailed = furnacesShort = smokerTried = false; furnacesPlaced = 0; benchClimbs = 0;
         stoneSearch = null; quarrySoil.clear(); quarryTried = selectingStone = false; exitCell = null; stairs = 0;
