@@ -854,6 +854,258 @@ public final class CompanionLeavesTests {
     }
 
     /**
+     * The owner's own geometry (18.11): a tree eight blocks tall on flat ground, the dirt stair he built up to it — its top
+     * two blocks below the crown, three from the trunk, the highest cell under the crown itself. The crown is cut from the
+     * stair, no column raised and no soil dug: «Вижу, где взять «Oak Leaves», но подойти не смог» was for a stair that stands
+     * right under the crown.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 8000)
+    public static void aCrownTwoBelowTheStairTopIsCutFromTheStair(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
+        for (int up = 0; up < 8; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        List<BlockPos> crown = new java.util.ArrayList<>();
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = 7; dy <= 8; dy++) {
+            BlockPos cell = trunk.offset(dx, dy, dz);
+            if (!cell.equals(trunk.above(dy))) { h.setBlock(cell, leaves); crown.add(cell); }
+        }
+        stair(h, 18, 9, GROUND + 1, 5);
+        int stairDirt = dirtAboveGround(h);
+        CompanionEntity c = withTheOwnersTools(h);
+        h.assertTrue(count(c, Items.DIRT) == 0, "The bag already holds soil: " + count(c, Items.DIRT));
+        double groundY = c.getY();
+        double[] highest = {0};
+        int[] supports = {0};
+        h.onEachTick(() -> {
+            highest[0] = Math.max(highest[0], c.getY());
+            supports[0] = Math.max(supports[0], c.getTemporarySupportCount());
+        });
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":8}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OAK_LEAVES) == 8, "Not eight leaves: " + count(c, Items.OAK_LEAVES) + ", " + report);
+            h.assertTrue(leavesLeft(h, crown) == crown.size() - 8, "Not eight of the crown were cut: " + (crown.size() - leavesLeft(h, crown)) + " of " + crown.size() + ", " + report);
+            h.assertTrue(supports[0] == 0, "A column was built beside a stair under the crown: " + supports[0] + ", " + report);
+            h.assertTrue(count(c, Items.DIRT) == 0, "He dug soil for a column beside the stair: " + count(c, Items.DIRT) + ", " + report);
+            h.assertTrue(dirtAboveGround(h) == stairDirt, "Dirt of his own was left above the ground: " + dirtAboveGround(h) + " of " + stairDirt + ", " + report);
+            h.assertTrue(highest[0] >= groundY + 5, "He never climbed the stair: highest y " + highest[0] + ", " + report);
+            h.assertTrue(c.getHealth() == c.getMaxHealth(), "A fall off the stair hurt him: " + c.getHealth() + " of " + c.getMaxHealth() + ", " + report);
+            h.assertTrue(c.onGround() && Math.abs(c.getY() - groundY) < 1.6, "He did not come back down: y " + c.getY() + ", " + report);
+        });
+    }
+
+    /**
+     * The same tree and stair on a slope: the crown hangs over ground two blocks higher than the ground he walks from, and the
+     * stair climbs the hillside. He walks up the stair and cuts the crown from it — no column, no soil dug, and the walk back
+     * down the slope leaves him on his feet.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 8000)
+    public static void aCrownOverAStairOnASlopeIsCutFromTheStair(GameTestHelper h) {
+        slope(h);
+        BlockPos trunk = new BlockPos(22, GROUND + 3, 16);
+        for (int up = 0; up < 8; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        List<BlockPos> crown = new java.util.ArrayList<>();
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = 7; dy <= 8; dy++) {
+            BlockPos cell = trunk.offset(dx, dy, dz);
+            if (!cell.equals(trunk.above(dy))) { h.setBlock(cell, leaves); crown.add(cell); }
+        }
+        stair(h, 22, 9, GROUND + 3, 6);
+        int stairDirt = dirtAboveGround(h);
+        CompanionEntity c = withTheOwnersTools(h);
+        double groundY = c.getY();
+        double[] highest = {0};
+        int[] supports = {0};
+        h.onEachTick(() -> {
+            highest[0] = Math.max(highest[0], c.getY());
+            supports[0] = Math.max(supports[0], c.getTemporarySupportCount());
+        });
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":8}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OAK_LEAVES) == 8, "Not eight leaves: " + count(c, Items.OAK_LEAVES) + ", " + report);
+            h.assertTrue(leavesLeft(h, crown) == crown.size() - 8, "Not eight of the crown were cut: " + (crown.size() - leavesLeft(h, crown)) + " of " + crown.size() + ", " + report);
+            h.assertTrue(supports[0] == 0, "A column was built beside the stair on the slope: " + supports[0] + ", " + report);
+            h.assertTrue(dirtAboveGround(h) == stairDirt, "Dirt of his own was left on the slope: " + dirtAboveGround(h) + " of " + stairDirt + ", " + report);
+            h.assertTrue(highest[0] >= groundY + 5, "He never climbed the stair: highest y " + highest[0] + ", " + report);
+            h.assertTrue(c.getHealth() == c.getMaxHealth(), "A fall off the slope hurt him: " + c.getHealth() + " of " + c.getMaxHealth() + ", " + report);
+            h.assertTrue(c.onGround(), "He did not come down: y " + c.getY() + ", " + report);
+        });
+    }
+
+    /**
+     * A stair five or six blocks from the trunk: no cell of it is within a swing of any leaf, so it is no stand at all. The
+     * crown is then above every stand cell: he walks to the foot of a column beside the trunk, digs the soil for it, builds up
+     * and cuts the crown from the top — the stair is walked past, not climbed, and the column comes back down with him.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 10000)
+    public static void aStairOutOfReachLeavesTheCrownToHisOwnColumn(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
+        for (int up = 0; up < 8; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = 7; dy <= 8; dy++) {
+            BlockPos cell = trunk.offset(dx, dy, dz);
+            if (!cell.equals(trunk.above(dy))) h.setBlock(cell, leaves);
+        }
+        // The stair stands six blocks off along x, its top two below the crown: nothing of it is within the reach of a leaf.
+        stair(h, 12, 11, GROUND + 1, 5);
+        int stairDirt = dirtAboveGround(h);
+        CompanionEntity c = withTheOwnersTools(h);
+        h.assertTrue(count(c, Items.DIRT) == 0, "The bag already holds soil: " + count(c, Items.DIRT));
+        double groundY = c.getY();
+        int[] supports = {0};
+        h.onEachTick(() -> supports[0] = Math.max(supports[0], c.getTemporarySupportCount()));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":8}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OAK_LEAVES) >= 8, "Not eight leaves: " + count(c, Items.OAK_LEAVES) + ", " + report);
+            h.assertTrue(supports[0] > 0, "No column was built for a crown the stair cannot serve: " + supports[0] + ", " + report);
+            h.assertTrue(count(c, Items.DIRT) > 0, "He dug no soil for the column: " + count(c, Items.DIRT) + ", " + report);
+            h.assertTrue(c.getHealth() == c.getMaxHealth(), "A fall off the column hurt him: " + c.getHealth() + " of " + c.getMaxHealth() + ", " + report);
+            h.assertTrue(c.onGround() && Math.abs(c.getY() - groundY) < 0.6, "He did not come back down: y " + c.getY() + ", " + report);
+            h.assertTrue(c.getTemporarySupportCount() == 0 && dirtAboveGround(h) == stairDirt, "The column was left standing: " + dirtAboveGround(h) + " of " + stairDirt + ", " + report);
+        });
+    }
+
+    /**
+     * A flat crown six blocks over the ground with nothing to stand on but its own leaves: a cell on top of a leaf is no walk
+     * for him (nothing gets up there without a column), and the ground is too far below. The crown is his all the same: he
+     * builds a column beside the trunk and cuts the plate from its top — the leaves of the crown top are not given up.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 10000)
+    public static void aCrownOnlyItsOwnTopCouldServeIsCutFromAColumn(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
+        for (int up = 0; up < 6; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        List<BlockPos> plate = new java.util.ArrayList<>();
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
+            BlockPos cell = trunk.offset(dx, 6, dz);
+            if (!cell.equals(trunk.above(6))) { h.setBlock(cell, leaves); plate.add(cell); }
+        }
+        CompanionEntity c = withTheOwnersTools(h);
+        h.assertTrue(count(c, Items.DIRT) == 0, "The bag already holds soil: " + count(c, Items.DIRT));
+        double groundY = c.getY();
+        int[] supports = {0};
+        h.onEachTick(() -> supports[0] = Math.max(supports[0], c.getTemporarySupportCount()));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":8}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OAK_LEAVES) == 8, "Not eight leaves: " + count(c, Items.OAK_LEAVES) + ", " + report);
+            h.assertTrue(leavesLeft(h, plate) == plate.size() - 8, "Not eight of the plate were cut: " + (plate.size() - leavesLeft(h, plate)) + " of " + plate.size() + ", " + report);
+            h.assertTrue(supports[0] >= 4, "He did not build the column the plate asks: supports " + supports[0] + ", " + report);
+            h.assertTrue(c.getHealth() == c.getMaxHealth(), "A fall off the column hurt him: " + c.getHealth() + " of " + c.getMaxHealth() + ", " + report);
+            h.assertTrue(c.onGround() && Math.abs(c.getY() - groundY) < 0.6, "He did not come back down: y " + c.getY() + ", " + report);
+            h.assertTrue(c.getTemporarySupportCount() == 0 && dirtAboveGround(h) == 0, "The column was left standing: " + report);
+        });
+    }
+
+    /**
+     * The owner's complaint (18.11) in one world: a tree eight blocks tall with the dirt stair under its crown, and a bed of
+     * leaves the player set down on the ground beside him. The tree's own leaves come first: eight of them are cut
+     * from the stair and the bed is left standing — not the other way round, where only the leaves on the ground came into the
+     * bag while the crown stood and he said «Вижу, где взять …, но подойти не смог».
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 10000)
+    public static void theTreesLeavesComeBeforeTheOnesSetDownOnTheGround(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
+        for (int up = 0; up < 8; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        List<BlockPos> crown = new java.util.ArrayList<>();
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = 7; dy <= 8; dy++) {
+            BlockPos cell = trunk.offset(dx, dy, dz);
+            if (!cell.equals(trunk.above(dy))) { h.setBlock(cell, leaves); crown.add(cell); }
+        }
+        stair(h, 18, 9, GROUND + 1, 5);
+        int stairDirt = dirtAboveGround(h);
+        CompanionEntity c = withTheOwnersTools(h);
+        c.setSearchRadius(24);
+        var setDown = Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.PERSISTENT, true).setValue(LeavesBlock.DISTANCE, 7);
+        List<BlockPos> bed = new java.util.ArrayList<>();
+        for (int dx = 0; dx < 3; dx++) for (int dz = 0; dz < 3; dz++) {
+            BlockPos cell = new BlockPos(10 + dx, GROUND + 1, 12 + dz);
+            placedByPlayer(h, c, cell, setDown);
+            bed.add(cell);
+        }
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":8}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OAK_LEAVES) == 8, "Not eight leaves: " + count(c, Items.OAK_LEAVES) + ", " + report);
+            h.assertTrue(leavesLeft(h, crown) == crown.size() - 8, "Not eight of the tree were cut: " + (crown.size() - leavesLeft(h, crown)) + " of " + crown.size() + ", " + report);
+            for (BlockPos cell : bed) h.assertBlockPresent(Blocks.OAK_LEAVES, cell);
+            h.assertTrue(dirtAboveGround(h) == stairDirt, "Dirt of his own was left above the ground: " + dirtAboveGround(h) + " of " + stairDirt + ", " + report);
+            h.assertTrue(!report.contains("подойти не смог"), "The crown was given up: " + report);
+        });
+    }
+
+    /** How many of these cells still hold a leaf. */
+    private static int leavesLeft(GameTestHelper h, List<BlockPos> cells) {
+        int left = 0;
+        for (BlockPos cell : cells) if (h.getBlockState(cell).is(Blocks.OAK_LEAVES)) left++;
+        return left;
+    }
+
+    /**
+     * The owner's stair he cannot climb (18.11): a crown seven blocks up, a stair of dirt whose steps are two blocks high — its
+     * top cell is within a swing of the leaves, yet no walk gets up there. A stand he cannot walk to is no stand:
+     * the soil for a column is dug before the gather, he builds up beside the trunk, cuts the crown from the top and comes back
+     * down — «Вижу, где взять «Oak Leaves», но подойти не смог» is not said over soil the ground holds.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 10000)
+    public static void aStairHeCannotClimbLeavesTheCrownToHisOwnColumn(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
+        for (int up = 0; up < 8; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        List<BlockPos> crown = new java.util.ArrayList<>();
+        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
+            BlockPos cell = trunk.offset(dx, 7, dz);
+            if (!cell.equals(trunk.above(7))) { h.setBlock(cell, leaves); crown.add(cell); }
+        }
+        // Steps of two: the top cell at (18, GROUND+7, 14) is within the reach of the crown, and the ground is two below it.
+        for (int step = 0; step < 3; step++) h.setBlock(new BlockPos(18, GROUND + 2 + step * 2, 12 + step), Blocks.DIRT);
+        int stairDirt = dirtAboveGround(h);
+        CompanionEntity c = withTheOwnersTools(h);
+        h.assertTrue(count(c, Items.DIRT) == 0, "The bag already holds soil: " + count(c, Items.DIRT));
+        double groundY = c.getY();
+        int[] supports = {0};
+        h.onEachTick(() -> supports[0] = Math.max(supports[0], c.getTemporarySupportCount()));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":8}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OAK_LEAVES) >= 8, "Not eight leaves: " + count(c, Items.OAK_LEAVES) + ", " + report);
+            h.assertTrue(supports[0] > 0, "No column was built for a stair he cannot climb: " + supports[0] + ", " + report);
+            h.assertTrue(count(c, Items.DIRT) > 0, "He dug no soil for the column: " + count(c, Items.DIRT) + ", " + report);
+            h.assertTrue(c.getHealth() == c.getMaxHealth(), "A fall off the column hurt him: " + c.getHealth() + " of " + c.getMaxHealth() + ", " + report);
+            h.assertTrue(c.onGround() && Math.abs(c.getY() - groundY) < 0.6, "He did not come back down: y " + c.getY() + ", " + report);
+            h.assertTrue(c.getTemporarySupportCount() == 0 && dirtAboveGround(h) == stairDirt, "The column was left standing: " + dirtAboveGround(h) + " of " + stairDirt + ", " + report);
+        });
+    }
+
+    /** A stair of dirt the player built: one step up and one forward from {@code yStart}, {@code steps} of them. */
+    private static void stair(GameTestHelper h, int x, int zStart, int yStart, int steps) {
+        for (int step = 0; step < steps; step++) h.setBlock(new BlockPos(x, yStart + step, zStart + step), Blocks.DIRT);
+    }
+
+    /** A hillside: flat ground to x=13, a block higher to x=19, two higher from x=20 on — the crown's ground is above his. */
+    private static void slope(GameTestHelper h) {
+        ground(h);
+        for (int x = 14; x < 32; x++) for (int z = 1; z < 31; z++) {
+            int top = GROUND + (x >= 20 ? 2 : x >= 14 ? 1 : 0);
+            for (int y = GROUND + 1; y <= top; y++) h.setBlock(new BlockPos(x, y, z), y == top ? Blocks.GRASS_BLOCK : Blocks.DIRT);
+        }
+    }
+
+    /**
      * «Два стака листвы» (the owner, 18.11): the local number parser reads a stack as 64, so «два стака» is 128 and «полтора
      * стака» 96; the order stays local and the codec takes a leaf count above 64, its chain splitting it into steps of a stack.
      */
