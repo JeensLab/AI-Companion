@@ -28,6 +28,10 @@ jobs:
       # needs only the JDK and takes about a second, so it runs in this job instead of being remembered by hand.
       - name: Check enum switches
         run: bash scripts/switch-check.sh
+      # An import whose simple name never appears outside its import line compiles fine, so no other gate notices it.
+      # The sweep removed the ones that had piled up; this check keeps them from coming back. JDK only, a second.
+      - name: Check unused imports
+        run: bash scripts/unused-imports.sh
       - name: Build with Gradle
         run: ./gradlew build
       # The guitar tracks are not in the JAR: they are packed from music/ into the ready config/aicompanion/music structure,
