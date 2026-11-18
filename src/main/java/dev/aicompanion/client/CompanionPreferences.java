@@ -71,7 +71,8 @@ public final class CompanionPreferences {
                         + ", охрана=" + companion.isProtecting() + ", сумка=" + companion.getStoredItemsForAi()
                         + ", экипировка=" + companion.getEquipmentForAi() + ", текущая активность=" + companion.getActivityForAi()
                         + ", память о местах=" + companion.getPlacesForAi() + ", исторический отчёт=" + companion.getLastTaskResult();
-                client.execute(() -> { if (client.level == clientWorld) GameContext.setRemoteState(clientWorld, remote); });
+                String traders = companion.getTradersForAi();
+                client.execute(() -> { if (client.level == clientWorld) GameContext.setRemoteState(clientWorld, remote, traders); });
             }
         });
     }
