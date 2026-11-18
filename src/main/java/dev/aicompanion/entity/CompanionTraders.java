@@ -60,6 +60,20 @@ public final class CompanionTraders {
         return entry;
     }
 
+    /**
+     * Where a round at a remembered village is made, of the traders remembered {@code remembered} (one dimension) and the one nearest to
+     * him: of the traders remembered around that one, the one from whom the farthest is nearest, so the round's 64 blocks take in the
+     * village and not only its near edge (game 18.11: walked to the edge, he asked 2 of 5).
+     */
+    public static BlockPos village(List<BlockPos> remembered, BlockPos nearest) {
+        // A village is some 100 blocks across: its traders are those within twice a round's reach of the nearest one.
+        int across = 128;
+        List<BlockPos> group = remembered.stream().filter(pos -> pos.distSqr(nearest) <= (double) across * across).toList();
+        // The spot the farthest of them is nearest from; a trader's own spot, not a bare middle, which may be a roof or a hole.
+        return group.stream().min(java.util.Comparator.comparingDouble(spot -> group.stream().mapToDouble(other -> other.distSqr(spot)).max().orElse(0)))
+                .orElse(nearest);
+    }
+
     static final String KEY = "Traders";
     /**
      * The line rides with every trade message the player writes, so it is held to some 4000 tokens (under the synced string's
