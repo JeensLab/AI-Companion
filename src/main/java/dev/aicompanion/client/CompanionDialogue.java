@@ -334,8 +334,10 @@ public final class CompanionDialogue {
     }
 
     /**
-     * What a leaf order brought: the count that really landed in the bag, not the step that wore the shears. With none,
-     * the refusal is the one short line the order was given; a partial gather says how many it got.
+     * What a leaf order brought: the count that really landed in the bag, not the step that wore the shears. The bag check's
+     * own line («Готово: «…» у меня, N шт.») is what the bag holds after the order — carried and gathered together, so ten
+     * carried and six cut answer for sixteen of sixteen, and an order the bag already met answers with that count alone.
+     * With none: the soil a crown above him asks for, or the one short line.
      */
     private static String leafReport(String report) {
         int got = 0;
@@ -343,7 +345,19 @@ public final class CompanionDialogue {
         while (gather.find()) got += Integer.parseInt(gather.group(1));
         var partial = Pattern.compile("Собрал «[^»]*»: (\\d+) из (\\d+)").matcher(report);
         while (partial.find()) got += Integer.parseInt(partial.group(1));
-        if (got > 0) return "Собрал " + got + " " + leavesWord(got) + ".";
+        var checked = Pattern.compile("Готово: «[^»]*» у меня, (\\d+) шт\\.").matcher(report);
+        String bagLine = null;
+        int inBag = 0;
+        while (checked.find()) {
+            int held = Integer.parseInt(checked.group(1));
+            if (held >= inBag) { inBag = held; bagLine = checked.group(); }
+        }
+        if (got > 0) {
+            int total = Math.max(got, inBag);
+            return "Собрал " + total + " " + leavesWord(total) + ".";
+        }
+        if (bagLine != null) return bagLine;
+        if (report.contains("До листвы не достану")) return "До листвы не достану — дай земли.";
         if (report.contains("Рядом листвы не вижу")) return "Рядом листвы не вижу.";
         String failure = dev.aicompanion.CompanionFailureMessages.primary(report);
         if (failure.contains("не нашёл") || failure.contains("не вижу")) return "Листвы рядом не нашёл.";

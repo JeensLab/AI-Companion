@@ -120,6 +120,24 @@ final class CompanionPicking {
         return all.isEmpty() ? null : find(c, level, all, sites(c, level), Set.of(), new HashSet<>());
     }
 
+    /**
+     * Whether a crown about him is out of his ground reach only for want of soil: a leaf of a tree he could come at up a short
+     * column of his own, if the bag held the soil for it. Said as the soil the refusal names, not as no leaves at all.
+     */
+    static boolean soilForACrown(CompanionEntity c, ServerLevel level) {
+        List<CompanionPickable.Source> all = allowed(level, CompanionPickable.leaves(level));
+        if (all.isEmpty()) return false;
+        Predicate<BlockPos> site = sites(c, level);
+        return CompanionObsidian.nearest(c, level, DEPTH, state -> gives(all, state) > 0, pos ->
+                c.errand.within(pos) && takes(level, pos, site) && grounded(c, level, pos) && !lavaBeside(level, pos)
+                && crownOverSoil(c, level, pos)) != null;
+    }
+
+    /** A leaf the ground reach does not give, but a short column of his would — the soil being there. */
+    private static boolean crownOverSoil(CompanionEntity c, ServerLevel level, BlockPos pos) {
+        return !(low(c, level, pos) && !standsFor(c, level, pos).isEmpty()) && !c.temporaryPillar.buildCellsWithAnySoil(pos).isEmpty();
+    }
+
     /** What is taken in this dimension: the overworld's own, not the Nether's stone (put there by the player), in the Nether only that stone, nothing elsewhere. */
     private static List<CompanionPickable.Source> allowed(ServerLevel level, List<CompanionPickable.Source> all) {
         if (level.dimension() == Level.OVERWORLD) return all.stream().filter(source -> !CompanionPickable.nether(source.block())).toList();

@@ -32,6 +32,9 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     private static final Set<String> TRACKED_WORK = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests",
             "build_house", "craft_item", "place_block", "come", "hunt_mobs", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "collect_smelt", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "use_bone_meal", "compost_meal", "walk_heading", "fill_bucket", "mine_obsidian", "gather_block", "hunt_drop", "build_portal", "build_cobble_gen", "pick_up", "go_to_place", "disenchant_item", "compost_items", "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block", "nether_go", "nether_back");
     private static final Set<String> PARKABLE_WORK = Set.of("smelt_items", "collect_smelt");
+    /** A leaf order's refusals: no leaf of any tree he can come at, or a crown above him that only soil would let him reach. */
+    private static final String NO_LEAVES = "Рядом листвы не вижу.";
+    private static final String NO_SOIL_FOR_LEAVES = "До листвы не достану — дай земли.";
     private static final Queue<Sleeper> SLEEPERS = new ConcurrentLinkedQueue<>();
     private final MinecraftServer server;
     private final UUID playerId;
@@ -241,9 +244,13 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
             if (companion == null) return new CompanionPlanRunner.Expansion(java.util.List.of(), "Компаньон выгружен из мира.");
             // «Листва» is no item of its own: the leaf block of a tree he can really gather from, whatever species grows here (CompanionLeaves).
-            String item = dev.aicompanion.entity.CompanionLeaves.resolve(companion, (net.minecraft.server.level.ServerLevel) companion.level(), action.item());
-            // No reachable leaf of any tree: one short line, no tree or species he cannot come at.
-            if (item == null) return new CompanionPlanRunner.Expansion(java.util.List.of(), "Рядом листвы не вижу.");
+            net.minecraft.server.level.ServerLevel level = (net.minecraft.server.level.ServerLevel) companion.level();
+            String item = dev.aicompanion.entity.CompanionLeaves.resolve(companion, level, action.item());
+            // No tree he can come at: the leaves already in the bag meet the order as it is (sixteen oak leaves beside no oak).
+            if (item == null) item = dev.aicompanion.entity.CompanionLeaves.inBag(companion, action.count());
+            // Nothing to take and nothing carried: the soil a crown above him asks for, or one short line — never a species he cannot come at.
+            if (item == null) return new CompanionPlanRunner.Expansion(java.util.List.of(),
+                    dev.aicompanion.entity.CompanionLeaves.soilForACrown(companion, level) ? NO_SOIL_FOR_LEAVES : NO_LEAVES);
             var plan = companion.obtainPlan(item, action.count());
             if (plan.refused()) return new CompanionPlanRunner.Expansion(java.util.List.of(), plan.refusal());
             java.util.List<PlannedAction> steps = new java.util.ArrayList<>();

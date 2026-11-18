@@ -3,6 +3,8 @@ package dev.aicompanion.entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.ItemTags;
+import net.minecraft.world.item.ItemStack;
 
 /**
  * «Листва»/«листья» as the world has them: the leaf block of a tree he can really gather from, whatever species grows
@@ -33,5 +35,28 @@ public final class CompanionLeaves {
     public static String resolve(CompanionEntity c, ServerLevel level, String requested) {
         if (!isFamily(requested)) return requested;
         return nearest(c, level);
+    }
+
+    /**
+     * The leaf block he already carries at least {@code count} of, the most of any he has, or null: an order the bag meets needs
+     * no tree, and its answer is that count (the owner, 17.11: sixteen oak leaves in the bag, «добудь листву» refused).
+     */
+    public static String inBag(CompanionEntity c, int count) {
+        java.util.Map<String, Integer> carried = new java.util.LinkedHashMap<>();
+        for (int slot = 0; slot < c.getContainerSize(); slot++) add(carried, c.getItem(slot));
+        add(carried, c.getMainHandItem());
+        add(carried, c.getOffhandItem());
+        return carried.entrySet().stream().filter(entry -> entry.getValue() >= count)
+                .max(java.util.Map.Entry.comparingByValue()).map(java.util.Map.Entry::getKey).orElse(null);
+    }
+
+    private static void add(java.util.Map<String, Integer> carried, ItemStack stack) {
+        if (stack.isEmpty() || !stack.is(ItemTags.LEAVES)) return;
+        carried.merge(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), stack.getCount(), Integer::sum);
+    }
+
+    /** Whether the leaves are there but the soil is not: a crown above every stand cell that a short column of his would reach. */
+    public static boolean soilForACrown(CompanionEntity c, ServerLevel level) {
+        return CompanionPicking.soilForACrown(c, level);
     }
 }

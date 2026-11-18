@@ -282,10 +282,17 @@ public final class CompanionPillar {
      * than his soil and {@link #MAX_SUPPORTS} allow. Empty when he cannot build up to it: no soil in the bag, a ceiling over
      * the column, or a crown too high for a short column.
      */
-    public Set<BlockPos> buildCells(BlockPos block) {
+    public Set<BlockPos> buildCells(BlockPos block) { return buildCells(block, soilCount()); }
+
+    /**
+     * The same cells as if the bag held the soil for the longest column: what the crown asks of him with the soil aside. When
+     * these are there and {@link #buildCells} has none, the soil is what he lacks for it.
+     */
+    public Set<BlockPos> buildCellsWithAnySoil(BlockPos block) { return buildCells(block, MAX_SUPPORTS); }
+
+    private Set<BlockPos> buildCells(BlockPos block, int supply) {
         Set<BlockPos> cells = new HashSet<>();
         if (!(owner.level() instanceof ServerLevel level) || !level.hasChunkAt(block)) return cells;
-        int supply = soilCount();
         for (int down = 1; down <= MAX_SUPPORTS + 2; down++) for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
             BlockPos feet = block.offset(dx, -down, dz);
             if (!safeFoundation(level, feet.below())) continue;
