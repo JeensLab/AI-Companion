@@ -1,5 +1,6 @@
 plugins {
     id 'java-library'
+    id 'checkstyle'
     id 'maven-publish'
     id 'net.neoforged.moddev' version '2.0.148'
     id 'idea'
@@ -28,6 +29,9 @@ sourceSets.main.resources {
 
 repositories {
     // Add here additional repositories if required by some of the dependencies below.
+    // Maven Central carries the Checkstyle analyser jar that the `checkstyle` core plugin resolves; it is listed
+    // last so the NeoForge/Mojang repositories above still win for the mod's own dependencies.
+    mavenCentral()
 }
 
 base {
@@ -242,6 +246,24 @@ publishing {
             url "file://${project.projectDir}/repo"
         }
     }
+}
+
+// Checkstyle is Gradle's own plugin (core, no third-party Gradle plugin to trust or update): it pulls one analyser
+// release, pinned below, from Maven Central. The config in config/checkstyle enables a single check, UnusedImports:
+// an import whose name never appears in the file compiles fine, so javac and the tests never notice it, and it only
+// costs readability. The check is textual, needs no classpath, and cannot report anything outside import lines.
+// A new rule is added there deliberately, one at a time, after confirming the existing tree passes it.
+checkstyle {
+    toolVersion = '10.26.1'
+    configFile = file('config/checkstyle/checkstyle.xml')
+    // Any finding is a failure: nothing is downgraded to a warning that a green build could hide.
+    maxWarnings = 0
+}
+
+// The analyser parses every source in one forked JVM; the stock 512 MB ceiling runs out on this tree (the ANTLR
+// parser dies with OutOfMemoryError), so it gets a fixed gigabyte, the same way the GameTest server gets its ceiling.
+tasks.withType(Checkstyle).configureEach {
+    maxHeapSize = '1g'
 }
 
 tasks.withType(JavaCompile).configureEach {

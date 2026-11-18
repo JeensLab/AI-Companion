@@ -131,6 +131,12 @@
 - Сборка: Windows `.\gradlew.bat build`; Linux/macOS `./gradlew build`.
 - Предупреждения javac `unchecked` и `rawtypes` — ошибки компиляции (`-Werror` в `build.gradle`);
   вместе с категориями javac по умолчанию; необязательные (`deprecation`, `removal`) не включены и видны только строкой `Note:`.
+- Неиспользуемый импорт — тоже нарушение: в сборке есть проверенный production-grade линтер —
+  Checkstyle, плагин ядра Gradle (не сторонний плагин), версия анализатора закреплена в `build.gradle`,
+  включена ровно одна проверка `UnusedImports` в `config/checkstyle/checkstyle.xml`. Это зависимость:
+  Gradle скачивает jar анализатора, но для этого проекта она рисков не несёт и полезна для читаемости.
+  Новые правила добавляются в конфиг осознанно, по одному, после проверки, что текущее дерево их проходит.
+  Проверка — `./gradlew checkstyleMain` (`.\gradlew.bat checkstyleMain`); `build` запускает её сам.
 - Игровые тесты: повседневно `.\scripts\verify-fast.ps1` на Windows и `./scripts/verify-fast.sh` на
   Linux/macOS (все тесты без трёх длинных
   сценариев `endurance`, в нескольких процессах); перед PR один раз полный `.\gradlew.bat runGameTestServer`
