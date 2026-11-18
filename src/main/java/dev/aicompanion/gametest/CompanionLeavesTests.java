@@ -569,6 +569,90 @@ public final class CompanionLeavesTests {
         h.succeed();
     }
 
+    /**
+     * Eight oak and eight spruce leaves in the bag beside an oak, «добудь 16 листвы»: a leaf order counts every kind it
+     * carries, so the bag meets it — sixteen of sixteen, not eight of sixteen — and not one leaf of the tree is cut for it.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void aBagOfSeveralKindsMeetsTheOrderAsOneCount(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
+        for (int up = 0; up < 3; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = 2; dy <= 3; dy++) {
+            BlockPos cell = trunk.offset(dx, dy, dz);
+            if (!cell.equals(trunk.above(dy))) h.setBlock(cell, leaves);
+        }
+        CompanionEntity c = withTheOwnersTools(h);
+        c.setItem(4, new ItemStack(Items.OAK_LEAVES, 8));
+        c.setItem(5, new ItemStack(Items.SPRUCE_LEAVES, 8));
+        h.assertTrue(CompanionLeaves.carried(c) == 16, "The bag is not sixteen leaves: " + CompanionLeaves.carried(c));
+        h.assertTrue("minecraft:oak_leaves".equals(CompanionLeaves.nearest(c, h.getLevel())), "The oak is not the tree beside him");
+        String command = CompanionLocalCommands.route("добудь 16 листвы", "Олег");
+        h.assertTrue(command != null, "«добудь 16 листвы» went to the model");
+        List<PlannedAction> plan = CompanionLocalCommands.actions(command);
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-leaves-mixed", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            String said = dev.aicompanion.client.CompanionDialogue.summarize(plan, report);
+            h.assertTrue(said.equals("Готово: «Листва» у меня, 16 шт."), "The bag's leaves were not counted together: " + said + ", " + report);
+            h.assertTrue(count(c, Items.OAK_LEAVES) == 8 && count(c, Items.SPRUCE_LEAVES) == 8, "The bag changed: " + report);
+            h.assertTrue(damage(c, Items.SHEARS) == 0, "The tree was cut for a bag that met the order: " + damage(c, Items.SHEARS) + ", " + report);
+        });
+    }
+
+    /**
+     * Fifteen oak leaves in the bag and a spruce beside him, «добудь 16 листвы»: the bag is one leaf short, so he cuts the
+     * spruce — one leaf of the tree he can come at, not sixteen — and answers sixteen of sixteen, not «Собрал 5 из 16» over
+     * a bag that holds twenty leaves once the spruce gives its own.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void aBagShortOfTheCountCutsTheTreeBesideIt(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
+        for (int up = 0; up < 3; up++) h.setBlock(trunk.above(up), Blocks.SPRUCE_LOG);
+        var leaves = Blocks.SPRUCE_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        for (BlockPos cell : List.of(trunk.above(2).west(), trunk.above(2).east(), trunk.above(3).north(), trunk.above(3).south(),
+                trunk.above(3).west(), trunk.above(3).east()))
+            h.setBlock(cell, leaves);
+        CompanionEntity c = withTheOwnersTools(h);
+        c.setItem(4, new ItemStack(Items.OAK_LEAVES, 15));
+        h.assertTrue("minecraft:spruce_leaves".equals(CompanionLeaves.nearest(c, h.getLevel())), "The spruce is not the tree beside him");
+        String command = CompanionLocalCommands.route("добудь 16 листвы", "Олег");
+        h.assertTrue(command != null, "«добудь 16 листвы» went to the model");
+        List<PlannedAction> plan = CompanionLocalCommands.actions(command);
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-leaves-short-spruce", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            String said = dev.aicompanion.client.CompanionDialogue.summarize(plan, report);
+            h.assertTrue(count(c, Items.SPRUCE_LEAVES) == 1, "The spruce was not cut for the one missing leaf: " + count(c, Items.SPRUCE_LEAVES) + ", " + report);
+            h.assertTrue(count(c, Items.OAK_LEAVES) == 15, "The oak in the bag changed: " + count(c, Items.OAK_LEAVES) + ", " + report);
+            h.assertTrue(said.equals("Собрал 16 листьев."), "The bag's oak was not counted: " + said + ", " + report);
+            h.assertTrue(damage(c, Items.SHEARS) == 1, "The shears cut more than the one leaf: " + damage(c, Items.SHEARS) + ", " + report);
+        });
+    }
+
+    /**
+     * A counted refusal inside a longer plan is one sentence: «Не вышло: «Листва» — у меня 15 из 16, рядом листвы не вижу.»
+     * The part and the reason are not joined by a second dash; the soil's refusal reads the same way.
+     */
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void aRefusalInsideALongerPlanIsOneSentence(GameTestHelper h) {
+        List<PlannedAction> plan = List.of(new PlannedAction("obtain_item", 0, 16, CompanionLeaves.FAMILY),
+                new PlannedAction("gather_wood", 0, 2, ""));
+        String counted = dev.aicompanion.client.CompanionDialogue.summarize(plan,
+                dev.aicompanion.client.CompanionDialogue.PARTIAL_PREFIX + "«Листва»: У меня 15 из 16 — рядом листвы не вижу.\nСобрал: «Дубовое бревно», 2 шт.");
+        h.assertTrue(counted.equals("Остальное сделал. Не вышло: «Листва» — у меня 15 из 16, рядом листвы не вижу."),
+                "The refusal is not one sentence: " + counted);
+        String soil = dev.aicompanion.client.CompanionDialogue.summarize(plan,
+                dev.aicompanion.client.CompanionDialogue.PARTIAL_PREFIX + "«Листва»: До листвы не достану — дай земли.\nСобрал: «Дубовое бревно», 2 шт.");
+        h.assertTrue(soil.equals("Остальное сделал. Не вышло: «Листва» — до листвы не достану, дай земли."),
+                "The soil's refusal is not one sentence: " + soil);
+        h.succeed();
+    }
+
     /** The owner's bag (in game 16.11): the stone pickaxe in his hand, an iron pickaxe, an axe, shears and a shovel in the bag. */
     private static CompanionEntity withTheOwnersTools(GameTestHelper h) {
         CompanionEntity c = spawn(h, 12, 16);
