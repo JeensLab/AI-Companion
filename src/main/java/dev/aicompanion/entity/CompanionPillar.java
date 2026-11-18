@@ -324,6 +324,9 @@ public final class CompanionPillar {
         return cells;
     }
 
+    /** Whether the column is being raised toward this block: the climb for it is what stands, not soil to be taken back. */
+    public boolean climbingTo(BlockPos block) { return !recovering && target != null && target.equals(block); }
+
     /** Whether a swing from where he stands now reaches this block: the same reach the climb works to. */
     public boolean inReach(BlockPos block) {
         return jumpCell == null && owner.onGround()

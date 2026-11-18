@@ -38,6 +38,8 @@ import java.util.function.Predicate;
  * block) he swims over and dives for, as for a foe under water (CompanionSwimming): under open water no deeper than his breath
  * takes him, never under a roof; what only lies under water (clay in a pond) is left for the dry kind. A crown above every
  * stand cell is no block out of reach: he builds up to it on his own soil (CompanionPillar) and cuts it from the top.
+ * What a stand serves is cut from the stand first — the stair a player built is walked up, not built over — and a leaf no
+ * stand he can walk to serves is climbed for, the soil dug first when the stair cannot be climbed (the owner, 18.11).
  */
 final class CompanionPicking {
     static final String FULL_BAG = "Сумка забита — некуда класть.";
@@ -72,6 +74,8 @@ final class CompanionPicking {
     private BlockPos target;
     /** The cells he takes the target from, his way to them and the walks so far. */
     private Set<BlockPos> stands = Set.of();
+    /** No way to the stands of this target: the climb is what is left, and the walk is not searched again for it. */
+    private boolean walkFailed;
     private Path path;
     private int legs, waited, dived;
     /** Blocks he found no way to. */
@@ -113,9 +117,9 @@ final class CompanionPicking {
         List<CompanionPickable.Source> here = allowed(level, sources);
         if (here.isEmpty()) return false;
         Predicate<BlockPos> site = sites(c, level);
-        if (find(c, level, here, site, Set.of(), new HashSet<>(), false, false) != null) return true;
+        if (find(c, level, here, site, Set.of(), new HashSet<>(), false, false, false) != null) return true;
         // A crown above every stand cell is still his when the soil for the column can be dug about him (the owner, 18.11).
-        return find(c, level, here, site, Set.of(), new HashSet<>(), true, false) != null && soilAbout(c, level);
+        return find(c, level, here, site, Set.of(), new HashSet<>(), true, false, false) != null && soilAbout(c, level);
     }
 
     /**
@@ -137,7 +141,7 @@ final class CompanionPicking {
         for (boolean natural : new boolean[]{true, false})
             for (boolean soil : new boolean[]{false, true}) {
                 if (soil && !dug) continue;
-                BlockPos found = find(c, level, all, site, Set.of(), new HashSet<>(), soil, natural);
+                BlockPos found = find(c, level, all, site, Set.of(), new HashSet<>(), soil, natural, false);
                 if (found != null) return found;
             }
         return null;
@@ -146,13 +150,13 @@ final class CompanionPicking {
     /** Whether a block that gives dirt stands within his search where he may take it: the soil for a crown he digs himself. */
     static boolean soilAbout(CompanionEntity c, ServerLevel level) {
         List<CompanionPickable.Source> dirt = allowed(level, CompanionPickable.sources(level, Items.DIRT));
-        return !dirt.isEmpty() && find(c, level, dirt, sites(c, level), Set.of(), new HashSet<>(), false, false) != null;
+        return !dirt.isEmpty() && find(c, level, dirt, sites(c, level), Set.of(), new HashSet<>(), false, false, false) != null;
     }
 
     /**
      * The soil he must dig for the crown of this leaf block the order will come at: the steps of its longest column less what
-     * he carries. 0 when the ground reach or the bag already has it; the crown is not counted when no column reaches it (the
-     * order is refused for its height then).
+     * he carries. 0 when a stand he can walk to serves it or the bag already has the soil; the crown is not counted when no
+     * column reaches it (the order is refused for its height then).
      */
     static int soilToDig(CompanionEntity c, ServerLevel level, String item) {
         var id = ResourceLocation.tryParse(item == null ? "" : item);
@@ -160,10 +164,30 @@ final class CompanionPicking {
         if (leaf == null) return 0;
         List<CompanionPickable.Source> all = allowed(level, CompanionPickable.sources(level, leaf)).stream()
                 .filter(source -> source.block().defaultBlockState().is(BlockTags.LEAVES)).toList();
-        BlockPos found = nearestLeaf(c, level, all);
-        if (found == null || low(c, level, found) && !standsFor(c, level, found).isEmpty()
-                || !c.temporaryPillar.buildCells(found).isEmpty()) return 0;
+        // The leaf the gather comes at first: one a stand serves, as the gather takes them first, else the nearest one a
+        // column reaches (the owner, 18.11: the stair's crown is cut from the stair, and no soil is dug for it).
+        Predicate<BlockPos> site = sites(c, level);
+        BlockPos found = find(c, level, all, site, Set.of(), new HashSet<>(), false, true, true);
+        if (found == null) found = find(c, level, all, site, Set.of(), new HashSet<>(), false, false, true);
+        if (found == null) found = nearestLeaf(c, level, all);
+        if (found == null) return 0;
+        // The leaf the order comes at first is served by a stand only when there is a way to that stand on foot: a stair he
+        // cannot climb (a step of two, a wall across it) leaves the crown above every stand cell all the same, and the soil for
+        // the column is dug before the gather instead of being given up over (the owner, 18.11: «Вижу, где взять …, но подойти
+        // не смог»). No dirt about to dig: the leaf is passed over for the one beside it, as it was (a stone shelf).
+        Set<BlockPos> stands = standsFor(c, level, found);
+        if (!stands.isEmpty() && CompanionMiningNavigation.canWalkTo(c, c.blockPosition(), stands)) return 0;
+        // No soil he can really dig (the dig's own reach, not the search radius of the order): the leaf is passed over for the
+        // one beside it, as it was — a leaf on a stone shelf with the dirt twenty blocks off (the owner, 18.11).
+        if (!soilNear(c, level)) return 0;
         return Math.max(0, c.temporaryPillar.columnSteps(found) - c.temporaryPillar.soilCarried());
+    }
+
+    /** Whether a block that gives dirt stands within the reach the dig works in, where he may take it. */
+    private static boolean soilNear(CompanionEntity c, ServerLevel level) {
+        List<CompanionPickable.Source> dirt = allowed(level, CompanionPickable.sources(level, Items.DIRT));
+        BlockPos found = dirt.isEmpty() ? null : find(c, level, dirt, sites(c, level), Set.of(), new HashSet<>(), false, false, false);
+        return found != null && found.distSqr(c.blockPosition()) <= 12 * 12;
     }
 
     /**
@@ -221,9 +245,9 @@ final class CompanionPicking {
     }
 
     private static BlockPos find(CompanionEntity c, ServerLevel level, List<CompanionPickable.Source> sources, Predicate<BlockPos> site,
-                                 Set<BlockPos> passed, Set<BlockPos> lava, boolean dugSoil, boolean naturalOnly) {
+                                 Set<BlockPos> passed, Set<BlockPos> lava, boolean dugSoil, boolean naturalOnly, boolean standOnly) {
         return CompanionObsidian.nearest(c, level, DEPTH, state -> gives(sources, state) > 0, pos -> {
-            if (passed.contains(pos) || !c.errand.within(pos) || !takes(level, pos, site) || !atHand(c, level, pos, dugSoil)
+            if (passed.contains(pos) || !c.errand.within(pos) || !takes(level, pos, site) || !atHand(c, level, pos, dugSoil, standOnly)
                     || naturalOnly && setDown(level.getBlockState(pos)) || !grounded(c, level, pos)) return false;
             if (!lavaBeside(level, pos)) return true;
             lava.add(pos.immutable());
@@ -297,7 +321,7 @@ final class CompanionPicking {
      * Leaves he reaches from a stand: a crown high over the ground is no source (a spruce, a tall oak) unless he builds up to
      * it, but any cell he can stand in within the reach of the leaf is — the ground, a stair or ledge the player built, a
      * pillar left standing. A stand on top of a leaf or of the trunk alone is no such reach: nothing walks up there without a
-     * column, so it is left to the stands of {@link #standsFor} once the leaf is his.
+     * column — the rule {@link #standsFor} follows for a leaf too, so the stand the walk is sent to is one it can come down from.
      */
     private static boolean low(CompanionEntity c, ServerLevel level, BlockPos pos) {
         if (!level.getBlockState(pos).is(BlockTags.LEAVES)) return true;
@@ -315,10 +339,13 @@ final class CompanionPicking {
      * Whether this block is his to take: from a stand under it (the ground reach of before), or — for a crown above every
      * stand cell (a tree grown with bone meal) — up a short column of his own soil (CompanionPillar). The soil for that column
      * is his to dig when a block that gives dirt stands about him, so a crown is not out of reach for want of soil he can get
-     * (the owner, 18.11). Nothing else is a source of his.
+     * (the owner, 18.11). Nothing else is a source of his. {@code standOnly} asks for the stand alone: what the gather takes
+     * first, before it raises anything — a stair the player built is walked up, not built over (the owner, 18.11).
      */
-    private static boolean atHand(CompanionEntity c, ServerLevel level, BlockPos pos, boolean dugSoil) {
-        if (low(c, level, pos) && !standsFor(c, level, pos).isEmpty()) return true;
+    private static boolean atHand(CompanionEntity c, ServerLevel level, BlockPos pos, boolean dugSoil, boolean standOnly) {
+        boolean stand = low(c, level, pos) && !standsFor(c, level, pos).isEmpty();
+        if (standOnly) return stand;
+        if (stand) return true;
         if (!c.temporaryPillar.buildCells(pos).isEmpty()) return true;
         return dugSoil && !c.temporaryPillar.buildCellsWithAnySoil(pos).isEmpty();
     }
@@ -354,9 +381,11 @@ final class CompanionPicking {
             boolean leaf = level.getBlockState(block).is(BlockTags.LEAVES);
             for (BlockPos stand : CompanionMiningNavigation.standCells(c, block, STAND_REACH, false, true)) {
                 // A leaf's drop falls off a crown or a stair to the ground below: the stand is still his, and the pickup walks
-                // down for what fell. Any standable cell within reach counts — a stair the player built, a ledge, a pillar, or a
-                // leaf's own top to walk on (the owner, 18.11: the dirt stair to a crown was no stand for him at all, so he dug
-                // soil for a column).
+                // down for what fell. Any standable cell within reach counts — a stair the player built, a ledge, a pillar.
+                // A cell on top of a leaf or of the trunk is no stand for a leaf: nothing walks up there without a column of
+                // his own (the same rule the ground reach follows), so a crown whose only cells are leaf tops is climbed, and
+                // the walk is not sent up to a leaf top it cannot come down from (the owner, 18.11).
+                if (leaf && (level.getBlockState(stand.below()).is(BlockTags.LEAVES) || level.getBlockState(stand.below()).is(BlockTags.LOGS))) continue;
                 if (leaf || CompanionMiningNavigation.dropCollectable(level, block, stand)) cells.add(stand);
             }
             return cells;
@@ -416,6 +445,9 @@ final class CompanionPicking {
 
     /** Walking to the cells beside the trunk, as {@link #walk()} walks to a stand: false when there is no way there. */
     private boolean approach(Set<BlockPos> feet) {
+        // The leg already being walked is the way there: searched again only when it is over, as a walk to a stand is. Asked
+        // afresh every tick it barely moved him — eight ticks of a walk are not eight blocks (the stair he cannot climb, 18.11).
+        if (path != null && !w.route.legOver()) return true;
         if (++legs > LEGS) return false;
         CompanionRoute.Reach reach = w.route.cells(feet, 0);
         if (reach.busy() || CompanionRoute.NOT_SEARCHED.equals(reach.reason())) { legs--; return ++waited < WAIT; }
@@ -458,10 +490,13 @@ final class CompanionPicking {
         Predicate<BlockPos> site = sites(c, level);
         if (target != null && (gives(sources, level.getBlockState(target)) == 0 || !takes(level, target, site) || lavaBeside(level, target))) release();
         if (target == null) {
-            // A tree's own blocks first; a leaf a player set down is the fallback, not the first pick (the owner, 18.11).
-            boolean dug = soilAbout(level);
-            target = find(c, level, sources, site, passed, lavaKept, dug, true);
-            if (target == null) target = find(c, level, sources, site, passed, lavaKept, dug, false);
+            // A leaf a stand serves is cut from it first: the stair the player built is walked up and what is in reach of it
+            // is taken, and no column is raised beside it. A tree's own leaves come before the ones he set down (the owner, 18.11).
+            target = find(c, level, sources, site, passed, lavaKept, false, true, true);
+            if (target == null) target = find(c, level, sources, site, passed, lavaKept, false, false, true);
+            // No leaf a stand serves: a crown above every stand cell is climbed on the soil he carries or digs.
+            if (target == null) target = find(c, level, sources, site, passed, lavaKept, soilAbout(level), true, false);
+            if (target == null) target = find(c, level, sources, site, passed, lavaKept, soilAbout(level), false, false);
         }
         if (target == null) {
             // On his own column nothing else is in reach: the soil comes back before the drops on the ground are walked to.
@@ -472,7 +507,12 @@ final class CompanionPicking {
             String lava = lavaKept.isEmpty() ? "" : " Рядом с лавой " + CompanionWorkItems.blocks(lavaKept.size()) + " — не трогал.";
             // Some gathered: obtain_item plans the rest again (red dye goes on with the tulips once the poppies are out). None: it ends here.
             if (got > 0) { release(); w.finish(CompanionActionResult.failed("Собрал «" + name() + "»: " + got + " из " + wanted + ", " + rest + "." + lava)); return; }
-            end(false, (passed.isEmpty() ? "Рядом не нашёл, где взять «" + name() + "»." : "Вижу, где взять «" + name() + "», но подойти не смог.") + lava);
+            String why = (passed.isEmpty() ? "Рядом не нашёл, где взять «" + name() + "»." : "Вижу, где взять «" + name() + "», но подойти не смог.") + lava;
+            // Leaves he saw but could not come at, with the soil for a column lying about him: the chain is planned again and
+            // digs that soil first (the plan made from where he stood could not see the way to the stair). A blocked end would
+            // give the order up on the spot (the stair he cannot climb, 18.11).
+            if (!passed.isEmpty() && soilAbout(level)) { release(); w.finish(CompanionActionResult.failed(why)); return; }
+            end(false, why);
             return;
         }
         BlockState state = level.getBlockState(target);
@@ -493,16 +533,24 @@ final class CompanionPicking {
             return;
         }
         if (!stands.contains(c.blockPosition())) {
-            // He is on his own column and this block needs the ground: down first, then the walk, not off the edge.
-            if (down()) return;
-            c.workStatus("Иду за: " + name() + ".");
-            if (!walk()) {
+            // He is on his own column and this block needs the ground: down first, then the walk, not off the edge. A column
+            // merely planned is no reason to take it down: the climb to it is what is wanted, and a cleanup would refuse it
+            // this tick (the stair he cannot climb, 18.11).
+            if (!c.temporaryPillar.climbingTo(target) && c.temporaryPillar.hasSupports() && down()) return;
+            if (!walkFailed) {
+                c.workStatus("Иду за: " + name() + ".");
+                if (walk()) return;
                 // A stand he saw but no way to it (a stair behind a wall, a ledge across a gap): up a column of his own if the
                 // soil for one is there, else the leaf is passed over and the next one about is tried (the owner, 18.11).
-                if (climb()) return;
-                passed.add(target);
-                release();
+                // The way to the column's foot is another walk: the legs the failed walk spent are no reason to give the leaf
+                // up before that walk is tried, and the walk to the same stands is not searched again while the climb goes on
+                // (a stair he cannot climb, the owner 18.11).
+                walkFailed = true;
+                legs = waited = 0;
             }
+            if (climb()) return;
+            passed.add(target);
+            release();
             return;
         }
         c.getNavigation().stop();
@@ -555,7 +603,7 @@ final class CompanionPicking {
         due = got; settleAt = 0; retried = false;
     }
 
-    private void release() { target = null; stands = Set.of(); path = null; legs = waited = dived = 0; w.breaking.reset(); w.resetApproach(); }
+    private void release() { target = null; stands = Set.of(); path = null; walkFailed = false; legs = waited = dived = 0; w.breaking.reset(); w.resetApproach(); }
 
     /** A failure ends obtain_item at once with what he says (BLOCKED): planned again, the same ground was looked over twice more. */
     private void end(boolean success, String message) {

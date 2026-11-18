@@ -274,7 +274,8 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             // over dirt he could dig).
             int soil = dev.aicompanion.entity.CompanionLeaves.isLeaf(item)
                     ? dev.aicompanion.entity.CompanionLeaves.soilToDig(companion, level, item) : 0;
-            if (soil > 0) steps.add(new PlannedAction("gather_dirt", 0, soil, ""));
+            // No gather left in the chain (the bag meets the order): the soil for a column is not dug for nothing.
+            if (soil > 0 && !plan.steps().isEmpty()) steps.add(new PlannedAction("gather_dirt", 0, soil, ""));
             for (var step : plan.steps()) steps.add(new PlannedAction(step.type(), 0, step.count(), step.item()));
             steps.add(new PlannedAction("verify_item", 0, action.count(), check));
             return new CompanionPlanRunner.Expansion(java.util.List.copyOf(steps), null);
