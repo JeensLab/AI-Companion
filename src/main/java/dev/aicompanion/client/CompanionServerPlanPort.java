@@ -32,9 +32,10 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     private static final Set<String> TRACKED_WORK = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests",
             "build_house", "craft_item", "place_block", "come", "hunt_mobs", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "collect_smelt", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "use_bone_meal", "compost_meal", "walk_heading", "fill_bucket", "mine_obsidian", "gather_block", "hunt_drop", "build_portal", "build_cobble_gen", "pick_up", "go_to_place", "disenchant_item", "compost_items", "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block", "nether_go", "nether_back");
     private static final Set<String> PARKABLE_WORK = Set.of("smelt_items", "collect_smelt");
-    /** A leaf order's refusals: no leaf of any tree he can come at, or a crown above him that only soil would let him reach. */
+    /** A leaf order's refusals: no leaf of any tree he can come at, a crown above him that only soil would let him reach, or one too high for even a full column. */
     private static final String NO_LEAVES = "Рядом листвы не вижу.";
     private static final String NO_SOIL_FOR_LEAVES = "До листвы не достану — дай земли.";
+    private static final String TOO_HIGH_FOR_A_COLUMN = "До листвы не достану даже со столбом.";
     private static final Queue<Sleeper> SLEEPERS = new ConcurrentLinkedQueue<>();
     private final MinecraftServer server;
     private final UUID playerId;
@@ -243,14 +244,15 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
         return onServer(player -> {
             CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
             if (companion == null) return new CompanionPlanRunner.Expansion(java.util.List.of(), "Компаньон выгружен из мира.");
-            // «Листва» is no item of its own: the leaf block of a tree he can really gather from, whatever species grows here (CompanionLeaves).
+            // The bag that meets the order is the answer whatever tree stands by: sixteen oak leaves beside a spruce are not cut
+            // from the spruce (the owner, 17.11). «Листва» is no item of its own: else the leaf block of a tree he can really
+            // gather from, whatever species grows here (CompanionLeaves).
             net.minecraft.server.level.ServerLevel level = (net.minecraft.server.level.ServerLevel) companion.level();
-            String item = dev.aicompanion.entity.CompanionLeaves.resolve(companion, level, action.item());
-            // No tree he can come at: the leaves already in the bag meet the order as it is (sixteen oak leaves beside no oak).
-            if (item == null) item = dev.aicompanion.entity.CompanionLeaves.inBag(companion, action.count());
-            // Nothing to take and nothing carried: the soil a crown above him asks for, or one short line — never a species he cannot come at.
-            if (item == null) return new CompanionPlanRunner.Expansion(java.util.List.of(),
-                    dev.aicompanion.entity.CompanionLeaves.soilForACrown(companion, level) ? NO_SOIL_FOR_LEAVES : NO_LEAVES);
+            String item = dev.aicompanion.entity.CompanionLeaves.isFamily(action.item())
+                    ? dev.aicompanion.entity.CompanionLeaves.inBag(companion, action.count()) : action.item();
+            if (item == null) item = dev.aicompanion.entity.CompanionLeaves.resolve(companion, level, action.item());
+            // Nothing to take and not enough carried: the reason and the count he holds — never a flat refusal that hides the part he did bring.
+            if (item == null) return new CompanionPlanRunner.Expansion(java.util.List.of(), leavesRefusal(companion, level, action.count()));
             var plan = companion.obtainPlan(item, action.count());
             if (plan.refused()) return new CompanionPlanRunner.Expansion(java.util.List.of(), plan.refusal());
             java.util.List<PlannedAction> steps = new java.util.ArrayList<>();
@@ -258,6 +260,20 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             steps.add(new PlannedAction("verify_item", 0, action.count(), item));
             return new CompanionPlanRunner.Expansion(java.util.List.copyOf(steps), null);
         });
+    }
+
+    /**
+     * Why the leaves cannot be got, with the count he already holds: «У меня 15 из 16 — рядом листвы не вижу.» A leaf order short
+     * of its count names what it did bring, never a flat refusal over a bag that already has most of it (the owner, 17.11).
+     */
+    private static String leavesRefusal(CompanionEntity companion, net.minecraft.server.level.ServerLevel level, int count) {
+        boolean soil = dev.aicompanion.entity.CompanionLeaves.soilForACrown(companion, level);
+        boolean tooHigh = !soil && dev.aicompanion.entity.CompanionLeaves.aboveAnyColumn(companion, level);
+        int have = dev.aicompanion.entity.CompanionLeaves.mostCarried(companion);
+        if (have <= 0) return soil ? NO_SOIL_FOR_LEAVES : tooHigh ? TOO_HIGH_FOR_A_COLUMN : NO_LEAVES;
+        String why = soil ? "до листвы не достану, дай земли."
+                : tooHigh ? "до листвы не достану даже со столбом." : "рядом листвы не вижу.";
+        return "У меня " + have + " из " + count + " — " + why;
     }
 
     @Override public CompletableFuture<Integer> carried(String item) {

@@ -138,6 +138,20 @@ final class CompanionPicking {
         return !(low(c, level, pos) && !standsFor(c, level, pos).isEmpty()) && !c.temporaryPillar.buildCellsWithAnySoil(pos).isEmpty();
     }
 
+    /**
+     * Whether a crown about him is above even the longest column of his own: a leaf of a tree he could come at that neither the
+     * ground reach nor six steps of soil bring within a swing. Said as its height, not as no leaves at all (the owner, 17.11).
+     */
+    static boolean aboveAnyColumn(CompanionEntity c, ServerLevel level) {
+        List<CompanionPickable.Source> all = allowed(level, CompanionPickable.leaves(level));
+        if (all.isEmpty()) return false;
+        Predicate<BlockPos> site = sites(c, level);
+        return CompanionObsidian.nearest(c, level, DEPTH, state -> gives(all, state) > 0, pos ->
+                c.errand.within(pos) && takes(level, pos, site) && grounded(c, level, pos) && !lavaBeside(level, pos)
+                && !(low(c, level, pos) && !standsFor(c, level, pos).isEmpty())
+                && c.temporaryPillar.buildCellsWithAnySoil(pos).isEmpty()) != null;
+    }
+
     /** What is taken in this dimension: the overworld's own, not the Nether's stone (put there by the player), in the Nether only that stone, nothing elsewhere. */
     private static List<CompanionPickable.Source> allowed(ServerLevel level, List<CompanionPickable.Source> all) {
         if (level.dimension() == Level.OVERWORLD) return all.stream().filter(source -> !CompanionPickable.nether(source.block())).toList();

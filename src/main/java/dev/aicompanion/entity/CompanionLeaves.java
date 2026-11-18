@@ -42,12 +42,24 @@ public final class CompanionLeaves {
      * no tree, and its answer is that count (the owner, 17.11: sixteen oak leaves in the bag, «добудь листву» refused).
      */
     public static String inBag(CompanionEntity c, int count) {
+        return carried(c).entrySet().stream().filter(entry -> entry.getValue() >= count)
+                .max(java.util.Map.Entry.comparingByValue()).map(java.util.Map.Entry::getKey).orElse(null);
+    }
+
+    /**
+     * How many leaves of one kind he carries, the most of any: an order short of its count answers with it («У меня 15 из 16»),
+     * never with a flat refusal that hides the part of the order he did bring.
+     */
+    public static int mostCarried(CompanionEntity c) {
+        return carried(c).values().stream().mapToInt(Integer::intValue).max().orElse(0);
+    }
+
+    private static java.util.Map<String, Integer> carried(CompanionEntity c) {
         java.util.Map<String, Integer> carried = new java.util.LinkedHashMap<>();
         for (int slot = 0; slot < c.getContainerSize(); slot++) add(carried, c.getItem(slot));
         add(carried, c.getMainHandItem());
         add(carried, c.getOffhandItem());
-        return carried.entrySet().stream().filter(entry -> entry.getValue() >= count)
-                .max(java.util.Map.Entry.comparingByValue()).map(java.util.Map.Entry::getKey).orElse(null);
+        return carried;
     }
 
     private static void add(java.util.Map<String, Integer> carried, ItemStack stack) {
@@ -58,5 +70,10 @@ public final class CompanionLeaves {
     /** Whether the leaves are there but the soil is not: a crown above every stand cell that a short column of his would reach. */
     public static boolean soilForACrown(CompanionEntity c, ServerLevel level) {
         return CompanionPicking.soilForACrown(c, level);
+    }
+
+    /** Whether the leaves are above even the longest column of his: not out of reach for want of soil, but too high to climb to. */
+    public static boolean aboveAnyColumn(CompanionEntity c, ServerLevel level) {
+        return CompanionPicking.aboveAnyColumn(c, level);
     }
 }

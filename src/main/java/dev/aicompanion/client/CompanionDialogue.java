@@ -295,9 +295,10 @@ public final class CompanionDialogue {
         // its mood number and its file name, and nothing else. Said as it is, not through the generic step summary.
         if (actions.stream().allMatch(action -> "campfire_song".equals(action.type()))) return speakable(report);
         // A leaf order answers with what it brought; the step that wears the shears at its end is bookkeeping, not the answer.
-        if (isLeafOrder(actions)) return leafReport(report);
+        if (isLeafOrder(actions)) return leafReport(actions, report);
         // The equip step of a plan is bookkeeping too: «Уже экипирован» answers a standalone order, not a plan that did other work.
-        if (actions.size() > 1) report = withoutEquipmentLines(report);
+        // With nothing else done than a part given up, the hand that took the tool is the only thing that happened: it is said.
+        if (actions.size() > 1 && !onlyEquipmentHappened(report)) report = withoutEquipmentLines(report);
         String skipped = "";
         int marker = report.lastIndexOf(SKIPPED_PREFIX);
         if (marker >= 0 && (marker == 0 || report.charAt(marker - 1) == '\n')) {
@@ -306,13 +307,16 @@ public final class CompanionDialogue {
         }
         String failed = actions.stream().anyMatch(CompanionDialogue::isGoalAction) ? "" : failedParts(report);
         if (!failed.isEmpty()) {
+            // What really happened besides the parts given up: the tool taken in hand after them, when that is all there was.
+            String did = speakable(String.join("\n", equipmentLines(report)));
+            String lead = did.isEmpty() ? "" : did + " ";
             // Parts given up while the rest went on: the player hears what was not made and why, once, not the steps that went with it.
-            if (!report.contains("План остановлен:")) return "Остальное сделал. " + failed;
+            if (!report.contains("План остановлен:")) return did.isEmpty() ? "Остальное сделал. " + failed : lead + failed;
             // The plan stopped on the last part given up (same reason on the line before the stop): it is one «Не вышло», said once.
-            if (stoppedOnLastPart(report)) return failed;
+            if (stoppedOnLastPart(report)) return lead + failed;
             String lower = report.toLowerCase(java.util.Locale.ROOT);
             String stopped = summarizeSteps(actions, report);
-            return lower.contains("отменён") || lower.contains("остановки") ? stopped : stopped + " " + failed;
+            return lead + (lower.contains("отменён") || lower.contains("остановки") ? stopped : stopped + " " + failed);
         }
         String spoken = summarizeSteps(actions, report);
         // Unstarted steps remain visible in Tasks. Reading them aloud turns one problem into a roll call.
@@ -337,14 +341,17 @@ public final class CompanionDialogue {
      * What a leaf order brought: the count that really landed in the bag, not the step that wore the shears. The bag check's
      * own line («Готово: «…» у меня, N шт.») is what the bag holds after the order — carried and gathered together, so ten
      * carried and six cut answer for sixteen of sixteen, and an order the bag already met answers with that count alone.
-     * With none: the soil a crown above him asks for, or the one short line.
+     * A part of the count is said with it («Собрал 6 из 16 — больше рядом нет»), and an order short of what the bag holds names
+     * that count («У меня 15 из 16 — рядом листвы не вижу»): the numbers are never hidden behind a flat refusal.
      */
-    private static String leafReport(String report) {
+    private static String leafReport(List<PlannedAction> actions, String report) {
+        int requested = requestedLeaves(actions);
         int got = 0;
+        String tail = "";
         var gather = Pattern.compile("Собрал: «[^»]*», (\\d+) шт\\.").matcher(report);
         while (gather.find()) got += Integer.parseInt(gather.group(1));
-        var partial = Pattern.compile("Собрал «[^»]*»: (\\d+) из (\\d+)").matcher(report);
-        while (partial.find()) got += Integer.parseInt(partial.group(1));
+        var partial = Pattern.compile("Собрал «[^»]*»: (\\d+) из (\\d+), ([^.]*)\\.").matcher(report);
+        while (partial.find()) { got += Integer.parseInt(partial.group(1)); tail = partial.group(3); }
         var checked = Pattern.compile("Готово: «[^»]*» у меня, (\\d+) шт\\.").matcher(report);
         String bagLine = null;
         int inBag = 0;
@@ -354,14 +361,27 @@ public final class CompanionDialogue {
         }
         if (got > 0) {
             int total = Math.max(got, inBag);
-            return "Собрал " + total + " " + leavesWord(total) + ".";
+            if (requested <= 0 || total >= requested) return "Собрал " + total + " " + leavesWord(total) + ".";
+            return "Собрал " + total + " из " + requested + (tail.isEmpty() ? "" : " — " + tail) + ".";
         }
         if (bagLine != null) return bagLine;
+        // An order short of its count answers with what the bag holds, as the refusal itself named it.
+        String failure = dev.aicompanion.CompanionFailureMessages.primary(report);
+        if (COUNTED_REFUSAL.matcher(failure).find()) return speakable(failure);
+        if (report.contains("даже со столбом")) return "До листвы не достану даже со столбом.";
         if (report.contains("До листвы не достану")) return "До листвы не достану — дай земли.";
         if (report.contains("Рядом листвы не вижу")) return "Рядом листвы не вижу.";
-        String failure = dev.aicompanion.CompanionFailureMessages.primary(report);
         if (failure.contains("не нашёл") || failure.contains("не вижу")) return "Листвы рядом не нашёл.";
         return report.contains("План остановлен:") ? speakable(failure) : "Листвы рядом не нашёл.";
+    }
+
+    /** «У меня 15 из 16 — …»: a refusal that already carries the count of the order and what the bag holds. */
+    private static final Pattern COUNTED_REFUSAL = Pattern.compile("^У меня \\d+ из \\d+ — ");
+
+    /** The count the leaf order asked for; 0 when it asked for everything carried. */
+    private static int requestedLeaves(List<PlannedAction> actions) {
+        return actions.stream().filter(action -> "obtain_item".equals(action.type()) && dev.aicompanion.entity.CompanionLeaves.isFamily(action.item()))
+                .mapToInt(PlannedAction::count).findFirst().orElse(0);
     }
 
     /** «лист», «листа», «листьев»: how a Russian player counts leaves. */
@@ -372,9 +392,32 @@ public final class CompanionDialogue {
     }
 
     /** The success lines of an equip step: «Уже экипирован», «Взял в правую руку», «Надел», «Убрал в сумку». */
+    private static boolean isEquipmentLine(String line) {
+        return line.startsWith("Уже экипирован: ") || line.startsWith("Взял в ") || line.startsWith("Надел: ") || line.startsWith("Убрал в сумку: ");
+    }
+
+    private static List<String> equipmentLines(String report) {
+        return java.util.Arrays.stream(report.split("\n")).filter(CompanionDialogue::isEquipmentLine).toList();
+    }
+
+    /**
+     * Whether nothing but the hand taking a tool happened after a part was given up: every other line is a part given up, a stop
+     * or a step not started. Such a plan says the tool it took — the one thing that came of it — instead of leaving it out.
+     */
+    private static boolean onlyEquipmentHappened(String report) {
+        boolean equipment = false, gaveUp = false;
+        for (String line : report.split("\n")) {
+            if (line.isBlank()) continue;
+            if (isEquipmentLine(line)) { equipment = true; continue; }
+            if (!line.startsWith(PARTIAL_PREFIX) && !line.startsWith("План остановлен:") && !line.startsWith(SKIPPED_PREFIX)) return false;
+            gaveUp = true;
+        }
+        return equipment && gaveUp;
+    }
+
     private static String withoutEquipmentLines(String report) {
         return java.util.Arrays.stream(report.split("\n"))
-                .filter(line -> !line.startsWith("Уже экипирован: ") && !line.startsWith("Взял в ") && !line.startsWith("Надел: ") && !line.startsWith("Убрал в сумку: "))
+                .filter(line -> !isEquipmentLine(line))
                 .collect(java.util.stream.Collectors.joining("\n"));
     }
 
