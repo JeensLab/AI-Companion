@@ -194,6 +194,27 @@ public final class CompanionGatherBlockTests {
     }
 
     /**
+     * «Добудь 2 травы» with shears in his other hand: grass is no tool's block and comes down at once, yet shears wear on every
+     * block they cut but fire, as a player's do — one for each tuft — and the tufts land in the bag as themselves, not as the seeds
+     * a hand would shake out. A real harvest path, not the wear helper: the shears in his hand are the ones the plan puts there.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 800)
+    public static void grassIsCutWithShearsAndTheyWear(GameTestHelper h) {
+        ground(h);
+        h.setBlock(new BlockPos(14, GROUND + 1, 16), Blocks.SHORT_GRASS);
+        h.setBlock(new BlockPos(13, GROUND + 1, 18), Blocks.SHORT_GRASS);
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItemSlot(net.minecraft.world.entity.EquipmentSlot.OFFHAND, new ItemStack(Items.SHEARS));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:short_grass\",\"count\":2}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.SHORT_GRASS) == 2, "Not two tufts: " + count(c, Items.SHORT_GRASS) + ", " + report);
+            h.assertTrue(wear(c, Items.SHEARS) == 2, "Shears worn by " + wear(c, Items.SHEARS) + ", not by the two tufts");
+        });
+    }
+
+    /**
      * The crown is cut block after block: the leaf after the first one comes down while the first one's drop still lies on the
      * ground, so the pickup comes after the cutting and not between two leaves.
      */
@@ -533,10 +554,11 @@ public final class CompanionGatherBlockTests {
             String report = future.join().report();
             h.assertTrue(count(c, Items.TUBE_CORAL) == 1 && count(c, Items.TUBE_CORAL_FAN) == 1,
                     "The coral or its fan did not land in the bag: coral " + count(c, Items.TUBE_CORAL) + ", fan " + count(c, Items.TUBE_CORAL_FAN) + ", " + report);
-            // Both are instabreak plants — hardness zero — so neither takes wear, as a player's tool does not; the silk block
-            // in the bag is what proves the tool broke it.
-            h.assertTrue(wear(c, Items.SHEARS) + wear(c, Items.WOODEN_PICKAXE) == 0,
-                    "The silk tools wore on the coral: shears " + wear(c, Items.SHEARS) + ", pickaxe " + wear(c, Items.WOODEN_PICKAXE) + ", " + report);
+            // Both are instabreak plants, yet shears wear on every block they cut but fire, as a player's do: the silk tie-break
+            // puts them in his hand for both, so they wear on both, while the pickaxe — no faster, no wear on hardness zero — does
+            // not; the silk block in the bag is what proves the tool broke it.
+            h.assertTrue(wear(c, Items.SHEARS) >= 2, "The shears did not wear on both plants: shears " + wear(c, Items.SHEARS) + ", " + report);
+            h.assertTrue(wear(c, Items.WOODEN_PICKAXE) == 0, "The pickaxe wore on the plants: " + wear(c, Items.WOODEN_PICKAXE) + ", " + report);
         });
     }
 
