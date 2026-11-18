@@ -184,7 +184,7 @@ public final class CompanionDialogue {
                 yield "развести " + (animal == null ? "животных" : animal.many) + " (пар: " + action.count() + ")";
             }
             case "scout_traders" -> "обойти торговцев и узнать их сделки";
-            case "trade_items" -> "обменяться с торговцем (одна сделка)";
+            case "trade_items" -> "обменяться с торговцем";
             case "farm_crops" -> {
                 var crop = dev.aicompanion.entity.CompanionCrops.Kind.of(action.item());
                 yield "посадить " + (crop == null ? "культуру" : crop.plant) + " (грядок: " + action.count() + ")";

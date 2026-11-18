@@ -49,6 +49,14 @@ public final class CompanionTraderTradeTests {
     public static void after6(net.minecraft.server.level.ServerLevel level) { CompanionTraderTests.afterVillagers(level); }
     @net.minecraft.gametest.framework.AfterBatch(batch = "trade7")
     public static void after7(net.minecraft.server.level.ServerLevel level) { CompanionTraderTests.afterVillagers(level); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "trade8")
+    public static void after8(net.minecraft.server.level.ServerLevel level) { CompanionTraderTests.afterVillagers(level); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "trade9")
+    public static void after9(net.minecraft.server.level.ServerLevel level) { CompanionTraderTests.afterVillagers(level); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "trade10")
+    public static void after10(net.minecraft.server.level.ServerLevel level) { CompanionTraderTests.afterVillagers(level); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "trade11")
+    public static void after11(net.minecraft.server.level.ServerLevel level) { CompanionTraderTests.afterVillagers(level); }
 
     private static final String ARROWS = "[{\"action\":\"trade_items\",\"item\":\"minecraft:arrow\"}]";
 
@@ -169,6 +177,70 @@ public final class CompanionTraderTradeTests {
         });
     }
 
+    /** "Buy 10 arrows" at one emerald for four arrows: three trades (the last one whole, rounded up), twelve arrows, two emeralds left. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3600, batch = "trade8")
+    public static void aNumberOfPiecesRepeatsTheDealRoundedUp(GameTestHelper h) {
+        ground(h);
+        Villager fletcher = trader(h, VillagerProfession.FLETCHER, 14, 12, arrowsForEmerald(5));
+        CompanionEntity companion = spawn(h, 10, 16);
+        companion.setItem(0, new ItemStack(Items.EMERALD, 5));
+        var future = run(h, companion, "[{\"action\":\"trade_items\",\"item\":\"minecraft:arrow\",\"count\":10}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + companion.getLastTaskResult());
+            h.assertTrue(future.join().skipped().isEmpty(), future.join().report());
+            h.assertTrue(count(companion, Items.ARROW) == 12 && count(companion, Items.EMERALD) == 2 && fletcher.getOffers().getFirst().getUses() == 3,
+                    "Arrows " + count(companion, Items.ARROW) + ", emeralds " + count(companion, Items.EMERALD) + " | " + future.join().report());
+        });
+    }
+
+    /** The first fletcher has one use left; a second one has the same deal: the rest is had from him. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3600, batch = "trade9")
+    public static void whenOneDealRunsOutTheNextTraderWithTheSameDealIsUsed(GameTestHelper h) {
+        ground(h);
+        Villager first = trader(h, VillagerProfession.FLETCHER, 14, 12, arrowsForEmerald(5, 1));
+        Villager second = trader(h, VillagerProfession.FLETCHER, 20, 20, arrowsForEmerald(5, 3));
+        CompanionEntity companion = spawn(h, 10, 16);
+        companion.setItem(0, new ItemStack(Items.EMERALD, 5));
+        var future = run(h, companion, "[{\"action\":\"trade_items\",\"item\":\"minecraft:arrow\",\"count\":8}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + companion.getLastTaskResult());
+            h.assertTrue(count(companion, Items.ARROW) == 8 && first.getOffers().getFirst().getUses() == 1 && second.getOffers().getFirst().getUses() == 1,
+                    "Arrows " + count(companion, Items.ARROW) + ", uses " + first.getOffers().getFirst().getUses() + "/" + second.getOffers().getFirst().getUses() + " | " + future.join().report());
+        });
+    }
+
+    /** "Sell the wheat" with no number: wheat goes while the farmer's limit lasts (two deals of twenty), ten is left, and the report says it was the limit. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3600, batch = "trade10")
+    public static void aSaleWithNoNumberGivesAwayWhatTheLimitTakes(GameTestHelper h) {
+        ground(h);
+        Villager farmer = trader(h, VillagerProfession.FARMER, 14, 12, new MerchantOffer(new ItemCost(Items.WHEAT, 20), Optional.empty(), new ItemStack(Items.EMERALD), 2, 2, 0f));
+        CompanionEntity companion = spawn(h, 10, 16);
+        companion.setItem(0, new ItemStack(Items.WHEAT, 50));
+        var future = run(h, companion, "[{\"action\":\"trade_items\",\"item\":\"minecraft:emerald\",\"pay\":\"minecraft:wheat\"}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + companion.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(companion, Items.EMERALD) == 2 && count(companion, Items.WHEAT) == 10 && farmer.getOffers().getFirst().getUses() == 2 && report.contains("лимит"),
+                    "Emeralds " + count(companion, Items.EMERALD) + ", wheat " + count(companion, Items.WHEAT) + " | " + report);
+        });
+    }
+
+    /** The price runs out half way: two emeralds, ten arrows asked: eight arrows, and the report says 8 of 10 and why. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3600, batch = "trade11")
+    public static void whenThePriceRunsOutTheReportSaysHowFarItGot(GameTestHelper h) {
+        ground(h);
+        Villager fletcher = trader(h, VillagerProfession.FLETCHER, 14, 12, arrowsForEmerald(5));
+        CompanionEntity companion = spawn(h, 10, 16);
+        companion.setItem(0, new ItemStack(Items.EMERALD, 2));
+        var future = run(h, companion, "[{\"action\":\"trade_items\",\"item\":\"minecraft:arrow\",\"count\":10}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + companion.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(companion, Items.ARROW) == 8 && count(companion, Items.EMERALD) == 0 && fletcher.getOffers().getFirst().getUses() == 2
+                    && report.contains("8 из 10") && report.contains("плата"), "Arrows " + count(companion, Items.ARROW) + " | " + report);
+        });
+    }
+
     /** Every wrong field spoils the whole plan: an unknown item or enchantment, a level out of range, a flag that is no flag, a profession that does not exist, no item. */
     @GameTest(template = "empty")
     public static void theTradeStepIsCheckedByTheCodec(GameTestHelper h) {
@@ -194,7 +266,7 @@ public final class CompanionTraderTradeTests {
         CompanionEntity companion = spawn(h, 4, 4);
         companion.setItem(0, new ItemStack(Items.EMERALD, 2));
         var player = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
-        h.assertTrue(CompanionEvents.executeAction(player, "trade_items", new dev.aicompanion.entity.CompanionTradeOrder("minecraft:arrow", "", 0, "", "", false).pack(), 1).success(), "Not accepted");
+        h.assertTrue(CompanionEvents.executeAction(player, "trade_items", new dev.aicompanion.entity.CompanionTradeOrder("minecraft:arrow", "", 0, "", "", false, 0).pack(), 1).success(), "Not accepted");
         h.runAfterDelay(30, () -> {
             h.assertTrue(companion.isWorking(), "Finished before the stop");
             companion.stopGathering();
@@ -206,8 +278,10 @@ public final class CompanionTraderTradeTests {
         });
     }
 
-    private static MerchantOffer arrowsForEmerald(int xp) {
-        return new MerchantOffer(new ItemCost(Items.EMERALD), Optional.empty(), new ItemStack(Items.ARROW, 4), 3, xp, 0f);
+    private static MerchantOffer arrowsForEmerald(int xp) { return arrowsForEmerald(xp, 3); }
+
+    private static MerchantOffer arrowsForEmerald(int xp, int maxUses) {
+        return new MerchantOffer(new ItemCost(Items.EMERALD), Optional.empty(), new ItemStack(Items.ARROW, 4), maxUses, xp, 0f);
     }
 
     private static Villager freshFletcher(GameTestHelper h, int x, int z) {

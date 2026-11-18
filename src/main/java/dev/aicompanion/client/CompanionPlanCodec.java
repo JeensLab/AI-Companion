@@ -185,7 +185,8 @@ public final class CompanionPlanCodec {
                 int seconds = step.has("seconds") ? step.get("seconds").getAsBigDecimal().intValueExact() : 5;
                 // obtain_item may ask for a few stacks («два стака», «добудь 500 листвы»): its chain splits them into steps of a
                 // stack each, and the plan carries the order in the same steps below.
-                int most = "obtain_item".equals(type) ? dev.aicompanion.entity.CompanionWork.MAX_LEAVES : 64;
+                int most = "obtain_item".equals(type) ? dev.aicompanion.entity.CompanionWork.MAX_LEAVES
+                        : "trade_items".equals(type) ? dev.aicompanion.entity.CompanionTradeOrder.MAX_COUNT : 64;
                 if ("walk_heading".equals(type) ? count < 0 || count > dev.aicompanion.entity.CompanionCourse.MAX_BLOCKS : count < 1 || count > most) throw invalid();
                 // "Smelt the iron" names no number: all of it, not a single piece (game log 22.10).
                 if ("smelt_items".equals(type) && !step.has("count")) count = PlannedAction.ALL_CARRIED;

@@ -17,10 +17,13 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * trade_items, one trade: the trader is chosen among the live ones within {@link CompanionScouting#RADIUS} blocks (fixed in his trade
+ * trade_items: the trader is chosen among the live ones within {@link CompanionScouting#RADIUS} blocks (fixed in his trade
  * before fresh, cheaper, nearer), walked up to within a hand's reach, and the deal is made for real: the price (the deal's own, no
  * player's discounts) leaves the bag, the deal is used once, the villager gets his experience, and the goods are dropped by him and
  * picked up like a harvest. A fresh villager is traded with only on the player's word: the first deal fixes his goods.
+ * The deal is repeated as the order counts (pieces of the goods; for a sale the pieces of what he gives; the last trade whole; no number
+ * is one trade, or for a sale everything of it he has): with the same trader while his deal lasts, then with the next one with the same
+ * deal. It stops when the count is reached, the price is gone, the bag will not take the goods, or no deal is left; the report says which.
  */
 final class CompanionTrading {
     /** Three minutes to get to a trader. */
@@ -38,10 +41,11 @@ final class CompanionTrading {
     private final List<UUID> queue = new ArrayList<>();
     private UUID current;
     private long startedAt, lookUntil;
-    private boolean paid;
-    private int bagBefore;
-    private String report = "", lastReason = "";
-    private ItemStack goods = ItemStack.EMPTY;
+    private boolean paid, bagFull;
+    private int bagBefore, trades, done, units;
+    /** Why this trader was let go: the full refusal when nothing was traded, the short reason for the report when something was. */
+    private String lastReason = "", lastWhy = "";
+    private ItemStack goods = ItemStack.EMPTY, paidA = ItemStack.EMPTY, paidB = ItemStack.EMPTY, gotGoods = ItemStack.EMPTY;
 
     CompanionTrading(CompanionWork w) { this.w = w; walk = new CompanionTraderWalk(w); }
 
@@ -85,8 +89,8 @@ final class CompanionTrading {
 
     void cancel() {
         if (current != null || !queue.isEmpty()) w.route.stop();
-        queue.clear(); current = null; order = null; paid = false; report = lastReason = ""; goods = ItemStack.EMPTY;
-        startedAt = lookUntil = 0; bagBefore = 0;
+        queue.clear(); current = null; order = null; paid = bagFull = false; lastReason = lastWhy = ""; goods = paidA = paidB = gotGoods = ItemStack.EMPTY;
+        startedAt = lookUntil = 0; bagBefore = trades = done = units = 0;
         walk.end();
     }
 
@@ -94,16 +98,24 @@ final class CompanionTrading {
         long now = level.getGameTime();
         if (startedAt == 0) startedAt = now;
         // The trade is made and the goods are being picked up (the work waits while they lie): count what came.
-        if (paid) { finishAfterPickup(); return; }
-        if (now - startedAt > LIMIT) { w.finish(false, "Не добрался до торговца: слишком долго."); return; }
+        if (paid) { afterPickup(level, now); return; }
+        if (now - startedAt > LIMIT) {
+            if (trades > 0) finishTrades(level, "долго шёл к торговцу");
+            else w.finish(false, "Не добрался до торговца: слишком долго.");
+            return;
+        }
         if (current == null) {
-            if (queue.isEmpty()) { w.finish(false, lastReason.isEmpty() ? "Не дотянулся до торговца." : lastReason); return; }
+            if (queue.isEmpty()) {
+                if (trades > 0) finishTrades(level, lastWhy.isEmpty() ? "других с такой сделкой нет" : lastWhy);
+                else w.finish(false, lastReason.isEmpty() ? "Не дотянулся до торговца." : lastReason);
+                return;
+            }
             current = queue.removeFirst(); walk.begin(now); lookUntil = 0;
         }
         if (!(level.getEntity(current) instanceof AbstractVillager trader) || !trader.isAlive()) { next(); return; }
-        if (trader.isSleeping()) { lastReason = "Торговец спит, сходим утром."; next(); return; }
+        if (trader.isSleeping()) { lastReason = "Торговец спит, сходим утром."; lastWhy = "торговец спит"; next(); return; }
         if (!walk.inReach(trader)) {
-            if (walk.approach(level, trader, now) == CompanionTraderWalk.Step.GAVE_UP) next();
+            if (walk.approach(level, trader, now) == CompanionTraderWalk.Step.GAVE_UP) { lastWhy = "не дотянулся до торговца"; next(); }
             return;
         }
         w.route.stop();
@@ -119,18 +131,24 @@ final class CompanionTrading {
 
     /** Looked at the trader long enough: the deal as it is now is checked again and made, or this trader is let go with a reason. */
     private void trade(ServerLevel level, AbstractVillager trader) {
-        if (trader.isTrading()) { lastReason = BUSY; next(); return; }
+        if (trader.isTrading()) { lastReason = BUSY; lastWhy = "торговец занят"; next(); return; }
         List<MerchantOffer> inStock = matching(trader).stream().filter(offer -> !offer.isOutOfStock()).toList();
-        if (inStock.isEmpty()) { lastReason = OUT; next(); return; }
+        if (inStock.isEmpty()) { lastReason = OUT; lastWhy = "лимит сделки кончился, других с такой сделкой нет"; next(); return; }
         MerchantOffer offer = cheapest(inStock);
         Candidate shortage = candidate(level, trader, offer, fresh(trader));
-        if (shortage.missing() > 0) { lastReason = "Не хватает платы: " + shortage.missingText() + "."; next(); return; }
+        if (shortage.missing() > 0) {
+            lastReason = "Не хватает платы: " + shortage.missingText() + ".";
+            // The bag is the same for every trader: with a trade made, the price is simply gone, and the rest of the line is not walked.
+            if (trades > 0) { queue.clear(); lastWhy = "плата кончилась"; }
+            next(); return;
+        }
         ItemStack costA = offer.getCostA(), costB = offer.getCostB(), result = offer.getResult().copy();
-        List<String> prices = new ArrayList<>(List.of(CompanionScouting.text(level, CompanionTraders.stack(costA))));
+        units = order.sale() ? (pays(costA) ? costA : costB).getCount() : 0;
         w.items.takeCarried(offer.getItemCostA()::test, costA.getCount());
+        paidA = add(paidA, costA);
         if (!costB.isEmpty() && offer.getItemCostB().isPresent()) {
             w.items.takeCarried(offer.getItemCostB().get()::test, costB.getCount());
-            prices.add(CompanionScouting.text(level, CompanionTraders.stack(costB)));
+            paidB = add(paidB, costB);
         }
         // The deal is used and the villager gets his experience and level as the game gives them; notifyTrade is not called (it announces a trade with no player).
         offer.increaseUses();
@@ -142,9 +160,8 @@ final class CompanionTrading {
         throwGoods(level, trader, result);
         w.owner.traders().remember(trader, level);
         w.owner.refreshTraders();
-        String kind = kind(trader);
-        report = "Обменял " + String.join(" и ", prices) + " на " + CompanionScouting.text(level, CompanionTraders.stack(result)) + " (торговец: "
-                + CompanionScouting.profession(kind).toLowerCase(java.util.Locale.ROOT) + ").";
+        gotGoods = add(gotGoods, result);
+        trades++;
         paid = true;
         w.route.stop();
     }
@@ -159,10 +176,26 @@ final class CompanionTrading {
         if (level.addFreshEntity(drop)) w.owner.claimDrops(List.of(drop));
     }
 
-    private void finishAfterPickup() {
+    /** The goods are in the bag (or could not be): the order is done, or goes on with the same trader (his deal may still hold). */
+    private void afterPickup(ServerLevel level, long now) {
         int got = w.items.countCarried(goods.getItem()) - bagBefore;
-        w.finish(true, got >= goods.getCount() ? report : report + " Товар подобрать не вышло: он лежит рядом.");
+        done += order.sale() ? units : got;
+        if (got < goods.getCount()) { bagFull = true; finishTrades(level, "сумка полна, товар лежит рядом"); return; }
+        if (order.count() > 0 ? done >= order.count() : !order.sale()) { finishTrades(level, ""); return; }
+        paid = false; lookUntil = now;
     }
+
+    /** The honest end of a trade order: what was traded for what, and, when the number was not reached or none was named, why it stopped. */
+    private void finishTrades(ServerLevel level, String why) {
+        String paidText = List.of(paidA, paidB).stream().filter(stack -> !stack.isEmpty()).map(stack -> CompanionScouting.text(level, CompanionTraders.stack(stack))).collect(java.util.stream.Collectors.joining(" и "));
+        String goodsText = CompanionScouting.text(level, CompanionTraders.stack(gotGoods));
+        String base = order.sale() ? "Продал " + paidText + " за " + goodsText : "Купил " + goodsText + " за " + paidText;
+        boolean reached = order.count() == 0 || done >= order.count();
+        String message = base + (order.count() > 0 && done < order.count() ? ", это " + done + " из " + order.count() : "") + (why.isEmpty() ? "." : ": " + why + ".");
+        w.finish(reached && !bagFull, message);
+    }
+
+    private static ItemStack add(ItemStack sum, ItemStack more) { return sum.isEmpty() ? more.copy() : sum.copyWithCount(sum.getCount() + more.getCount()); }
 
     // ---- choosing ----
 
