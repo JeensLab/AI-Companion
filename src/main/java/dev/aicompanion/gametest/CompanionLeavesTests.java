@@ -232,11 +232,12 @@ public final class CompanionLeavesTests {
     }
 
     /**
-     * The same tall crown and nothing to stand on: no soil in the bag, no other tree's leaves about. He cannot build up, so
-     * the order is refused in the short line — no species he could not come at, nothing gathered, no soil invented.
+     * The owner's tall crown and nothing to stand on: no soil in the bag, no other tree's leaves about. He cannot build up, so
+     * the order is refused naming the soil he lacks — not «Рядом листвы не вижу» for a crown that stands right over him —
+     * nothing gathered, no soil invented.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 3000)
-    public static void aCrownAboveReachWithoutSoilIsRefusedShort(GameTestHelper h) {
+    public static void aCrownAboveReachWithoutSoilNamesTheSoil(GameTestHelper h) {
         ground(h);
         BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
         for (int up = 0; up < 5; up++) h.setBlock(trunk.above(up), Blocks.SPRUCE_LOG);
@@ -254,9 +255,38 @@ public final class CompanionLeavesTests {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
             String report = future.join().report();
             String said = dev.aicompanion.client.CompanionDialogue.summarize(plan, report);
-            h.assertTrue(said.equals("Рядом листвы не вижу."), "Not the short line: " + said + ", " + report);
+            h.assertTrue(said.equals("До листвы не достану — дай земли."), "Not the soil line: " + said + ", " + report);
+            h.assertTrue(!said.contains("Рядом листвы не вижу"), "The short line came back for a crown overhead: " + said);
             h.assertTrue(count(c, Items.SPRUCE_LEAVES) == 0, "A leaf was gathered out of reach: " + report);
             h.assertTrue(supports[0] == 0 && dirtAboveGround(h) == 0, "A column was built without soil");
+        });
+    }
+
+    /**
+     * A given-up obtain takes the shears step with it: nothing was cut, so they stay in the bag and their own line does not
+     * speak over the chain's reason — the reason itself is the answer.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void aGivenUpObtainDoesNotWearTheShears(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
+        for (int up = 0; up < 5; up++) h.setBlock(trunk.above(up), Blocks.SPRUCE_LOG);
+        var leaves = Blocks.SPRUCE_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = 5; dy <= 6; dy++)
+            h.setBlock(trunk.offset(dx, dy, dz), leaves);
+        CompanionEntity c = withTheOwnersTools(h);
+        String command = CompanionLocalCommands.route("добудь листву", "Олег");
+        h.assertTrue(command != null, "«добудь листву» went to the model");
+        List<PlannedAction> plan = CompanionLocalCommands.actions(command);
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-leaves-crown-wear", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            String said = dev.aicompanion.client.CompanionDialogue.summarize(plan, report);
+            h.assertTrue(!report.contains("Уже экипирован") && !report.contains("Взял в правую руку"),
+                    "The equip step ran after the obtain was given up: " + report);
+            h.assertTrue(c.getMainHandItem().is(Items.STONE_PICKAXE), "The shears were worn for nothing: " + c.getMainHandItem() + ", " + report);
+            h.assertTrue(said.equals("До листвы не достану — дай земли."), "The chain's reason was not spoken: " + said + ", " + report);
         });
     }
 
@@ -284,13 +314,12 @@ public final class CompanionLeavesTests {
         });
     }
 
-    /** No reachable leaf of any tree: one short line, «листву» and no species he could not come at. */
+    /** No leaf of any tree at all: one short line, «листву» and no species he could not come at. */
     @GameTest(template = "tall_tree", timeoutTicks = 3000)
     public static void noReachableLeafIsRefusedShortWithoutASpecies(GameTestHelper h) {
         ground(h);
         BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
         for (int up = 0; up < 6; up++) h.setBlock(trunk.above(up), Blocks.SPRUCE_LOG);
-        h.setBlock(trunk.above(5).west(), Blocks.SPRUCE_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1));
         CompanionEntity c = withTheOwnersTools(h);
         String command = CompanionLocalCommands.route("добудь листву", "Олег");
         h.assertTrue(command != null, "«добудь листву» went to the model");
@@ -304,6 +333,77 @@ public final class CompanionLeavesTests {
             h.assertTrue(!said.contains("Остальное сделал") && !said.contains("Еловая") && !said.contains("Дубовая"), "Species or the old prefix: " + said);
             h.assertTrue(count(c, Items.SPRUCE_LEAVES) == 0, "A leaf was gathered out of reach: " + report);
         });
+    }
+
+    /**
+     * The owner's bag (17.11): sixteen oak leaves already in it beside an oak. «Добудь листву» cuts nothing — the bag meets
+     * the order, the check passes, and the answer is that count («Готово: «Oak Leaves» у меня, 16 шт.»), not «Листвы рядом
+     * не нашёл.»
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void anOrderTheBagAlreadyMeetsAnswersItsCount(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
+        for (int up = 0; up < 3; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        for (BlockPos cell : List.of(trunk.above(2).west(), trunk.above(2).east(), trunk.above(3).north(), trunk.above(3).south()))
+            h.setBlock(cell, leaves);
+        CompanionEntity c = withTheOwnersTools(h);
+        c.setItem(4, new ItemStack(Items.OAK_LEAVES, 16));
+        String command = CompanionLocalCommands.route("добудь листву", "Олег");
+        h.assertTrue(command != null, "«добудь листву» went to the model");
+        List<PlannedAction> plan = CompanionLocalCommands.actions(command);
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-leaves-bag", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            String said = dev.aicompanion.client.CompanionDialogue.summarize(plan, report);
+            h.assertTrue(report.contains("Готово: «Oak Leaves» у меня, 16 шт."), "The bag was not checked: " + report);
+            h.assertTrue(said.equals("Готово: «Oak Leaves» у меня, 16 шт."), "Not the honest count: " + said + ", " + report);
+            h.assertTrue(!said.contains("не нашёл") && !said.contains("не вижу"), "A refusal came back: " + said);
+            h.assertTrue(count(c, Items.OAK_LEAVES) == 16, "The bag changed: " + count(c, Items.OAK_LEAVES) + ", " + report);
+            h.assertTrue(damage(c, Items.SHEARS) == 0, "Leaves were cut for a bag that had them: " + damage(c, Items.SHEARS) + ", " + report);
+        });
+    }
+
+    /**
+     * Sixteen oak leaves in the bag and no tree of any kind about: the order the bag meets is answered by that count, not
+     * refused for the tree the world does not have.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void leavesCarriedWithoutATreeAnswerTheirCount(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = withTheOwnersTools(h);
+        c.setItem(4, new ItemStack(Items.OAK_LEAVES, 16));
+        h.assertTrue(CompanionLeaves.nearest(c, h.getLevel()) == null, "A tree was found in the open");
+        String command = CompanionLocalCommands.route("добудь листву", "Олег");
+        h.assertTrue(command != null, "«добудь листву» went to the model");
+        List<PlannedAction> plan = CompanionLocalCommands.actions(command);
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-leaves-bag-open", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            String said = dev.aicompanion.client.CompanionDialogue.summarize(plan, report);
+            h.assertTrue(report.contains("Готово: «Oak Leaves» у меня, 16 шт."), "The carried leaves were not checked: " + report);
+            h.assertTrue(said.equals("Готово: «Oak Leaves» у меня, 16 шт."), "Not the honest count: " + said + ", " + report);
+            h.assertTrue(!report.contains("Собрал: ") && !said.contains("не нашёл") && !said.contains("не вижу"), "A gather or a refusal came back: " + said + ", " + report);
+            h.assertTrue(count(c, Items.OAK_LEAVES) == 16, "The bag changed: " + count(c, Items.OAK_LEAVES) + ", " + report);
+        });
+    }
+
+    /**
+     * The count of a leaf order is what the bag holds after it, not only what this gather cut: ten carried and six cut answer
+     * for sixteen of sixteen; a bag that already met the order answers with the check's own line, nothing cut.
+     */
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void theCountOfALeafOrderIsWhatTheBagHoldsAfterIt(GameTestHelper h) {
+        List<PlannedAction> plan = List.of(new PlannedAction("obtain_item", 0, 16, CompanionLeaves.FAMILY));
+        String said = dev.aicompanion.client.CompanionDialogue.summarize(plan,
+                "Собрал: «Дубовая листва», 6 шт.\nГотово: «Дубовая листва» у меня, 16 шт.");
+        h.assertTrue(said.equals("Собрал 16 листьев."), "Only this gather was counted: " + said);
+        String met = dev.aicompanion.client.CompanionDialogue.summarize(plan, "Готово: «Дубовая листва» у меня, 16 шт.");
+        h.assertTrue(met.equals("Готово: «Дубовая листва» у меня, 16 шт."), "A refusal for a bag that had them: " + met);
+        h.succeed();
     }
 
     /** The equip step of a plan says nothing; a standalone «надень ножницы» still answers. */
