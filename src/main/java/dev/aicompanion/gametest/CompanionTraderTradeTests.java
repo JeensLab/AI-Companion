@@ -57,6 +57,12 @@ public final class CompanionTraderTradeTests {
     public static void after10(net.minecraft.server.level.ServerLevel level) { CompanionTraderTests.afterVillagers(level); }
     @net.minecraft.gametest.framework.AfterBatch(batch = "trade11")
     public static void after11(net.minecraft.server.level.ServerLevel level) { CompanionTraderTests.afterVillagers(level); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "trade12")
+    public static void after12(net.minecraft.server.level.ServerLevel level) { CompanionTraderTests.afterVillagers(level); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "trade13")
+    public static void after13(net.minecraft.server.level.ServerLevel level) { CompanionTraderTests.afterVillagers(level); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "trade14")
+    public static void after14(net.minecraft.server.level.ServerLevel level) { CompanionTraderTests.afterVillagers(level); }
 
     private static final String ARROWS = "[{\"action\":\"trade_items\",\"item\":\"minecraft:arrow\"}]";
 
@@ -109,7 +115,8 @@ public final class CompanionTraderTradeTests {
         Villager fixed = trader(h, VillagerProfession.FLETCHER, 20, 18, arrowsForEmerald(5));
         CompanionEntity companion = spawn(h, 10, 16);
         companion.setItem(0, new ItemStack(Items.EMERALD, 2));
-        var future = run(h, companion, ARROWS);
+        // With the word given: the fresh one is not dropped for want of it, so only the preference decides.
+        var future = run(h, companion, "[{\"action\":\"trade_items\",\"item\":\"minecraft:arrow\",\"consent\":true}]");
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + companion.getLastTaskResult());
             h.assertTrue(count(companion, Items.ARROW) == 4 && fixed.getOffers().getFirst().getUses() == 1 && fresh.getVillagerXp() == 0 && fresh.getOffers().getFirst().getUses() == 0,
@@ -238,6 +245,58 @@ public final class CompanionTraderTradeTests {
             String report = future.join().report();
             h.assertTrue(count(companion, Items.ARROW) == 8 && count(companion, Items.EMERALD) == 0 && fletcher.getOffers().getFirst().getUses() == 2
                     && report.contains("8 из 10") && report.contains("плата"), "Arrows " + count(companion, Items.ARROW) + " | " + report);
+        });
+    }
+
+    /** The bag has no cell for the goods and the price frees none: nothing is paid, the deal is not used, and the report says the bag is full. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200, batch = "trade12")
+    public static void aFullBagRefusesTheTradeBeforePaying(GameTestHelper h) {
+        ground(h);
+        Villager fletcher = trader(h, VillagerProfession.FLETCHER, 14, 12, arrowsForEmerald(5));
+        CompanionEntity companion = spawn(h, 10, 16);
+        companion.setItem(0, new ItemStack(Items.EMERALD, 2));
+        for (int slot = 1; slot < companion.getContainerSize(); slot++) companion.setItem(slot, new ItemStack(Items.DIRT, 64));
+        var future = run(h, companion, ARROWS);
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + companion.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Сумка полна") && count(companion, Items.EMERALD) == 2 && count(companion, Items.ARROW) == 0
+                    && fletcher.getOffers().getFirst().getUses() == 0 && fletcher.getVillagerXp() == 0, "Emeralds " + count(companion, Items.EMERALD) + " | " + report);
+        });
+    }
+
+    /** "Sell 100 wheat": a number over 64 passes the codec and the server (it rides in the order), five deals of twenty are made. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3600, batch = "trade13")
+    public static void aSaleOfMoreThanSixtyFourPiecesIsAccepted(GameTestHelper h) {
+        ground(h);
+        Villager farmer = trader(h, VillagerProfession.FARMER, 14, 12, new MerchantOffer(new ItemCost(Items.WHEAT, 20), Optional.empty(), new ItemStack(Items.EMERALD), 5, 2, 0f));
+        CompanionEntity companion = spawn(h, 10, 16);
+        companion.setItem(0, new ItemStack(Items.WHEAT, 64));
+        companion.setItem(1, new ItemStack(Items.WHEAT, 36));
+        var future = run(h, companion, "[{\"action\":\"trade_items\",\"item\":\"minecraft:emerald\",\"pay\":\"minecraft:wheat\",\"count\":100}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + companion.getLastTaskResult());
+            h.assertTrue(future.join().skipped().isEmpty(), future.join().report());
+            h.assertTrue(count(companion, Items.EMERALD) == 5 && count(companion, Items.WHEAT) == 0 && farmer.getOffers().getFirst().getUses() == 5,
+                    "Emeralds " + count(companion, Items.EMERALD) + ", wheat " + count(companion, Items.WHEAT) + " | " + future.join().report());
+        });
+    }
+
+    /** Five renamed emeralds and sixty-four plain ones, a price of fifteen: the renamed ones count and the rest is taken from the plain stack. */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400, batch = "trade14")
+    public static void aPriceIsTakenFromStacksOfDifferentComponents(GameTestHelper h) {
+        ground(h);
+        Villager fletcher = trader(h, VillagerProfession.FLETCHER, 14, 12, new MerchantOffer(new ItemCost(Items.EMERALD, 15), Optional.empty(), new ItemStack(Items.ARROW, 4), 3, 5, 0f));
+        CompanionEntity companion = spawn(h, 10, 16);
+        ItemStack renamed = new ItemStack(Items.EMERALD, 5);
+        renamed.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, net.minecraft.network.chat.Component.literal("Lucky"));
+        companion.setItem(0, renamed);
+        companion.setItem(1, new ItemStack(Items.EMERALD, 64));
+        var future = run(h, companion, ARROWS);
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + companion.getLastTaskResult());
+            h.assertTrue(count(companion, Items.EMERALD) == 54 && count(companion, Items.ARROW) == 4 && fletcher.getOffers().getFirst().getUses() == 1,
+                    "Emeralds " + count(companion, Items.EMERALD) + ", arrows " + count(companion, Items.ARROW) + " | " + future.join().report());
         });
     }
 

@@ -75,7 +75,7 @@ final class CompanionScouting {
             return CompanionActionResult.failed(TOO_FAR);
         // Without chunk loading he would stop where the world stops around him, half way, until the order times out.
         if (!CompanionErrand.holdsChunks(w.owner, level))
-            return CompanionActionResult.failed("Один далеко не пойду: у меня выключена подгрузка чанков. Включи «Работа вдали от игрока» в «Поведении» или отведи меня.");
+            return CompanionActionResult.failed(CompanionFarWalk.CHUNKS_OFF);
         far.begin(CompanionTraders.village(remembered.stream().filter(e -> e.dimension().equals(dimension)).map(CompanionTraders.Entry::pos).toList(), nearest.get().pos()));
         return null;
     }
