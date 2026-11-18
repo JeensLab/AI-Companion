@@ -15,6 +15,7 @@ import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -306,6 +307,75 @@ public final class CompanionRightToolTests {
         h.succeed();
     }
 
+    /**
+     * The owner's case: a stone axe in his hand over ripe wheat. Wheat comes down on the first tick whatever he holds — its own
+     * destroy speed is zero — so the axe shortens nothing and only swings: it is put away for the break, the crop gives its wheat,
+     * and no axe wears. Before, the hand was emptied only on the four mineable tags, so the axe stayed in it over a crop.
+     */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void wheatIsReapedWithNoAxeInHisHand(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_AXE));
+        BlockPos wheat = new BlockPos(16, GROUND, 18);
+        h.setBlock(wheat, Blocks.WHEAT.defaultBlockState().setValue(CropBlock.AGE, 7));
+        ItemStack[] hand = new ItemStack[1];
+        List<ItemStack> drops = breakWithTool(h, c, wheat, hand);
+        h.assertTrue(hand[0].isEmpty(), "The axe was in his hand at the break: " + hand[0]);
+        h.assertTrue(drops.stream().anyMatch(drop -> drop.is(Items.WHEAT)), "The ripe wheat gave no wheat: " + drops);
+        h.assertBlockNotPresent(Blocks.WHEAT, wheat);
+        h.assertTrue(damage(c, Items.STONE_AXE) == 0, "The axe wore on the crop: damage " + damage(c, Items.STONE_AXE));
+        h.assertTrue(count(c, Items.STONE_AXE) == 1, "The axe was lost: " + c.getStoredItemsSummary());
+        h.succeed();
+    }
+
+    /** A sword is no tool for a crop either: it is no faster than a hand on wheat, so it is put away and does not wear. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void wheatIsReapedWithNoSwordInHisHand(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SWORD));
+        BlockPos wheat = new BlockPos(16, GROUND, 18);
+        h.setBlock(wheat, Blocks.WHEAT.defaultBlockState().setValue(CropBlock.AGE, 7));
+        ItemStack[] hand = new ItemStack[1];
+        List<ItemStack> drops = breakWithTool(h, c, wheat, hand);
+        h.assertTrue(hand[0].isEmpty(), "The sword was in his hand at the break: " + hand[0]);
+        h.assertTrue(drops.stream().anyMatch(drop -> drop.is(Items.WHEAT)), "The ripe wheat gave no wheat: " + drops);
+        h.assertBlockNotPresent(Blocks.WHEAT, wheat);
+        h.assertTrue(damage(c, Items.IRON_SWORD) == 0, "The sword wore on the crop: damage " + damage(c, Items.IRON_SWORD));
+        h.assertTrue(count(c, Items.IRON_SWORD) == 1, "The sword was lost: " + c.getStoredItemsSummary());
+        h.succeed();
+    }
+
+    /** The guard: a tool that does speed the block up stays in his hand, and it is the one that wears. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void thePickaxeStaysInHisHandOnTheStoneItSpeedsUp(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        BlockPos stone = new BlockPos(16, GROUND, 18);
+        h.setBlock(stone, Blocks.STONE);
+        ItemStack[] hand = new ItemStack[1];
+        List<ItemStack> drops = breakWithTool(h, c, stone, hand);
+        h.assertTrue(hand[0].is(Items.STONE_PICKAXE), "The pickaxe was put away from the stone it speeds up: " + hand[0]);
+        h.assertTrue(drops.stream().anyMatch(drop -> drop.is(Items.COBBLESTONE)), "Stone gave no cobblestone: " + drops);
+        h.assertTrue(damage(c, Items.STONE_PICKAXE) == 1, "The pickaxe was not the tool used: damage " + damage(c, Items.STONE_PICKAXE));
+        h.succeed();
+    }
+
+    /** The guard: what is not a tool at all (food) stays in his hand over a crop, and the crop is still broken. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void hisFoodStaysInHisHandOverACrop(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.BREAD, 3));
+        BlockPos wheat = new BlockPos(16, GROUND, 18);
+        h.setBlock(wheat, Blocks.WHEAT.defaultBlockState().setValue(CropBlock.AGE, 7));
+        ItemStack[] hand = new ItemStack[1];
+        List<ItemStack> drops = breakWithTool(h, c, wheat, hand);
+        h.assertTrue(hand[0].is(Items.BREAD), "His bread was put away from the crop: " + hand[0]);
+        h.assertTrue(drops.stream().anyMatch(drop -> drop.is(Items.WHEAT)), "The ripe wheat gave no wheat: " + drops);
+        h.assertBlockNotPresent(Blocks.WHEAT, wheat);
+        h.assertTrue(count(c, Items.BREAD) == 3, "His bread was lost: " + c.getStoredItemsSummary());
+        h.succeed();
+    }
+
     /** A faster tool of the wrong class gives no drop: the pickaxe that takes the drop is the one taken and worn. */
     @GameTest(template = "empty", timeoutTicks = 40)
     public static void obsidianIsTakenWithThePickaxeThatGivesItsDrop(GameTestHelper h) {
@@ -478,11 +548,17 @@ public final class CompanionRightToolTests {
 
     /** A block broken as the paths break it: the tool for it in his hand, the drops to that tool, its wear, then his hand put back. */
     private static List<ItemStack> breakWithTool(GameTestHelper h, CompanionEntity c, BlockPos at) {
+        return breakWithTool(h, c, at, new ItemStack[1]);
+    }
+
+    /** The same, reporting the hand the block was broken with before the hand is put back. */
+    private static List<ItemStack> breakWithTool(GameTestHelper h, CompanionEntity c, BlockPos at, ItemStack[] handAtBreak) {
         ServerLevel level = h.getLevel();
         BlockPos pos = h.absolutePos(at);
         BlockState state = level.getBlockState(pos);
         c.takeToolForBlock(state);
         ItemStack tool = c.getMainHandItem();
+        handAtBreak[0] = tool.copy();
         // The game checks the right tool before the loot table, as CompanionTools.drops does for the paths.
         List<ItemStack> drops = state.requiresCorrectToolForDrops() && !tool.isCorrectToolForDrops(state)
                 ? List.of() : Block.getDrops(state, level, pos, level.getBlockEntity(pos), c, tool);

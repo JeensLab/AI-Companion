@@ -4,7 +4,6 @@ import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.entity.Entity;
@@ -132,9 +131,14 @@ final class CompanionTools {
         return ItemStack.EMPTY;
     }
 
-    /** Vanilla destroy speed with the tool's own Efficiency, as a player has it: the bonus only on the tool's own blocks. */
+    /**
+     * Vanilla destroy speed with the tool's own Efficiency, as a player has it: the bonus only on the tool's own blocks. A block
+     * that comes down on the first tick — hardness zero: a crop, a flower, a sapling — gains nothing from any speed, the game
+     * takes no tick off it, so it is a bare hand's one to a tool as to a hand.
+     */
     static float breakSpeed(CompanionEntity owner, ItemStack stack, BlockState state) {
         if (stack.isEmpty()) return 1;
+        if (state.getDestroySpeed(owner.level(), BlockPos.ZERO) == 0) return 1;
         float speed = stack.getDestroySpeed(state);
         if (speed <= 1) return speed;
         int efficiency = net.minecraft.world.item.enchantment.EnchantmentHelper.getItemEnchantmentLevel(
@@ -151,18 +155,20 @@ final class CompanionTools {
     }
 
     /**
-     * A tool in his hand that is no faster than a bare hand on a block a tool is wanted for: a pickaxe held over earth. A player
-     * puts it away rather than digs with it in the way; what is not a tool (a block, food) stays in the hand.
+     * A tool in his hand that is no faster than a bare hand on the block he is about to break: a pickaxe held over earth, an axe
+     * or a sword over a crop. A player puts it away rather than swings it in the way; what is not a tool (a block, food) stays in
+     * the hand. The rule is the speed itself, not a list of the tags a tool speeds: whatever the block, a tool that does not speed
+     * it up gives nothing and only swings.
      */
     static boolean wrongToolForBlock(CompanionEntity owner, ItemStack hand, BlockState state) {
-        if (hand.isEmpty() || !isTool(hand) || breakSpeed(owner, hand, state) > 1) return false;
-        return state.is(BlockTags.MINEABLE_WITH_PICKAXE) || state.is(BlockTags.MINEABLE_WITH_AXE)
-                || state.is(BlockTags.MINEABLE_WITH_SHOVEL) || state.is(BlockTags.MINEABLE_WITH_HOE);
+        if (hand.isEmpty() || !isTool(hand)) return false;
+        return breakSpeed(owner, hand, state) <= 1;
     }
 
+    /** What a player swings at blocks and what wears on them: a tool of the four classes, shears, a sword. */
     private static boolean isTool(ItemStack stack) {
         return stack.is(ItemTags.PICKAXES) || stack.is(ItemTags.AXES) || stack.is(ItemTags.SHOVELS) || stack.is(ItemTags.HOES)
-                || stack.is(net.neoforged.neoforge.common.Tags.Items.TOOLS_SHEAR);
+                || stack.is(ItemTags.SWORDS) || stack.is(net.neoforged.neoforge.common.Tags.Items.TOOLS_SHEAR);
     }
     /** The better of two stacks of one tool class: the faster on this block, the one with more use left at the same speed. */
     private static boolean fresher(CompanionEntity owner, ItemStack candidate, ItemStack best, BlockState state) {
