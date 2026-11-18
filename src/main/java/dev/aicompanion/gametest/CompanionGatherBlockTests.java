@@ -421,20 +421,24 @@ public final class CompanionGatherBlockTests {
         });
     }
 
-    /** A crown high over the ground is out of his reach: said at once, and the two ingots he carries are not spent on shears for it. */
+    /**
+     * A leaf above even the longest column of his soil is out of his reach: said at once with its height, and the two ingots
+     * he carries are not spent on shears for it.
+     */
     @GameTest(template = "tall_tree", timeoutTicks = 400)
     public static void leavesOutOfReachAreNotPlanned(GameTestHelper h) {
         ground(h);
         BlockPos trunk = new BlockPos(16, GROUND + 1, 16);
-        h.setBlock(trunk.above(5).west(), Blocks.OAK_LEAVES);
-        for (int up = 0; up < 6; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
+        for (int up = 0; up < 10; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
+        h.setBlock(trunk.above(10).west(), Blocks.OAK_LEAVES);
         CompanionEntity c = spawn(h, 12, 16);
         c.setItem(0, new ItemStack(Items.IRON_INGOT, 2));
         var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":1}]");
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
             String report = future.join().report();
-            h.assertTrue(report.contains("Рядом не вижу") && count(c, Items.IRON_INGOT) == 2 && count(c, Items.SHEARS) == 0, "Leaves out of reach: " + report + ", ingots " + count(c, Items.IRON_INGOT));
+            h.assertTrue(report.contains("Рядом не вижу") && count(c, Items.IRON_INGOT) == 2 && count(c, Items.SHEARS) == 0,
+                    "Leaves out of reach: " + report + ", ingots " + count(c, Items.IRON_INGOT));
         });
     }
 

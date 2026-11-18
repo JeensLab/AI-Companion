@@ -8,11 +8,15 @@ import net.minecraft.world.item.ItemStack;
 
 /**
  * «Листва»/«листья» as the world has them: the leaf block of a tree he can really gather from, whatever species grows
- * here — never a log, and no species of its own hardcoded. A leaf a player set down (persistent) is no tree's crown.
+ * here — never a log, and no species of its own hardcoded. A leaf a player set down (persistent) is no tree's crown, but it
+ * is still leaves: it is seen and cut when no tree's own can meet the order, and only a tie-break puts a tree's own first
+ * (the owner, 18.11: the leaves beside him were his own, and he saw none at all).
  * The nearest leaf is not enough: a tall crown may hang over him out of reach while another tree's leaves stand by
  * (the owner, 17.11: «Рядом не вижу … oak leaves» under a tall tree he could gather from). A crown above every stand
- * cell is no loss either: with soil in the bag he builds up to it (CompanionPillar) and cuts it from the column. So the
- * target is chosen by the picking path's own rule, and with no leaf of any tree he can come at the order names none.
+ * cell is no loss either: with soil in the bag he builds up to it (CompanionPillar) and cuts it from the column, and the soil
+ * for it he digs himself when the bag has none and a block that gives dirt stands about him (18.11: «дай земли» over dirt he
+ * could dig). So the target is chosen by the picking path's own rule, and with no leaf of any tree he can come at the order
+ * names none.
  */
 public final class CompanionLeaves {
     /** The word an order carries instead of a species: resolved where the world is known (CompanionServerPlanPort). */
@@ -71,9 +75,26 @@ public final class CompanionLeaves {
         carried.merge(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), stack.getCount(), Integer::sum);
     }
 
+    /** Whether the item of an order is a leaf block: a species resolved for it, or one the player named. */
+    public static boolean isLeaf(String item) {
+        if (item == null) return false;
+        var id = net.minecraft.resources.ResourceLocation.tryParse(item);
+        var leaf = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
+        return leaf != null && new ItemStack(leaf).is(ItemTags.LEAVES);
+    }
+
     /** Whether the leaves are there but the soil is not: a crown above every stand cell that a short column of his would reach. */
     public static boolean soilForACrown(CompanionEntity c, ServerLevel level) {
         return CompanionPicking.soilForACrown(c, level);
+    }
+
+    /**
+     * How much soil he must dig for the crown of this leaf block an order will climb: the steps of its longest column less what
+     * he carries, or 0 when the ground reach or his bag already has it — so a crown is climbed on soil he digs himself, and
+     * «дай земли» is only for a world with none about (the owner, 18.11).
+     */
+    public static int soilToDig(CompanionEntity c, ServerLevel level, String item) {
+        return CompanionPicking.soilToDig(c, level, item);
     }
 
     /** Whether the leaves are above even the longest column of his: not out of reach for want of soil, but too high to climb to. */

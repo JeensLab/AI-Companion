@@ -74,6 +74,8 @@ final class CompanionPicking {
     private int legs, waited, dived;
     /** Blocks he found no way to. */
     private final Set<BlockPos> passed = new HashSet<>();
+    /** Whether a block that gives dirt is about him, looked for once: the soil a crown's column is dug from. */
+    private boolean soilAbout, soilAboutKnown;
     /** Blocks left alone this order, for the report: lava stands beside them (source or running, any of the six sides). */
     private final Set<BlockPos> lavaKept = new HashSet<>();
 
@@ -88,7 +90,7 @@ final class CompanionPicking {
         if (sources.isEmpty()) return CompanionActionResult.failed("Такое я с земли не собираю: " + id + ".");
         item = asked; wanted = count; before = w.items.countCarried(item); due = 0; settleAt = 0; retried = false;
         release();
-        passed.clear(); lavaKept.clear();
+        passed.clear(); lavaKept.clear(); soilAboutKnown = false;
         return null;
     }
 
@@ -107,26 +109,69 @@ final class CompanionPicking {
     /** Whether one of these blocks stands within his search radius where he may take it. */
     static boolean near(CompanionEntity c, ServerLevel level, List<CompanionPickable.Source> sources) {
         List<CompanionPickable.Source> here = allowed(level, sources);
-        return !here.isEmpty() && find(c, level, here, sites(c, level), Set.of(), new HashSet<>()) != null;
+        if (here.isEmpty()) return false;
+        Predicate<BlockPos> site = sites(c, level);
+        if (find(c, level, here, site, Set.of(), new HashSet<>(), false, false) != null) return true;
+        // A crown above every stand cell is still his when the soil for the column can be dug about him (the owner, 18.11).
+        return find(c, level, here, site, Set.of(), new HashSet<>(), true, false) != null && soilAbout(c, level);
     }
 
     /**
      * The leaf block the picking can really work from: the nearest leaf of any tree in his search that he can stand by
-     * (the gather's own rule — a stand cell under the crown, never merely the nearest block in the air). Null when no
-     * tree's leaves are within reach at all — the order is then refused short instead of naming a species he cannot come at.
+     * (the gather's own rule — a stand cell under the crown, never merely the nearest block in the air), or a crown he can
+     * build up to on the soil he carries or digs. A tree's own leaves come first, and the ground reach before a column; the
+     * leaves a player set down are leaves too, cut when no tree's own can meet the order (the owner, 18.11). Null when no
+     * leaf is within reach at all — the order is then refused short instead of naming a species he cannot come at.
      */
     static BlockPos nearestLeaf(CompanionEntity c, ServerLevel level) {
-        List<CompanionPickable.Source> all = allowed(level, CompanionPickable.leaves(level));
-        return all.isEmpty() ? null : find(c, level, all, sites(c, level), Set.of(), new HashSet<>());
+        return nearestLeaf(c, level, allowed(level, CompanionPickable.leaves(level)));
+    }
+
+    /** The nearest of these leaf blocks he can come at: a tree's own first, the ground reach before a column, the player's own last. */
+    private static BlockPos nearestLeaf(CompanionEntity c, ServerLevel level, List<CompanionPickable.Source> all) {
+        if (all.isEmpty()) return null;
+        Predicate<BlockPos> site = sites(c, level);
+        boolean dug = soilAbout(c, level);
+        for (boolean natural : new boolean[]{true, false})
+            for (boolean soil : new boolean[]{false, true}) {
+                if (soil && !dug) continue;
+                BlockPos found = find(c, level, all, site, Set.of(), new HashSet<>(), soil, natural);
+                if (found != null) return found;
+            }
+        return null;
+    }
+
+    /** Whether a block that gives dirt stands within his search where he may take it: the soil for a crown he digs himself. */
+    static boolean soilAbout(CompanionEntity c, ServerLevel level) {
+        List<CompanionPickable.Source> dirt = allowed(level, CompanionPickable.sources(level, Items.DIRT));
+        return !dirt.isEmpty() && find(c, level, dirt, sites(c, level), Set.of(), new HashSet<>(), false, false) != null;
+    }
+
+    /**
+     * The soil he must dig for the crown of this leaf block the order will come at: the steps of its longest column less what
+     * he carries. 0 when the ground reach or the bag already has it; the crown is not counted when no column reaches it (the
+     * order is refused for its height then).
+     */
+    static int soilToDig(CompanionEntity c, ServerLevel level, String item) {
+        var id = ResourceLocation.tryParse(item == null ? "" : item);
+        var leaf = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
+        if (leaf == null) return 0;
+        List<CompanionPickable.Source> all = allowed(level, CompanionPickable.sources(level, leaf)).stream()
+                .filter(source -> source.block().defaultBlockState().is(BlockTags.LEAVES)).toList();
+        BlockPos found = nearestLeaf(c, level, all);
+        if (found == null || low(c, level, found) && !standsFor(c, level, found).isEmpty()
+                || !c.temporaryPillar.buildCells(found).isEmpty()) return 0;
+        return Math.max(0, c.temporaryPillar.columnSteps(found) - c.temporaryPillar.soilCarried());
     }
 
     /**
      * Whether a crown about him is out of his ground reach only for want of soil: a leaf of a tree he could come at up a short
-     * column of his own, if the bag held the soil for it. Said as the soil the refusal names, not as no leaves at all.
+     * column of his own, if the bag held the soil for it. Said as the soil the refusal names, not as no leaves at all — and
+     * never when that soil lies about him to dig (the owner, 18.11).
      */
     static boolean soilForACrown(CompanionEntity c, ServerLevel level) {
         List<CompanionPickable.Source> all = allowed(level, CompanionPickable.leaves(level));
-        if (all.isEmpty()) return false;
+        if (all.isEmpty() || soilAbout(c, level)) return false;
         Predicate<BlockPos> site = sites(c, level);
         return CompanionObsidian.nearest(c, level, DEPTH, state -> gives(all, state) > 0, pos ->
                 c.errand.within(pos) && takes(level, pos, site) && grounded(c, level, pos) && !lavaBeside(level, pos)
@@ -173,9 +218,11 @@ final class CompanionPicking {
         return c.getOwnerId() == null ? pos -> false : CompanionPlayerBuilds.get(level.getServer()).sites(c.getOwnerId(), level);
     }
 
-    private static BlockPos find(CompanionEntity c, ServerLevel level, List<CompanionPickable.Source> sources, Predicate<BlockPos> site, Set<BlockPos> passed, Set<BlockPos> lava) {
+    private static BlockPos find(CompanionEntity c, ServerLevel level, List<CompanionPickable.Source> sources, Predicate<BlockPos> site,
+                                 Set<BlockPos> passed, Set<BlockPos> lava, boolean dugSoil, boolean naturalOnly) {
         return CompanionObsidian.nearest(c, level, DEPTH, state -> gives(sources, state) > 0, pos -> {
-            if (passed.contains(pos) || !c.errand.within(pos) || !takes(level, pos, site) || !atHand(c, level, pos) || !grounded(c, level, pos)) return false;
+            if (passed.contains(pos) || !c.errand.within(pos) || !takes(level, pos, site) || !atHand(c, level, pos, dugSoil)
+                    || naturalOnly && setDown(level.getBlockState(pos)) || !grounded(c, level, pos)) return false;
             if (!lavaBeside(level, pos)) return true;
             lava.add(pos.immutable());
             return false;
@@ -208,8 +255,8 @@ final class CompanionPicking {
         // A rose bush is taken by its foot: the top half gives nothing, and the foot it brings down would lie there unclaimed.
         if (state.hasProperty(BlockStateProperties.DOUBLE_BLOCK_HALF) && state.getValue(BlockStateProperties.DOUBLE_BLOCK_HALF) == DoubleBlockHalf.UPPER) return false;
         if (state.getBlock() instanceof CocoaBlock && state.getValue(CocoaBlock.AGE) < CocoaBlock.MAX_AGE) return false;
-        // Leaves that do not fade were set down by someone: a hedge, a roof of leaves, wherever it stands.
-        if (state.hasProperty(BlockStateProperties.PERSISTENT) && state.getValue(BlockStateProperties.PERSISTENT)) return false;
+        // A leaf that does not fade was set down by someone: a hedge, a roof of leaves. It is still leaves, and its own item
+        // comes to shears the same (the owner, 18.11: the leaves beside him were his own); a tree's own are cut first.
         // A hanging vine from its lower end: the ones under a cut fall with nothing to pick up.
         if (state.is(Blocks.VINE) && level.getBlockState(pos.below()).is(Blocks.VINE)) return false;
         // The block above the root, within his reach from the ground: the root grows again.
@@ -257,11 +304,19 @@ final class CompanionPicking {
 
     /**
      * Whether this block is his to take: from a stand under it (the ground reach of before), or — for a crown above every
-     * stand cell (a tree grown with bone meal) — up a short column of his own soil (CompanionPillar). Nothing else is a
-     * source of his: a leaf high over the ground with no soil to stand on is no leaf he can come at.
+     * stand cell (a tree grown with bone meal) — up a short column of his own soil (CompanionPillar). The soil for that column
+     * is his to dig when a block that gives dirt stands about him, so a crown is not out of reach for want of soil he can get
+     * (the owner, 18.11). Nothing else is a source of his.
      */
-    private static boolean atHand(CompanionEntity c, ServerLevel level, BlockPos pos) {
-        return (low(c, level, pos) && !standsFor(c, level, pos).isEmpty()) || !c.temporaryPillar.buildCells(pos).isEmpty();
+    private static boolean atHand(CompanionEntity c, ServerLevel level, BlockPos pos, boolean dugSoil) {
+        if (low(c, level, pos) && !standsFor(c, level, pos).isEmpty()) return true;
+        if (!c.temporaryPillar.buildCells(pos).isEmpty()) return true;
+        return dugSoil && !c.temporaryPillar.buildCellsWithAnySoil(pos).isEmpty();
+    }
+
+    /** A leaf that does not fade: set down by a player, his own hedge or roof, and still a leaf a shears gives. */
+    private static boolean setDown(BlockState state) {
+        return state.hasProperty(BlockStateProperties.PERSISTENT) && state.getValue(BlockStateProperties.PERSISTENT);
     }
 
     private static boolean column(BlockState state) { return state.is(Blocks.SUGAR_CANE) || state.is(Blocks.CACTUS) || state.is(Blocks.BAMBOO) || kelp(state); }
@@ -375,13 +430,24 @@ final class CompanionPicking {
         return hit.getType() == HitResult.Type.MISS || hit.getBlockPos().equals(target);
     }
 
+    /** Whether a block that gives dirt is about him now: looked for once, the soil a crown's column is dug from. */
+    private boolean soilAbout(ServerLevel level) {
+        if (!soilAboutKnown) { soilAbout = soilAbout(c, level); soilAboutKnown = true; }
+        return soilAbout;
+    }
+
     void tick(ServerLevel level) {
         int got = got();
         if (got >= wanted) { end(true, "Собрал: «" + name() + "», " + got + " шт."); return; }
         if (due >= wanted) { down(); collect(level, got); return; }
         Predicate<BlockPos> site = sites(c, level);
         if (target != null && (gives(sources, level.getBlockState(target)) == 0 || !takes(level, target, site) || lavaBeside(level, target))) release();
-        if (target == null) target = find(c, level, sources, site, passed, lavaKept);
+        if (target == null) {
+            // A tree's own blocks first; a leaf a player set down is the fallback, not the first pick (the owner, 18.11).
+            boolean dug = soilAbout(level);
+            target = find(c, level, sources, site, passed, lavaKept, dug, true);
+            if (target == null) target = find(c, level, sources, site, passed, lavaKept, dug, false);
+        }
         if (target == null) {
             // On his own column nothing else is in reach: the soil comes back before the drops on the ground are walked to.
             if (down()) return;
@@ -451,7 +517,9 @@ final class CompanionPicking {
             for (ItemStack drop : drops) if (drop.is(item)) due += drop.getCount();
         }
         tool.getItem().mineBlock(tool, level, state, target, c);
-        c.putToolAway();
+        // The shears stay in his hand for the whole crown: the player sees the tool that cuts, and the hand he had before comes
+        // back once, when the work ends (CompanionWork.cancel) — not after every leaf (the owner, 18.11).
+        if (!shorn) c.putToolAway();
         // A tool with Silk Touch brings the block itself (clay, not its balls): one is enough to see it, not every block about.
         if (due == dueBefore) { end(false, "С этим инструментом «" + name() + "» не выходит: в руке " + tool.getHoverName().getString() + "."); return; }
         release();

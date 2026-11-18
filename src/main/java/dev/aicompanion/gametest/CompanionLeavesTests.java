@@ -220,7 +220,7 @@ public final class CompanionLeavesTests {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
             String report = future.join().report();
             String said = dev.aicompanion.client.CompanionDialogue.summarize(plan, report);
-            h.assertTrue(count(c, Items.SPRUCE_LEAVES) == 16, "Not sixteen leaves: " + count(c, Items.SPRUCE_LEAVES) + ", " + report);
+            h.assertTrue(count(c, Items.SPRUCE_LEAVES) >= 16, "Not sixteen leaves: " + count(c, Items.SPRUCE_LEAVES) + ", " + report);
             h.assertTrue(said.equals("Собрал 16 листьев."), "The answer is not the count: " + said + ", " + report);
             h.assertTrue(supports[0] > 0 && highest[0] > groundY + 2, "He never built up: supports " + supports[0] + ", highest y " + highest[0] + ", " + report);
             h.assertTrue(c.onGround() && Math.abs(c.getY() - groundY) < 0.6, "He did not come back down: y " + c.getY() + ", " + report);
@@ -232,13 +232,13 @@ public final class CompanionLeavesTests {
     }
 
     /**
-     * The owner's tall crown and nothing to stand on: no soil in the bag, no other tree's leaves about. He cannot build up, so
-     * the order is refused naming the soil he lacks — not «Рядом листвы не вижу» for a crown that stands right over him —
-     * nothing gathered, no soil invented.
+     * The owner's tall crown and nothing to stand on: no soil in the bag and a stone shelf under him — no dirt to dig about
+     * at all. He cannot build up, so the order is refused naming the soil he lacks — not «Рядом листвы не вижу» for a crown
+     * that stands right over him — nothing gathered, no soil invented.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 3000)
     public static void aCrownAboveReachWithoutSoilNamesTheSoil(GameTestHelper h) {
-        ground(h);
+        stoneGround(h);
         BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
         for (int up = 0; up < 5; up++) h.setBlock(trunk.above(up), Blocks.SPRUCE_LOG);
         var leaves = Blocks.SPRUCE_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
@@ -264,11 +264,11 @@ public final class CompanionLeavesTests {
 
     /**
      * A given-up obtain takes the shears step with it: nothing was cut, so they stay in the bag and their own line does not
-     * speak over the chain's reason — the reason itself is the answer.
+     * speak over the chain's reason — the reason itself is the answer. A stone shelf under him: no soil to dig for a column.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 3000)
     public static void aGivenUpObtainDoesNotWearTheShears(GameTestHelper h) {
-        ground(h);
+        stoneGround(h);
         BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
         for (int up = 0; up < 5; up++) h.setBlock(trunk.above(up), Blocks.SPRUCE_LOG);
         var leaves = Blocks.SPRUCE_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
@@ -653,6 +653,167 @@ public final class CompanionLeavesTests {
         h.succeed();
     }
 
+    /**
+     * The owner's crown and an empty bag of soil (18.11): no dirt carried, the flat ground about him is dirt under the grass.
+     * «Добудь листву» digs the soil he needs, builds up on it, cuts the crown and comes back down — «До листвы не достану —
+     * дай земли» is not said over soil he can dig himself.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 8000)
+    public static void aCrownWithoutSoilInTheBagIsDugForAndClimbed(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
+        for (int up = 0; up < 5; up++) h.setBlock(trunk.above(up), Blocks.SPRUCE_LOG);
+        var leaves = Blocks.SPRUCE_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = 5; dy <= 6; dy++)
+            h.setBlock(trunk.offset(dx, dy, dz), leaves);
+        CompanionEntity c = withTheOwnersTools(h);
+        h.assertTrue(count(c, Items.DIRT) == 0, "The bag already holds soil: " + count(c, Items.DIRT));
+        double groundY = c.getY();
+        int[] supports = {0};
+        h.onEachTick(() -> supports[0] = Math.max(supports[0], c.getTemporarySupportCount()));
+        String command = CompanionLocalCommands.route("добудь листву", "Олег");
+        h.assertTrue(command != null, "«добудь листву» went to the model");
+        List<PlannedAction> plan = CompanionLocalCommands.actions(command);
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-leaves-dig", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            String said = dev.aicompanion.client.CompanionDialogue.summarize(plan, report);
+            h.assertTrue(!said.contains("дай земли") && !report.contains("дай земли"), "Soil was asked for instead of dug: " + said + ", " + report);
+            h.assertTrue(count(c, Items.SPRUCE_LEAVES) >= 16, "Not sixteen leaves: " + count(c, Items.SPRUCE_LEAVES) + ", " + report);
+            h.assertTrue(count(c, Items.DIRT) > 0, "He dug no soil for the crown: " + count(c, Items.DIRT) + ", " + report);
+            h.assertTrue(supports[0] > 0, "He never built up on the soil he dug: " + report);
+            h.assertTrue(c.onGround() && Math.abs(c.getY() - groundY) < 0.6, "He did not come back down: y " + c.getY() + ", " + report);
+            h.assertTrue(c.getTemporarySupportCount() == 0 && dirtAboveGround(h) == 0, "The column was left standing: " + report);
+        });
+    }
+
+    /**
+     * The owner's hedge (18.11): the leaves beside him were set down by the player (persistent), and no tree's own crown is
+     * there to meet the order. They are leaves all the same and a shears gives their own item: the order cuts them and counts
+     * them — not «Рядом листвы не вижу» over leaves that stand right beside him.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 4000)
+    public static void playerPlacedLeavesBesideHimAreCut(GameTestHelper h) {
+        ground(h);
+        BlockPos hedgeTrunk = new BlockPos(18, GROUND + 1, 16);
+        for (int up = 0; up < 3; up++) h.setBlock(hedgeTrunk.above(up), Blocks.OAK_LOG);
+        var hedge = Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.PERSISTENT, true).setValue(LeavesBlock.DISTANCE, 7);
+        List<BlockPos> beside = List.of(hedgeTrunk.above().west(), hedgeTrunk.above().east(), hedgeTrunk.above().north(),
+                hedgeTrunk.above(2).west(), hedgeTrunk.above(2).east(), hedgeTrunk.above(2).north());
+        for (BlockPos cell : beside) h.setBlock(cell, hedge);
+        CompanionEntity c = withTheOwnersTools(h);
+        h.assertTrue("minecraft:oak_leaves".equals(CompanionLeaves.nearest(c, h.getLevel())),
+                "The player's own leaves are not seen: " + CompanionLeaves.nearest(c, h.getLevel()));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":6}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OAK_LEAVES) == 6, "The player's leaves were not cut: " + count(c, Items.OAK_LEAVES) + ", " + report);
+            h.assertTrue(damage(c, Items.SHEARS) == 6, "The shears did not cut six leaves: " + damage(c, Items.SHEARS) + ", " + report);
+        });
+    }
+
+    /** Natural leaves are cut before the player's own: the hedge stands while the oak beside it can meet the order. */
+    @GameTest(template = "tall_tree", timeoutTicks = 4000)
+    public static void naturalLeavesArePreferredToThePlayersHedge(GameTestHelper h) {
+        ground(h);
+        BlockPos hedgeTrunk = new BlockPos(18, GROUND + 1, 16);
+        var hedge = Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.PERSISTENT, true).setValue(LeavesBlock.DISTANCE, 7);
+        List<BlockPos> beside = List.of(hedgeTrunk.above().west(), hedgeTrunk.above().east(), hedgeTrunk.above().north(),
+                hedgeTrunk.above(2).west(), hedgeTrunk.above(2).east(), hedgeTrunk.above(2).north());
+        for (BlockPos cell : beside) h.setBlock(cell, hedge);
+        BlockPos oak = new BlockPos(22, GROUND + 1, 16);
+        for (int up = 0; up < 3; up++) h.setBlock(oak.above(up), Blocks.OAK_LOG);
+        var natural = Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = 2; dy <= 3; dy++) {
+            BlockPos cell = oak.offset(dx, dy, dz);
+            if (!cell.equals(oak.above(dy))) h.setBlock(cell, natural);
+        }
+        CompanionEntity c = withTheOwnersTools(h);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":6}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OAK_LEAVES) >= 6, "Not six leaves: " + count(c, Items.OAK_LEAVES) + ", " + report);
+            for (BlockPos cell : beside) h.assertBlockPresent(Blocks.OAK_LEAVES, cell);
+        });
+    }
+
+    /**
+     * The owner's modest crown (18.11): six and seven blocks up on flat ground, no stand cell under it, and no soil in the
+     * bag — the ground about him is dirt. A four-step column reaches it, so «Добудь листву» digs the soil, builds the column
+     * and cuts the crown: «Рядом листвы не вижу» is for no leaves at all, not for a modest crown over him. A leaf the column
+     * cleared out of its way comes into the bag too, so the count is sixteen or more.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 8000)
+    public static void aCrownSixOrSevenBlocksUpIsClimbed(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
+        for (int up = 0; up < 6; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = 6; dy <= 7; dy++)
+            h.setBlock(trunk.offset(dx, dy, dz), leaves);
+        CompanionEntity c = withTheOwnersTools(h);
+        h.assertTrue(count(c, Items.DIRT) == 0, "The bag already holds soil: " + count(c, Items.DIRT));
+        double groundY = c.getY();
+        int[] supports = {0};
+        h.onEachTick(() -> supports[0] = Math.max(supports[0], c.getTemporarySupportCount()));
+        String command = CompanionLocalCommands.route("добудь листву", "Олег");
+        h.assertTrue(command != null, "«добудь листву» went to the model");
+        List<PlannedAction> plan = CompanionLocalCommands.actions(command);
+        h.assertTrue("minecraft:oak_leaves".equals(CompanionLeaves.resolve(c, h.getLevel(), CompanionLeaves.FAMILY)),
+                "The crown six blocks up was not named: " + CompanionLeaves.resolve(c, h.getLevel(), CompanionLeaves.FAMILY));
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-leaves-six-up", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            String said = dev.aicompanion.client.CompanionDialogue.summarize(plan, report);
+            h.assertTrue(!said.contains("Рядом листвы не вижу") && !said.contains("дай земли"), "A crown six blocks up was refused: " + said + ", " + report);
+            h.assertTrue(count(c, Items.OAK_LEAVES) >= 16, "Not sixteen leaves: " + count(c, Items.OAK_LEAVES) + ", " + report);
+            h.assertTrue(supports[0] >= 4, "He did not build the four-step column the crown asks: supports " + supports[0] + ", " + report);
+            h.assertTrue(count(c, Items.DIRT) > 0, "He dug no soil for the column: " + count(c, Items.DIRT) + ", " + report);
+            h.assertTrue(c.onGround() && Math.abs(c.getY() - groundY) < 0.6, "He did not come back down: y " + c.getY() + ", " + report);
+            h.assertTrue(c.getTemporarySupportCount() == 0 && dirtAboveGround(h) == 0, "The column was left standing: " + report);
+        });
+    }
+
+    /**
+     * The owner's hand (18.11): the shears are seen in his hand from the first swing of a crown to the last leaf, and the
+     * tool he held before comes back only when the crown is done — not after every leaf.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 4000)
+    public static void theShearsStayInHisHandForTheWholeCrown(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        List<BlockPos> crown = List.of(trunk.above().west(), trunk.above().east(), trunk.above().north(),
+                trunk.above(2).west(), trunk.above(2).east(), trunk.above(2).north());
+        for (BlockPos cell : crown) h.setBlock(cell, leaves);
+        for (int up = 0; up < 3; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
+        CompanionEntity c = withTheOwnersTools(h);
+        int[] midCrown = {0}, withShears = {0}, withoutShears = {0};
+        h.onEachTick(() -> {
+            int left = 0;
+            for (BlockPos cell : crown) if (h.getBlockState(cell).is(Blocks.OAK_LEAVES)) left++;
+            if (left > 0 && left < crown.size()) {
+                midCrown[0]++;
+                if (c.getMainHandItem().is(Items.SHEARS)) withShears[0]++;
+                else withoutShears[0]++;
+            }
+        });
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":6}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OAK_LEAVES) == 6, "Not six leaves: " + count(c, Items.OAK_LEAVES) + ", " + report);
+            h.assertTrue(midCrown[0] >= 3, "The crown was cut in too few ticks to see: " + midCrown[0] + ", " + report);
+            h.assertTrue(withShears[0] >= 3, "The shears were not in his hand while the crown was cut: " + withShears[0] + " of " + midCrown[0] + ", " + report);
+            h.assertTrue(withoutShears[0] == 0, "The previous tool was in his hand between two leaves: " + withoutShears[0] + " of " + midCrown[0] + ", " + report);
+            h.assertTrue(c.getMainHandItem().is(Items.STONE_PICKAXE), "The hand he had before the crown did not come back: " + c.getMainHandItem() + ", " + report);
+        });
+    }
+
     /** The owner's bag (in game 16.11): the stone pickaxe in his hand, an iron pickaxe, an axe, shears and a shovel in the bag. */
     private static CompanionEntity withTheOwnersTools(GameTestHelper h) {
         CompanionEntity c = spawn(h, 12, 16);
@@ -668,6 +829,16 @@ public final class CompanionLeavesTests {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= GROUND + 6; y++) {
             boolean border = x == 0 || x == 31 || z == 0 || z == 31;
             if (y <= GROUND) h.setBlock(new BlockPos(x, y, z), y == 0 || border ? Blocks.BEDROCK : y == GROUND ? Blocks.GRASS_BLOCK : Blocks.DIRT);
+            else if (border) h.setBlock(new BlockPos(x, y, z), Blocks.BEDROCK);
+            else h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        }
+    }
+
+    /** The same shelf of stone: a world with no block that gives dirt, so a column has no soil to be dug for it. */
+    private static void stoneGround(GameTestHelper h) {
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= GROUND + 6; y++) {
+            boolean border = x == 0 || x == 31 || z == 0 || z == 31;
+            if (y <= GROUND) h.setBlock(new BlockPos(x, y, z), y == 0 || border ? Blocks.BEDROCK : Blocks.STONE);
             else if (border) h.setBlock(new BlockPos(x, y, z), Blocks.BEDROCK);
             else h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
         }

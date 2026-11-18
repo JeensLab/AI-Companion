@@ -269,6 +269,12 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             var plan = companion.obtainPlan(item, need);
             if (plan.refused()) return new CompanionPlanRunner.Expansion(java.util.List.of(), plan.refusal());
             java.util.List<PlannedAction> steps = new java.util.ArrayList<>();
+            // A crown above every stand cell is climbed on soil he digs himself: the dirt for the column comes first, and
+            // «дай земли» is left for a world with no soil about him (the owner, 18.11: «до листвы не достану — дай земли»
+            // over dirt he could dig).
+            int soil = dev.aicompanion.entity.CompanionLeaves.isLeaf(item)
+                    ? dev.aicompanion.entity.CompanionLeaves.soilToDig(companion, level, item) : 0;
+            if (soil > 0) steps.add(new PlannedAction("gather_dirt", 0, soil, ""));
             for (var step : plan.steps()) steps.add(new PlannedAction(step.type(), 0, step.count(), step.item()));
             steps.add(new PlannedAction("verify_item", 0, action.count(), check));
             return new CompanionPlanRunner.Expansion(java.util.List.copyOf(steps), null);

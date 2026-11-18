@@ -290,15 +290,36 @@ public final class CompanionPillar {
      */
     public Set<BlockPos> buildCellsWithAnySoil(BlockPos block) { return buildCells(block, MAX_SUPPORTS); }
 
+    /** The soil he carries for a column now: what the bag and the hands hold. */
+    public int soilCarried() { return soilCount(); }
+
+    /**
+     * The longest column this block asks of him, in steps of soil: the most steps among the cells a column could stand at, so
+     * the soil gathered for it is enough for whichever of them he raises. 0 when no column reaches it at all.
+     */
+    public int columnSteps(BlockPos block) {
+        int longest = 0;
+        for (int steps : columns(block).values()) longest = Math.max(longest, steps);
+        return longest;
+    }
+
     private Set<BlockPos> buildCells(BlockPos block, int supply) {
         Set<BlockPos> cells = new HashSet<>();
+        for (var column : columns(block).entrySet())
+            if (column.getValue() > 0 && column.getValue() <= MAX_SUPPORTS && column.getValue() <= supply) cells.add(column.getKey());
+        return cells;
+    }
+
+    /** The cells a column to this block could stand at, each with the steps it asks: ground below, room over it, the reach. */
+    private java.util.Map<BlockPos, Integer> columns(BlockPos block) {
+        java.util.Map<BlockPos, Integer> cells = new java.util.LinkedHashMap<>();
         if (!(owner.level() instanceof ServerLevel level) || !level.hasChunkAt(block)) return cells;
         for (int down = 1; down <= MAX_SUPPORTS + 2; down++) for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
             BlockPos feet = block.offset(dx, -down, dz);
             if (!safeFoundation(level, feet.below())) continue;
             int steps = requiredSteps(block, feet);
-            if (steps <= 0 || steps > MAX_SUPPORTS || steps > supply || !columnClearable(level, feet, steps)) continue;
-            cells.add(feet.immutable());
+            if (steps < 0 || steps > MAX_SUPPORTS || !columnClearable(level, feet, steps)) continue;
+            cells.put(feet.immutable(), steps);
         }
         return cells;
     }
