@@ -63,6 +63,8 @@ public final class CompanionTraderTradeTests {
     public static void after13(net.minecraft.server.level.ServerLevel level) { CompanionTraderTests.afterVillagers(level); }
     @net.minecraft.gametest.framework.AfterBatch(batch = "trade14")
     public static void after14(net.minecraft.server.level.ServerLevel level) { CompanionTraderTests.afterVillagers(level); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "trade15")
+    public static void after15(net.minecraft.server.level.ServerLevel level) { CompanionTraderTests.afterVillagers(level); }
 
     private static final String ARROWS = "[{\"action\":\"trade_items\",\"item\":\"minecraft:arrow\"}]";
 
@@ -279,6 +281,24 @@ public final class CompanionTraderTradeTests {
             h.assertTrue(future.join().skipped().isEmpty(), future.join().report());
             h.assertTrue(count(companion, Items.EMERALD) == 5 && count(companion, Items.WHEAT) == 0 && farmer.getOffers().getFirst().getUses() == 5,
                     "Emeralds " + count(companion, Items.EMERALD) + ", wheat " + count(companion, Items.WHEAT) + " | " + future.join().report());
+        });
+    }
+
+    /**
+     * «Продай пшеницу» with no number, all of it sold before the deal runs out: that is the order done, not a stop — game 18.11 said
+     * «Продал морковь × 22 за изумруд: плата кончилась», as if he had come up short.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400, batch = "trade15")
+    public static void aSaleOfAllHeHasEndsWithoutAReason(GameTestHelper h) {
+        ground(h);
+        trader(h, VillagerProfession.FARMER, 14, 12, new MerchantOffer(new ItemCost(Items.WHEAT, 20), Optional.empty(), new ItemStack(Items.EMERALD), 5, 2, 0f));
+        CompanionEntity companion = spawn(h, 10, 16);
+        companion.setItem(0, new ItemStack(Items.WHEAT, 40));
+        var future = run(h, companion, "[{\"action\":\"trade_items\",\"item\":\"minecraft:emerald\",\"pay\":\"minecraft:wheat\"}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + companion.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(companion, Items.EMERALD) == 2 && count(companion, Items.WHEAT) == 0 && !report.contains("плата") && !report.contains("кончил"), report);
         });
     }
 
