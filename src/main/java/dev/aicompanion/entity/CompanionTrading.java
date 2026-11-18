@@ -12,21 +12,25 @@ import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
  * trade_items: the trader is chosen among the live ones within {@link CompanionScouting#RADIUS} blocks (fixed in his trade
  * before fresh, cheaper, nearer), walked up to within a hand's reach, and the deal is made for real: the price (the deal's own, no
- * player's discounts) leaves the bag, the deal is used once, the villager gets his experience, and the goods are dropped by him and
- * picked up like a harvest. A fresh villager is traded with only on the player's word: the first deal fixes his goods.
+ * player's discounts) leaves the bag, the deal is used once, the villager gets his experience, and the goods are dropped at the
+ * companion's own feet (a villager picks up food within four blocks) and picked up like a harvest. The price is taken only when the bag
+ * has room for the goods. A fresh villager is traded with only on the player's word: the first deal fixes his goods.
  * The deal is repeated as the order counts (pieces of the goods; for a sale the pieces of what he gives; the last trade whole; no number
  * is one trade, or for a sale everything of it he has): with the same trader while his deal lasts, then with the next one with the same
  * deal. It stops when the count is reached, the price is gone, the bag will not take the goods, or no deal is left; the report says which.
  * When no live trader near has the deal, the memory is looked in: a remembered trader of this dimension with it, within
  * {@link CompanionScouting#FAR_RADIUS} blocks, is walked to ({@link CompanionFarWalk}) and traded with by his live offers as near;
- * one who is not there is forgotten and the next remembered one is tried.
+ * one who is not there is forgotten and the next remembered one is tried. The same goes when the near ones have the deal but all are out of it.
+ * The three minutes are for one approach to a trader, not for the whole order.
  */
 final class CompanionTrading {
     /** Three minutes to get to a trader. */
@@ -36,6 +40,7 @@ final class CompanionTrading {
     /** A trader whose window a player has open: his offers carry that player's discount then, and the game lets nobody else trade. */
     private static final String FRESH = "Такая сделка есть только у жителя, который ещё не торговал: после обмена товар у него закрепится. Меняем?";
     private static final String BUSY = "Торговец занят: у него открыто окно торговли. Закрой — и я обменяюсь.";
+    private static final String BAG_FULL = "Сумка полна: товар некуда положить.";
 
     private record Candidate(UUID id, boolean fresh, int price, double distance, int missing, String missingText) { }
 
@@ -51,7 +56,10 @@ final class CompanionTrading {
     /** Set by {@link #choose}: no live trader near had the deal (the refusal is then only the last word if the memory has none). */
     private boolean noDeal;
     private long startedAt, lookUntil;
-    private boolean paid, bagFull;
+    /** The order stopped short of what it could have done: the goods did not reach the bag. */
+    private boolean paid, incomplete;
+    /** The traders seen near with the deal, all of it out of stock: the memory's stock is older than what was just seen. */
+    private final Set<UUID> outNear = new HashSet<>();
     private int bagBefore, trades, done, units;
     /** Why this trader was let go: the full refusal when nothing was traded, the short reason for the report when something was. */
     private String lastReason = "", lastWhy = "";
@@ -73,6 +81,7 @@ final class CompanionTrading {
     /** Fills the queue with the live traders near him that will do, in the order the class says; else the refusal, in words, and {@link #noDeal}. */
     private String choose(ServerLevel level) {
         noDeal = false;
+        outNear.clear();
         List<AbstractVillager> near = CompanionScouting.nearby(level, w.owner);
         if (near.isEmpty()) { noDeal = true; return "Торговцев рядом не вижу."; }
         boolean matched = false, stocked = false, awake = false, free = false, allowed = false;
@@ -82,7 +91,7 @@ final class CompanionTrading {
             if (offers.isEmpty()) continue;
             matched = true;
             List<MerchantOffer> inStock = offers.stream().filter(offer -> !offer.isOutOfStock()).toList();
-            if (inStock.isEmpty()) continue;
+            if (inStock.isEmpty()) { outNear.add(trader.getUUID()); continue; }
             stocked = true;
             if (trader.isSleeping()) continue;
             awake = true;
@@ -94,7 +103,8 @@ final class CompanionTrading {
             candidates.add(candidate(level, trader, cheapest(inStock), fresh));
         }
         if (!matched) { noDeal = true; return "Такого обмена тут нет."; }
-        if (!stocked) return OUT;
+        // All of them are out of it: as if none had it, the memory may know one that is not.
+        if (!stocked) { noDeal = true; return OUT; }
         if (!awake) return "Торговец спит, сходим утром.";
         if (!free) return BUSY;
         if (!allowed) return FRESH;
@@ -106,9 +116,9 @@ final class CompanionTrading {
     }
 
     /**
-     * No live trader near has the deal: the memory's traders that have it. None at all: {@code refusal} stands. None in this dimension
-     * within the far radius: he asks to be led. Else they are lined up as near (fixed before fresh, cheaper, nearer) by the remembered
-     * deals, and the walk to the first begins on the first tick.
+     * No live trader near has the deal (or all are out of it): the memory's traders that have it. None at all: {@code refusal} stands.
+     * None in this dimension within the far radius: he asks to be led; the same when chunks are not held. Else they are lined up as near
+     * (with stock before without, fixed before fresh, cheaper, nearer) by the remembered deals, and the walk to the first begins on the first tick.
      */
     private CompanionActionResult remembered(ServerLevel level, String refusal) {
         List<CompanionTraders.Entry> have = w.owner.traders().entries().stream().filter(entry -> rememberedDeal(entry) != null).toList();
@@ -117,13 +127,16 @@ final class CompanionTrading {
         double reach = (double) CompanionScouting.FAR_RADIUS * CompanionScouting.FAR_RADIUS;
         List<CompanionTraders.Entry> reachable = have.stream().filter(entry -> entry.dimension().equals(dimension) && entry.pos().distSqr(w.owner.blockPosition()) <= reach).toList();
         if (reachable.isEmpty()) return CompanionActionResult.failed(CompanionScouting.TOO_FAR);
-        List<CompanionTraders.Entry> stocked = reachable.stream().filter(entry -> rememberedDeal(entry).left() > 0).toList();
-        if (stocked.isEmpty()) return CompanionActionResult.failed(OUT);
-        List<CompanionTraders.Entry> allowed = stocked.stream().filter(entry -> !entry.fresh() || order.consent()).toList();
+        // Without chunk loading he would stop where the world stops around him, half way, until the order times out.
+        if (!CompanionErrand.holdsChunks(w.owner, level)) return CompanionActionResult.failed(CompanionFarWalk.CHUNKS_OFF);
+        // The remembered stock may be old (villagers restock): the live offers decide on arrival. One just seen out of it near is not walked to.
+        List<CompanionTraders.Entry> unseen = reachable.stream().filter(entry -> !outNear.contains(entry.id())).toList();
+        if (unseen.isEmpty()) return CompanionActionResult.failed(refusal);
+        List<CompanionTraders.Entry> allowed = unseen.stream().filter(entry -> !entry.fresh() || order.consent()).toList();
         if (allowed.isEmpty()) return CompanionActionResult.failed(FRESH);
         List<CompanionTraders.Entry> sorted = new ArrayList<>(allowed);
-        sorted.sort(Comparator.comparing(CompanionTraders.Entry::fresh).thenComparingInt(entry -> price(rememberedDeal(entry)))
-                .thenComparingDouble(entry -> entry.pos().distSqr(w.owner.blockPosition())));
+        sorted.sort(Comparator.comparing((CompanionTraders.Entry entry) -> rememberedDeal(entry).left() <= 0).thenComparing(CompanionTraders.Entry::fresh)
+                .thenComparingInt(entry -> price(rememberedDeal(entry))).thenComparingDouble(entry -> entry.pos().distSqr(w.owner.blockPosition())));
         for (CompanionTraders.Entry entry : sorted) if (missingText(level, rememberedDeal(entry)).isEmpty()) farQueue.add(entry.id());
         if (farQueue.isEmpty()) return CompanionActionResult.failed("Не хватает платы: " + missingText(level, rememberedDeal(sorted.getFirst())) + ".");
         return null;
@@ -158,7 +171,7 @@ final class CompanionTrading {
     void cancel() {
         if (current != null || !queue.isEmpty() || farWalk.active()) w.route.stop();
         farWalk.cancel();
-        queue.clear(); farQueue.clear(); current = farId = null; order = null; paid = bagFull = false; lastReason = lastWhy = ""; goods = paidA = paidB = gotGoods = ItemStack.EMPTY;
+        queue.clear(); farQueue.clear(); outNear.clear(); current = farId = null; order = null; paid = incomplete = false; lastReason = lastWhy = ""; goods = paidA = paidB = gotGoods = ItemStack.EMPTY;
         startedAt = lookUntil = 0; bagBefore = trades = done = units = 0;
         walk.end();
     }
@@ -177,11 +190,11 @@ final class CompanionTrading {
         if (current == null) {
             if (queue.isEmpty() && startFar()) return;
             if (queue.isEmpty()) {
-                if (trades > 0) finishTrades(level, lastWhy.isEmpty() ? "других с такой сделкой нет" : lastWhy);
+                if (trades > 0) finishTrades(level, lastWhy.isEmpty() ? "других с такой сделкой рядом нет" : lastWhy);
                 else w.finish(false, lastReason.isEmpty() ? "Не дотянулся до торговца." : lastReason);
                 return;
             }
-            current = queue.removeFirst(); walk.begin(now); lookUntil = 0;
+            current = queue.removeFirst(); walk.begin(now); lookUntil = 0; startedAt = now;
         }
         if (!(level.getEntity(current) instanceof AbstractVillager trader) || !trader.isAlive()) { next(); return; }
         if (trader.isSleeping()) { lastReason = "Торговец спит, сходим утром."; lastWhy = "торговец спит"; next(); return; }
@@ -198,7 +211,8 @@ final class CompanionTrading {
         trade(level, trader);
     }
 
-    private void next() { current = null; walk.end(); }
+    /** This trader is done with or given up; the three minutes of the next approach start when it is taken. */
+    private void next() { current = null; startedAt = 0; walk.end(); }
 
     /** The walk to the next remembered trader begins; false when none is left (one forgotten since the line was made is passed). */
     private boolean startFar() {
@@ -230,16 +244,18 @@ final class CompanionTrading {
                 w.owner.refreshTraders();
                 farId = null;
             }
-            case TIMEOUT -> farLost("Шёл к торговцу слишком долго, не дошёл.");
-            case FAILED -> farLost("До торговца, которого помню, дойти не смог: нет пути.");
+            case TIMEOUT -> farLost("Шёл к торговцу слишком долго, не дошёл.", "шёл к далёкому торговцу слишком долго");
+            case FAILED -> farLost("До торговца, которого помню, дойти не смог: нет пути.", "до далёкого торговца не дошёл");
         }
     }
 
-    private void farLost(String reason) {
+    /** The walk to this remembered trader is over without him; the next one is tried, and this reason stays if no one else says its own. */
+    private void farLost(String reason, String why) {
         dev.aicompanion.CompanionDiagnostics.event(w.owner.diagnosticTrace(), "trading_far_failed", "entity", w.owner.getUUID(), "to", farWalk.target().toShortString());
         farWalk.cancel();
         w.route.stop();
         lastReason = reason;
+        lastWhy = why;
         farId = null;
     }
 
@@ -247,7 +263,7 @@ final class CompanionTrading {
     private void trade(ServerLevel level, AbstractVillager trader) {
         if (trader.isTrading()) { lastReason = BUSY; lastWhy = "торговец занят"; next(); return; }
         List<MerchantOffer> inStock = matching(trader).stream().filter(offer -> !offer.isOutOfStock()).toList();
-        if (inStock.isEmpty()) { lastReason = OUT; lastWhy = "лимит сделки кончился, других с такой сделкой нет"; next(); return; }
+        if (inStock.isEmpty()) { lastReason = OUT; lastWhy = "лимит сделки кончился, других с такой сделкой рядом нет"; next(); return; }
         MerchantOffer offer = cheapest(inStock);
         Candidate shortage = candidate(level, trader, offer, fresh(trader));
         if (shortage.missing() > 0) {
@@ -257,13 +273,25 @@ final class CompanionTrading {
             next(); return;
         }
         ItemStack costA = offer.getCostA(), costB = offer.getCostB(), result = offer.getResult().copy();
-        units = order.sale() ? (pays(costA) ? costA : costB).getCount() : 0;
-        w.items.takeCarried(offer.getItemCostA()::test, costA.getCount());
-        paidA = add(paidA, costA);
-        if (!costB.isEmpty() && offer.getItemCostB().isPresent()) {
-            w.items.takeCarried(offer.getItemCostB().get()::test, costB.getCount());
-            paidB = add(paidB, costB);
+        boolean second = !costB.isEmpty() && offer.getItemCostB().isPresent();
+        // The price is taken first, so that what it frees counts as room; with no room or no whole price it goes back as it was and nothing is paid.
+        List<ItemStack> saved = carriedCopy();
+        if (!takeAll(offer.getItemCostA(), costA.getCount()) || second && !takeAll(offer.getItemCostB().get(), costB.getCount())) {
+            restoreCarried(saved);
+            lastReason = "Не хватает платы.";
+            queue.clear(); farQueue.clear(); lastWhy = "плата кончилась";
+            next(); return;
         }
+        if (!w.owner.canStoreDrops(List.of(result))) {
+            restoreCarried(saved);
+            incomplete = true;
+            if (trades > 0) finishTrades(level, "сумка полна: товар некуда положить");
+            else w.finish(false, BAG_FULL);
+            return;
+        }
+        units = order.sale() ? (pays(costA) ? costA : costB).getCount() : 0;
+        paidA = add(paidA, costA);
+        if (second) paidB = add(paidB, costB);
         // The deal is used and the villager gets his experience and level as the game gives them; notifyTrade is not called (it announces a trade with no player).
         offer.increaseUses();
         trader.rewardTradeXp(offer);
@@ -271,7 +299,7 @@ final class CompanionTrading {
         w.owner.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
         goods = result;
         bagBefore = w.items.countCarried(result.getItem());
-        throwGoods(level, trader, result);
+        dropGoods(level, result);
         w.owner.traders().remember(trader, level);
         w.owner.refreshTraders();
         gotGoods = add(gotGoods, result);
@@ -280,23 +308,50 @@ final class CompanionTrading {
         w.route.stop();
     }
 
-    /** The trader puts the goods on the ground toward him, as a villager gives; he picks them up like his harvest. */
-    private void throwGoods(ServerLevel level, AbstractVillager trader, ItemStack result) {
-        Vec3 from = trader.position().add(0, trader.getEyeHeight() - .3, 0);
-        Vec3 toward = w.owner.getEyePosition().subtract(from).normalize().scale(.25);
-        ItemEntity drop = new ItemEntity(level, from.x, from.y, from.z, result);
-        drop.setDeltaMovement(toward.x, toward.y + .1, toward.z);
-        drop.setPickUpDelay(10);
+    /** The goods lie at his own feet, ready to pick up at once (a villager takes food within four blocks); he picks them up like his harvest. */
+    private void dropGoods(ServerLevel level, ItemStack result) {
+        ItemEntity drop = new ItemEntity(level, w.owner.getX(), w.owner.getY(), w.owner.getZ(), result);
+        drop.setDeltaMovement(Vec3.ZERO);
+        drop.setPickUpDelay(0);
         if (level.addFreshEntity(drop)) w.owner.claimDrops(List.of(drop));
+    }
+
+    /** What he carries, cell by cell (bag, then hands), to put back as it was. */
+    private List<ItemStack> carriedCopy() {
+        List<ItemStack> copy = new ArrayList<>();
+        for (int slot = 0; slot < w.owner.getContainerSize(); slot++) copy.add(w.owner.getItem(slot).copy());
+        copy.add(w.owner.getMainHandItem().copy());
+        copy.add(w.owner.getOffhandItem().copy());
+        return copy;
+    }
+
+    private void restoreCarried(List<ItemStack> saved) {
+        int cells = w.owner.getContainerSize();
+        for (int slot = 0; slot < cells; slot++) w.owner.setItem(slot, saved.get(slot).copy());
+        w.owner.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, saved.get(cells).copy());
+        w.owner.setItemSlot(net.minecraft.world.entity.EquipmentSlot.OFFHAND, saved.get(cells + 1).copy());
+        w.owner.refreshInventorySummary();
+    }
+
+    /** The whole price, stack after stack (a take is of one kind of stack, and the price accepts others too); false when the bag has less. */
+    private boolean takeAll(ItemCost cost, int count) {
+        int taken = 0;
+        while (taken < count) {
+            ItemStack got = w.items.takeCarried(cost::test, count - taken);
+            if (got.isEmpty()) return false;
+            taken += got.getCount();
+        }
+        return true;
     }
 
     /** The goods are in the bag (or could not be): the order is done, or goes on with the same trader (his deal may still hold). */
     private void afterPickup(ServerLevel level, long now) {
         int got = w.items.countCarried(goods.getItem()) - bagBefore;
         done += order.sale() ? units : got;
-        if (got < goods.getCount()) { bagFull = true; finishTrades(level, "сумка полна, товар лежит рядом"); return; }
+        // The bag had room when the price was taken: goods that did not come lie somewhere near.
+        if (got < goods.getCount()) { incomplete = true; finishTrades(level, "товар не подобрал: лежит рядом"); return; }
         if (order.count() > 0 ? done >= order.count() : !order.sale()) { finishTrades(level, ""); return; }
-        paid = false; lookUntil = now;
+        paid = false; lookUntil = now; startedAt = now; walk.begin(now);
     }
 
     /** The honest end of a trade order: what was traded for what, and, when the number was not reached or none was named, why it stopped. */
@@ -306,7 +361,7 @@ final class CompanionTrading {
         String base = order.sale() ? "Продал " + paidText + " за " + goodsText : "Купил " + goodsText + " за " + paidText;
         boolean reached = order.count() == 0 || done >= order.count();
         String message = base + (order.count() > 0 && done < order.count() ? ", это " + done + " из " + order.count() : "") + (why.isEmpty() ? "." : ": " + why + ".");
-        w.finish(reached && !bagFull, message);
+        w.finish(reached && !incomplete, message);
     }
 
     private static ItemStack add(ItemStack sum, ItemStack more) { return sum.isEmpty() ? more.copy() : sum.copyWithCount(sum.getCount() + more.getCount()); }

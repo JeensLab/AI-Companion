@@ -10,6 +10,8 @@ final class CompanionFarWalk {
     enum Step { WALKING, ARRIVED, FAILED, TIMEOUT }
 
     static final int LIMIT = 20 * 60 * 8;
+    /** The refusal of a far walk when chunk loading would not hold him out there (CompanionErrand.holdsChunks). */
+    static final String CHUNKS_OFF = "Один далеко не пойду: у меня выключена подгрузка чанков. Включи «Работа вдали от игрока» в «Поведении» или отведи меня.";
     private final CompanionWork w;
     private BlockPos target;
     private long startedAt;

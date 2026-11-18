@@ -1045,8 +1045,8 @@ public final class OpenRouterClient {
         JsonObject count = new JsonObject();
         count.addProperty("type", "integer");
         count.addProperty("minimum", 0);
-        count.addProperty("maximum", 500);
-        count.addProperty("description", "Количество 1–64; для walk_heading — блоки пути 1–500, без count — до «стоп».");
+        count.addProperty("maximum", 640);
+        count.addProperty("description", "Количество 1–64; для walk_heading — блоки пути 1–500, без count — до «стоп»; для trade_items — штуки, 1–640.");
         itemProperties.add("count", count);
         JsonObject itemId = new JsonObject();
         itemId.addProperty("type", "string");

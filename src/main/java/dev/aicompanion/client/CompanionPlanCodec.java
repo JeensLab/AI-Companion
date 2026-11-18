@@ -197,7 +197,11 @@ public final class CompanionPlanCodec {
                 // The round of traders takes no item and no number: anything written there spoils the plan.
                 if ("scout_traders".equals(type) && (!item.isEmpty() || count != 1)) throw invalid();
                 // A trade names its goods (a book also its enchantment), maybe what to pay and whom, and the player's word; the fields ride in the item text.
-                if ("trade_items".equals(type)) item = dev.aicompanion.entity.CompanionTradeOrder.read(step).pack();
+                if ("trade_items".equals(type)) {
+                    item = dev.aicompanion.entity.CompanionTradeOrder.read(step).pack();
+                    // The real number rides in the packed order; the step's own count must pass the server's one-order limit of 64.
+                    count = 1;
+                }
                 // A building is named from the catalogue (or a kind of it) or not at all («resume» goes on with the one left unfinished); the name is kept as the catalogue spells it.
                 // «дом», «house», «маленький дом», «дом 5×5»: the plain house, as an empty item always was.
                 if ("build_house".equals(type) && dev.aicompanion.entity.CompanionVillageBuildings.plankHouse(item)) item = "";
