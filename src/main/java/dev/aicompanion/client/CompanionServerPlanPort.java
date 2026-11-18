@@ -354,8 +354,8 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
         if ("walk_heading".equals(action.type())) return dev.aicompanion.entity.CompanionCourse.LIMIT_SECONDS + 120;
         // A scout of a remembered village: the walk there has its own eight minutes on the server, the round three more (CompanionScouting).
         if ("scout_traders".equals(action.type())) return 8 * 60 + 3 * 60 + 120;
-        // A far trade: the walk to a remembered trader has its own eight minutes on the server, the trading and the walks between traders more (CompanionTrading).
-        if ("trade_items".equals(action.type())) return 20 * 60;
+        // A far trade: up to two remembered traders, each an eight-minute walk and a three-minute approach, on the server's deadline (CompanionTrading).
+        if ("trade_items".equals(action.type())) return 2 * (8 + 3) * 60 + 60 + 120;
         // Iron tools and gold or diamonds without an iron pickaxe: ore, furnace and bench in one order, each stage with its
         // own time on the server (review 22.10, М5); the client waits for all of them.
         var kind = "mine_ore".equals(action.type()) ? dev.aicompanion.entity.CompanionOre.Kind.of(action.item()) : null;
