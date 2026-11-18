@@ -5,6 +5,7 @@ import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.client.CompanionPlanCodec;
 import dev.aicompanion.client.CompanionPlanRunner;
 import dev.aicompanion.client.CompanionServerPlanPort;
+import dev.aicompanion.client.CompanionTradeWords;
 import dev.aicompanion.entity.CompanionActionResult;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
@@ -50,6 +51,13 @@ public final class CompanionTraderTests {
     public static void after3(net.minecraft.server.level.ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @net.minecraft.gametest.framework.AfterBatch(batch = "traders4")
     public static void after4(net.minecraft.server.level.ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+
+    @net.minecraft.gametest.framework.AfterBatch(batch = "traders5")
+    public static void after5(net.minecraft.server.level.ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "traders6")
+    public static void after6(net.minecraft.server.level.ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "traders7")
+    public static void after7(net.minecraft.server.level.ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
 
     /** Two traders with their own offers, a jobless villager and a child: the report names the two and the memory holds their offers. */
     @GameTest(template = "tall_tree", timeoutTicks = 2400, batch = "traders1")
@@ -142,6 +150,82 @@ public final class CompanionTraderTests {
             h.assertTrue(companion.traders().entries().isEmpty() && far.isAlive() && far.getOffers().size() == 1, "Memory or villager changed");
             h.succeed();
         });
+    }
+
+    /** The memory goes into the saved tag and comes out the same on a new entity; a tag without the key is an empty memory; the one who comes back after death has it too. */
+    @GameTest(template = "tall_tree", timeoutTicks = 20 * 40, batch = "traders5")
+    public static void theMemoryIsSavedAndComesBackWithTheCompanion(GameTestHelper h) {
+        ground(h);
+        Villager librarian = trader(h, VillagerProfession.LIBRARIAN, 14, 12, mendingBook(h));
+        Villager armorer = trader(h, VillagerProfession.ARMORER, 20, 18, new MerchantOffer(new ItemCost(Items.EMERALD, 15), java.util.Optional.of(new ItemCost(Items.IRON_INGOT, 2)), new ItemStack(Items.DIAMOND_HELMET), 3, 1, 0));
+        CompanionEntity companion = spawn(h, 10, 16);
+        companion.traders().remember(librarian, h.getLevel());
+        companion.traders().remember(armorer, h.getLevel());
+        var before = companion.traders().entries();
+        net.minecraft.nbt.CompoundTag tag = new net.minecraft.nbt.CompoundTag();
+        companion.saveWithoutId(tag);
+        CompanionEntity copy = AICompanionMod.COMPANION.get().create(h.getLevel());
+        copy.load(tag);
+        h.assertTrue(copy.traders().entries().size() == 2 && copy.traders().entries().containsAll(before), "Loaded: " + copy.traders().entries());
+        tag.remove("Traders");
+        CompanionEntity old = AICompanionMod.COMPANION.get().create(h.getLevel());
+        old.load(tag);
+        h.assertTrue(old.traders().entries().isEmpty(), "An old save has traders: " + old.traders().entries());
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        companion.kill();
+        h.succeedWhen(() -> {
+            CompanionEntity back = CompanionEvents.getOwnedCompanion(owner);
+            h.assertTrue(back != null && back.isAlive() && back != companion, "He did not come back");
+            h.assertTrue(back.traders().entries().size() == 2 && back.traders().entries().containsAll(before), "Memory lost at death: " + back.traders().entries());
+        });
+    }
+
+    /** The 31st trader pushes out the one seen longest ago. */
+    @GameTest(template = "tall_tree", timeoutTicks = 400, batch = "traders6")
+    public static void theThirtyFirstTraderPushesOutTheOldest(GameTestHelper h) {
+        ground(h);
+        CompanionEntity companion = spawn(h, 10, 16);
+        Villager first = trader(h, VillagerProfession.LIBRARIAN, 3, 3, mendingBook(h));
+        companion.traders().remember(first, h.getLevel());
+        h.runAfterDelay(5, () -> {
+            Villager last = null;
+            for (int i = 0; i < 30; i++) {
+                last = trader(h, VillagerProfession.ARMORER, 4 + i % 25, 6 + i / 25 * 3, mendingBook(h));
+                companion.traders().remember(last, h.getLevel());
+            }
+            h.assertTrue(companion.traders().entries().size() == 30 && companion.traders().entry(first.getUUID()) == null && companion.traders().entry(last.getUUID()) != null,
+                    "Size " + companion.traders().entries().size() + ", the oldest is still there: " + (companion.traders().entry(first.getUUID()) != null));
+            h.succeed();
+        });
+    }
+
+    /** 30 traders of 10 deals each: the line the entity syncs stays under the string limit of the data, and is there on the client side getter. */
+    @GameTest(template = "tall_tree", timeoutTicks = 400, batch = "traders7")
+    public static void theSyncedLineOfThirtyFullTradersFitsTheDataLimit(GameTestHelper h) {
+        ground(h);
+        CompanionEntity companion = spawn(h, 10, 16);
+        for (int i = 0; i < 30; i++) {
+            Villager villager = trader(h, VillagerProfession.LIBRARIAN, 3 + i % 25, 6 + i / 25 * 3, mendingBook(h));
+            MerchantOffers offers = new MerchantOffers();
+            for (int d = 0; d < 10; d++) offers.add(new MerchantOffer(new ItemCost(Items.EMERALD, 15), java.util.Optional.of(new ItemCost(Items.PAPER, 24)), mendingBook(h).getResult(), 3, 1, 0));
+            villager.setOffers(offers);
+            companion.traders().remember(villager, h.getLevel());
+        }
+        h.succeedWhen(() -> {
+            String line = companion.getTradersForAi();
+            h.assertTrue(!line.isEmpty() && line.length() <= 32767, "Synced length " + line.length());
+            h.assertTrue(line.contains("15 emerald+24 paper->1 enchanted_book[mending 1]") && line.contains("librarian") && line.contains("только что"), "Line: " + line.substring(0, Math.min(400, line.length())));
+        });
+    }
+
+    /** What the snapshot adds only for trade talk. */
+    @GameTest(template = "empty")
+    public static void tradeWordsPickTheMessagesAboutTrading(GameTestHelper h) {
+        for (String yes : new String[]{"купи книгу на починку", "что продают жители", "Обменяй пшеницу на изумруды", "сколько стоит зачарованная книга"})
+            h.assertTrue(CompanionTradeWords.about(yes), "Not about trading: " + yes);
+        for (String no : new String[]{"пойдём домой", "руби дерево", "что у тебя в сумке"})
+            h.assertTrue(!CompanionTradeWords.about(no), "Taken for trading: " + no);
+        h.succeed();
     }
 
     // ---- the arena ----

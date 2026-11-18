@@ -88,7 +88,14 @@ public final class GameContext {
                         ? "пока нет" : companions.getFirst().getLastTaskResult())
                         + ", журнал его недавних дел (старые первыми, настоящие итоги)=" + companions.getFirst().getDeedsForAi())
                 + (remembered.isEmpty() ? "" : ", " + remembered)
+                + tradersPart(message, companions)
                 + ". Это только видимые клиенту сведения; не додумывай неизвестное. Ход своих дел, печи и цель не докладывай, если товарищ о них не спросил.";
+    }
+
+    private static String tradersPart(String message, List<CompanionEntity> companions) {
+        if (companions.isEmpty() || !CompanionTradeWords.about(message)) return "";
+        String traders = companions.getFirst().getTradersForAi();
+        return ", торговцы=" + (traders.isEmpty() ? "список пуст: никого из торговцев он ещё не расспрашивал" : traders);
     }
 
     public static String timeOfDay(long dayTime) {
