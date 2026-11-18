@@ -360,6 +360,8 @@ final class CompanionTrading {
 
     /** The honest end of a trade order: what was traded for what, and, when the number was not reached or none was named, why it stopped. */
     private void finishTrades(ServerLevel level, String why) {
+        // «Продай всё»: giving away all he has is the order done, not a stop (game 18.11 said «плата кончилась», as if he came up short).
+        if (order.sale() && order.count() == 0 && "плата кончилась".equals(why)) why = "";
         String paidText = List.of(paidA, paidB).stream().filter(stack -> !stack.isEmpty()).map(stack -> CompanionScouting.text(level, CompanionTraders.stack(stack))).collect(java.util.stream.Collectors.joining(" и "));
         String goodsText = CompanionScouting.text(level, CompanionTraders.stack(gotGoods));
         String base = order.sale() ? "Продал " + paidText + " за " + goodsText : "Купил " + goodsText + " за " + paidText;
