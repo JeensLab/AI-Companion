@@ -7,6 +7,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.FluidTags;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -74,6 +75,14 @@ final class CompanionPicking {
     private BlockPos target;
     /** The cells he takes the target from, his way to them and the walks so far. */
     private Set<BlockPos> stands = Set.of();
+    /** A leaf order is the leaves of any kind: the species it named first, the leaves of any tree or hedge about after it (any #minecraft:leaves). */
+    private boolean leafOrder;
+    /** The sources of the species the order named: tried before the leaves of other kinds. */
+    private List<CompanionPickable.Source> speciesSources = List.of();
+    /** Every leaf block about, whatever species: what a leaf order falls through to when the tree it named cannot give it. */
+    private List<CompanionPickable.Source> leafSources = List.of();
+    /** The gather takes the leaves with the shears: the tool stays in his hand until the order ends, also while a column comes down. */
+    private boolean shearsGather;
     /** No way to the stands of this target: the climb is what is left, and the walk is not searched again for it. */
     private boolean walkFailed;
     private Path path;
@@ -92,9 +101,16 @@ final class CompanionPicking {
         c = w.owner;
         ResourceLocation key = ResourceLocation.tryParse(id == null ? "" : id);
         Item asked = key == null ? null : BuiltInRegistries.ITEM.getOptional(key).orElse(null);
-        sources = asked == null || !(c.level() instanceof ServerLevel level) ? List.of() : allowed(level, CompanionPickable.sources(level, asked));
+        ServerLevel level = c.level() instanceof ServerLevel here ? here : null;
+        speciesSources = asked == null || level == null ? List.of() : allowed(level, CompanionPickable.sources(level, asked));
+        // A leaf order is the leaves of any tree or hedge about, whatever species it named: the named one is tried first, and
+        // another kind stands in for the part it cannot give (any #minecraft:leaves) before the order is refused.
+        leafOrder = asked != null && level != null && new ItemStack(asked).is(ItemTags.LEAVES);
+        leafSources = leafOrder ? allowed(level, CompanionPickable.leaves(level)) : List.of();
+        sources = leafOrder ? leafSources : speciesSources;
+        shearsGather = leafOrder || asked != null && level != null && CompanionPickable.shorn(level, asked);
         if (sources.isEmpty()) return CompanionActionResult.failed("Такое я с земли не собираю: " + id + ".");
-        item = asked; wanted = count; before = w.items.countCarried(item); due = 0; settleAt = 0; retried = false;
+        item = asked; wanted = count; before = leafOrder ? CompanionLeaves.carried(c) : w.items.countCarried(item); due = 0; settleAt = 0; retried = false;
         release();
         passed.clear(); lavaKept.clear(); soilAboutKnown = false;
         return null;
@@ -105,9 +121,10 @@ final class CompanionPicking {
 
     String jobName() { return "сбор: «" + name() + "» (" + got() + " из " + wanted + ")"; }
 
-    private String name() { return new ItemStack(item).getHoverName().getString(); }
+    private String name() { return leafOrder ? "Листва" : new ItemStack(item).getHoverName().getString(); }
 
-    private int got() { return Math.max(0, w.items.countCarried(item) - before); }
+    /** What the order has brought: for a leaf order every kind of leaf in the bag counts, as the order itself counts them. */
+    private int got() { return Math.max(0, (leafOrder ? CompanionLeaves.carried(c) : w.items.countCarried(item)) - before); }
 
     /** What the order has brought so far: said when it is cut short (the errand's watch in the Nether). */
     String progress() { return "в сумке прибавилось " + got() + " «" + CompanionWork.itemName(item) + "»."; }
@@ -147,47 +164,89 @@ final class CompanionPicking {
         return null;
     }
 
-    /** Whether a block that gives dirt stands within his search where he may take it: the soil for a crown he digs himself. */
+    /**
+     * The block to take from these sources: a tree's own leaves from a stand he can walk to first (the stair the player built
+     * is walked up, not built over), then a tree's own up a column of his soil; {@code naturalOnly} false adds the leaves a
+     * player set down the same two ways, and they are asked for only after every natural leaf about (the owner, 18.11, 19.11).
+     */
+    private BlockPos pick(ServerLevel level, Predicate<BlockPos> site, List<CompanionPickable.Source> from, boolean dug, boolean naturalOnly) {
+        BlockPos found = find(c, level, from, site, passed, lavaKept, false, naturalOnly, true);
+        if (found == null) found = find(c, level, from, site, passed, lavaKept, dug, naturalOnly, false);
+        return found;
+    }
+
+    /** Whether a block of soil stands within the reach the dig works in, where he may take it: the dig's own rule, the site of a building and all (CompanionDigGoal). */
     static boolean soilAbout(CompanionEntity c, ServerLevel level) {
-        List<CompanionPickable.Source> dirt = allowed(level, CompanionPickable.sources(level, Items.DIRT));
-        return !dirt.isEmpty() && find(c, level, dirt, sites(c, level), Set.of(), new HashSet<>(), false, false, false) != null;
+        BlockPos origin = c.blockPosition();
+        for (BlockPos pos : CompanionLogSearch.find(level, origin, 12, BlockTags.DIRT)) {
+            if (!c.leashAllows(pos) || !CompanionGround.SOIL.matches(level.getBlockState(pos))) continue;
+            if (pos.getY() < origin.getY() - 1 || pos.getY() > origin.getY() + 5 || pos.distSqr(origin) > 12 * 12) continue;
+            if (!CompanionGround.SOIL.safeCell(level, pos, c) || !exposed(level, pos)) continue;
+            return true;
+        }
+        return false;
+    }
+
+    /** A face of the block open to the air: the dig takes only a block he can come at from a stand. */
+    private static boolean exposed(ServerLevel level, BlockPos pos) {
+        for (Direction side : Direction.values()) {
+            BlockPos beside = pos.relative(side);
+            if (level.hasChunkAt(beside) && level.getBlockState(beside).getCollisionShape(level, beside).isEmpty()) return true;
+        }
+        return false;
     }
 
     /**
-     * The soil he must dig for the crown of this leaf block the order will come at: the steps of its longest column less what
-     * he carries. 0 when a stand he can walk to serves it or the bag already has the soil; the crown is not counted when no
-     * column reaches it (the order is refused for its height then).
+     * The soil he must dig for the crown of these leaves the order will come at: the steps of the longest column among the
+     * leaves no stand he can walk to serves, less what he carries. 0 when the stands serve the whole order or the bag already
+     * has the soil; a leaf no column reaches is not counted (the order is refused for its height then). A stair that serves only
+     * part of a crown is no reason to pass the far leaves over: the dig is sized for the leaves that remain reachable, not only
+     * for the first (the owner, 19.11).
      */
-    static int soilToDig(CompanionEntity c, ServerLevel level, String item) {
+    static int soilToDig(CompanionEntity c, ServerLevel level, String item, int count) {
         var id = ResourceLocation.tryParse(item == null ? "" : item);
         var leaf = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
         if (leaf == null) return 0;
         List<CompanionPickable.Source> all = allowed(level, CompanionPickable.sources(level, leaf)).stream()
                 .filter(source -> source.block().defaultBlockState().is(BlockTags.LEAVES)).toList();
-        // The leaf the gather comes at first: one a stand serves, as the gather takes them first, else the nearest one a
-        // column reaches (the owner, 18.11: the stair's crown is cut from the stair, and no soil is dug for it).
         Predicate<BlockPos> site = sites(c, level);
-        BlockPos found = find(c, level, all, site, Set.of(), new HashSet<>(), false, true, true);
-        if (found == null) found = find(c, level, all, site, Set.of(), new HashSet<>(), false, false, true);
-        if (found == null) found = nearestLeaf(c, level, all);
-        if (found == null) return 0;
-        // The leaf the order comes at first is served by a stand only when there is a way to that stand on foot: a stair he
-        // cannot climb (a step of two, a wall across it) leaves the crown above every stand cell all the same, and the soil for
-        // the column is dug before the gather instead of being given up over (the owner, 18.11: «Вижу, где взять …, но подойти
-        // не смог»). No dirt about to dig: the leaf is passed over for the one beside it, as it was (a stone shelf).
-        Set<BlockPos> stands = standsFor(c, level, found);
-        if (!stands.isEmpty() && CompanionMiningNavigation.canWalkTo(c, c.blockPosition(), stands)) return 0;
+        List<BlockPos> candidates = CompanionLogSearch.find(level, c.blockPosition(), c.searchRadius, BlockTags.LEAVES).stream()
+                .filter(pos -> gives(all, level.getBlockState(pos)) > 0 && c.errand.within(pos) && takes(level, pos, site)
+                        && grounded(c, level, pos) && !lavaBeside(level, pos))
+                .toList();
+        // The leaves the order comes at: those a stand serves need no soil, and the leaf the gather comes at first is walked to,
+        // so a stair he cannot climb (a step of two, a wall across it) leaves it to a column. The leaves above every stand cell
+        // are climbed for: the dig is sized for the longest of those columns, so a stair that serves only part of a crown is no
+        // reason to pass the far leaves over (the owner, 19.11).
+        int byStand = 0;
+        for (BlockPos found : candidates) if (low(c, level, found)) byStand++;
+        int steps = 0;
+        BlockPos first = find(c, level, all, site, Set.of(), new HashSet<>(), false, true, true);
+        if (first == null) first = find(c, level, all, site, Set.of(), new HashSet<>(), false, false, true);
+        if (first == null) first = nearestLeaf(c, level, all);
+        if (byStand >= count && first != null) {
+            Set<BlockPos> stands = standsFor(c, level, first);
+            // The stands serve the whole order and the first of them is walked to: no column, no soil.
+            if (!stands.isEmpty() && CompanionMiningNavigation.canWalkTo(c, c.blockPosition(), stands)) return 0;
+            steps = c.temporaryPillar.columnSteps(first);
+        }
+        for (BlockPos found : candidates) {
+            if (low(c, level, found) || c.temporaryPillar.buildCellsWithAnySoil(found).isEmpty()) continue;
+            steps = Math.max(steps, c.temporaryPillar.columnSteps(found));
+        }
+        if (steps == 0) return 0;
         // No soil he can really dig (the dig's own reach, not the search radius of the order): the leaf is passed over for the
         // one beside it, as it was — a leaf on a stone shelf with the dirt twenty blocks off (the owner, 18.11).
-        if (!soilNear(c, level)) return 0;
-        return Math.max(0, c.temporaryPillar.columnSteps(found) - c.temporaryPillar.soilCarried());
+        if (!soilAbout(c, level)) return 0;
+        return Math.max(0, steps - c.temporaryPillar.soilCarried());
     }
 
-    /** Whether a block that gives dirt stands within the reach the dig works in, where he may take it. */
-    private static boolean soilNear(CompanionEntity c, ServerLevel level) {
-        List<CompanionPickable.Source> dirt = allowed(level, CompanionPickable.sources(level, Items.DIRT));
-        BlockPos found = dirt.isEmpty() ? null : find(c, level, dirt, sites(c, level), Set.of(), new HashSet<>(), false, false, false);
-        return found != null && found.distSqr(c.blockPosition()) <= 12 * 12;
+    /** The nearest leaf of this item's blocks he can come at, or null: the species of an order that named one. */
+    static BlockPos nearestOf(CompanionEntity c, ServerLevel level, Item item) {
+        if (item == null) return null;
+        List<CompanionPickable.Source> all = allowed(level, CompanionPickable.sources(level, item)).stream()
+                .filter(source -> source.block().defaultBlockState().is(BlockTags.LEAVES)).toList();
+        return nearestLeaf(c, level, all);
     }
 
     /**
@@ -271,13 +330,13 @@ final class CompanionPicking {
         return false;
     }
 
-    /** A block of the kind he may take now: dry, not on a site of the player's (but the fruit of a stem, and a leaf the player set down himself), ripe, and not the root of a growing column. */
+    /** A block of the kind he may take now: dry, not on a site of the player's (but the fruit of a stem, and leaves of any kind), ripe, and not the root of a growing column. */
     private static boolean takes(ServerLevel level, BlockPos pos, Predicate<BlockPos> site) {
         BlockState state = level.getBlockState(pos);
-        // A leaf that does not fade was set down by the player as leaves (a hedge, a roof, a bed of them on the ground): it is
-        // still his to cut on a site of his, as the last leaves of a leaf order (the owner, 18.11: the leaves he placed lay
-        // beside him and were not taken at all).
-        if (site.test(pos) && !CompanionCrops.onStem(level, pos) && !(state.is(BlockTags.LEAVES) && setDown(state))) return false;
+        // A leaf is no building of the player's: a tree's own crown and the leaves he set down alike stand on a site of his (a
+        // tree beside the house is not his wall). The gather takes a tree's own leaves first and a leaf the player set down
+        // only when no natural leaf is reachable for the order, so a hedge beside a working tree stands (the owner, 18.11, 19.11).
+        if (site.test(pos) && !CompanionCrops.onStem(level, pos) && !state.is(BlockTags.LEAVES)) return false;
         // Clay on the bed of a pond has no water in its own cell: the water over it counts too. Only what grows there is dived for.
         // A coral block under another one, or a sea pickle sat on it, is not under open water: none of it is dived for.
         if (wet(level, pos) ? !grows(state) || depth(level, pos) < 0 : state.is(BlockTags.CORAL_BLOCKS)) return false;
@@ -285,7 +344,8 @@ final class CompanionPicking {
         if (state.hasProperty(BlockStateProperties.DOUBLE_BLOCK_HALF) && state.getValue(BlockStateProperties.DOUBLE_BLOCK_HALF) == DoubleBlockHalf.UPPER) return false;
         if (state.getBlock() instanceof CocoaBlock && state.getValue(CocoaBlock.AGE) < CocoaBlock.MAX_AGE) return false;
         // A leaf that does not fade was set down by someone: a hedge, a roof of leaves. It is still leaves, and its own item
-        // comes to shears the same (the owner, 18.11: the leaves beside him were his own); a tree's own are cut first.
+        // comes to shears the same (the owner, 18.11: the leaves beside him were his own); it is the last the gather comes at,
+        // after every tree's own leaf about.
         // A hanging vine from its lower end: the ones under a cut fall with nothing to pick up.
         if (state.is(Blocks.VINE) && level.getBlockState(pos.below()).is(Blocks.VINE)) return false;
         // The block above the root, within his reach from the ground: the root grows again.
@@ -462,7 +522,9 @@ final class CompanionPicking {
     private boolean down() {
         if (!c.temporaryPillar.isActive()) return false;
         boolean stood = c.temporaryPillar.hasSupports();
-        c.temporaryPillar.requestCleanup();
+        // The gather's own tool stays in his hand while the column comes down: the shears cut the next leaf, not the hand the
+        // column replaced (the owner, 19.11).
+        c.temporaryPillar.requestCleanup(shearsGather);
         return stood;
     }
 
@@ -490,13 +552,20 @@ final class CompanionPicking {
         Predicate<BlockPos> site = sites(c, level);
         if (target != null && (gives(sources, level.getBlockState(target)) == 0 || !takes(level, target, site) || lavaBeside(level, target))) release();
         if (target == null) {
-            // A leaf a stand serves is cut from it first: the stair the player built is walked up and what is in reach of it
-            // is taken, and no column is raised beside it. A tree's own leaves come before the ones he set down (the owner, 18.11).
-            target = find(c, level, sources, site, passed, lavaKept, false, true, true);
-            if (target == null) target = find(c, level, sources, site, passed, lavaKept, false, false, true);
-            // No leaf a stand serves: a crown above every stand cell is climbed on the soil he carries or digs.
-            if (target == null) target = find(c, level, sources, site, passed, lavaKept, soilAbout(level), true, false);
-            if (target == null) target = find(c, level, sources, site, passed, lavaKept, soilAbout(level), false, false);
+            boolean dug = soilAbout(level);
+            if (leafOrder) {
+                // A tree's own leaves of every species come before the leaves a player set down: the species the order named
+                // from a stand or a column first, then the leaves of any other tree or hedge about (any #minecraft:leaves), and
+                // only when no natural leaf is reachable the leaves he set down — so a hedge beside a working tree stands
+                // (the owner, 18.11, 19.11).
+                target = pick(level, site, speciesSources, dug, true);
+                if (target == null) target = pick(level, site, leafSources, dug, true);
+                if (target == null) target = pick(level, site, speciesSources, dug, false);
+                if (target == null) target = pick(level, site, leafSources, dug, false);
+            } else {
+                // A block of the kind he may take: from a stand he can walk to first, then up a column of his own soil.
+                target = pick(level, site, speciesSources, dug, false);
+            }
         }
         if (target == null) {
             // On his own column nothing else is in reach: the soil comes back before the drops on the ground are walked to.
@@ -571,7 +640,7 @@ final class CompanionPicking {
         else c.takeToolForBlock(state);
         ItemStack tool = c.getMainHandItem();
         if (state.requiresCorrectToolForDrops() && !tool.isCorrectToolForDrops(state)) { c.putToolAway(); end(false, "Нечем взять «" + name() + "»: нужен инструмент."); return; }
-        if (!w.items.canStore(List.of(new ItemStack(item)))) { c.putToolAway(); end(false, FULL_BAG + (got == 0 ? "" : " Собрал " + got + " из " + wanted + ".")); return; }
+        if (!w.items.canStore(List.of(leafOrder ? new ItemStack(state.getBlock().asItem()) : new ItemStack(item)))) { c.putToolAway(); end(false, FULL_BAG + (got == 0 ? "" : " Собрал " + got + " из " + wanted + ".")); return; }
         c.workStatus("Собираю: " + name() + ".");
         if (!w.breaking.tick(level, target)) return;
         // A cane cut low comes down whole: what stands over the cut is his harvest too, from the top.
@@ -583,7 +652,7 @@ final class CompanionPicking {
             var drops = CompanionTools.drops(broken, level, pos, null, c, tool);
             if (!level.destroyBlock(pos, false, c, 512)) { passed.add(pos); continue; }
             c.dropHarvest(pos, drops);
-            for (ItemStack drop : drops) if (drop.is(item)) due += drop.getCount();
+            for (ItemStack drop : drops) if (leafOrder ? drop.is(ItemTags.LEAVES) : drop.is(item)) due += drop.getCount();
         }
         tool.getItem().mineBlock(tool, level, state, target, c);
         // The shears stay in his hand for the whole crown: the player sees the tool that cuts, and the hand he had before comes

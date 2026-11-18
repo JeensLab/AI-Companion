@@ -9,10 +9,12 @@ import net.minecraft.world.item.ItemStack;
 /**
  * «Листва»/«листья» as the world has them: the leaf block of a tree he can really gather from, whatever species grows
  * here — never a log, and no species of its own hardcoded. A leaf a player set down (persistent) is no tree's crown, but it
- * is still leaves: it is seen and cut when no tree's own can meet the order, and only a tie-break puts a tree's own first
- * (the owner, 18.11: the leaves beside him were his own, and he saw none at all).
+ * is still leaves: it is cut when no tree's own leaf is reachable for the order, and only then (the owner, 18.11: the leaves
+ * beside him were his own, and he saw none at all).
  * The nearest leaf is not enough: a tall crown may hang over him out of reach while another tree's leaves stand by
- * (the owner, 17.11: «Рядом не вижу … oak leaves» under a tall tree he could gather from). A crown above every stand
+ * (the owner, 17.11: «Рядом не вижу … oak leaves» under a tall tree he could gather from). The species an order named is no
+ * limit either: when that tree cannot give the order, the leaves of any other tree or hedge about answer it (any
+ * #minecraft:leaves) before it is refused. A crown above every stand
  * cell is no loss either: with soil in the bag he builds up to it (CompanionPillar) and cuts it from the column, and the soil
  * for it he digs himself when the bag has none and a block that gives dirt stands about him (18.11: «дай земли» over dirt he
  * could dig). So the target is chosen by the picking path's own rule, and with no leaf of any tree he can come at the order
@@ -38,6 +40,19 @@ public final class CompanionLeaves {
     /** The item of the order: the family word resolved to a reachable tree's leaf block (null when there is none), else the id unchanged. */
     public static String resolve(CompanionEntity c, ServerLevel level, String requested) {
         if (!isFamily(requested)) return requested;
+        return nearest(c, level);
+    }
+
+    /**
+     * The leaf block an order will come at: the species it named when its leaves can be come at, else the nearest leaf of any
+     * other tree or hedge about (any #minecraft:leaves), else null. A named species is no limit on a leaf order.
+     */
+    public static String leafTarget(CompanionEntity c, ServerLevel level, String requested) {
+        if (requested != null && !isFamily(requested) && isLeaf(requested)) {
+            var id = net.minecraft.resources.ResourceLocation.tryParse(requested);
+            var item = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
+            if (item != null && CompanionPicking.nearestOf(c, level, item) != null) return requested;
+        }
         return nearest(c, level);
     }
 
@@ -89,12 +104,13 @@ public final class CompanionLeaves {
     }
 
     /**
-     * How much soil he must dig for the crown of this leaf block an order will climb: the steps of its longest column less what
-     * he carries, or 0 when the ground reach or his bag already has it — so a crown is climbed on soil he digs himself, and
-     * «дай земли» is only for a world with none about (the owner, 18.11).
+     * How much soil he must dig for the crown of the leaves an order will come at: the steps of the longest column among the
+     * leaves no stand he can walk to serves, less what he carries, or 0 when the stands serve the whole order or the bag already
+     * has the soil — so a crown is climbed on soil he digs himself, and «дай земли» is only for a world with none about (the
+     * owner, 18.11). A stair that serves only part of a crown is sized for the far leaves too (19.11).
      */
-    public static int soilToDig(CompanionEntity c, ServerLevel level, String item) {
-        return CompanionPicking.soilToDig(c, level, item);
+    public static int soilToDig(CompanionEntity c, ServerLevel level, String item, int count) {
+        return CompanionPicking.soilToDig(c, level, item, count);
     }
 
     /** Whether the leaves are above even the longest column of his: not out of reach for want of soil, but too high to climb to. */

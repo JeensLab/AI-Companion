@@ -249,20 +249,24 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             // gather from, whatever species grows here (CompanionLeaves).
             net.minecraft.server.level.ServerLevel level = (net.minecraft.server.level.ServerLevel) companion.level();
             boolean family = dev.aicompanion.entity.CompanionLeaves.isFamily(action.item());
-            String item = family ? dev.aicompanion.entity.CompanionLeaves.inBag(companion, action.count()) : action.item();
+            // A leaf order is leaves of any kind, whatever species the order named: the bag that meets it answers, else the
+            // species named when its leaves can be come at, else the leaves of any other tree or hedge about (any #minecraft:leaves).
+            boolean leafOrder = family || dev.aicompanion.entity.CompanionLeaves.isLeaf(action.item());
+            String item = leafOrder ? dev.aicompanion.entity.CompanionLeaves.inBag(companion, action.count()) : action.item();
             boolean byTheBag = item != null;
-            if (item == null) item = dev.aicompanion.entity.CompanionLeaves.resolve(companion, level, action.item());
+            if (item == null) item = leafOrder ? dev.aicompanion.entity.CompanionLeaves.leafTarget(companion, level, action.item())
+                    : dev.aicompanion.entity.CompanionLeaves.resolve(companion, level, action.item());
             // Nothing to take and not enough carried: the reason and the count he holds — never a flat refusal that hides the part he did bring.
             if (item == null) return new CompanionPlanRunner.Expansion(java.util.List.of(), leavesRefusal(companion, level, action.count()));
-            // A bag of several kinds meets the family order as one count: the check counts them all, and no tree is cut for it.
+            // A bag of several kinds meets the leaf order as one count: the check counts them all, and no tree is cut for it.
             if (byTheBag && dev.aicompanion.entity.CompanionLeaves.isFamily(item))
                 return new CompanionPlanRunner.Expansion(java.util.List.of(
                         new PlannedAction("verify_item", 0, action.count(), dev.aicompanion.entity.CompanionLeaves.FAMILY)), null);
-            // A family order short of its count takes only the part the bag lacks — the leaves of every kind he carries count
+            // A leaf order short of its count takes only the part the bag lacks — the leaves of every kind he carries count
             // toward it — and is checked as one count of leaves, not as the species of the tree he came at.
             String check = item;
             int need = action.count();
-            if (family && !byTheBag) {
+            if (leafOrder && !byTheBag) {
                 need = action.count() - dev.aicompanion.entity.CompanionLeaves.carried(companion) + companion.carriedCount(item);
                 check = dev.aicompanion.entity.CompanionLeaves.FAMILY;
             }
@@ -271,9 +275,10 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             java.util.List<PlannedAction> steps = new java.util.ArrayList<>();
             // A crown above every stand cell is climbed on soil he digs himself: the dirt for the column comes first, and
             // «дай земли» is left for a world with no soil about him (the owner, 18.11: «до листвы не достану — дай земли»
-            // over dirt he could dig).
+            // over dirt he could dig). Sized for the leaves the order will come at, not only the first: a stair that serves part
+            // of a crown still needs the soil for the far leaves (19.11).
             int soil = dev.aicompanion.entity.CompanionLeaves.isLeaf(item)
-                    ? dev.aicompanion.entity.CompanionLeaves.soilToDig(companion, level, item) : 0;
+                    ? dev.aicompanion.entity.CompanionLeaves.soilToDig(companion, level, item, Math.max(1, action.count() - dev.aicompanion.entity.CompanionLeaves.carried(companion))) : 0;
             // No gather left in the chain (the bag meets the order): the soil for a column is not dug for nothing.
             if (soil > 0 && !plan.steps().isEmpty()) steps.add(new PlannedAction("gather_dirt", 0, soil, ""));
             for (var step : plan.steps()) steps.add(new PlannedAction(step.type(), 0, step.count(), step.item()));

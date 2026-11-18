@@ -59,6 +59,10 @@ public final class CompanionPillar {
     private int cleanupTicks;
     private boolean recovering;
     private String failureReason = "";
+    /** The hand a gather keeps while its column comes down: the tool for a support goes back into it after each break. */
+    private ItemStack keptHand;
+    /** Whether the tool of the gather that asked for this descent stays in his hand: also a failed climb leaves it there. */
+    private boolean keepTool;
 
     public CompanionPillar(CompanionEntity owner) {
         this.owner = owner;
@@ -196,10 +200,23 @@ public final class CompanionPillar {
     }
 
     /** Cancel wood swings immediately; keep the pillar until normal descent has finished. */
-    public void requestCleanup() {
+    public void requestCleanup() { requestCleanup(false); }
+
+    /**
+     * The same, with {@code keepTool} for a gather whose own tool stays in his hand: the shears of a leaf order are not put
+     * away while its column comes down — the tool for a support goes back into that hand after each break, and the hand the
+     * gather replaced waits for the end of the gather (the owner, 19.11).
+     */
+    public void requestCleanup(boolean keepTool) {
         breaking.reset();
-        // A tool taken for the last swing goes back with the hand it replaced: the pillar may stand for a while before it is taken down.
-        owner.putToolAway();
+        this.keepTool = keepTool && isActive();
+        if (this.keepTool) {
+            keptHand = owner.getMainHandItem().copy();
+        } else {
+            // A tool taken for the last swing goes back with the hand it replaced: the pillar may stand for a while before it is taken down.
+            keptHand = null;
+            owner.putToolAway();
+        }
         if (!recovering) cleanupTicks = 0;
         recovering = isActive();
         jumpCell = null;
@@ -492,7 +509,10 @@ public final class CompanionPillar {
         tool.getItem().mineBlock(tool, level, state, pos, owner);
         owner.swing(InteractionHand.MAIN_HAND);
         owner.dropHarvest(pos, drops);
-        owner.putToolAway();
+        // A gather whose tool is kept gets it back into his hand after the support's own tool; the hand the gather replaced
+        // still waits for the end of the gather (CompanionWork.cancel).
+        if (keptHand == null || keptHand.isEmpty()) owner.putToolAway();
+        else owner.equipForSupport(BuiltInRegistries.ITEM.getKey(keptHand.getItem()).toString());
         return true;
     }
 
@@ -539,7 +559,7 @@ public final class CompanionPillar {
 
     private Outcome fail(String reason) {
         failureReason = reason;
-        requestCleanup();
+        requestCleanup(keepTool);
         return Outcome.FAILED;
     }
 
@@ -550,6 +570,8 @@ public final class CompanionPillar {
         lastProgress = null;
         attemptTicks = stalledTicks = jumpTicks = failedJumps = cooldown = cleanupTicks = 0;
         recovering = false;
+        keptHand = null;
+        keepTool = false;
     }
 
     public void save(CompoundTag tag) {
