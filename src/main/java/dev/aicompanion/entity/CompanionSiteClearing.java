@@ -272,7 +272,7 @@ final class CompanionSiteClearing {
             var drops = CompanionTools.drops(state, level, pos, null, owner, tool);
             if (!owner.canStoreDrops(drops)) { message = "В сумке нет места для того, что расчищаю («" + state.getBlock().getName().getString() + "» на " + pos.toShortString() + "). Освободи место и скажи «дострой»."; return Outcome.BLOCKED; }
             if (!level.destroyBlock(pos, false, owner, 512)) return Outcome.WORKING;
-            tool.getItem().mineBlock(tool, level, state, pos, owner);
+            CompanionTools.wearOnBreak(tool, level, state, pos, owner);
             owner.swing(InteractionHand.MAIN_HAND);
             owner.dropHarvest(pos, drops);
             breaking.reset();

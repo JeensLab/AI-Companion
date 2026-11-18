@@ -253,7 +253,7 @@ final class CompanionStoneMining {
         w.lastHarvestStand = w.owner.blockPosition();
         if (!autonomousReturnAllows(w.target)) { if (soil) w.finish(CompanionActionResult.blocked("Дальнейшая добыча разрушит обратные ступеньки. Остановился, вещи сохранил.")); else w.rejectTarget(); return; }
         if (!safeToMine(level, w.target) || !level.destroyBlock(w.target, false, w.owner, 512)) { w.rejectTarget(); return; }
-        pickaxe.getItem().mineBlock(pickaxe, level, state, w.target, w.owner);
+        CompanionTools.wearOnBreak(pickaxe, level, state, w.target, w.owner);
         w.owner.dropHarvest(w.target, drops);
         if (!soil || stairStone) w.owner.observeEvent("stone", "Сломал камень и вижу выпавший материал. Работа ещё может продолжаться.");
         if (soil) w.quarrySoil.removeFirst();
@@ -341,7 +341,7 @@ final class CompanionStoneMining {
         var drops = CompanionTools.drops(state, level, generator, null, w.owner, pickaxe);
         if (drops.isEmpty() || !w.items.canStore(drops)) { w.finish(false, "В сумке нет места для добычи. Освободи место или попроси сложить ресурсы в сундук."); return true; }
         if (!level.destroyBlock(generator, false, w.owner, 512)) { w.resetTarget(); generator = null; return false; }
-        pickaxe.getItem().mineBlock(pickaxe, level, state, generator, w.owner);
+        CompanionTools.wearOnBreak(pickaxe, level, state, generator, w.owner);
         w.owner.dropHarvest(generator, drops);
         w.owner.observeEvent("stone", "Сломал камень генератора и вижу выпавший материал. Работа ещё может продолжаться.");
         generatorEmptySince = level.getGameTime();

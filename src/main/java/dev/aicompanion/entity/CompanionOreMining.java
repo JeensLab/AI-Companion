@@ -308,7 +308,7 @@ final class CompanionOreMining {
         // Water too, with what is left of the plugs, but only a spring in the wall: the cells of his own way (a flooded one too) and any pond are open, not plugged.
         List<BlockPos> water = CompanionLava.waterInflow(level, pos, ownWater());
         if (!level.destroyBlock(pos, false, w.owner, 512)) { blockOreCell(level, pos, "destroy_rejected"); return false; }
-        tool.getItem().mineBlock(tool, level, state, pos, w.owner);
+        CompanionTools.wearOnBreak(tool, level, state, pos, w.owner);
         w.owner.dropHarvest(pos, drops);
         CompanionLava.plug(w.owner, level, lava);
         CompanionLava.plug(w.owner, level, water);

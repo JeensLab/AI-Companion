@@ -347,7 +347,7 @@ final class CompanionPicking {
             c.dropHarvest(pos, drops);
             for (ItemStack drop : drops) if (drop.is(item)) due += drop.getCount();
         }
-        tool.getItem().mineBlock(tool, level, state, target, c);
+        CompanionTools.wearOnBreak(tool, level, state, target, c);
         c.putToolAway();
         // A tool with Silk Touch brings the block itself (clay, not its balls): one is enough to see it, not every block about.
         if (due == dueBefore) { end(false, "С этим инструментом «" + name() + "» не выходит: в руке " + tool.getHoverName().getString() + "."); return; }

@@ -245,7 +245,7 @@ final class CompanionObsidian {
         if (!w.breaking.tick(level, target)) return;
         var drops = CompanionTools.drops(state, level, target, null, c, tool);
         if (!level.destroyBlock(target, false, c, 512)) { passed.add(target); target = null; return; }
-        tool.getItem().mineBlock(tool, level, state, target, c);
+        CompanionTools.wearOnBreak(tool, level, state, target, c);
         c.dropHarvest(target, drops);
         mined++;
         // Floating in his running water the drop is no use chasing (in game 08.11 each was chased ten seconds in vain): it waits

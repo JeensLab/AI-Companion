@@ -173,7 +173,7 @@ final class CompanionHandOver {
         if (!w.items.canStore(drops)) { w.packTarget = null;
             w.finish(new CompanionActionResult(w.packResult.success(), w.packResult.message() + left + " В сумке нет места.", w.packResult.status(), w.packResult.evidence())); return; }
         if (!level.destroyBlock(w.packTarget, false, w.owner, 512)) return;
-        tool.getItem().mineBlock(tool, level, state, w.packTarget, w.owner);
+        CompanionTools.wearOnBreak(tool, level, state, w.packTarget, w.owner);
         w.owner.dropHarvest(w.packTarget, drops);
         w.breaking.reset();
         w.packedBenchFrom = w.packTarget;

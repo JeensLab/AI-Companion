@@ -543,7 +543,7 @@ final class CompanionChores {
         var drops = CompanionTools.drops(state, level, placed, null, c, axe);
         if (level.destroyBlock(placed, false, c, 512)) {
             c.dropHarvest(placed, drops);
-            axe.getItem().mineBlock(axe, level, state, placed, c);
+            CompanionTools.wearOnBreak(axe, level, state, placed, c);
         }
         c.putToolAway();
         placed = null; stripped = false;
@@ -652,7 +652,7 @@ final class CompanionChores {
                 ItemStack tool = c.getMainHandItem();
                 var drops = CompanionTools.drops(state, level, placed, null, c, tool);
                 if (level.destroyBlock(placed, false, c, 512)) {
-                    tool.getItem().mineBlock(tool, level, state, placed, c);
+                    CompanionTools.wearOnBreak(tool, level, state, placed, c);
                     c.dropHarvest(placed, drops);
                 }
                 c.putToolAway();

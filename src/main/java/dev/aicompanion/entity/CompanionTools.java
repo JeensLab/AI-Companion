@@ -7,13 +7,15 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
-final class CompanionTools {
+public final class CompanionTools {
     private CompanionTools() { }
     static int count(CompanionEntity owner, TagKey<Item> tag) {
         int total = 0;
@@ -132,13 +134,28 @@ final class CompanionTools {
     }
 
     /**
+     * The wear a tool takes on a block it broke, as a player's: none on a block that comes down at once — hardness zero, a crop,
+     * a flower, a sapling, grass — which the game takes no tick off, so shears on grass stay as they were. The block is already
+     * broken and its drops given; this is only the wear.
+     */
+    public static void wearOnBreak(ItemStack tool, Level level, BlockState state, BlockPos pos, LivingEntity owner) {
+        if (state.getDestroySpeed(level, pos) == 0) return;
+        tool.getItem().mineBlock(tool, level, state, pos, owner);
+    }
+
+    /**
      * Vanilla destroy speed with the tool's own Efficiency, as a player has it: the bonus only on the tool's own blocks. A block
      * that comes down on the first tick — hardness zero: a crop, a flower, a sapling — gains nothing from any speed, the game
      * takes no tick off it, so it is a bare hand's one to a tool as to a hand.
      */
     static float breakSpeed(CompanionEntity owner, ItemStack stack, BlockState state) {
+        return breakSpeed(owner, stack, state, BlockPos.ZERO);
+    }
+
+    /** The same at the block's own position, for a hardness that depends on where it stands. */
+    static float breakSpeed(CompanionEntity owner, ItemStack stack, BlockState state, BlockPos pos) {
         if (stack.isEmpty()) return 1;
-        if (state.getDestroySpeed(owner.level(), BlockPos.ZERO) == 0) return 1;
+        if (state.getDestroySpeed(owner.level(), pos) == 0) return 1;
         float speed = stack.getDestroySpeed(state);
         if (speed <= 1) return speed;
         int efficiency = net.minecraft.world.item.enchantment.EnchantmentHelper.getItemEnchantmentLevel(

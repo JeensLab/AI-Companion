@@ -325,7 +325,7 @@ final class CompanionPortalBuild {
         ItemStack tool = c.getMainHandItem();
         var drops = CompanionTools.drops(state, level, cell, level.getBlockEntity(cell), c, tool);
         if (!level.destroyBlock(cell, false, c, 512)) { c.putToolAway(); w.finish(false, TAKEN); return; }
-        tool.getItem().mineBlock(tool, level, state, cell, c);
+        CompanionTools.wearOnBreak(tool, level, state, cell, c);
         c.dropHarvest(cell, drops);
         c.putToolAway();
         event("portal_dug", "cell", cell.toShortString(), "block", BuiltInRegistries.BLOCK.getKey(state.getBlock()));

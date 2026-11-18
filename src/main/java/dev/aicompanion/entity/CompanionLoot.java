@@ -462,7 +462,7 @@ final class CompanionLoot {
         var tool = owner.getMainHandItem();
         var drops = CompanionTools.drops(state, level, leaf, null, owner, tool);
         if (level.destroyBlock(leaf, false, owner, 512)) {
-            tool.getItem().mineBlock(tool, level, state, leaf, owner);
+            CompanionTools.wearOnBreak(tool, level, state, leaf, owner);
             owner.dropHarvest(leaf, drops);
         }
         owner.putToolAway();

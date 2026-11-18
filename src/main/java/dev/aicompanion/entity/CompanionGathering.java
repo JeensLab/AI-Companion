@@ -104,7 +104,7 @@ final class CompanionGathering {
         var drops = CompanionTools.drops(state, serverLevel, pos, serverLevel.getBlockEntity(pos), c, tool);
         if (!canStoreDrops(drops)) { c.putToolAway(); return false; }
         if (!serverLevel.destroyBlock(pos, false, c, 512)) { c.putToolAway(); return false; }
-        tool.getItem().mineBlock(tool, serverLevel, state, pos, c);
+        CompanionTools.wearOnBreak(tool, serverLevel, state, pos, c);
         c.swing(InteractionHand.MAIN_HAND);
         c.dropHarvest(pos, drops);
         c.putToolAway();
@@ -125,7 +125,7 @@ final class CompanionGathering {
         var drops = CompanionTools.drops(state, serverLevel, pos, serverLevel.getBlockEntity(pos), c, tool);
         if (!canStoreDrops(drops)) { c.putToolAway(); return false; }
         if (!serverLevel.destroyBlock(pos, false, c, 512)) { c.putToolAway(); return false; }
-        tool.getItem().mineBlock(tool, serverLevel, state, pos, c);
+        CompanionTools.wearOnBreak(tool, serverLevel, state, pos, c);
         c.swing(InteractionHand.MAIN_HAND);
         c.dropHarvest(pos, drops);
         c.putToolAway();

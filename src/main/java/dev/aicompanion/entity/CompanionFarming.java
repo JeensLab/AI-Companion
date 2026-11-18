@@ -696,9 +696,9 @@ final class CompanionFarming {
         if (!drops.isEmpty() && !w.items.canStore(drops)) { bagFull = true; return false; }
         w.clearCracks();
         level.destroyBlock(cell, false, w.owner, 512);
-        // The tool of the plant wears on it, as a player's does.
+        // The tool of the plant wears on it as a player's does: nothing on one that comes down at once, grass or a crop.
         ItemStack tool = w.owner.getMainHandItem();
-        tool.getItem().mineBlock(tool, level, state, cell, w.owner);
+        CompanionTools.wearOnBreak(tool, level, state, cell, w.owner);
         if (!drops.isEmpty()) w.owner.dropHarvest(cell, drops);
         return true;
     }

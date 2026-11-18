@@ -432,7 +432,7 @@ final class CompanionRecovery {
         var drops = CompanionTools.drops(state, level, digTarget, null, owner, tool);
         if (!owner.canStoreDrops(drops)) { owner.putToolAway(); stop(false); return; }
         if (safeTarget(level, digTarget) && level.destroyBlock(digTarget, false, owner, 512)) {
-            tool.getItem().mineBlock(tool, level, state, digTarget, owner); owner.dropHarvest(digTarget, drops); dug++;
+            CompanionTools.wearOnBreak(tool, level, state, digTarget, owner); owner.dropHarvest(digTarget, drops); dug++;
         }
         owner.putToolAway();
         breaking.reset(); digTarget = null;
@@ -475,7 +475,7 @@ final class CompanionRecovery {
         var drops = CompanionTools.drops(state, level, bench, level.getBlockEntity(bench), owner, tool);
         breaking.reset();
         if (!owner.canStoreDrops(drops)) { leaveBench(); return; }
-        if (level.destroyBlock(bench, false, owner, 512)) { tool.getItem().mineBlock(tool, level, state, bench, owner); owner.dropHarvest(bench, drops); }
+        if (level.destroyBlock(bench, false, owner, 512)) { CompanionTools.wearOnBreak(tool, level, state, bench, owner); owner.dropHarvest(bench, drops); }
         bench = null;
     }
     /** Not taken now (a new order, no room in the bag): a travelling bench, which the work order picks up when it ends. */

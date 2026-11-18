@@ -300,7 +300,7 @@ final class CompanionCobbleGen {
         var drops = CompanionTools.drops(state, level, cell, null, c, tool);
         if (!w.items.canStore(drops)) { c.putToolAway(); w.finish(false, FULL_BAG); return; }
         if (!level.destroyBlock(cell, false, c, 512)) { c.putToolAway(); w.finish(false, TAKEN); return; }
-        tool.getItem().mineBlock(tool, level, state, cell, c);
+        CompanionTools.wearOnBreak(tool, level, state, cell, c);
         c.dropHarvest(cell, drops);
         c.putToolAway();
         event("cobble_gen_dug", "cell", cell.toShortString(), "block", BuiltInRegistries.BLOCK.getKey(state.getBlock()));
@@ -346,7 +346,7 @@ final class CompanionCobbleGen {
         if (!w.breaking.tick(level, cell)) return;
         if (!level.destroyBlock(cell, false, c, 512) || !level.setBlockAndUpdate(cell, Blocks.WATER.defaultBlockState())) { w.finish(false, TAKEN); return; }
         held = c.getMainHandItem();
-        if (!held.isEmpty()) held.getItem().mineBlock(held, level, Blocks.ICE.defaultBlockState(), cell, c);
+        if (!held.isEmpty()) CompanionTools.wearOnBreak(held, level, Blocks.ICE.defaultBlockState(), cell, c);
         w.cooldown = 8;
         event("cobble_gen_melted", "cell", cell.toShortString());
     }

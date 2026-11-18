@@ -39,7 +39,7 @@ final class CompanionBlockBreaking {
         owner.getLookControl().setLookAt(pos.getX() + .5, pos.getY() + .5, pos.getZ() + .5, dx * dx + dz * dz < .25 ? 0 : TURN, PITCH);
         if (lastTick == level.getGameTime()) return false;
         lastTick = level.getGameTime();
-        float speed = Math.max(1, CompanionTools.breakSpeed(owner, hand, current));
+        float speed = Math.max(1, CompanionTools.breakSpeed(owner, hand, current, pos));
         float divisor = !current.requiresCorrectToolForDrops() || hand.isCorrectToolForDrops(current) ? 30 : 100;
         int duration = Math.max(1, (int)Math.ceil(hardness * divisor / speed));
         ticks++;

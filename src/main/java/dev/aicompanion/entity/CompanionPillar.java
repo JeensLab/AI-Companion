@@ -423,7 +423,7 @@ public final class CompanionPillar {
         ItemStack tool = owner.getMainHandItem();
         var drops = CompanionTools.drops(state, level, pos, level.getBlockEntity(pos), owner, tool);
         if (!level.destroyBlock(pos, false, owner, 512)) { owner.putToolAway(); return false; }
-        tool.getItem().mineBlock(tool, level, state, pos, owner);
+        CompanionTools.wearOnBreak(tool, level, state, pos, owner);
         owner.swing(InteractionHand.MAIN_HAND);
         owner.dropHarvest(pos, drops);
         owner.putToolAway();
