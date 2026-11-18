@@ -43,21 +43,30 @@ public final class CompanionTraderTests {
     static final int GROUND = 5;
 
     // One batch for each test that has villagers: the scout looks 64 blocks round, so the villagers of a neighbour test must be gone first.
+    /**
+     * The villagers of a finished batch stay in the world, and the next batch stands some 40 blocks off: within a scout's or a trade's
+     * 64 blocks (one left with a deal in stock sent the next test's trade to him) and a village search's 24. They are taken away.
+     */
+    static void afterVillagers(net.minecraft.server.level.ServerLevel level) {
+        for (var villager : java.util.List.copyOf(level.getEntities(net.minecraft.world.level.entity.EntityTypeTest.forClass(net.minecraft.world.entity.npc.AbstractVillager.class), v -> true))) villager.discard();
+        CompanionFixtureCleanup.afterAtomicTests(level);
+    }
+
     @net.minecraft.gametest.framework.AfterBatch(batch = "traders1")
-    public static void after1(net.minecraft.server.level.ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    public static void after1(net.minecraft.server.level.ServerLevel level) { afterVillagers(level); }
     @net.minecraft.gametest.framework.AfterBatch(batch = "traders2")
-    public static void after2(net.minecraft.server.level.ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    public static void after2(net.minecraft.server.level.ServerLevel level) { afterVillagers(level); }
     @net.minecraft.gametest.framework.AfterBatch(batch = "traders3")
-    public static void after3(net.minecraft.server.level.ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    public static void after3(net.minecraft.server.level.ServerLevel level) { afterVillagers(level); }
     @net.minecraft.gametest.framework.AfterBatch(batch = "traders4")
-    public static void after4(net.minecraft.server.level.ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    public static void after4(net.minecraft.server.level.ServerLevel level) { afterVillagers(level); }
 
     @net.minecraft.gametest.framework.AfterBatch(batch = "traders5")
-    public static void after5(net.minecraft.server.level.ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    public static void after5(net.minecraft.server.level.ServerLevel level) { afterVillagers(level); }
     @net.minecraft.gametest.framework.AfterBatch(batch = "traders6")
-    public static void after6(net.minecraft.server.level.ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    public static void after6(net.minecraft.server.level.ServerLevel level) { afterVillagers(level); }
     @net.minecraft.gametest.framework.AfterBatch(batch = "traders7")
-    public static void after7(net.minecraft.server.level.ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    public static void after7(net.minecraft.server.level.ServerLevel level) { afterVillagers(level); }
 
     /** Two traders with their own offers, a jobless villager and a child: the report names the two and the memory holds their offers. */
     @GameTest(template = "tall_tree", timeoutTicks = 2400, batch = "traders1")
