@@ -40,7 +40,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionTraderTests {
-    private static final int GROUND = 5;
+    static final int GROUND = 5;
 
     // One batch for each test that has villagers: the scout looks 64 blocks round, so the villagers of a neighbour test must be gone first.
     @net.minecraft.gametest.framework.AfterBatch(batch = "traders1")
@@ -230,12 +230,12 @@ public final class CompanionTraderTests {
 
     // ---- the arena ----
 
-    private static java.util.concurrent.CompletableFuture<CompanionPlanRunner.Outcome> run(GameTestHelper h, CompanionEntity companion, String json) {
+    static java.util.concurrent.CompletableFuture<CompanionPlanRunner.Outcome> run(GameTestHelper h, CompanionEntity companion, String json) {
         var plan = CompanionPlanCodec.parsePlan(JsonParser.parseString(json));
         return CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), companion.getOwnerId(), "gametest-scout", () -> false));
     }
 
-    private static MerchantOffer mendingBook(GameTestHelper h) {
+    static MerchantOffer mendingBook(GameTestHelper h) {
         ItemStack book = new ItemStack(Items.ENCHANTED_BOOK);
         var mending = h.getLevel().registryAccess().registryOrThrow(Registries.ENCHANTMENT).getHolderOrThrow(Enchantments.MENDING);
         var enchantments = new ItemEnchantments.Mutable(ItemEnchantments.EMPTY);
@@ -245,7 +245,7 @@ public final class CompanionTraderTests {
     }
 
     /** A villager that stands where it is put, with the profession, the level and the one offer the test gives it. */
-    private static Villager trader(GameTestHelper h, VillagerProfession profession, int x, int z, MerchantOffer offer) {
+    static Villager trader(GameTestHelper h, VillagerProfession profession, int x, int z, MerchantOffer offer) {
         Villager villager = h.spawn(EntityType.VILLAGER, x, GROUND + 1, z);
         villager.setNoAi(true);
         villager.setVillagerData(new VillagerData(VillagerType.PLAINS, profession, 2));
@@ -263,7 +263,7 @@ public final class CompanionTraderTests {
         }
     }
 
-    private static CompanionEntity spawn(GameTestHelper h, int x, int z) {
+    static CompanionEntity spawn(GameTestHelper h, int x, int z) {
         CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), x, GROUND + 1, z);
         var owner = h.makeMockServerPlayerInLevel();
         BlockPos stand = h.absolutePos(new BlockPos(x - 3, GROUND + 1, z - 3));
