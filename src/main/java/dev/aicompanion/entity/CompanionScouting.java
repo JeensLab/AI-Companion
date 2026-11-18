@@ -34,6 +34,10 @@ final class CompanionScouting {
     static final int RADIUS = 64;
     /** Three minutes of the round; what is not reached by then is left. */
     static final int LIMIT = 20 * 60 * 3;
+    /** A remembered village is walked to from at most this far (same dimension); farther he asks to be led. */
+    static final int FAR_RADIUS = 500;
+    /** The walk there has its own time, apart from the round: eight minutes. */
+    private static final int TRAVEL_LIMIT = 20 * 60 * 8;
     private static final double REACH = 3.0;
     private static final int LOOK_TICKS = 30;
     /** Without getting closer for this long the trader is given up (a wall, a fence all round, no way). */
@@ -56,6 +60,10 @@ final class CompanionScouting {
     private long startedAt, lookUntil, progressAt, nextPath;
     private double best;
     private Path path;
+    /** The remembered spot he is walking to (null in the round itself), where the round is centred, and who was forgotten at the end. */
+    private BlockPos far, centre;
+    private boolean walked;
+    private final List<String> forgotten = new ArrayList<>();
 
     CompanionScouting(CompanionWork w) { this.w = w; }
 
@@ -63,12 +71,26 @@ final class CompanionScouting {
     CompanionActionResult begin() {
         cancel();
         if (!(w.owner.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Не могу осмотреться.");
+        centre = w.owner.blockPosition();
+        queue.addAll(scan(level));
+        if (!queue.isEmpty()) return null;
+        // Nobody trades round him: the nearest remembered trader of this dimension, if not too far; the round is made there.
+        String dimension = level.dimension().location().toString();
+        var remembered = w.owner.traders().entries();
+        if (remembered.isEmpty()) return CompanionActionResult.failed("Деревни рядом не вижу. Могу поискать: скажи, в какую сторону света идти.");
+        var nearest = remembered.stream().filter(e -> e.dimension().equals(dimension)).min(Comparator.comparingDouble(e -> e.pos().distSqr(centre)));
+        if (nearest.isEmpty() || nearest.get().pos().distSqr(centre) > (double) FAR_RADIUS * FAR_RADIUS)
+            return CompanionActionResult.failed("Далеко, отведи меня: деревня, которую помню, дальше " + FAR_RADIUS + " блоков или в другом мире.");
+        far = nearest.get().pos();
+        return null;
+    }
+
+    /** Traders within {@link #RADIUS} of him, nearest first. */
+    private List<UUID> scan(ServerLevel level) {
         List<AbstractVillager> traders = level.getEntitiesOfClass(AbstractVillager.class, new AABB(w.owner.blockPosition()).inflate(RADIUS, RADIUS, RADIUS),
                 trader -> isTrader(trader) && trader.distanceToSqr(w.owner) <= RADIUS * RADIUS);
-        if (traders.isEmpty()) return CompanionActionResult.failed("Деревни рядом не вижу. Могу поискать: скажи, в какую сторону света идти.");
         traders.sort(Comparator.comparingDouble(w.owner::distanceToSqr));
-        for (AbstractVillager trader : traders) queue.add(trader.getUUID());
-        return null;
+        return traders.stream().map(AbstractVillager::getUUID).toList();
     }
 
     /** A villager with a profession (not jobless, not a nitwit, not a child) or a wandering trader. */
@@ -80,14 +102,16 @@ final class CompanionScouting {
     }
 
     void cancel() {
-        if (current != null || !queue.isEmpty()) w.route.stop();
-        queue.clear(); asked.clear(); current = null; path = null;
+        if (current != null || !queue.isEmpty() || far != null) w.route.stop();
+        if (far != null) w.route.legsEnd(false);
+        queue.clear(); asked.clear(); forgotten.clear(); current = null; path = null; far = centre = null; walked = false;
         asleep = unreached = 0; startedAt = lookUntil = progressAt = nextPath = 0;
     }
 
     void tick(ServerLevel level) {
         long now = level.getGameTime();
         if (startedAt == 0) startedAt = now;
+        if (far != null) { travel(level, now); return; }
         if (now - startedAt > LIMIT) { finish(level, true); return; }
         if (current == null) {
             if (queue.isEmpty()) { finish(level, false); return; }
@@ -106,6 +130,28 @@ final class CompanionScouting {
         asked.add(w.owner.traders().remember(trader, level));
         w.owner.refreshTraders();
         next();
+    }
+
+    /** The way to the remembered village, in legs like any long walk and never a teleport; its own time. Arrived, the round begins from here. */
+    private void travel(ServerLevel level, long now) {
+        if (now - startedAt > TRAVEL_LIMIT) { giveUp("Шёл к деревне слишком долго, не дошёл."); return; }
+        w.owner.workStatus("Иду к деревне, которую помню.");
+        switch (w.route.legs(far, 8)) {
+            case WALKING -> { }
+            case NEAR -> {
+                w.route.legsEnd(true);
+                far = null; startedAt = 0; walked = true; centre = w.owner.blockPosition();
+                queue.addAll(scan(level));
+            }
+            case FAILED -> giveUp("До деревни, которую помню, дойти не смог: нет пути.");
+        }
+    }
+
+    private void giveUp(String message) {
+        dev.aicompanion.CompanionDiagnostics.event(w.owner.diagnosticTrace(), "scouting_far_failed", "entity", w.owner.getUUID(), "to", far.toShortString());
+        w.route.legsEnd(false);
+        w.route.stop();
+        w.finish(false, message);
     }
 
     private void next() { current = null; path = null; w.route.legsEnd(false); w.route.stop(); }
@@ -151,16 +197,29 @@ final class CompanionScouting {
     private void finish(ServerLevel level, boolean timeUp) {
         int left = queue.size() + (current != null ? 1 : 0);
         w.route.stop();
+        forgetMissing(level);
         String report = report(level, timeUp, left);
         boolean any = !asked.isEmpty();
         dev.aicompanion.CompanionDiagnostics.event(w.owner.diagnosticTrace(), "scouting_finished", "entity", w.owner.getUUID(), "asked", asked.size(), "asleep", asleep, "unreached", unreached);
         w.finish(any, report);
     }
 
+    /** A remembered trader whose spot is within the round's reach, in a loaded chunk, and who is not found alive, is not there any more. */
+    private void forgetMissing(ServerLevel level) {
+        String dimension = level.dimension().location().toString();
+        for (var entry : w.owner.traders().entries()) {
+            if (!entry.dimension().equals(dimension) || entry.pos().distSqr(centre) > (double) RADIUS * RADIUS || !level.isLoaded(entry.pos())) continue;
+            if (level.getEntity(entry.id()) instanceof AbstractVillager trader && trader.isAlive()) continue;
+            w.owner.traders().forget(entry.id());
+            forgotten.add(profession(entry.kind()));
+        }
+        if (!forgotten.isEmpty()) w.owner.refreshTraders();
+    }
+
     // ---- the report ----
 
     private String report(ServerLevel level, boolean timeUp, int left) {
-        StringBuilder text = new StringBuilder();
+        StringBuilder text = new StringBuilder(walked ? "Дошёл до деревни, которую помнил. " : "");
         if (asked.isEmpty()) text.append(asleep > 0 ? "Никого не расспросил." : "Ни до кого не дошёл.");
         else {
             Map<String, Integer> kinds = new LinkedHashMap<>();
@@ -171,6 +230,7 @@ final class CompanionScouting {
         if (asleep > 0) text.append(" Ещё ").append(asleep).append(asleep == 1 ? " спит" : " спят").append(", расспрошу утром.");
         if (unreached > 0) text.append(" До ").append(unreached).append(" не добрался.");
         if (timeUp && left > 0) text.append(" Три минуты вышли, остальных не успел.");
+        if (!forgotten.isEmpty()) text.append(" Забыл тех, кого на месте нет: ").append(String.join(", ", forgotten)).append('.');
         for (String deal : bestDeals(level)) text.append(' ').append(deal);
         return text.toString();
     }
