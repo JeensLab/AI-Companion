@@ -399,9 +399,10 @@ public final class CompanionPlanRunner {
         boolean earlier = !run.dropped.isEmpty();
         run.dropped.add(obtain);
         run.dropped.addAll(same);
-        // A given-up obtain takes its bookkeeping with it: the shears it was to wear and the check it was to pass would only
-        // speak over the chain's own reason (the leaf order's equip step ran after its obtain had nothing to wear them for).
-        while (from < run.plan.size() && ("equip_item".equals(run.plan.get(from).type()) || "verify_item".equals(run.plan.get(from).type())))
+        // A leaf order's shears step is its obtain's bookkeeping: with the obtain given up there is nothing to wear them for,
+        // and their own line would speak over the chain's reason (the equip of another order's product stays).
+        if (dev.aicompanion.entity.CompanionLeaves.isFamily(obtain.item()) && from < run.plan.size()
+                && "equip_item".equals(run.plan.get(from).type()) && "minecraft:shears".equals(run.plan.get(from).item()))
             run.plan.remove(from);
         boolean goesOn = from < run.plan.size();
         String name = obtain.item() == null ? "" : "«" + CompanionDialogue.itemName(obtain.item()) + "»: ";
