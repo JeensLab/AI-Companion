@@ -256,6 +256,9 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             boolean byTheBag = item != null;
             if (item == null) item = leafOrder ? dev.aicompanion.entity.CompanionLeaves.leafTarget(companion, level, action.item())
                     : dev.aicompanion.entity.CompanionLeaves.resolve(companion, level, action.item());
+            // A species the order named that no other tree or hedge about answers is left to the chain: it says what it sees
+            // («Рядом не вижу …»), as it did before the leaves of any kind were tried.
+            if (item == null) item = dev.aicompanion.entity.CompanionLeaves.resolve(companion, level, action.item());
             // Nothing to take and not enough carried: the reason and the count he holds — never a flat refusal that hides the part he did bring.
             if (item == null) return new CompanionPlanRunner.Expansion(java.util.List.of(), leavesRefusal(companion, level, action.count()));
             // A bag of several kinds meets the leaf order as one count: the check counts them all, and no tree is cut for it.
