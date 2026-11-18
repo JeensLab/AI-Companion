@@ -451,7 +451,9 @@ public final class CompanionDialogue {
         }
         if (whys.isEmpty()) return "";
         if (names.isEmpty()) return "Часть не вышла: " + String.join(" ", whys);
-        String why = String.join(" ", whys);
+        // A reason that carries a dash of its own («У меня 15 из 16 — рядом листвы не вижу») takes a comma after the part:
+        // one dash in a sentence, not two (round 3).
+        String why = String.join(" ", whys).replace(" — ", ", ");
         return "Не вышло: " + String.join(", ", names) + " — " + Character.toLowerCase(why.charAt(0)) + why.substring(1);
     }
 
