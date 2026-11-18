@@ -29,8 +29,8 @@ sourceSets.main.resources {
 
 repositories {
     // Add here additional repositories if required by some of the dependencies below.
-    // Maven Central carries the Checkstyle analyser jar that the `checkstyle` core plugin resolves; it is listed
-    // last so the NeoForge/Mojang repositories above still win for the mod's own dependencies.
+    // Maven Central carries the Checkstyle analyser jar that the `checkstyle` core plugin resolves.
+    // The NeoForge/Mojang repositories are injected by the moddev plugin, so this is the only entry here.
     mavenCentral()
 }
 
