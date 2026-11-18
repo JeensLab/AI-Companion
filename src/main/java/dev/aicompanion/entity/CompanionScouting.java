@@ -104,6 +104,7 @@ final class CompanionScouting {
         if (lookUntil == 0) lookUntil = now + LOOK_TICKS;
         if (now < lookUntil) return;
         asked.add(w.owner.traders().remember(trader, level));
+        w.owner.refreshTraders();
         next();
     }
 
