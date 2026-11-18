@@ -55,6 +55,8 @@ final class CompanionPicking {
     private static final int DEEP = 10;
     /** A player's reach, from the eyes to the middle of the block. */
     private static final double REACH = 4.5;
+    /** How far from a leaf a cell he works it from may be: the same reach the stand cells are searched in. */
+    private static final double STAND_REACH = 3.5;
     /** Ticks over the block, down and up for air, before it is passed over. */
     private static final int DIVE = 900;
 
@@ -245,10 +247,13 @@ final class CompanionPicking {
         return false;
     }
 
-    /** A block of the kind he may take now: dry, not on a site of the player's (but the fruit of a stem), ripe, and not the root of a growing column. */
+    /** A block of the kind he may take now: dry, not on a site of the player's (but the fruit of a stem, and a leaf the player set down himself), ripe, and not the root of a growing column. */
     private static boolean takes(ServerLevel level, BlockPos pos, Predicate<BlockPos> site) {
         BlockState state = level.getBlockState(pos);
-        if (site.test(pos) && !CompanionCrops.onStem(level, pos)) return false;
+        // A leaf that does not fade was set down by the player as leaves (a hedge, a roof, a bed of them on the ground): it is
+        // still his to cut on a site of his, as the last leaves of a leaf order (the owner, 18.11: the leaves he placed lay
+        // beside him and were not taken at all).
+        if (site.test(pos) && !CompanionCrops.onStem(level, pos) && !(state.is(BlockTags.LEAVES) && setDown(state))) return false;
         // Clay on the bed of a pond has no water in its own cell: the water over it counts too. Only what grows there is dived for.
         // A coral block under another one, or a sea pickle sat on it, is not under open water: none of it is dived for.
         if (wet(level, pos) ? !grows(state) || depth(level, pos) < 0 : state.is(BlockTags.CORAL_BLOCKS)) return false;
@@ -289,15 +294,19 @@ final class CompanionPicking {
     }
 
     /**
-     * Leaves he reaches from the ground: a crown high over it is no source (a spruce, a tall oak) unless he builds up to it.
-     * A standable cell within three below the leaf is the coarse ground reach; a stand on top of the trunk alone is no such
-     * reach — nothing walks up there without a column.
+     * Leaves he reaches from a stand: a crown high over the ground is no source (a spruce, a tall oak) unless he builds up to
+     * it, but any cell he can stand in within the reach of the leaf is — the ground, a stair or ledge the player built, a
+     * pillar left standing. A stand on top of a leaf or of the trunk alone is no such reach: nothing walks up there without a
+     * column, so it is left to the stands of {@link #standsFor} once the leaf is his.
      */
     private static boolean low(CompanionEntity c, ServerLevel level, BlockPos pos) {
         if (!level.getBlockState(pos).is(BlockTags.LEAVES)) return true;
-        for (int dy = -3; dy <= 0; dy++) for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
+        for (int dy = -4; dy <= 1; dy++) for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) {
             BlockPos cell = pos.offset(dx, dy, dz);
-            if (!level.getBlockState(cell.below()).is(BlockTags.LEAVES) && CompanionMiningNavigation.standable(c, cell)) return true;
+            BlockState floor = level.getBlockState(cell.below());
+            if (floor.is(BlockTags.LEAVES) || floor.is(BlockTags.LOGS)) continue;
+            if (Vec3.atBottomCenterOf(cell).distanceToSqr(pos.getCenter()) > STAND_REACH * STAND_REACH) continue;
+            if (CompanionMiningNavigation.standable(c, cell)) return true;
         }
         return false;
     }
@@ -342,8 +351,14 @@ final class CompanionPicking {
             return cells;
         }
         if (!level.getBlockState(block).getCollisionShape(level, block).isEmpty()) {
-            for (BlockPos stand : CompanionMiningNavigation.standCells(c, block, 3.5, false, true))
-                if (CompanionMiningNavigation.dropCollectable(level, block, stand)) cells.add(stand);
+            boolean leaf = level.getBlockState(block).is(BlockTags.LEAVES);
+            for (BlockPos stand : CompanionMiningNavigation.standCells(c, block, STAND_REACH, false, true)) {
+                // A leaf's drop falls off a crown or a stair to the ground below: the stand is still his, and the pickup walks
+                // down for what fell. Any standable cell within reach counts — a stair the player built, a ledge, a pillar, or a
+                // leaf's own top to walk on (the owner, 18.11: the dirt stair to a crown was no stand for him at all, so he dug
+                // soil for a column).
+                if (leaf || CompanionMiningNavigation.dropCollectable(level, block, stand)) cells.add(stand);
+            }
             return cells;
         }
         for (int dy = -2; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
@@ -481,7 +496,13 @@ final class CompanionPicking {
             // He is on his own column and this block needs the ground: down first, then the walk, not off the edge.
             if (down()) return;
             c.workStatus("Иду за: " + name() + ".");
-            if (!walk()) { passed.add(target); release(); }
+            if (!walk()) {
+                // A stand he saw but no way to it (a stair behind a wall, a ledge across a gap): up a column of his own if the
+                // soil for one is there, else the leaf is passed over and the next one about is tried (the owner, 18.11).
+                if (climb()) return;
+                passed.add(target);
+                release();
+            }
             return;
         }
         c.getNavigation().stop();
