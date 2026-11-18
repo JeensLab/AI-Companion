@@ -13,7 +13,9 @@ public final class GameContext {
     private static Object remoteWorld;
     private static String remoteState = "не найден рядом";
     private static long remoteAt;
-    public static void setRemoteState(Object world, String state) { remoteWorld = world; remoteState = state; remoteAt = System.nanoTime(); }
+    /** The trader line the server sent with the state: a companion the client does not see (far off, or a stale copy) still knows his traders. */
+    private static String remoteTraders = "";
+    public static void setRemoteState(Object world, String state, String traders) { remoteWorld = world; remoteState = state; remoteTraders = traders; remoteAt = System.nanoTime(); }
     static void forgetWorld() { remoteWorld = null; }
     private GameContext() {
     }
@@ -93,8 +95,11 @@ public final class GameContext {
     }
 
     private static String tradersPart(String message, List<CompanionEntity> companions) {
-        if (companions.isEmpty() || !CompanionTradeWords.relevant(message, System.currentTimeMillis())) return "";
-        String traders = companions.getFirst().getTradersForAi();
+        if (!CompanionTradeWords.relevant(message, System.currentTimeMillis())) return "";
+        // Not seen by the client (game 18.11: the player taken 500 blocks, the client kept a stale copy): the server's line, as the state is.
+        boolean remote = remoteWorld == Minecraft.getInstance().level && System.nanoTime() - remoteAt < 10_000_000_000L;
+        if (companions.isEmpty() && !remote) return "";
+        String traders = companions.isEmpty() ? remoteTraders : companions.getFirst().getTradersForAi();
         return ", торговцы=" + (traders.isEmpty() ? "список пуст: никого из торговцев он ещё не расспрашивал" : traders);
     }
 
