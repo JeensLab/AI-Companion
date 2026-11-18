@@ -35,6 +35,11 @@ import java.util.UUID;
 final class CompanionTrading {
     /** Three minutes to get to a trader. */
     private static final int LIMIT = 20 * 60 * 3;
+    /**
+     * The work's own deadline (CompanionWork): a far walk of up to eight minutes, the trades, maybe a second remembered trader — under
+     * the client's twenty minutes, so the server's honest report comes first (review round 2: the common ten minutes cut it).
+     */
+    static final int WORK_SECONDS = 18 * 60;
     private static final int LOOK_TICKS = 20;
     private static final String OUT = "Кончилось: сделка исчерпана, торговец пополнит запас после работы. Сходить позже?";
     /** A trader whose window a player has open: his offers carry that player's discount then, and the game lets nobody else trade. */
@@ -121,7 +126,9 @@ final class CompanionTrading {
      * (with stock before without, fixed before fresh, cheaper, nearer) by the remembered deals, and the walk to the first begins on the first tick.
      */
     private CompanionActionResult remembered(ServerLevel level, String refusal) {
-        List<CompanionTraders.Entry> have = w.owner.traders().entries().stream().filter(entry -> rememberedDeal(entry) != null).toList();
+        // The remembered stock may be old (villagers restock): the live offers decide on arrival. One just seen out of it near is not
+        // walked to, and is left out before the far and chunk refusals, which are not about him (review round 2).
+        List<CompanionTraders.Entry> have = w.owner.traders().entries().stream().filter(entry -> rememberedDeal(entry) != null && !outNear.contains(entry.id())).toList();
         if (have.isEmpty()) return CompanionActionResult.failed(refusal);
         String dimension = level.dimension().location().toString();
         double reach = (double) CompanionScouting.FAR_RADIUS * CompanionScouting.FAR_RADIUS;
@@ -129,10 +136,7 @@ final class CompanionTrading {
         if (reachable.isEmpty()) return CompanionActionResult.failed(CompanionScouting.TOO_FAR);
         // Without chunk loading he would stop where the world stops around him, half way, until the order times out.
         if (!CompanionErrand.holdsChunks(w.owner, level)) return CompanionActionResult.failed(CompanionFarWalk.CHUNKS_OFF);
-        // The remembered stock may be old (villagers restock): the live offers decide on arrival. One just seen out of it near is not walked to.
-        List<CompanionTraders.Entry> unseen = reachable.stream().filter(entry -> !outNear.contains(entry.id())).toList();
-        if (unseen.isEmpty()) return CompanionActionResult.failed(refusal);
-        List<CompanionTraders.Entry> allowed = unseen.stream().filter(entry -> !entry.fresh() || order.consent()).toList();
+        List<CompanionTraders.Entry> allowed = reachable.stream().filter(entry -> !entry.fresh() || order.consent()).toList();
         if (allowed.isEmpty()) return CompanionActionResult.failed(FRESH);
         List<CompanionTraders.Entry> sorted = new ArrayList<>(allowed);
         sorted.sort(Comparator.comparing((CompanionTraders.Entry entry) -> rememberedDeal(entry).left() <= 0).thenComparing(CompanionTraders.Entry::fresh)
@@ -269,7 +273,7 @@ final class CompanionTrading {
         if (shortage.missing() > 0) {
             lastReason = "Не хватает платы: " + shortage.missingText() + ".";
             // The bag is the same for every trader: with a trade made, the price is simply gone, and the rest of the line is not walked.
-            if (trades > 0) { queue.clear(); lastWhy = "плата кончилась"; }
+            if (trades > 0) { queue.clear(); farQueue.clear(); lastWhy = "плата кончилась"; }
             next(); return;
         }
         ItemStack costA = offer.getCostA(), costB = offer.getCostB(), result = offer.getResult().copy();
