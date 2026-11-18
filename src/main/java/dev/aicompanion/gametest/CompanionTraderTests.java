@@ -255,7 +255,11 @@ public final class CompanionTraderTests {
         // Game 18.11: «сходи в деревню, проверь торговцев» was taken for a walk to a marker «деревня» nobody set; it is the model's.
         h.assertTrue(dev.aicompanion.client.CompanionPlaceSpeech.parse("Сходи в деревню, проверь, что сейчас у торговцев", "Олег", java.util.List.of(), true).question() == null,
                 "A trade errand to the village was asked about a marker");
-        h.assertTrue(dev.aicompanion.client.CompanionPlaceSpeech.parse("Сходи в деревню", "Олег", java.util.List.of(), true).question() != null,
+        // Review round 3, the spec's own phrases: a trade verb before the preposition, and the village with no trade word at all.
+        for (String errand : new String[]{"Сходи купи шлем у кузнеца", "Сходи в деревню узнай, что у них нового", "Иди продай пшеницу в деревне"})
+            h.assertTrue(dev.aicompanion.client.CompanionPlaceSpeech.parse(errand, "Олег", java.util.List.of(), true).question() == null,
+                    "Taken for a marker: " + errand);
+        h.assertTrue(dev.aicompanion.client.CompanionPlaceSpeech.parse("Сходи к озеру", "Олег", java.util.List.of(), true).question() != null,
                 "A plain walk to an unknown marker lost its question");
         h.succeed();
     }
