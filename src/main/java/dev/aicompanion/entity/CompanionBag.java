@@ -157,7 +157,8 @@ final class CompanionBag {
         if (!(c.level() instanceof ServerLevel serverLevel)) return new CompanionObtain.Plan(List.of(), "Для этого нужен загруженный мир.");
         return CompanionObtain.plan(serverLevel, carriedForPlan(), c.hasCraftingTableNearby() || c.hasKnownCraftingTableWithin(16), item, count,
                 wanted -> wanted == net.minecraft.world.item.Items.COMPOSTER ? CompanionComposting.find(c, true) != null
-                        : CompanionPicking.near(c, serverLevel, CompanionPickable.sources(serverLevel, wanted)) || CompanionFarming.reapableNear(c, serverLevel, wanted)
+                        : (wanted == net.minecraft.world.item.Items.OBSIDIAN && CompanionObsidian.liesAbout(c, serverLevel, c.work.portal::laid))
+                        || CompanionPicking.near(c, serverLevel, CompanionPickable.sources(serverLevel, wanted)) || CompanionFarming.reapableNear(c, serverLevel, wanted)
                         || CompanionChores.about(c, serverLevel, wanted), wanted -> CompanionMobDrops.near(c, serverLevel, wanted),
                 new CompanionObtain.Trip(serverLevel.dimension() == net.minecraft.world.level.Level.OVERWORLD ? CompanionPortals.litNear(serverLevel, c.blockPosition()) : null, c.errand.away(), CompanionErrand.holdsChunks(c, serverLevel)),
                 stack -> !c.carriedForPlayer(stack));

@@ -252,6 +252,8 @@ public final class CompanionRoute {
             Reach reach = to(block, need);
             // This tick's cells went to another choice: keep walking the leg he has, ask again next tick.
             if (reach.busy()) return 0;
+            // Nothing was searched at all (he is in the air, the first tick of the order): that is no evidence of no way.
+            if (NOT_SEARCHED.equals(reach.reason())) return 0;
             w.path = reach.path();
             if (reach.kind() == Kind.FAR) setFar(w.path);
             // A failed search was told by nearest() already.
