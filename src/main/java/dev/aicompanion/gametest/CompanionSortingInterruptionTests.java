@@ -30,7 +30,6 @@ import java.util.Map;
 
 import static dev.aicompanion.gametest.CompanionSortingTests.bagOf;
 import static dev.aicompanion.gametest.CompanionSortingTests.chest;
-import static dev.aicompanion.gametest.CompanionSortingTests.count;
 import static dev.aicompanion.gametest.CompanionSortingTests.mixedThree;
 import static dev.aicompanion.gametest.CompanionSortingTests.setup;
 import static dev.aicompanion.gametest.CompanionSortingTests.totals;
