@@ -134,25 +134,27 @@ public final class CompanionTools {
     }
 
     /**
-     * The wear a tool takes on a block it broke, as a player's: none on a block that comes down at once — hardness zero, a crop,
-     * a flower, a sapling, grass — which the game takes no tick off, so shears on grass stay as they were. The block is already
-     * broken and its drops given; this is only the wear.
+     * The wear a tool takes on a block it broke, as a player's: the game's own wear for it, so the item's own {@code mineBlock}.
+     * A tool of the four classes and a sword wear only where the block takes a tick; shears override that and wear on every block
+     * they cut but fire — grass, a crop, a flower, a leaf — whatever the hardness. The block is already broken and its drops
+     * given; this is only the wear.
      */
     public static void wearOnBreak(ItemStack tool, Level level, BlockState state, BlockPos pos, LivingEntity owner) {
-        if (state.getDestroySpeed(level, pos) == 0) return;
         tool.getItem().mineBlock(tool, level, state, pos, owner);
     }
 
     /**
      * Vanilla destroy speed with the tool's own Efficiency, as a player has it: the bonus only on the tool's own blocks. A block
      * that comes down on the first tick — hardness zero: a crop, a flower, a sapling — gains nothing from any speed, the game
-     * takes no tick off it, so it is a bare hand's one to a tool as to a hand.
+     * takes no tick off it, so it is a bare hand's one to a tool as to a hand. The hardness is the state's own, read without a
+     * position: the selection of a tool has the state in hand, not the block's place, so a hardness that depends on where it
+     * stands is honoured only by the break itself, which passes the position.
      */
     static float breakSpeed(CompanionEntity owner, ItemStack stack, BlockState state) {
         return breakSpeed(owner, stack, state, BlockPos.ZERO);
     }
 
-    /** The same at the block's own position, for a hardness that depends on where it stands. */
+    /** The same at the block's own position, as the break's own timing has it. */
     static float breakSpeed(CompanionEntity owner, ItemStack stack, BlockState state, BlockPos pos) {
         if (stack.isEmpty()) return 1;
         if (state.getDestroySpeed(owner.level(), pos) == 0) return 1;
