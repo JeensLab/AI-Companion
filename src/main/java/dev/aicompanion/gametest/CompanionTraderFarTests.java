@@ -53,6 +53,10 @@ public final class CompanionTraderFarTests {
     public static void after4(ServerLevel level) { cleanUp(level); }
     @net.minecraft.gametest.framework.AfterBatch(batch = "tradersfar7")
     public static void after7(ServerLevel level) { cleanUp(level); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "tradersfar5")
+    public static void after5(ServerLevel level) { cleanUp(level); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "tradersfar6")
+    public static void after6(ServerLevel level) { cleanUp(level); }
 
     private static void cleanUp(ServerLevel level) {
         for (BlockPos[] box : strips) for (BlockPos pos : BlockPos.betweenClosed(box[0], box[1])) level.setBlock(pos, Blocks.AIR.defaultBlockState(), 2);
@@ -160,6 +164,56 @@ public final class CompanionTraderFarTests {
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone(), "No answer");
             h.assertTrue(future.join().report().contains("подгрузка чанков") && !companion.isWorking(), future.join().report());
+        });
+    }
+
+    private static MerchantOffer arrowsFor(int emeralds) {
+        return new MerchantOffer(new ItemCost(Items.EMERALD, emeralds), java.util.Optional.empty(), new ItemStack(Items.ARROW, 4), 3, 5, 0f);
+    }
+
+    private static int count(CompanionEntity companion, net.minecraft.world.item.Item item) {
+        int total = 0;
+        for (int slot = 0; slot < companion.getContainerSize(); slot++) if (companion.getItem(slot).is(item)) total += companion.getItem(slot).getCount();
+        return total;
+    }
+
+    /** Nobody trades within 64 blocks, a fletcher is remembered 86 off with the deal: he walks there, buys by the live offer, the goods are in his bag, and he is back by the player. */
+    @GameTest(template = "tall_tree", timeoutTicks = 20 * 240, batch = "tradersfar5")
+    public static void aTradeIsMadeWithARememberedTraderFarOff(GameTestHelper h) {
+        strip(h, 110);
+        Villager far = trader(h, VillagerProfession.FLETCHER, 90, 16, arrowsFor(1));
+        CompanionEntity companion = spawn(h, 4, 16);
+        companion.setItem(0, new ItemStack(Items.EMERALD, 2));
+        companion.traders().remember(far, h.getLevel());
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        var future = run(h, companion, "[{\"action\":\"trade_items\",\"item\":\"minecraft:arrow\"}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + companion.getLastTaskResult());
+            h.assertTrue(future.join().skipped().isEmpty(), future.join().report());
+            h.assertTrue(count(companion, Items.EMERALD) == 1 && count(companion, Items.ARROW) == 4 && far.getOffers().getFirst().getUses() == 1,
+                    "Emeralds " + count(companion, Items.EMERALD) + ", arrows " + count(companion, Items.ARROW) + ", uses " + far.getOffers().getFirst().getUses());
+            h.assertTrue(companion.distanceTo(player) < 12, "Not back by the player: " + companion.distanceTo(player));
+        });
+    }
+
+    /** The cheaper remembered fletcher is gone from his spot: he is forgotten, the next remembered one with the deal is walked to and traded with. */
+    @GameTest(template = "tall_tree", timeoutTicks = 20 * 240, batch = "tradersfar6")
+    public static void aRememberedTraderWhoIsNotThereIsForgottenAndTheNextIsUsed(GameTestHelper h) {
+        strip(h, 110);
+        Villager gone = trader(h, VillagerProfession.FLETCHER, 80, 16, arrowsFor(1));
+        Villager there = trader(h, VillagerProfession.FLETCHER, 100, 16, arrowsFor(2));
+        CompanionEntity companion = spawn(h, 4, 16);
+        companion.setItem(0, new ItemStack(Items.EMERALD, 3));
+        companion.traders().remember(gone, h.getLevel());
+        companion.traders().remember(there, h.getLevel());
+        gone.discard();
+        var future = run(h, companion, "[{\"action\":\"trade_items\",\"item\":\"minecraft:arrow\"}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + companion.getLastTaskResult());
+            h.assertTrue(future.join().skipped().isEmpty(), future.join().report());
+            h.assertTrue(companion.traders().entry(gone.getUUID()) == null && companion.traders().entry(there.getUUID()) != null, "Memory: " + companion.traders().entries());
+            h.assertTrue(count(companion, Items.EMERALD) == 1 && count(companion, Items.ARROW) == 4 && there.getOffers().getFirst().getUses() == 1,
+                    "Emeralds " + count(companion, Items.EMERALD) + ", arrows " + count(companion, Items.ARROW));
         });
     }
 

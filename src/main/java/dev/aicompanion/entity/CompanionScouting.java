@@ -30,10 +30,9 @@ final class CompanionScouting {
     static final int LIMIT = 20 * 60 * 3;
     /** A remembered village is walked to from at most this far (same dimension); farther he asks to be led. */
     static final int FAR_RADIUS = 500;
-    /** The walk there has its own time, apart from the round: eight minutes. */
-    private static final int TRAVEL_LIMIT = 20 * 60 * 8;
+    static final String TOO_FAR = "Далеко, отведи меня: деревня, которую помню, дальше " + FAR_RADIUS + " блоков или в другом мире.";
     /** The work's own deadline (CompanionWork): the walk there, the round and a minute over, or the far scout is cut before its report. */
-    static final int WORK_SECONDS = (TRAVEL_LIMIT + LIMIT) / 20 + 60;
+    static final int WORK_SECONDS = (CompanionFarWalk.LIMIT + LIMIT) / 20 + 60;
     private static final int LOOK_TICKS = 30;
     private static final int SHOWN_DEALS = 3;
     private static final Map<String, String> PROFESSIONS = new LinkedHashMap<>();
@@ -52,12 +51,13 @@ final class CompanionScouting {
     private int asleep, unreached;
     private long startedAt, lookUntil;
     private final CompanionTraderWalk walk;
-    /** The remembered spot he is walking to (null in the round itself), where the round is centred, and who was forgotten at the end. */
-    private BlockPos far, centre;
+    /** The walk to a remembered spot (idle in the round itself), where the round is centred, and who was forgotten at the end. */
+    private final CompanionFarWalk far;
+    private BlockPos centre;
     private boolean walked;
     private final List<String> forgotten = new ArrayList<>();
 
-    CompanionScouting(CompanionWork w) { this.w = w; walk = new CompanionTraderWalk(w); }
+    CompanionScouting(CompanionWork w) { this.w = w; walk = new CompanionTraderWalk(w); far = new CompanionFarWalk(w); }
 
     /** Null if the order is taken; no trader round him is a refusal that says so. */
     CompanionActionResult begin() {
@@ -72,11 +72,11 @@ final class CompanionScouting {
         if (remembered.isEmpty()) return CompanionActionResult.failed("Деревни рядом не вижу. Могу поискать: скажи, в какую сторону света идти.");
         var nearest = remembered.stream().filter(e -> e.dimension().equals(dimension)).min(Comparator.comparingDouble(e -> e.pos().distSqr(centre)));
         if (nearest.isEmpty() || nearest.get().pos().distSqr(centre) > (double) FAR_RADIUS * FAR_RADIUS)
-            return CompanionActionResult.failed("Далеко, отведи меня: деревня, которую помню, дальше " + FAR_RADIUS + " блоков или в другом мире.");
+            return CompanionActionResult.failed(TOO_FAR);
         // Without chunk loading he would stop where the world stops around him, half way, until the order times out.
         if (!CompanionErrand.holdsChunks(w.owner, level))
             return CompanionActionResult.failed("Один далеко не пойду: у меня выключена подгрузка чанков. Включи «Работа вдали от игрока» в «Поведении» или отведи меня.");
-        far = CompanionTraders.village(remembered.stream().filter(e -> e.dimension().equals(dimension)).map(CompanionTraders.Entry::pos).toList(), nearest.get().pos());
+        far.begin(CompanionTraders.village(remembered.stream().filter(e -> e.dimension().equals(dimension)).map(CompanionTraders.Entry::pos).toList(), nearest.get().pos()));
         return null;
     }
 
@@ -99,16 +99,16 @@ final class CompanionScouting {
     }
 
     void cancel() {
-        if (current != null || !queue.isEmpty() || far != null) w.route.stop();
-        if (far != null) w.route.legsEnd(false);
-        queue.clear(); asked.clear(); forgotten.clear(); current = null; far = centre = null; walked = false;
+        if (current != null || !queue.isEmpty() || far.active()) w.route.stop();
+        far.cancel();
+        queue.clear(); asked.clear(); forgotten.clear(); current = null; centre = null; walked = false;
         asleep = unreached = 0; startedAt = lookUntil = 0;
     }
 
     void tick(ServerLevel level) {
         long now = level.getGameTime();
         if (startedAt == 0) startedAt = now;
-        if (far != null) { travel(level, now); return; }
+        if (far.active()) { travel(level, now); return; }
         if (now - startedAt > LIMIT) { finish(level, true); return; }
         if (current == null) {
             if (queue.isEmpty()) { finish(level, false); return; }
@@ -133,22 +133,20 @@ final class CompanionScouting {
 
     /** The way to the remembered village, in legs like any long walk and never a teleport; its own time. Arrived, the round begins from here. */
     private void travel(ServerLevel level, long now) {
-        if (now - startedAt > TRAVEL_LIMIT) { giveUp("Шёл к деревне слишком долго, не дошёл."); return; }
-        w.owner.workStatus("Иду к деревне, которую помню.");
-        switch (w.route.legs(far, 8)) {
+        switch (far.step(now, "Иду к деревне, которую помню.")) {
             case WALKING -> { }
-            case NEAR -> {
-                w.route.legsEnd(true);
-                far = null; startedAt = 0; walked = true; centre = w.owner.blockPosition();
+            case ARRIVED -> {
+                startedAt = 0; walked = true; centre = w.owner.blockPosition();
                 queue.addAll(scan(level));
             }
+            case TIMEOUT -> giveUp("Шёл к деревне слишком долго, не дошёл.");
             case FAILED -> giveUp("До деревни, которую помню, дойти не смог: нет пути.");
         }
     }
 
     private void giveUp(String message) {
-        dev.aicompanion.CompanionDiagnostics.event(w.owner.diagnosticTrace(), "scouting_far_failed", "entity", w.owner.getUUID(), "to", far.toShortString());
-        w.route.legsEnd(false);
+        dev.aicompanion.CompanionDiagnostics.event(w.owner.diagnosticTrace(), "scouting_far_failed", "entity", w.owner.getUUID(), "to", far.target().toShortString());
+        far.cancel();
         w.route.stop();
         w.finish(false, message);
     }
