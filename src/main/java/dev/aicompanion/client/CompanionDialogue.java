@@ -105,6 +105,7 @@ public final class CompanionDialogue {
             case "build_pen" -> "Окей, сделаю загон.";
             case "breed_animals" -> "Ага, займусь разведением.";
             case "scout_traders" -> "Ага, схожу посмотрю, что у торговцев.";
+            case "trade_items" -> "Ага, схожу обменяюсь.";
             case "farm_crops" -> "Ага, сделаю грядки у воды.";
             case "harvest_crops" -> "Ага, пойду соберу урожай.";
             case "use_bone_meal" -> "sapling".equals(actions.getFirst().item()) ? "Ага, посыплю саженец костной мукой." : "Ага, посыплю грядки костной мукой.";
@@ -183,6 +184,7 @@ public final class CompanionDialogue {
                 yield "развести " + (animal == null ? "животных" : animal.many) + " (пар: " + action.count() + ")";
             }
             case "scout_traders" -> "обойти торговцев и узнать их сделки";
+            case "trade_items" -> "обменяться с торговцем (одна сделка)";
             case "farm_crops" -> {
                 var crop = dev.aicompanion.entity.CompanionCrops.Kind.of(action.item());
                 yield "посадить " + (crop == null ? "культуру" : crop.plant) + " (грядок: " + action.count() + ")";
@@ -510,7 +512,7 @@ public final class CompanionDialogue {
         if (last.contains("План остановлен:")) {
             String failure = dev.aicompanion.CompanionFailureMessages.primary(last);
             // A pen or a breeding order says its own facts (what stands, who is inside, what is missing), not a general excuse.
-            if (actions.stream().anyMatch(action -> "build_pen".equals(action.type()) || "breed_animals".equals(action.type()) || "scout_traders".equals(action.type()))) return speakable(failure);
+            if (actions.stream().anyMatch(action -> "build_pen".equals(action.type()) || "breed_animals".equals(action.type()) || "scout_traders".equals(action.type()) || "trade_items".equals(action.type()))) return speakable(failure);
             String partial = partialGather(actions, failure);
             if (partial != null) return partial;
             if (failure.contains("Для подъёма не хватает земли")) return "До верхушки без опоры не достану. Дай мне немного земли.";

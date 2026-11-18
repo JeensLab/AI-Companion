@@ -155,7 +155,7 @@ public final class CompanionTraders {
 
     private static String bare(String id) { return id.startsWith("minecraft:") ? id.substring("minecraft:".length()) : id; }
 
-    private static Stack stack(ItemStack stack) {
+    static Stack stack(ItemStack stack) {
         ItemEnchantments enchantments = stack.getOrDefault(DataComponents.STORED_ENCHANTMENTS, ItemEnchantments.EMPTY);
         if (enchantments.isEmpty()) enchantments = stack.getOrDefault(DataComponents.ENCHANTMENTS, ItemEnchantments.EMPTY);
         String enchantment = "";
