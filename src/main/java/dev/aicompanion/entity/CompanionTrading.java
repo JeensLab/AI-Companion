@@ -35,11 +35,13 @@ import java.util.UUID;
 final class CompanionTrading {
     /** Three minutes to get to a trader. */
     private static final int LIMIT = 20 * 60 * 3;
+    /** Remembered traders walked to at most for one order: the work's deadline below covers that many walks and approaches. */
+    static final int FAR_TRIES = 2;
     /**
-     * The work's own deadline (CompanionWork): a far walk of up to eight minutes, the trades, maybe a second remembered trader — under
-     * the client's twenty minutes, so the server's honest report comes first (review round 2: the common ten minutes cut it).
+     * The work's own deadline (CompanionWork): up to two far walks of eight minutes, each with an approach of three, and a minute over —
+     * under the client's wait, so the server's honest report comes first (review rounds 2 and 3: the common ten minutes cut it).
      */
-    static final int WORK_SECONDS = 18 * 60;
+    static final int WORK_SECONDS = FAR_TRIES * (CompanionFarWalk.LIMIT + LIMIT) / 20 + 60;
     private static final int LOOK_TICKS = 20;
     private static final String OUT = "Кончилось: сделка исчерпана, торговец пополнит запас после работы. Сходить позже?";
     /** A trader whose window a player has open: his offers carry that player's discount then, and the game lets nobody else trade. */
@@ -133,15 +135,15 @@ final class CompanionTrading {
         String dimension = level.dimension().location().toString();
         double reach = (double) CompanionScouting.FAR_RADIUS * CompanionScouting.FAR_RADIUS;
         List<CompanionTraders.Entry> reachable = have.stream().filter(entry -> entry.dimension().equals(dimension) && entry.pos().distSqr(w.owner.blockPosition()) <= reach).toList();
-        if (reachable.isEmpty()) return CompanionActionResult.failed(CompanionScouting.TOO_FAR);
+        if (reachable.isEmpty()) return CompanionActionResult.failed(outNear.isEmpty() ? CompanionScouting.TOO_FAR : refusal);
         // Without chunk loading he would stop where the world stops around him, half way, until the order times out.
-        if (!CompanionErrand.holdsChunks(w.owner, level)) return CompanionActionResult.failed(CompanionFarWalk.CHUNKS_OFF);
+        if (!CompanionErrand.holdsChunks(w.owner, level)) return CompanionActionResult.failed(outNear.isEmpty() ? CompanionFarWalk.CHUNKS_OFF : refusal);
         List<CompanionTraders.Entry> allowed = reachable.stream().filter(entry -> !entry.fresh() || order.consent()).toList();
         if (allowed.isEmpty()) return CompanionActionResult.failed(FRESH);
         List<CompanionTraders.Entry> sorted = new ArrayList<>(allowed);
         sorted.sort(Comparator.comparing((CompanionTraders.Entry entry) -> rememberedDeal(entry).left() <= 0).thenComparing(CompanionTraders.Entry::fresh)
                 .thenComparingInt(entry -> price(rememberedDeal(entry))).thenComparingDouble(entry -> entry.pos().distSqr(w.owner.blockPosition())));
-        for (CompanionTraders.Entry entry : sorted) if (missingText(level, rememberedDeal(entry)).isEmpty()) farQueue.add(entry.id());
+        for (CompanionTraders.Entry entry : sorted) if (missingText(level, rememberedDeal(entry)).isEmpty() && farQueue.size() < FAR_TRIES) farQueue.add(entry.id());
         if (farQueue.isEmpty()) return CompanionActionResult.failed("Не хватает платы: " + missingText(level, rememberedDeal(sorted.getFirst())) + ".");
         return null;
     }
@@ -192,7 +194,7 @@ final class CompanionTrading {
             return;
         }
         if (current == null) {
-            if (queue.isEmpty() && startFar()) return;
+            if (queue.isEmpty() && startFar(level)) return;
             if (queue.isEmpty()) {
                 if (trades > 0) finishTrades(level, lastWhy.isEmpty() ? "других с такой сделкой рядом нет" : lastWhy);
                 else w.finish(false, lastReason.isEmpty() ? "Не дотянулся до торговца." : lastReason);
@@ -219,11 +221,15 @@ final class CompanionTrading {
     private void next() { current = null; startedAt = 0; walk.end(); }
 
     /** The walk to the next remembered trader begins; false when none is left (one forgotten since the line was made is passed). */
-    private boolean startFar() {
+    private boolean startFar(ServerLevel level) {
         while (!farQueue.isEmpty()) {
             farId = farQueue.removeFirst();
             var entry = w.owner.traders().entry(farId);
-            if (entry != null) { farWalk.begin(entry.pos()); return true; }
+            if (entry == null) continue;
+            // His deal cannot be paid any more (the bag went on the trades made): no walk to him (review round 3).
+            var deal = rememberedDeal(entry);
+            if (deal == null || !missingText(level, deal).isEmpty()) { if (trades > 0) lastWhy = "плата кончилась"; continue; }
+            farWalk.begin(entry.pos()); return true;
         }
         return false;
     }
@@ -267,7 +273,15 @@ final class CompanionTrading {
     private void trade(ServerLevel level, AbstractVillager trader) {
         if (trader.isTrading()) { lastReason = BUSY; lastWhy = "торговец занят"; next(); return; }
         List<MerchantOffer> inStock = matching(trader).stream().filter(offer -> !offer.isOutOfStock()).toList();
-        if (inStock.isEmpty()) { lastReason = OUT; lastWhy = "лимит сделки кончился, других с такой сделкой рядом нет"; next(); return; }
+        if (inStock.isEmpty()) {
+            lastReason = OUT;
+            // Out of it, and the bag could not pay it once more anyway: no one else is walked to with nothing to pay (review round 3); the
+            // deal's end is still what is said, as it came first.
+            List<MerchantOffer> all = matching(trader);
+            if (trades > 0 && !all.isEmpty() && candidate(level, trader, cheapest(all), fresh(trader)).missing() > 0) { queue.clear(); farQueue.clear(); lastWhy = "лимит сделки кончился"; }
+            else lastWhy = "лимит сделки кончился, других с такой сделкой рядом нет";
+            next(); return;
+        }
         MerchantOffer offer = cheapest(inStock);
         Candidate shortage = candidate(level, trader, offer, fresh(trader));
         if (shortage.missing() > 0) {
@@ -361,7 +375,11 @@ final class CompanionTrading {
     /** The honest end of a trade order: what was traded for what, and, when the number was not reached or none was named, why it stopped. */
     private void finishTrades(ServerLevel level, String why) {
         // «Продай всё»: giving away all he has is the order done, not a stop (game 18.11 said «плата кончилась», as if he came up short).
-        if (order.sale() && order.count() == 0 && "плата кончилась".equals(why)) why = "";
+        if (order.sale() && order.count() == 0 && "плата кончилась".equals(why)) {
+            // Less than a deal's worth may be left: said, not hidden (review round 3).
+            int left = w.items.countCarried(net.minecraft.core.registries.BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.parse(order.pay())));
+            why = left > 0 ? "осталось " + left + ", на сделку не хватает" : "";
+        }
         String paidText = List.of(paidA, paidB).stream().filter(stack -> !stack.isEmpty()).map(stack -> CompanionScouting.text(level, CompanionTraders.stack(stack))).collect(java.util.stream.Collectors.joining(" и "));
         String goodsText = CompanionScouting.text(level, CompanionTraders.stack(gotGoods));
         String base = order.sale() ? "Продал " + paidText + " за " + goodsText : "Купил " + goodsText + " за " + paidText;

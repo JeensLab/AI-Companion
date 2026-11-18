@@ -65,6 +65,8 @@ public final class CompanionTraderTradeTests {
     public static void after14(net.minecraft.server.level.ServerLevel level) { CompanionTraderTests.afterVillagers(level); }
     @net.minecraft.gametest.framework.AfterBatch(batch = "trade15")
     public static void after15(net.minecraft.server.level.ServerLevel level) { CompanionTraderTests.afterVillagers(level); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "trade16")
+    public static void after16(net.minecraft.server.level.ServerLevel level) { CompanionTraderTests.afterVillagers(level); }
 
     private static final String ARROWS = "[{\"action\":\"trade_items\",\"item\":\"minecraft:arrow\"}]";
 
@@ -299,6 +301,21 @@ public final class CompanionTraderTradeTests {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + companion.getLastTaskResult());
             String report = future.join().report();
             h.assertTrue(count(companion, Items.EMERALD) == 2 && count(companion, Items.WHEAT) == 0 && !report.contains("плата") && !report.contains("кончил"), report);
+        });
+    }
+
+    /** The same with 45: two deals, and the five left (less than a deal) are said, not hidden (review round 3). */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400, batch = "trade16")
+    public static void aSaleOfAllHeHasSaysWhatIsLeft(GameTestHelper h) {
+        ground(h);
+        trader(h, VillagerProfession.FARMER, 14, 12, new MerchantOffer(new ItemCost(Items.WHEAT, 20), Optional.empty(), new ItemStack(Items.EMERALD), 5, 2, 0f));
+        CompanionEntity companion = spawn(h, 10, 16);
+        companion.setItem(0, new ItemStack(Items.WHEAT, 45));
+        var future = run(h, companion, "[{\"action\":\"trade_items\",\"item\":\"minecraft:emerald\",\"pay\":\"minecraft:wheat\"}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + companion.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(companion, Items.EMERALD) == 2 && count(companion, Items.WHEAT) == 5 && report.contains("осталось 5"), report);
         });
     }
 
