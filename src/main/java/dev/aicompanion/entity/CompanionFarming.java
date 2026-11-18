@@ -459,7 +459,7 @@ final class CompanionFarming {
         if (reach < 0) { next(); return; }
         if (reach == 0) { w.owner.workStatus("Иду за травой — нужны семена пшеницы."); return; }
         w.owner.workStatus("Рву траву ради семян: " + have + " из " + todo.size() + ".");
-        if (!takePlantTool(level, plant, state)) { endSeeds(have); return; }
+        if (!takeSeedTool(level, plant, state)) { endSeeds(have); return; }
         if (!w.breaking.tick(level, plant)) return;
         boolean plucked = pluck(level, plant, state);
         w.owner.putToolAway();
@@ -690,13 +690,25 @@ final class CompanionFarming {
         return true;
     }
 
+    /**
+     * The hand for a seed break: grass gives its seeds to a bare hand, while shears cut the tuft and the seed roll never happens.
+     * The shears leave his hand for the bag, so the grass comes down to the hand and not to the blade.
+     */
+    private boolean takeSeedTool(ServerLevel level, BlockPos cell, BlockState state) {
+        var drops = CompanionTools.drops(state, level, cell, null, w.owner, ItemStack.EMPTY);
+        if (!drops.isEmpty() && !w.items.canStore(drops)) { bagFull = true; return false; }
+        if (w.owner.getMainHandItem().is(net.neoforged.neoforge.common.Tags.Items.TOOLS_SHEAR)) w.owner.unequipForSupport("mainhand");
+        return true;
+    }
+
     /** Breaks a plant with the tool of the plant: the drops fall into the world to be picked up. False when the bag could not take them. */
     private boolean pluck(ServerLevel level, BlockPos cell, BlockState state) {
         var drops = CompanionTools.drops(state, level, cell, null, w.owner, w.owner.getMainHandItem());
         if (!drops.isEmpty() && !w.items.canStore(drops)) { bagFull = true; return false; }
         w.clearCracks();
         level.destroyBlock(cell, false, w.owner, 512);
-        // The tool of the plant wears on it as a player's does: nothing on one that comes down at once, grass or a crop.
+        // The tool of the plant wears on it as a player's does: a tool of the four classes skips a block that comes down at once,
+        // but shears wear on the grass they cut.
         ItemStack tool = w.owner.getMainHandItem();
         CompanionTools.wearOnBreak(tool, level, state, cell, w.owner);
         if (!drops.isEmpty()) w.owner.dropHarvest(cell, drops);
