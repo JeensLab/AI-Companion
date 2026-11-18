@@ -183,8 +183,10 @@ public final class CompanionWorkCommands {
         var leaves = Pattern.compile("^(?:(?:до|да)будь(?:ка)?|собери|набери|нарви)(?: мне| нам| себе)?\\s+(листв\\p{L}*|листь\\p{L}*|листьев)"
                 + "(?:\\s+(?:рядом|поблизости|с дерева|с деревьев|на дереве))?$").matcher(bare);
         if (leaves.matches()) {
-            int count = amount(said.count(), 16, 64, 32);
-            return count >= 1 && count <= 64 ? new PlannedAction("obtain_item", 0, count, dev.aicompanion.entity.CompanionLeaves.FAMILY) : null;
+            // «Два стака» is 128, and a leaf order may be a few hundred: the gather splits it into steps of a stack each.
+            int count = amount(said.count(), 16, dev.aicompanion.entity.CompanionWork.MAX_LEAVES, 32);
+            return count >= 1 && count <= dev.aicompanion.entity.CompanionWork.MAX_LEAVES
+                    ? new PlannedAction("obtain_item", 0, count, dev.aicompanion.entity.CompanionLeaves.FAMILY) : null;
         }
         // «Сруби дерево», «наруби дров»: the trunk, any species — the wood order the model used to plan, now without it.
         var wood = Pattern.compile("^(?:сруби|наруби|поруби|наколи)(?: мне| нам| себе)?\\s+(дерево|дерева|деревце|дров|дрова|дровец|бревна|бревен)"

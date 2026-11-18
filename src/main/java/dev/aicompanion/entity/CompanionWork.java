@@ -189,6 +189,8 @@ public final class CompanionWork {
     final java.util.Map<BlockPos, BlockState> oreBlockedCells = new java.util.HashMap<>();
     /** hunt_animals: the kind (null — any), how many, kills by his own blows, the chase, and the bag before for the report. */
     public static final int MAX_GAME = 16;
+    /** A leaf order may be a few stacks («два стака листвы», 128): the gather splits it into steps of a stack each. */
+    public static final int MAX_LEAVES = 384;
     boolean gameForFood;
     /** How a hunt without a single animal begins its report; the plan then does not go on to the furnace. */
     public static final String NOTHING_HUNTED = "Никого не добыл";

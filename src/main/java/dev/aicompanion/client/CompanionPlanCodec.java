@@ -180,7 +180,9 @@ public final class CompanionPlanCodec {
                         // A heading with no distance is walked until «стоп».
                         : "walk_heading".equals(type) ? 0 : 1;
                 int seconds = step.has("seconds") ? step.get("seconds").getAsBigDecimal().intValueExact() : 5;
-                if ("walk_heading".equals(type) ? count < 0 || count > dev.aicompanion.entity.CompanionCourse.MAX_BLOCKS : count < 1 || count > 64) throw invalid();
+                // obtain_item may ask for a few hundred (a leaf order of «два стака»): its chain splits them into steps of a stack.
+                int most = "obtain_item".equals(type) ? dev.aicompanion.entity.CompanionWork.MAX_LEAVES : 64;
+                if ("walk_heading".equals(type) ? count < 0 || count > dev.aicompanion.entity.CompanionCourse.MAX_BLOCKS : count < 1 || count > most) throw invalid();
                 // "Smelt the iron" names no number: all of it, not a single piece (game log 22.10).
                 if ("smelt_items".equals(type) && !step.has("count")) count = PlannedAction.ALL_CARRIED;
                 // «Закинь саженцы в компостер» names no number: all of them, not one (as the smelting above).
