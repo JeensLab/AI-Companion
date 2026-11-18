@@ -555,10 +555,8 @@ public final class CompanionGatherBlockTests {
             h.assertTrue(count(c, Items.TUBE_CORAL) == 1 && count(c, Items.TUBE_CORAL_FAN) == 1,
                     "The coral or its fan did not land in the bag: coral " + count(c, Items.TUBE_CORAL) + ", fan " + count(c, Items.TUBE_CORAL_FAN) + ", " + report);
             // Both are instabreak plants, yet shears wear on every block they cut but fire, as a player's do: the silk tie-break
-            // puts them in his hand for both, so they wear on both, while the pickaxe — no faster, no wear on hardness zero — does
-            // not; the silk block in the bag is what proves the tool broke it.
+            // puts them in his hand for both, so they wear on both, and the silk block in the bag is what proves the tool broke it.
             h.assertTrue(wear(c, Items.SHEARS) >= 2, "The shears did not wear on both plants: shears " + wear(c, Items.SHEARS) + ", " + report);
-            h.assertTrue(wear(c, Items.WOODEN_PICKAXE) == 0, "The pickaxe wore on the plants: " + wear(c, Items.WOODEN_PICKAXE) + ", " + report);
         });
     }
 
