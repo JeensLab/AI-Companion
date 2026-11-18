@@ -81,6 +81,9 @@ final class CompanionScouting {
         var nearest = remembered.stream().filter(e -> e.dimension().equals(dimension)).min(Comparator.comparingDouble(e -> e.pos().distSqr(centre)));
         if (nearest.isEmpty() || nearest.get().pos().distSqr(centre) > (double) FAR_RADIUS * FAR_RADIUS)
             return CompanionActionResult.failed("Далеко, отведи меня: деревня, которую помню, дальше " + FAR_RADIUS + " блоков или в другом мире.");
+        // Without chunk loading he would stop where the world stops around him, half way, until the order times out.
+        if (!CompanionErrand.holdsChunks(w.owner, level))
+            return CompanionActionResult.failed("Один далеко не пойду: у меня выключена подгрузка чанков. Включи «Работа вдали от игрока» в «Поведении» или отведи меня.");
         far = nearest.get().pos();
         return null;
     }

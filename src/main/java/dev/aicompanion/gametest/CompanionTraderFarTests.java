@@ -51,6 +51,8 @@ public final class CompanionTraderFarTests {
     public static void after3(ServerLevel level) { cleanUp(level); }
     @net.minecraft.gametest.framework.AfterBatch(batch = "tradersfar4")
     public static void after4(ServerLevel level) { cleanUp(level); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "tradersfar7")
+    public static void after7(ServerLevel level) { cleanUp(level); }
 
     private static void cleanUp(ServerLevel level) {
         for (BlockPos[] box : strips) for (BlockPos pos : BlockPos.betweenClosed(box[0], box[1])) level.setBlock(pos, Blocks.AIR.defaultBlockState(), 2);
@@ -141,6 +143,23 @@ public final class CompanionTraderFarTests {
             }
             h.assertTrue(second.getFirst().isDone(), "No answer to the second order");
             h.assertTrue(second.getFirst().join().report().contains("Далеко, отведи меня") && !companion.isWorking(), "Other dimension: " + second.getFirst().join().report());
+        });
+    }
+
+    /** Chunk loading off: a remembered village 90 blocks off is not walked to (he would stop where the world stops), he says why. */
+    @GameTest(template = "tall_tree", timeoutTicks = 600, batch = "tradersfar7")
+    public static void withoutChunkLoadingAFarScoutIsRefused(GameTestHelper h) {
+        strip(h, 31);
+        CompanionEntity companion = spawn(h, 10, 16);
+        companion.setLifestyle(false, false);
+        BlockPos here = h.absolutePos(new BlockPos(10, GROUND + 1, 16));
+        MerchantOffers offers = new MerchantOffers();
+        offers.add(new MerchantOffer(new ItemCost(Items.EMERALD), new ItemStack(Items.BREAD), 3, 1, 0));
+        companion.traders().remember(unplaced(h, here.getX() + 90, here.getZ(), offers), h.getLevel());
+        var future = run(h, companion, "[{\"action\":\"scout_traders\"}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone(), "No answer");
+            h.assertTrue(future.join().report().contains("подгрузка чанков") && !companion.isWorking(), future.join().report());
         });
     }
 

@@ -234,6 +234,10 @@ public final class CompanionTraderTests {
             h.assertTrue(CompanionTradeWords.about(yes), "Not about trading: " + yes);
         for (String no : new String[]{"пойдём домой", "руби дерево", "что у тебя в сумке"})
             h.assertTrue(!CompanionTradeWords.about(no), "Taken for trading: " + no);
+        // «Да» to «он ещё не торговал… меняем?» has no trade word: the list still rides along for a while after trade talk.
+        long t = 1_000_000L;
+        h.assertTrue(CompanionTradeWords.relevant("купи стрелы", t) && CompanionTradeWords.relevant("да", t + 60_000), "The answer right after trade talk lost the list");
+        h.assertTrue(!CompanionTradeWords.relevant("да", t + CompanionTradeWords.FOLLOW_UP_MILLIS + 1), "The list stayed long after trade talk");
         h.succeed();
     }
 
