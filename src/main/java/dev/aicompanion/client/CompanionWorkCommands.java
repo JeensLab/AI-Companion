@@ -183,7 +183,8 @@ public final class CompanionWorkCommands {
         var leaves = Pattern.compile("^(?:(?:до|да)будь(?:ка)?|собери|набери|нарви)(?: мне| нам| себе)?\\s+(листв\\p{L}*|листь\\p{L}*|листьев)"
                 + "(?:\\s+(?:рядом|поблизости|с дерева|с деревьев|на дереве))?$").matcher(bare);
         if (leaves.matches()) {
-            // «Два стака» is 128, and a leaf order may be a few hundred: the gather splits it into steps of a stack each.
+            // «Два стака» is 128, «добудь 500 листвы» is a few stacks: the plan takes the order in steps of a stack each, and the
+            // chain the server plans splits it the same way — a long leaf order is not refused.
             int count = amount(said.count(), 16, dev.aicompanion.entity.CompanionWork.MAX_LEAVES, 32);
             return count >= 1 && count <= dev.aicompanion.entity.CompanionWork.MAX_LEAVES
                     ? new PlannedAction("obtain_item", 0, count, dev.aicompanion.entity.CompanionLeaves.FAMILY) : null;

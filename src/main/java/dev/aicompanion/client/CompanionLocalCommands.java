@@ -221,7 +221,12 @@ public final class CompanionLocalCommands {
         boolean give = command.endsWith(" give");
         PlannedAction action = action(give ? command.substring(0, command.length() - " give".length()) : command);
         java.util.List<PlannedAction> steps = new java.util.ArrayList<>();
-        steps.add(action);
+        // A leaf order of several stacks («добудь 500 листвы») is taken as growing targets of a stack each, as the model's plan
+        // is split: the bag is checked against the whole count, and no order is refused for being longer than a stack (19.11).
+        if ("obtain_item".equals(action.type()) && dev.aicompanion.entity.CompanionLeaves.isFamily(action.item()) && action.count() > 64) {
+            for (int at = 64; at < action.count(); at += 64) steps.add(new PlannedAction("obtain_item", 0, at, action.item()));
+            steps.add(new PlannedAction("obtain_item", 0, action.count(), action.item()));
+        } else steps.add(action);
         // «Добудь листву» ends with the shears in his hand: the gather puts the tool away after every cut, the leaves stay in the bag.
         if ("obtain_item".equals(action.type()) && dev.aicompanion.entity.CompanionLeaves.isFamily(action.item()))
             steps.add(new PlannedAction("equip_item", 0, 1, "minecraft:shears", "mainhand"));

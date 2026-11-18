@@ -378,10 +378,10 @@ public final class CompanionDialogue {
     /** «У меня 15 из 16 — …»: a refusal that already carries the count of the order and what the bag holds. */
     private static final Pattern COUNTED_REFUSAL = Pattern.compile("^У меня \\d+ из \\d+ — ");
 
-    /** The count the leaf order asked for; 0 when it asked for everything carried. */
+    /** The count the leaf order asked for; 0 when it asked for everything carried. A long order is carried in steps of a stack, its last step the whole count. */
     private static int requestedLeaves(List<PlannedAction> actions) {
         return actions.stream().filter(action -> "obtain_item".equals(action.type()) && dev.aicompanion.entity.CompanionLeaves.isFamily(action.item()))
-                .mapToInt(PlannedAction::count).findFirst().orElse(0);
+                .mapToInt(PlannedAction::count).max().orElse(0);
     }
 
     /** «лист», «листа», «листьев»: how a Russian player counts leaves. */

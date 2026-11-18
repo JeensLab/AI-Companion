@@ -180,7 +180,8 @@ public final class CompanionPlanCodec {
                         // A heading with no distance is walked until «стоп».
                         : "walk_heading".equals(type) ? 0 : 1;
                 int seconds = step.has("seconds") ? step.get("seconds").getAsBigDecimal().intValueExact() : 5;
-                // obtain_item may ask for a few hundred (a leaf order of «два стака»): its chain splits them into steps of a stack.
+                // obtain_item may ask for a few stacks («два стака», «добудь 500 листвы»): its chain splits them into steps of a
+                // stack each, and the plan carries the order in the same steps below.
                 int most = "obtain_item".equals(type) ? dev.aicompanion.entity.CompanionWork.MAX_LEAVES : 64;
                 if ("walk_heading".equals(type) ? count < 0 || count > dev.aicompanion.entity.CompanionCourse.MAX_BLOCKS : count < 1 || count > most) throw invalid();
                 // "Smelt the iron" names no number: all of it, not a single piece (game log 22.10).
@@ -233,6 +234,15 @@ public final class CompanionPlanCodec {
                 // A marker is named by the player's own word: 1..24 characters, never a coordinate triple.
                 if (("remember_place".equals(type) || "go_to_place".equals(type))
                         && (!dev.aicompanion.entity.CompanionMarkerNames.valid(item) || count != 1 || !"near_player".equals(location))) throw invalid();
+                // A leaf order of several stacks is carried as growing targets of a stack each, the bag checked against the
+                // whole count: «добудь 500 листвы» is targets of 64 up to 448 and the whole 500, not refused for being longer
+                // than a stack.
+                if ("obtain_item".equals(type) && count > 64) {
+                    for (int at = 64; at < count; at += 64) result.add(new PlannedAction(type, 0, at, item, slot, location));
+                    result.add(new PlannedAction(type, 0, count, item, slot, location));
+                    if (result.size() > MAX_STEPS) throw invalid();
+                    continue;
+                }
                 if ("mine_ore".equals(type)) {
                     var kind = dev.aicompanion.entity.CompanionOre.Kind.of(item);
                     if (kind == null) throw invalid();
