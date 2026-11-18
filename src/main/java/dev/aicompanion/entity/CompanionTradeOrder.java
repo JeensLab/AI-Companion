@@ -9,12 +9,14 @@ import net.minecraft.world.item.Items;
 
 /**
  * What a trade_items step asks for: the goods (an item, and for a book its enchantment and level), optionally what to pay with, the
- * trader's profession, and the player's word for a fresh villager. It travels in the step's {@code item} text as
- * {@code get|enchantment|level|pay|profession|consent}, so the step keeps its shape. IDs are complete here: the codec adds
+ * trader's profession, the player's word for a fresh villager, and the number asked (0: the player named none). It travels in the step's
+ * {@code item} text as {@code get|enchantment|level|pay|profession|consent|count}, so the step keeps its shape. IDs are complete here: the codec adds
  * {@code minecraft:} to what the model wrote bare (the trader line the model reads has none).
  */
-public record CompanionTradeOrder(String get, String enchantment, int level, String pay, String profession, boolean consent) {
+public record CompanionTradeOrder(String get, String enchantment, int level, String pay, String profession, boolean consent, int count) {
     private static final int MAX_LEVEL = 10;
+    /** Ten stacks: wheat and paper are sold by the stack (a farmer takes 20 wheat a deal), so 64 would be three deals. */
+    public static final int MAX_COUNT = 640;
 
     /** The step's fields checked against the registries; anything wrong spoils the whole plan. Level 0 is any level. */
     public static CompanionTradeOrder read(JsonObject step) {
@@ -48,8 +50,17 @@ public record CompanionTradeOrder(String get, String enchantment, int level, Str
             if (!flag.isJsonPrimitive() || !flag.getAsJsonPrimitive().isBoolean()) throw new IllegalStateException();
             consent = flag.getAsBoolean();
         }
-        return new CompanionTradeOrder(get, enchantment, level, pay, profession, consent);
+        // No number is not "1": a sale then gives away all it can, and the codec's default count of 1 must not stand for it.
+        int count = 0;
+        if (step.has("count")) {
+            count = step.get("count").getAsBigDecimal().intValueExact();
+            if (count < 1 || count > MAX_COUNT) throw new IllegalStateException();
+        }
+        return new CompanionTradeOrder(get, enchantment, level, pay, profession, consent, count);
     }
+
+    /** A sale: the goods are emeralds and the player named what he gives. Its number counts the paid item, not the emeralds. */
+    public boolean sale() { return get.equals("minecraft:emerald") && !pay.isEmpty(); }
 
     private static String text(JsonObject step, String field) {
         if (!step.has(field)) return "";
@@ -66,13 +77,13 @@ public record CompanionTradeOrder(String get, String enchantment, int level, Str
         return full;
     }
 
-    public String pack() { return get + "|" + enchantment + "|" + level + "|" + pay + "|" + profession + "|" + consent; }
+    public String pack() { return get + "|" + enchantment + "|" + level + "|" + pay + "|" + profession + "|" + consent + "|" + count; }
 
     /** Null for text that is not a packed order. */
     public static CompanionTradeOrder parse(String packed) {
         String[] parts = packed.split("[|]", -1);
-        if (parts.length != 6 || parts[0].isEmpty()) return null;
-        try { return new CompanionTradeOrder(parts[0], parts[1], Integer.parseInt(parts[2]), parts[3], parts[4], Boolean.parseBoolean(parts[5])); }
+        if (parts.length != 7 || parts[0].isEmpty()) return null;
+        try { return new CompanionTradeOrder(parts[0], parts[1], Integer.parseInt(parts[2]), parts[3], parts[4], Boolean.parseBoolean(parts[5]), Integer.parseInt(parts[6])); }
         catch (NumberFormatException exception) { return null; }
     }
 }
