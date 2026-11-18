@@ -2,6 +2,7 @@ package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.client.CompanionLocalCommands;
+import dev.aicompanion.client.CompanionNumbers;
 import dev.aicompanion.client.CompanionPlanCodec;
 import dev.aicompanion.client.CompanionPlanRunner;
 import dev.aicompanion.client.CompanionServerPlanPort;
@@ -22,6 +23,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LeavesBlock;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.common.util.BlockSnapshot;
+import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -812,6 +816,108 @@ public final class CompanionLeavesTests {
             h.assertTrue(withoutShears[0] == 0, "The previous tool was in his hand between two leaves: " + withoutShears[0] + " of " + midCrown[0] + ", " + report);
             h.assertTrue(c.getMainHandItem().is(Items.STONE_PICKAXE), "The hand he had before the crown did not come back: " + c.getMainHandItem() + ", " + report);
         });
+    }
+
+    /**
+     * The owner's dirt stair (18.11): a crown seven and eight blocks up, a stair of dirt the player built to it, and no soil
+     * in the bag. The stair is a stand like any other — he walks up it and cuts the crown from there, and no column of his is
+     * raised nor a block of soil dug: «Вижу, где взять «Oak Leaves», но подойти не смог» was for a stair he could walk up.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 6000)
+    public static void aCrownOverThePlayersStairIsCutFromItWithoutAColumn(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
+        for (int up = 0; up < 8; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++)
+            h.setBlock(trunk.offset(dx, 8, dz), leaves);
+        // The player's stair of dirt: one step up and one forward, its top beside the crown and level with its foot.
+        for (int step = 0; step < 9; step++) h.setBlock(new BlockPos(18, GROUND + 1 + step, 5 + step), Blocks.DIRT);
+        CompanionEntity c = withTheOwnersTools(h);
+        h.assertTrue(count(c, Items.DIRT) == 0, "The bag already holds soil: " + count(c, Items.DIRT));
+        double groundY = c.getY();
+        double[] highest = {0};
+        int[] supports = {0};
+        h.onEachTick(() -> {
+            highest[0] = Math.max(highest[0], c.getY());
+            supports[0] = Math.max(supports[0], c.getTemporarySupportCount());
+        });
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":8}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OAK_LEAVES) == 8, "Not eight leaves: " + count(c, Items.OAK_LEAVES) + ", " + report);
+            h.assertTrue(supports[0] == 0, "A column was built beside a stair he could walk up: " + supports[0] + ", " + report);
+            h.assertTrue(count(c, Items.DIRT) == 0, "He dug soil for a column beside the stair: " + count(c, Items.DIRT) + ", " + report);
+            h.assertTrue(highest[0] >= groundY + 8, "He never climbed the stair: highest y " + highest[0] + ", " + report);
+        });
+    }
+
+    /**
+     * «Два стака листвы» (the owner, 18.11): the local number parser reads a stack as 64, so «два стака» is 128 and «полтора
+     * стака» 96; the order stays local and the codec takes a leaf count above 64, its chain splitting it into steps of a stack.
+     */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void aLeafOrderOfSeveralStacksIsParsedAndPlannedLocally(GameTestHelper h) {
+        h.assertTrue(CompanionNumbers.parse("добудь 128 листвы").count() == 128, "«128»: " + CompanionNumbers.parse("добудь 128 листвы").count());
+        h.assertTrue(CompanionNumbers.parse("добудь два стака листвы").count() == 128, "«два стака»: " + CompanionNumbers.parse("добудь два стака листвы").count());
+        h.assertTrue(CompanionNumbers.parse("добудь полтора стака листвы").count() == 96, "«полтора стака»: " + CompanionNumbers.parse("добудь полтора стака листвы").count());
+        for (String phrase : List.of("добудь 128 листвы", "добудь два стака листвы")) {
+            String command = CompanionLocalCommands.route(phrase, "Олег");
+            h.assertTrue(command != null, "«" + phrase + "» went to the model");
+            List<PlannedAction> plan = CompanionLocalCommands.actions(command);
+            h.assertTrue(plan.getFirst().type().equals("obtain_item") && plan.getFirst().count() == 128
+                    && CompanionLeaves.isFamily(plan.getFirst().item()), "«" + phrase + "» is no order of 128 leaves: " + plan);
+        }
+        // The model's own plan of 128 leaves is accepted, not refused for a count over a stack.
+        List<PlannedAction> decoded = CompanionPlanCodec.parsePlan(com.google.gson.JsonParser.parseString(
+                "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":128}]"));
+        h.assertTrue(decoded.size() == 1 && decoded.getFirst().count() == 128, "The codec refused 128: " + decoded);
+        // The chain the server plans splits the order into steps of a stack each.
+        var chain = CompanionObtain.plan(h.getLevel(), List.of(new ItemStack(Items.SHEARS)), false, "minecraft:oak_leaves", 128, thing -> true);
+        h.assertTrue(!chain.refused(), "The chain of 128 leaves was refused: " + chain.refusal());
+        h.assertTrue(chain.steps().size() == 2 && chain.steps().stream().allMatch(step -> step.type().equals("gather_block") && step.count() == 64),
+                "The chain is not two steps of a stack: " + chain);
+        h.succeed();
+    }
+
+    /**
+     * The owner's tree with a stair and his own leaves (18.11): the tree's crown hangs on a shelf three blocks over stone, no
+     * soil about to build a column, so the leaf he first goes for is one he cannot walk to; the leaves he set down on the
+     * ground about him are inside a site of his (a chest stands there) and were left for the site's rule. The order falls
+     * through to those leaves and gathers them instead of «Вижу, где взять …, но подойти не смог».
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 6000)
+    public static void leavesThePlayerSetDownAreGatheredWhenTheTreeCannotBeReached(GameTestHelper h) {
+        stoneGround(h);
+        CompanionEntity c = withTheOwnersTools(h);
+        c.setSearchRadius(24);
+        // A chest the player set down: a site of his reaches over the leaves he lays on the ground.
+        placedByPlayer(h, c, new BlockPos(5, GROUND + 1, 5), Blocks.CHEST.defaultBlockState());
+        // A leaf of a tree he cannot come at: a stone shelf three blocks over the ground, and no dirt to build a column.
+        BlockPos shelf = new BlockPos(29, GROUND + 3, 16);
+        h.setBlock(shelf, Blocks.STONE);
+        h.setBlock(shelf.above(3), Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1));
+        // The leaves the player set down on the ground beside him: a leaf that does not fade, on a site of his.
+        var setDown = Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.PERSISTENT, true).setValue(LeavesBlock.DISTANCE, 7);
+        for (int dx = 0; dx < 3; dx++) for (int dz = 0; dz < 3; dz++)
+            placedByPlayer(h, c, new BlockPos(12 + dx, GROUND + 1, 12 + dz), setDown);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":8}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OAK_LEAVES) == 8, "The player's leaves were not gathered: " + count(c, Items.OAK_LEAVES) + ", " + report);
+            h.assertTrue(!report.contains("подойти не смог") && !report.contains("Рядом не вижу"), "A refusal over the leaves beside him: " + report);
+            h.assertTrue(damage(c, Items.SHEARS) == 8, "The shears did not cut the eight leaves: " + damage(c, Items.SHEARS) + ", " + report);
+        });
+    }
+
+    /** A block set down by the player, as the game tells it (CompanionPlayerBuilds learns his buildings so). */
+    private static void placedByPlayer(GameTestHelper h, CompanionEntity c, BlockPos cell, net.minecraft.world.level.block.state.BlockState state) {
+        h.setBlock(cell, state);
+        var player = (net.minecraft.server.level.ServerPlayer) h.getLevel().getPlayerByUUID(c.getOwnerId());
+        NeoForge.EVENT_BUS.post(new BlockEvent.EntityPlaceEvent(BlockSnapshot.create(h.getLevel().dimension(), h.getLevel(), h.absolutePos(cell)),
+                Blocks.GRASS_BLOCK.defaultBlockState(), player));
     }
 
     /** The owner's bag (in game 16.11): the stone pickaxe in his hand, an iron pickaxe, an axe, shears and a shovel in the bag. */
