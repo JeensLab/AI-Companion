@@ -248,28 +248,42 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             // from the spruce (the owner, 17.11). «Листва» is no item of its own: else the leaf block of a tree he can really
             // gather from, whatever species grows here (CompanionLeaves).
             net.minecraft.server.level.ServerLevel level = (net.minecraft.server.level.ServerLevel) companion.level();
-            String item = dev.aicompanion.entity.CompanionLeaves.isFamily(action.item())
-                    ? dev.aicompanion.entity.CompanionLeaves.inBag(companion, action.count()) : action.item();
+            boolean family = dev.aicompanion.entity.CompanionLeaves.isFamily(action.item());
+            String item = family ? dev.aicompanion.entity.CompanionLeaves.inBag(companion, action.count()) : action.item();
+            boolean byTheBag = item != null;
             if (item == null) item = dev.aicompanion.entity.CompanionLeaves.resolve(companion, level, action.item());
             // Nothing to take and not enough carried: the reason and the count he holds — never a flat refusal that hides the part he did bring.
             if (item == null) return new CompanionPlanRunner.Expansion(java.util.List.of(), leavesRefusal(companion, level, action.count()));
-            var plan = companion.obtainPlan(item, action.count());
+            // A bag of several kinds meets the family order as one count: the check counts them all, and no tree is cut for it.
+            if (byTheBag && dev.aicompanion.entity.CompanionLeaves.isFamily(item))
+                return new CompanionPlanRunner.Expansion(java.util.List.of(
+                        new PlannedAction("verify_item", 0, action.count(), dev.aicompanion.entity.CompanionLeaves.FAMILY)), null);
+            // A family order short of its count takes only the part the bag lacks — the leaves of every kind he carries count
+            // toward it — and is checked as one count of leaves, not as the species of the tree he came at.
+            String check = item;
+            int need = action.count();
+            if (family && !byTheBag) {
+                need = action.count() - dev.aicompanion.entity.CompanionLeaves.carried(companion) + companion.carriedCount(item);
+                check = dev.aicompanion.entity.CompanionLeaves.FAMILY;
+            }
+            var plan = companion.obtainPlan(item, need);
             if (plan.refused()) return new CompanionPlanRunner.Expansion(java.util.List.of(), plan.refusal());
             java.util.List<PlannedAction> steps = new java.util.ArrayList<>();
             for (var step : plan.steps()) steps.add(new PlannedAction(step.type(), 0, step.count(), step.item()));
-            steps.add(new PlannedAction("verify_item", 0, action.count(), item));
+            steps.add(new PlannedAction("verify_item", 0, action.count(), check));
             return new CompanionPlanRunner.Expansion(java.util.List.copyOf(steps), null);
         });
     }
 
     /**
      * Why the leaves cannot be got, with the count he already holds: «У меня 15 из 16 — рядом листвы не вижу.» A leaf order short
-     * of its count names what it did bring, never a flat refusal over a bag that already has most of it (the owner, 17.11).
+     * of its count names what it did bring — every kind of leaf in the bag counted together — never a flat refusal over a bag
+     * that already has most of it (the owner, 17.11).
      */
     private static String leavesRefusal(CompanionEntity companion, net.minecraft.server.level.ServerLevel level, int count) {
         boolean soil = dev.aicompanion.entity.CompanionLeaves.soilForACrown(companion, level);
         boolean tooHigh = !soil && dev.aicompanion.entity.CompanionLeaves.aboveAnyColumn(companion, level);
-        int have = dev.aicompanion.entity.CompanionLeaves.mostCarried(companion);
+        int have = dev.aicompanion.entity.CompanionLeaves.carried(companion);
         if (have <= 0) return soil ? NO_SOIL_FOR_LEAVES : tooHigh ? TOO_HIGH_FOR_A_COLUMN : NO_LEAVES;
         String why = soil ? "до листвы не достану, дай земли."
                 : tooHigh ? "до листвы не достану даже со столбом." : "рядом листвы не вижу.";

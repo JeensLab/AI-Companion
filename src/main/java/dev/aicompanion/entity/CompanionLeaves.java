@@ -38,23 +38,27 @@ public final class CompanionLeaves {
     }
 
     /**
-     * The leaf block he already carries at least {@code count} of, the most of any he has, or null: an order the bag meets needs
-     * no tree, and its answer is that count (the owner, 17.11: sixteen oak leaves in the bag, «добудь листву» refused).
+     * The leaf block he already carries enough of — one species alone, or several kinds together, then the family word — or
+     * null: an order the bag meets needs no tree, and its answer is that count (the owner, 17.11: sixteen oak leaves in the
+     * bag, «добудь листву» refused).
      */
     public static String inBag(CompanionEntity c, int count) {
-        return carried(c).entrySet().stream().filter(entry -> entry.getValue() >= count)
-                .max(java.util.Map.Entry.comparingByValue()).map(java.util.Map.Entry::getKey).orElse(null);
+        java.util.Map<String, Integer> carried = bySpecies(c);
+        if (carried.values().stream().mapToInt(Integer::intValue).sum() < count) return null;
+        return carried.entrySet().stream().filter(entry -> entry.getValue() >= count)
+                .max(java.util.Map.Entry.comparingByValue()).map(java.util.Map.Entry::getKey).orElse(FAMILY);
     }
 
     /**
-     * How many leaves of one kind he carries, the most of any: an order short of its count answers with it («У меня 15 из 16»),
-     * never with a flat refusal that hides the part of the order he did bring.
+     * How many leaves he carries, every kind together: a leaf order asks for leaves, and any species of them counts toward
+     * its count (eight oak and eight spruce answer for sixteen). An order short of its count answers with this («У меня 15
+     * из 16»), never with a flat refusal that hides the part of the order he did bring.
      */
-    public static int mostCarried(CompanionEntity c) {
-        return carried(c).values().stream().mapToInt(Integer::intValue).max().orElse(0);
+    public static int carried(CompanionEntity c) {
+        return bySpecies(c).values().stream().mapToInt(Integer::intValue).sum();
     }
 
-    private static java.util.Map<String, Integer> carried(CompanionEntity c) {
+    private static java.util.Map<String, Integer> bySpecies(CompanionEntity c) {
         java.util.Map<String, Integer> carried = new java.util.LinkedHashMap<>();
         for (int slot = 0; slot < c.getContainerSize(); slot++) add(carried, c.getItem(slot));
         add(carried, c.getMainHandItem());
