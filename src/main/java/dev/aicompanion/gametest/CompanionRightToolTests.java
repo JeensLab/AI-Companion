@@ -2,6 +2,7 @@ package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.entity.CompanionEntity;
+import dev.aicompanion.entity.CompanionTools;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -107,7 +108,8 @@ public final class CompanionRightToolTests {
         List<ItemStack> drops = breakWithTool(h, c, grass);
         // No tool is faster than a hand on grass: shears are taken because they are the only way to the plant itself.
         h.assertTrue(drops.stream().anyMatch(drop -> drop.is(Items.SHORT_GRASS)), "The grass did not give itself: " + drops);
-        h.assertTrue(damage(c, Items.SHEARS) == 1, "The shears were not the tool used: damage " + damage(c, Items.SHEARS));
+        // Grass comes down at once, as a crop does: the shears take no wear for it, as a player's do not.
+        h.assertTrue(damage(c, Items.SHEARS) == 0, "The shears wore on the grass: damage " + damage(c, Items.SHEARS));
         h.assertBlockNotPresent(Blocks.SHORT_GRASS, grass);
         h.succeed();
     }
@@ -345,6 +347,47 @@ public final class CompanionRightToolTests {
         h.succeed();
     }
 
+    /** A crop comes down at once: whatever tool is in his hands or his bag, none of them wears on the wheat. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void wheatIsReapedWithNoWearOnAnyTool(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_AXE));
+        c.setItem(0, new ItemStack(Items.IRON_SWORD));
+        c.setItem(1, new ItemStack(Items.SHEARS));
+        BlockPos wheat = new BlockPos(16, GROUND, 18);
+        h.setBlock(wheat, Blocks.WHEAT.defaultBlockState().setValue(CropBlock.AGE, 7));
+        ItemStack[] hand = new ItemStack[1];
+        List<ItemStack> drops = breakWithTool(h, c, wheat, hand);
+        h.assertTrue(hand[0].isEmpty(), "A tool was in his hand at the break: " + hand[0]);
+        h.assertTrue(drops.stream().anyMatch(drop -> drop.is(Items.WHEAT)), "The ripe wheat gave no wheat: " + drops);
+        h.assertBlockNotPresent(Blocks.WHEAT, wheat);
+        h.assertTrue(damage(c, Items.STONE_AXE) == 0, "The axe wore on the crop: damage " + damage(c, Items.STONE_AXE));
+        h.assertTrue(damage(c, Items.IRON_SWORD) == 0, "The sword wore on the crop: damage " + damage(c, Items.IRON_SWORD));
+        h.assertTrue(damage(c, Items.SHEARS) == 0, "The shears wore on the crop: damage " + damage(c, Items.SHEARS));
+        h.assertTrue(c.getMainHandItem().is(Items.STONE_AXE), "The axe was not put back into his hand: " + c.getMainHandItem());
+        h.succeed();
+    }
+
+    /** A flower and a sapling come down at once: the shears take no wear for either, and the plant itself falls. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void aFlowerAndASaplingAreBrokenWithNoWear(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.SHEARS));
+        BlockPos poppy = new BlockPos(16, GROUND, 18), sapling = new BlockPos(16, GROUND, 19);
+        h.setBlock(new BlockPos(16, GROUND - 1, 18), Blocks.DIRT);
+        h.setBlock(new BlockPos(16, GROUND - 1, 19), Blocks.DIRT);
+        h.setBlock(poppy, Blocks.POPPY);
+        h.setBlock(sapling, Blocks.OAK_SAPLING);
+        List<ItemStack> poppyDrops = breakWithTool(h, c, poppy);
+        List<ItemStack> saplingDrops = breakWithTool(h, c, sapling);
+        h.assertTrue(poppyDrops.stream().anyMatch(drop -> drop.is(Items.POPPY)), "The poppy did not give itself: " + poppyDrops);
+        h.assertTrue(saplingDrops.stream().anyMatch(drop -> drop.is(Items.OAK_SAPLING)), "The sapling did not give itself: " + saplingDrops);
+        h.assertTrue(damage(c, Items.SHEARS) == 0, "The shears wore on the plants: damage " + damage(c, Items.SHEARS));
+        h.assertBlockNotPresent(Blocks.POPPY, poppy);
+        h.assertBlockNotPresent(Blocks.OAK_SAPLING, sapling);
+        h.succeed();
+    }
+
     /** The guard: a tool that does speed the block up stays in his hand, and it is the one that wears. */
     @GameTest(template = "empty", timeoutTicks = 40)
     public static void thePickaxeStaysInHisHandOnTheStoneItSpeedsUp(GameTestHelper h) {
@@ -563,7 +606,7 @@ public final class CompanionRightToolTests {
         List<ItemStack> drops = state.requiresCorrectToolForDrops() && !tool.isCorrectToolForDrops(state)
                 ? List.of() : Block.getDrops(state, level, pos, level.getBlockEntity(pos), c, tool);
         h.assertTrue(level.destroyBlock(pos, false, c, 512), "The block at " + at + " was not broken");
-        tool.getItem().mineBlock(tool, level, state, pos, c);
+        CompanionTools.wearOnBreak(tool, level, state, pos, c);
         c.putToolAway();
         return drops;
     }

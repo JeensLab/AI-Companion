@@ -533,9 +533,10 @@ public final class CompanionGatherBlockTests {
             String report = future.join().report();
             h.assertTrue(count(c, Items.TUBE_CORAL) == 1 && count(c, Items.TUBE_CORAL_FAN) == 1,
                     "The coral or its fan did not land in the bag: coral " + count(c, Items.TUBE_CORAL) + ", fan " + count(c, Items.TUBE_CORAL_FAN) + ", " + report);
-            // Two blocks, one wear each: whether one silk tool broke both or the two were split between them.
-            h.assertTrue(wear(c, Items.SHEARS) + wear(c, Items.WOODEN_PICKAXE) >= 2,
-                    "No silk tool broke them: shears " + wear(c, Items.SHEARS) + ", pickaxe " + wear(c, Items.WOODEN_PICKAXE) + ", " + report);
+            // Both are instabreak plants — hardness zero — so neither takes wear, as a player's tool does not; the silk block
+            // in the bag is what proves the tool broke it.
+            h.assertTrue(wear(c, Items.SHEARS) + wear(c, Items.WOODEN_PICKAXE) == 0,
+                    "The silk tools wore on the coral: shears " + wear(c, Items.SHEARS) + ", pickaxe " + wear(c, Items.WOODEN_PICKAXE) + ", " + report);
         });
     }
 
