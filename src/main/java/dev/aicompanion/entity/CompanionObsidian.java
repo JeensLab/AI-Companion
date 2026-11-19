@@ -86,6 +86,16 @@ final class CompanionObsidian {
 
     static boolean takesObsidian(ItemStack stack) { return !stack.isEmpty() && stack.isCorrectToolForDrops(Blocks.OBSIDIAN.defaultBlockState()); }
 
+    /**
+     * Whether obsidian he may mine lies within his reach now: it is mined where it lies, so no lava is cooled and no bucket of
+     * water is needed for it. What a portal's frame is, what stands on a site of the player's and what lies beside lava is not.
+     */
+    static boolean liesAbout(CompanionEntity c, ServerLevel level, Predicate<BlockPos> laid) {
+        Predicate<BlockPos> site = CompanionPicking.sites(c, level);
+        return nearest(c, level, DEPTH, state -> state.is(Blocks.OBSIDIAN),
+                pos -> !pos.equals(c.blockPosition().below()) && !laid.test(pos) && free(level, pos, site)) != null;
+    }
+
     /** mine_obsidian: {@code count} more obsidian in his bag. Null when the work may start, else why not. */
     CompanionActionResult begin(int count) {
         String refusal = refusal(c.level(), w.items.carriedItems());
@@ -165,13 +175,25 @@ final class CompanionObsidian {
 
     /** Obsidian he may mine now: his own or lying about but no portal's nor on a site of the player's, and its drop safe from lava. */
     private boolean minable(ServerLevel level, BlockPos pos) {
-        if (!level.hasChunkAt(pos) || !level.getBlockState(pos).is(Blocks.OBSIDIAN) || passed.contains(pos) || pos.equals(c.blockPosition().below())) return false;
+        if (passed.contains(pos) || pos.equals(c.blockPosition().below())) return false;
         // While his water is out, only what it sets: a walk to obsidian far off would leave the water behind him.
         if (water != null && !pos.closerThan(water, SPREAD + 1)) return false;
-        if (site.test(pos) || w.portal.laid(pos) || !his.contains(pos) && (portal(level, pos) || frame(level, pos))) return false;
+        if (site.test(pos) || w.portal.laid(pos)) return false;
+        if (!level.hasChunkAt(pos) || !level.getBlockState(pos).is(Blocks.OBSIDIAN)) return false;
+        if (!his.contains(pos) && (portal(level, pos) || frame(level, pos))) return false;
+        return safe(level, pos);
+    }
+
+    /** Whether the block at this cell is his to mine at all: no portal's frame, no site of the player's, its drop safe from lava. */
+    private static boolean free(ServerLevel level, BlockPos pos, Predicate<BlockPos> site) {
+        return level.hasChunkAt(pos) && level.getBlockState(pos).is(Blocks.OBSIDIAN) && !site.test(pos)
+                && !portal(level, pos) && !frame(level, pos) && safe(level, pos);
+    }
+
+    /** Whether the drop of the block here rests where he can pick it up: under his water, or nowhere near lava. */
+    private static boolean safe(ServerLevel level, BlockPos pos) {
         if (wet(level, pos)) return true;
-        for (Direction side : new Direction[]{Direction.UP, Direction.DOWN, Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST})
-            if (CompanionLava.at(level, pos.relative(side))) return false;
+        for (Direction side : Direction.values()) if (CompanionLava.at(level, pos.relative(side))) return false;
         return true;
     }
 
@@ -223,7 +245,7 @@ final class CompanionObsidian {
         if (!w.breaking.tick(level, target)) return;
         var drops = CompanionTools.drops(state, level, target, null, c, tool);
         if (!level.destroyBlock(target, false, c, 512)) { passed.add(target); target = null; return; }
-        tool.getItem().mineBlock(tool, level, state, target, c);
+        CompanionTools.wearOnBreak(tool, level, state, target, c);
         c.dropHarvest(target, drops);
         mined++;
         // Floating in his running water the drop is no use chasing (in game 08.11 each was chased ten seconds in vain): it waits

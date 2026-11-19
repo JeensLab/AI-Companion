@@ -7,7 +7,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.BlockTags;
-import net.minecraft.tags.ItemTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
@@ -293,17 +292,17 @@ final class CompanionCobbleGen {
     /** A block of the row or the hole, broken as he breaks blocks, what it drops picked up. */
     private void dig(ServerLevel level, BlockPos cell, String status) {
         BlockState state = level.getBlockState(cell);
-        // Taken once: a tool put in his hand again every tick would start the swing over.
-        if (state.is(BlockTags.MINEABLE_WITH_SHOVEL) && !c.getMainHandItem().is(ItemTags.SHOVELS)) CompanionTools.equip(c, ItemTags.SHOVELS, state);
-        else if (state.is(BlockTags.MINEABLE_WITH_PICKAXE) && !c.getMainHandItem().is(ItemTags.PICKAXES)) CompanionTools.equip(c, ItemTags.PICKAXES, state);
+        // The rule leaves the hand as it is once the tool for the block is in it: the swing is not started over every tick.
+        c.takeToolForBlock(state);
         c.workStatus(status);
         if (!w.breaking.tick(level, cell)) return;
         ItemStack tool = c.getMainHandItem();
         var drops = CompanionTools.drops(state, level, cell, null, c, tool);
-        if (!w.items.canStore(drops)) { w.finish(false, FULL_BAG); return; }
-        if (!level.destroyBlock(cell, false, c, 512)) { w.finish(false, TAKEN); return; }
-        tool.getItem().mineBlock(tool, level, state, cell, c);
+        if (!w.items.canStore(drops)) { c.putToolAway(); w.finish(false, FULL_BAG); return; }
+        if (!level.destroyBlock(cell, false, c, 512)) { c.putToolAway(); w.finish(false, TAKEN); return; }
+        CompanionTools.wearOnBreak(tool, level, state, cell, c);
         c.dropHarvest(cell, drops);
+        c.putToolAway();
         event("cobble_gen_dug", "cell", cell.toShortString(), "block", BuiltInRegistries.BLOCK.getKey(state.getBlock()));
     }
 
@@ -347,7 +346,7 @@ final class CompanionCobbleGen {
         if (!w.breaking.tick(level, cell)) return;
         if (!level.destroyBlock(cell, false, c, 512) || !level.setBlockAndUpdate(cell, Blocks.WATER.defaultBlockState())) { w.finish(false, TAKEN); return; }
         held = c.getMainHandItem();
-        if (!held.isEmpty()) held.getItem().mineBlock(held, level, Blocks.ICE.defaultBlockState(), cell, c);
+        if (!held.isEmpty()) CompanionTools.wearOnBreak(held, level, Blocks.ICE.defaultBlockState(), cell, c);
         w.cooldown = 8;
         event("cobble_gen_melted", "cell", cell.toShortString());
     }

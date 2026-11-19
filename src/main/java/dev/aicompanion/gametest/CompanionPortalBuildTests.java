@@ -109,6 +109,43 @@ public final class CompanionPortalBuildTests {
         });
     }
 
+    /**
+     * A leaf inside a frame he is finishing (a bush of the player's, a leaf set down there): cleared as any block he breaks, with the
+     * tool of the leaf — the shears from his bag, not the pickaxe in his hand — so it comes down as itself, the shears wear and no
+     * pickaxe does, and the frame is lit after it. The frame is chosen while that cell is still free (a leaf is no free cell to its
+     * own check): the leaf is set in it after the work began.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200, batch = PORTALS)
+    public static void aLeafInsideTheFrameIsClearedWithTheShearsWhileAPickaxeIsHeld(GameTestHelper h) {
+        ground(h);
+        for (BlockPos cell : List.of(new BlockPos(15, GROUND, 20), new BlockPos(16, GROUND, 20), new BlockPos(15, GROUND + 4, 20), new BlockPos(16, GROUND + 4, 20)))
+            h.setBlock(cell, Blocks.OBSIDIAN);
+        for (int y = GROUND + 1; y <= GROUND + 3; y++) { h.setBlock(new BlockPos(14, y, 20), Blocks.OBSIDIAN); h.setBlock(new BlockPos(17, y, 20), Blocks.OBSIDIAN); }
+        CompanionEntity c = spawn(h);
+        // The owner's bag: the stone pickaxe in his hand, an iron pickaxe, an axe, shears and a shovel in the bag.
+        c.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        c.setItem(0, new ItemStack(Items.IRON_PICKAXE));
+        c.setItem(1, new ItemStack(Items.IRON_AXE));
+        c.setItem(2, new ItemStack(Items.SHEARS));
+        c.setItem(3, new ItemStack(Items.IRON_SHOVEL));
+        c.setItem(4, new ItemStack(Items.FLINT_AND_STEEL));
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        h.assertTrue(CompanionEvents.executeAction(owner, "build_portal", "", 1).success(), "The order was refused");
+        BlockPos inside = new BlockPos(16, GROUND + 2, 20);
+        h.setBlock(inside, Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.DISTANCE, 1));
+        h.succeedWhen(() -> {
+            String report = c.getLastTaskResult();
+            h.assertTrue(report.contains("Портал готов."), "Not built: " + report);
+            h.assertBlockNotPresent(Blocks.OAK_LEAVES, inside);
+            h.assertTrue(blocks(h, Blocks.NETHER_PORTAL).size() == 6, "Not a lit portal: " + blocks(h, Blocks.NETHER_PORTAL));
+            h.assertTrue(count(c, Items.OAK_LEAVES) >= 1, "The leaf did not come down as itself: " + c.getStoredItemsSummary());
+            h.assertTrue(damage(c, Items.SHEARS) >= 1, "The leaf was not cut with the shears: " + damage(c, Items.SHEARS) + ", " + report);
+            h.assertTrue(damage(c, Items.STONE_PICKAXE) == 0 && damage(c, Items.IRON_PICKAXE) == 0,
+                    "A pickaxe broke the leaf: stone " + damage(c, Items.STONE_PICKAXE) + ", iron " + damage(c, Items.IRON_PICKAXE) + ", " + report);
+            putOut(h);
+        });
+    }
+
     /** A lit portal within sixteen blocks of the player: nothing built, no obsidian spent, he says so and follows on. */
     @GameTest(template = "tall_tree", timeoutTicks = 400, batch = PORTALS)
     public static void aLitPortalNearThePlayerIsEnough(GameTestHelper h) {
@@ -330,5 +367,14 @@ public final class CompanionPortalBuildTests {
         for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(item)) count += c.getItem(slot).getCount();
         if (c.getMainHandItem().is(item)) count += c.getMainHandItem().getCount();
         return count;
+    }
+
+    /** The wear on the stack of this item, in the bag or in either hand; -1 when he has none. */
+    private static int damage(CompanionEntity c, Item item) {
+        int found = -1;
+        for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(item)) found = Math.max(found, c.getItem(slot).getDamageValue());
+        for (net.minecraft.world.entity.EquipmentSlot hand : net.minecraft.world.entity.EquipmentSlot.values())
+            if (hand.getType() == net.minecraft.world.entity.EquipmentSlot.Type.HAND && c.getItemBySlot(hand).is(item)) found = Math.max(found, c.getItemBySlot(hand).getDamageValue());
+        return found;
     }
 }

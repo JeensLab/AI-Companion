@@ -45,6 +45,17 @@ public final class CompanionNetherErrandTests {
     /** The chunks of the Nether arena a test forced: let go after the batch, whatever the test did. The tests are one batch each: eight overworld blocks are one in the Nether, so arenas of tests side by side overlap. */
     static final List<ChunkPos> FORCED = new ArrayList<>();
 
+    /**
+     * Whether the Nether has handed out the entities of the forced chunks. Until it has, the server thread yields a few
+     * milliseconds a tick: a test server ticks as fast as it can, while those entities come from the disk off its thread, and
+     * under load (CI shards on two cores, 19.11) a test's whole tick budget went by before they did («Ticked 0 times only»).
+     */
+    static boolean forcedLoaded(ServerLevel nether) {
+        if (FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) return true;
+        try { Thread.sleep(5); } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+        return false;
+    }
+
     @AfterBatch(batch = "errand0")
     public static void afterErrand0(ServerLevel level) { afterErrand(level); }
 
@@ -314,7 +325,7 @@ public final class CompanionNetherErrandTests {
         // The entities of the arena's chunks load a little after the chunks: he is sent in only when they have, as in a world where the player is near.
         List<CompletableFuture<CompanionPlanRunner.Outcome>> started = new ArrayList<>();
         h.onEachTick(() -> {
-            if (started.isEmpty() && FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong())))
+            if (started.isEmpty() && forcedLoaded(nether))
                 started.add(run(h, companion, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:quartz\",\"count\":3}]"));
             if (nether.getEntity(id) instanceof CompanionEntity there) {
                 CompoundTag tag = new CompoundTag();
@@ -366,7 +377,7 @@ public final class CompanionNetherErrandTests {
         boolean[] hurt = {false};
         long[] dig = {0};
         h.onEachTick(() -> {
-            if (started.isEmpty() && FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) started.add(run(h, companion, QUARTZ_6));
+            if (started.isEmpty() && forcedLoaded(nether)) started.add(run(h, companion, QUARTZ_6));
             if (!hurt[0] && nether.getEntity(id) instanceof CompanionEntity there && count(there, Items.QUARTZ) >= 1) { dig[0] = there.activeWorkId(); there.setHealth(8); hurt[0] = true; }
         });
         h.succeedWhen(() -> {
@@ -404,7 +415,7 @@ public final class CompanionNetherErrandTests {
         List<CompletableFuture<CompanionPlanRunner.Outcome>> started = new ArrayList<>();
         boolean[] stopped = {false};
         h.onEachTick(() -> {
-            if (started.isEmpty() && FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) started.add(run(h, companion, QUARTZ_6));
+            if (started.isEmpty() && forcedLoaded(nether)) started.add(run(h, companion, QUARTZ_6));
             if (!stopped[0] && nether.getEntity(id) instanceof CompanionEntity there && count(there, Items.QUARTZ) >= 1) { there.stopGatheringForPlayer(); stopped[0] = true; }
         });
         h.succeedWhen(() -> {
@@ -441,7 +452,7 @@ public final class CompanionNetherErrandTests {
         UUID id = there.getUUID();
         boolean[] added = {false};
         h.onEachTick(() -> {
-            if (!added[0] && FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) { nether.addFreshEntity(there); added[0] = true; }
+            if (!added[0] && forcedLoaded(nether)) { nether.addFreshEntity(there); added[0] = true; }
         });
         h.succeedWhen(() -> {
             h.assertTrue(added[0] && h.getLevel().getEntity(id) instanceof CompanionEntity, "Still in the Nether: " + describe(h, nether, id));
@@ -465,7 +476,7 @@ public final class CompanionNetherErrandTests {
         UUID id = there.getUUID();
         List<CompletableFuture<CompanionPlanRunner.Outcome>> started = new ArrayList<>();
         h.onEachTick(() -> {
-            if (started.isEmpty() && FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) {
+            if (started.isEmpty() && forcedLoaded(nether)) {
                 nether.addFreshEntity(there);
                 started.add(run(h, there, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:quartz\",\"count\":3}]"));
             }
@@ -492,7 +503,7 @@ public final class CompanionNetherErrandTests {
         List<CompletableFuture<CompanionPlanRunner.Outcome>> started = new ArrayList<>();
         long[] dig = {0};
         h.onEachTick(() -> {
-            if (started.isEmpty() && FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) {
+            if (started.isEmpty() && forcedLoaded(nether)) {
                 nether.addFreshEntity(there);
                 started.add(run(h, there, QUARTZ_6));
             }
@@ -526,7 +537,7 @@ public final class CompanionNetherErrandTests {
         UUID id = there.getUUID();
         boolean[] added = {false};
         h.onEachTick(() -> {
-            if (!added[0] && FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) { nether.addFreshEntity(there); added[0] = true; }
+            if (!added[0] && forcedLoaded(nether)) { nether.addFreshEntity(there); added[0] = true; }
         });
         h.succeedWhen(() -> {
             h.assertTrue(added[0] && there.tickCount >= 450, "Ticked " + there.tickCount + " times only");
@@ -556,7 +567,7 @@ public final class CompanionNetherErrandTests {
         boolean[] stopped = {false};
         long[] dig = {0};
         h.onEachTick(() -> {
-            if (stopped[0] || !FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) return;
+            if (stopped[0] || !forcedLoaded(nether)) return;
             if (dig[0] == 0) {
                 nether.addFreshEntity(there);
                 var started = there.startWork("mine_ore", "minecraft:quartz_ore", 6);
@@ -596,7 +607,7 @@ public final class CompanionNetherErrandTests {
         long[] since = {-1};
         h.onEachTick(() -> {
             if (since[0] < 0) {
-                if (!FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) return;
+                if (!forcedLoaded(nether)) return;
                 nether.addFreshEntity(there);
                 owner.teleportTo(nether, cell[0] + 60.5, 160, cell[1] + 0.5, 0, 0);
                 since[0] = h.getTick();
@@ -630,7 +641,7 @@ public final class CompanionNetherErrandTests {
         UUID id = there.getUUID();
         boolean[] added = {false};
         h.onEachTick(() -> {
-            if (added[0] || !FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) return;
+            if (added[0] || !forcedLoaded(nether)) return;
             nether.addFreshEntity(there);
             var back = there.startWork("nether_back", "", 1);
             h.assertTrue(back.success() && !back.message().contains("уже в верхнем") && there.hasActiveWorkOrder(), "No walk out: " + back.message());
@@ -657,7 +668,7 @@ public final class CompanionNetherErrandTests {
         CompanionEntity there = restored(h, nether, cell, null, -1);
         boolean[] added = {false};
         h.onEachTick(() -> {
-            if (added[0] || !FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) return;
+            if (added[0] || !forcedLoaded(nether)) return;
             nether.addFreshEntity(there);
             var back = there.startWork("nether_back", "", 1);
             h.assertTrue(!back.success() && !back.message().contains("уже в верхнем") && !there.hasActiveWorkOrder(), "In the Nether with no portal: " + back.success() + " " + back.message());

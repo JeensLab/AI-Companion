@@ -157,12 +157,20 @@ final class CompanionBag {
         if (!(c.level() instanceof ServerLevel serverLevel)) return new CompanionObtain.Plan(List.of(), "Для этого нужен загруженный мир.");
         return CompanionObtain.plan(serverLevel, carriedForPlan(), c.hasCraftingTableNearby() || c.hasKnownCraftingTableWithin(16) || c.placement.seesCraftingTableWithin(16), item, count,
                 wanted -> wanted == net.minecraft.world.item.Items.COMPOSTER ? CompanionComposting.find(c, true) != null
-                        : CompanionPicking.near(c, serverLevel, CompanionPickable.sources(serverLevel, wanted)) || CompanionFarming.reapableNear(c, serverLevel, wanted)
+                        : (wanted == net.minecraft.world.item.Items.OBSIDIAN && CompanionObsidian.liesAbout(c, serverLevel, c.work.portal::laid))
+                        || CompanionPicking.near(c, serverLevel, CompanionPickable.sources(serverLevel, wanted)) || CompanionFarming.reapableNear(c, serverLevel, wanted)
                         || CompanionChores.about(c, serverLevel, wanted), wanted -> CompanionMobDrops.near(c, serverLevel, wanted),
-                new CompanionObtain.Trip(serverLevel.dimension() == net.minecraft.world.level.Level.OVERWORLD ? CompanionPortals.litNear(serverLevel, c.blockPosition()) : null, c.errand.away(), CompanionErrand.holdsChunks(c, serverLevel)));
+                new CompanionObtain.Trip(serverLevel.dimension() == net.minecraft.world.level.Level.OVERWORLD ? CompanionPortals.litNear(serverLevel, c.blockPosition()) : null, c.errand.away(), CompanionErrand.holdsChunks(c, serverLevel)),
+                stack -> !c.carriedForPlayer(stack));
     }
     /** The end of obtain_item: success only by the bag, never by the plan. */
     public CompanionActionResult carriedCheck(String item, int count) {
+        // «Листва» is no item of its own: a leaf order is met by leaves of any species, counted together.
+        if (CompanionLeaves.isFamily(item)) {
+            int have = CompanionLeaves.carried(c);
+            return have >= count ? CompanionActionResult.ok("Готово: «Листва» у меня, " + have + " шт.")
+                    : CompanionActionResult.failed("Добыл не всё: «Листва» у меня " + have + " из " + count + ".");
+        }
         var id = net.minecraft.resources.ResourceLocation.tryParse(item);
         var wanted = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
         if (wanted == null) return CompanionActionResult.failed("Не понял, какой предмет проверить.");

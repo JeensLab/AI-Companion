@@ -17,13 +17,16 @@ public final class CompanionPlanCodec {
     public static final int MAX_REPEAT = 100;
     public static final int WOOD_STEP = 16;
     public static final Set<String> ACTIONS = Set.of("follow", "wait", "come", "protect", "stop_protect", "wander", "stop", "enter_portal",
-            "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "use_bone_meal", "obtain_item", "pursue_goal", "walk_heading", "set_home", "build_portal", "build_cobble_gen", "build_golem", "pick_up", "remember_place", "go_to_place", "repair_item", "disenchant_item", "compost_items", "campfire_song");
+            "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "scout_traders", "trade_items", "farm_crops", "harvest_crops", "use_bone_meal", "obtain_item", "pursue_goal", "walk_heading", "set_home", "build_portal", "build_cobble_gen", "build_golem", "pick_up", "remember_place", "go_to_place", "repair_item", "disenchant_item", "compost_items", "campfire_song");
     /** Flint is dug out of gravel, which drops it rarely: one step asks for at most this much. */
     static final String FLINT = "minecraft:flint";
     static final int FLINT_STEP = 8;
     static final int FLINT_DEFAULT = 2;
     /** The items a gather_loose order may name: the loose blocks the server digs with a shovel, and the flint in gravel. */
     private static final Set<String> LOOSE_ITEMS = Set.of("minecraft:sand", "minecraft:red_sand", "minecraft:gravel", FLINT);
+    /** The stone dug by name where it shows (CompanionPickable): obtain_item's, not gather_stone's, which digs any stone. */
+    private static final Set<String> NAMED_STONE = Set.of("minecraft:granite", "minecraft:diorite", "minecraft:andesite", "minecraft:tuff", "minecraft:calcite",
+            "minecraft:cobbled_deepslate");
     /** One invoke of the plan tool: its parameters are read inside its own tags, so another invoke's repeat is not taken for this plan's. */
     private static final Pattern DSML_INVOKE = Pattern.compile("(?s)<\\|DSML\\|invoke\\s+name=\"queue_companion_plan\"[^>]*>(.*?)</\\|DSML\\|invoke>");
     private static final Pattern DSML_STEPS = Pattern.compile("(?s)<\\|DSML\\|parameter\\s+name=\"steps\"[^>]*>(.*?)</\\|DSML\\|parameter>");
@@ -181,7 +184,11 @@ public final class CompanionPlanCodec {
                         // A heading with no distance is walked until «стоп».
                         : "walk_heading".equals(type) ? 0 : 1;
                 int seconds = step.has("seconds") ? step.get("seconds").getAsBigDecimal().intValueExact() : 5;
-                if ("walk_heading".equals(type) ? count < 0 || count > dev.aicompanion.entity.CompanionCourse.MAX_BLOCKS : count < 1 || count > 64) throw invalid();
+                // obtain_item may ask for a few stacks («два стака», «добудь 500 листвы»): its chain splits them into steps of a
+                // stack each, and the plan carries the order in the same steps below.
+                int most = "obtain_item".equals(type) ? dev.aicompanion.entity.CompanionWork.MAX_LEAVES
+                        : "trade_items".equals(type) ? dev.aicompanion.entity.CompanionTradeOrder.MAX_COUNT : 64;
+                if ("walk_heading".equals(type) ? count < 0 || count > dev.aicompanion.entity.CompanionCourse.MAX_BLOCKS : count < 1 || count > most) throw invalid();
                 // "Smelt the iron" names no number: all of it, not a single piece (game log 22.10).
                 if ("smelt_items".equals(type) && !step.has("count")) count = PlannedAction.ALL_CARRIED;
                 // «Закинь саженцы в компостер» names no number: all of them, not one (as the smelting above).
@@ -189,10 +196,22 @@ public final class CompanionPlanCodec {
                 if (("build_house".equals(type) || "sort_chests".equals(type) || "set_home".equals(type) || "build_portal".equals(type) || "build_cobble_gen".equals(type) || "build_golem".equals(type) || "campfire_song".equals(type)) && count != 1) throw invalid();
                 if ("wait".equals(type) && (seconds < 1 || seconds > 30)) throw invalid();
                 String item = step.has("item") ? step.get("item").getAsString().trim() : "";
+                // gather_stone digs any stone: granite, tuff or cobbled deepslate named there is obtain_item's, dug by name where it shows
+                // (in game 17.11: «добудь 2 диорита» given to gather_stone dug two of plain stone and said done).
+                String stoneId = item.contains(":") ? item : "minecraft:" + item;
+                if ("gather_stone".equals(type) && NAMED_STONE.contains(stoneId)) { type = "obtain_item"; item = stoneId; }
                 // «Подбери всё» may come with no item or with a word for the whole ground: the codec's own meaning for any drop.
                 if ("pick_up".equals(type) && (item.isEmpty() || "any".equals(item) || "all".equals(item) || "minecraft:all".equals(item)))
                     item = dev.aicompanion.entity.CompanionPickUp.ANY_ITEM;
                 if ("set_home".equals(type) && !item.isEmpty()) throw invalid();
+                // The round of traders takes no item and no number: anything written there spoils the plan.
+                if ("scout_traders".equals(type) && (!item.isEmpty() || count != 1)) throw invalid();
+                // A trade names its goods (a book also its enchantment), maybe what to pay and whom, and the player's word; the fields ride in the item text.
+                if ("trade_items".equals(type)) {
+                    item = dev.aicompanion.entity.CompanionTradeOrder.read(step).pack();
+                    // The real number rides in the packed order; the step's own count must pass the server's one-order limit of 64.
+                    count = 1;
+                }
                 // A building is named from the catalogue (or a kind of it) or not at all («resume» goes on with the one left unfinished); the name is kept as the catalogue spells it.
                 // «дом», «house», «маленький дом», «дом 5×5»: the plain house, as an empty item always was.
                 if ("build_house".equals(type) && dev.aicompanion.entity.CompanionVillageBuildings.plankHouse(item)) item = "";
@@ -235,6 +254,15 @@ public final class CompanionPlanCodec {
                 // A marker is named by the player's own word: 1..24 characters, never a coordinate triple.
                 if (("remember_place".equals(type) || "go_to_place".equals(type))
                         && (!dev.aicompanion.entity.CompanionMarkerNames.valid(item) || count != 1 || !"near_player".equals(location))) throw invalid();
+                // A leaf order of several stacks is carried as growing targets of a stack each, the bag checked against the
+                // whole count: «добудь 500 листвы» is targets of 64 up to 448 and the whole 500, not refused for being longer
+                // than a stack.
+                if ("obtain_item".equals(type) && count > 64) {
+                    for (int at = 64; at < count; at += 64) result.add(new PlannedAction(type, 0, at, item, slot, location));
+                    result.add(new PlannedAction(type, 0, count, item, slot, location));
+                    if (result.size() > MAX_STEPS) throw invalid();
+                    continue;
+                }
                 if ("mine_ore".equals(type)) {
                     var kind = dev.aicompanion.entity.CompanionOre.Kind.of(item);
                     if (kind == null) throw invalid();

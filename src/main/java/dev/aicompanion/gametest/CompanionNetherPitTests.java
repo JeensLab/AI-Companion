@@ -128,7 +128,7 @@ public final class CompanionNetherPitTests {
         UUID id = there.getUUID();
         boolean[] started = {false};
         h.onEachTick(() -> {
-            if (started[0] || !CompanionNetherErrandTests.FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) return;
+            if (started[0] || !CompanionNetherErrandTests.forcedLoaded(nether)) return;
             nether.addFreshEntity(there);
             var work = there.startWork("mine_ore", "minecraft:quartz_ore", 1);
             h.assertTrue(work.success() && there.activeWorkId() != 0, "No dig: " + work.message());
@@ -149,7 +149,7 @@ public final class CompanionNetherPitTests {
         UUID id = there.getUUID();
         boolean[] added = {false};
         h.onEachTick(() -> {
-            if (!added[0] && CompanionNetherErrandTests.FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) { nether.addFreshEntity(there); added[0] = true; }
+            if (!added[0] && CompanionNetherErrandTests.forcedLoaded(nether)) { nether.addFreshEntity(there); added[0] = true; }
         });
         h.succeedWhen(() -> {
             h.assertTrue(added[0] && h.getLevel().getEntity(id) instanceof CompanionEntity, "Still in the Nether: " + CompanionNetherErrandTests.describe(h, nether, id));

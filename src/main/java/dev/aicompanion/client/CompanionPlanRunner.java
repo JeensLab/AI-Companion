@@ -32,7 +32,7 @@ public final class CompanionPlanRunner {
     public static final String NO_TREE = "Не нашёл доступного дерева";
     /** Orders that the server rejects while another work order is still active. */
     public static final Set<String> WORK = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests",
-            "build_house", "craft_item", "place_block", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "dig_for_diamonds", "use_bone_meal", "compost_meal", "fill_bucket", "mine_obsidian", "gather_block", "hunt_drop", "build_portal", "build_cobble_gen", "build_golem", "pick_up", "go_to_place", "disenchant_item", "compost_items", "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block", "nether_go", "nether_back");
+            "build_house", "craft_item", "place_block", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "scout_traders", "trade_items", "farm_crops", "harvest_crops", "dig_for_diamonds","use_bone_meal", "compost_meal", "fill_bucket", "mine_obsidian", "gather_block", "hunt_drop", "build_portal", "build_cobble_gen", "build_golem", "pick_up", "go_to_place", "disenchant_item", "compost_items", "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block", "nether_go", "nether_back");
     private static final Set<String> GATHER = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone");
     /** Steps that may run while a parked batch cooks, unless they produce its input (CompanionParkHold decides that). */
     private static final Set<String> RUN_AHEAD = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "mine_ore", "hunt_animals");
@@ -139,6 +139,7 @@ public final class CompanionPlanRunner {
             run.plan.remove(index);
             run.plan.addAll(index, expansion.steps());
             run.obtain = action; run.obtainEnd = index + expansion.steps().size(); run.obtainSteps = 0; run.noGain = 0; run.noGainFailure = null;
+            run.gathered.clear();
             return step(run, index, run.plan.get(index), false);
         });
         // A step boundary of the plan itself: a cooked batch of another request that is near is collected now (CompanionServerPlanPort.checkpoint).
@@ -251,6 +252,10 @@ public final class CompanionPlanRunner {
             // A step of an obtain chain that did not succeed is planned around, even a partial gather the plan would go on after:
             // the stop comes only if the new plan is the same as before the step (nothing was gained).
             if (inObtain && !result.success() && verdict.decision() != Decision.RETRY && !"cancelled".equals(verdict.reason())) {
+                // A leaf order that brought part of its count keeps that line: when the replan gives it up, the player hears what
+                // the errand did gather with the count he asked for, not only why it stopped («Собрал 6 из 16 — больше рядом нет»).
+                if (run.obtain != null && dev.aicompanion.entity.CompanionLeaves.isFamily(run.obtain.item()) && result.message().contains(" из "))
+                    run.gathered.add(result.message());
                 run.replan = true; run.before = layout; run.lastFailed = true; run.lastMessage = result.message();
                 return step(run, index + 1, null, false);
             }
@@ -259,7 +264,7 @@ public final class CompanionPlanRunner {
                     run.reports.add(result.message());
                     if (inObtain) {
                         if (index + 1 < run.obtainEnd) { run.replan = true; run.before = layout; run.lastFailed = false; run.lastMessage = result.message(); }
-                        else run.obtain = null;
+                        else { run.obtain = null; run.gathered.clear(); }
                     }
                     yield step(run, index + 1, index + 1 < run.plan.size() ? run.plan.get(index + 1) : null, false);
                 }
@@ -411,6 +416,14 @@ public final class CompanionPlanRunner {
         boolean earlier = !run.dropped.isEmpty();
         run.dropped.add(obtain);
         run.dropped.addAll(same);
+        // What the errand did bring before it was given up, said before the reason: the count of the order is never lost.
+        run.reports.addAll(run.gathered);
+        run.gathered.clear();
+        // A leaf order's shears step is its obtain's bookkeeping: with the obtain given up there is nothing to wear them for,
+        // and their own line would speak over the chain's reason (the equip of another order's product stays).
+        if (dev.aicompanion.entity.CompanionLeaves.isFamily(obtain.item()) && from < run.plan.size()
+                && "equip_item".equals(run.plan.get(from).type()) && "minecraft:shears".equals(run.plan.get(from).item()))
+            run.plan.remove(from);
         boolean goesOn = from < run.plan.size();
         String name = obtain.item() == null ? "" : "«" + CompanionDialogue.itemName(obtain.item()) + "»: ";
         // The last part of a plan that gave parts up before is named too (the stop line follows with the same reason, said once by CompanionDialogue).
@@ -445,6 +458,8 @@ public final class CompanionPlanRunner {
         boolean cancelled;
         /** The obtain_item being run, where its unfinished steps end in the plan, and what the replan after the last step must know. */
         PlannedAction obtain;
+        /** The lines of a leaf order's partial gathers, kept for the report in case the replan gives the order up. */
+        final List<String> gathered = new ArrayList<>();
         /** The unfinished steps before the step that ran last, whether it failed, and its message. */
         List<PlannedAction> before;
         boolean lastFailed;

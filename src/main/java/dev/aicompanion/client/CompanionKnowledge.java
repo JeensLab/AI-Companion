@@ -44,6 +44,12 @@ public final class CompanionKnowledge {
         return scored.stream().limit(MAX_ARTICLES).map(Scored::article).toList();
     }
 
+    /** True when the text has a word that is one of the keywords ({@code word*} is a prefix, a bare word the exact form). Pure: no game classes. */
+    public static boolean mentions(String text, String... keywords) {
+        for (String word : words(text)) for (String keyword : keywords) if (wordMatches(normalize(keyword), word)) return true;
+        return false;
+    }
+
     private static String[] words(String text) {
         return normalize(text).split("[^\\p{L}\\p{N}]+");
     }

@@ -106,6 +106,11 @@ final class CompanionBehaviorScreen extends Screen {
             b.setMessage(replantLabel()); CompanionPreferences.sync();
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                 "Срубил дерево — сажает на его место саженец той же породы из своей сумки (тёмный дуб — только из четырёх). У построек не сажает. Выключено: на месте срубленных деревьев ничего не сажает."))).build());
+        addRenderableWidget(Button.builder(rightToolLabel(), b -> {
+            OpenRouterConfig.RIGHT_TOOL_FOR_BLOCK.set(!OpenRouterConfig.RIGHT_TOOL_FOR_BLOCK.get()); OpenRouterConfig.RIGHT_TOOL_FOR_BLOCK.save();
+            b.setMessage(rightToolLabel()); CompanionPreferences.sync();
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "Ломает блок тем инструментом из сумки, которым это быстрее всего: кирка для камня и руды, топор для дерева, лопата для земли, ножницы для листвы. Нет такого — ломает рукой. Выключено: ломает тем, что в руке."))).build());
         addRenderableWidget(Button.builder(pickUpLabel(), b -> {
             OpenRouterConfig.PICK_UP_NEARBY.set(!OpenRouterConfig.PICK_UP_NEARBY.get()); OpenRouterConfig.PICK_UP_NEARBY.save();
             b.setMessage(pickUpLabel()); CompanionPreferences.sync();
@@ -150,6 +155,7 @@ final class CompanionBehaviorScreen extends Screen {
     private Component intervalLabel() { return Component.literal("Пауза между своими репликами: " + OpenRouterConfig.MURMUR_INTERVAL_PERCENT.get() + "%"); }
     private Component guardLabel() { return Component.literal("Охрана: цель ближе к игроку: " + (OpenRouterConfig.GUARD_NEAREST_TO_PLAYER.get() ? "вкл." : "выкл.")); }
     private Component containersLabel() { return Component.literal("Бочки, шалкеры, печи и другие контейнеры: " + (OpenRouterConfig.OTHER_CONTAINERS.get() ? "вкл." : "выкл.")); }
+    private static Component rightToolLabel() { return Component.literal("Олег выбирает инструмент под блок: " + (OpenRouterConfig.RIGHT_TOOL_FOR_BLOCK.get() ? "вкл." : "выкл.")); }
     private static Component replantLabel() { return Component.literal("Саженцы на месте срубленных деревьев: " + (OpenRouterConfig.REPLANT_SAPLINGS.get() ? "вкл." : "выкл.")); }
     private static Component boatClutchLabel() { return Component.literal("Лодка при падении: " + (OpenRouterConfig.BOAT_CLUTCH.get() ? "вкл." : "выкл.")); }
     private static Component campfireLabel() { return Component.literal("Олег играет у костра: " + (OpenRouterConfig.PLAYS_BY_THE_FIRE.get() ? "вкл." : "выкл.")); }

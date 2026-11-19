@@ -69,6 +69,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private static final EntityDataAccessor<String> DATA_PLACES = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> DATA_DEEDS = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> DATA_FURNACES = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
+    private static final EntityDataAccessor<String> DATA_TRADERS = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> DATA_GOAL = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> DATA_ACTIVITY = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<Boolean> DATA_MINING = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
@@ -152,6 +153,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether he plays by the fire at all (the player's switch, on in old saves: CompanionEntityNbt). */
     private boolean playsByTheFire = true;
     private boolean replantOn = true;
+    /** Whether he takes the tool that breaks a block best from his bag, or breaks with whatever is in his hand (issue #105). */
+    private boolean rightToolOn = true;
     /** Whether «подбери» looks at the ground first, and how far around him (the player's setting, not saved). */
     private boolean pickUpNearby = true;
     private int pickUpRadius = 16;
@@ -189,6 +192,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionDiagnosticState diagnostics = new CompanionDiagnosticState(this);
     private final CompanionEntityNbt nbt = new CompanionEntityNbt(this);
     final CompanionPlaces places = new CompanionPlaces(this);
+    private final CompanionTraders traders = new CompanionTraders();
+    public CompanionTraders traders() { return traders; }
     final CompanionDeeds deeds = new CompanionDeeds();
     final CompanionAutonomy autonomy = new CompanionAutonomy(this);
     final CompanionGoals goals = new CompanionGoals(this);
@@ -315,6 +320,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public String getDeedsForAi() { return level().isClientSide ? entityData.get(DATA_DEEDS) : deeds.summary(level().getGameTime()); }
     /** What his furnaces hold and how much is ready; empty when no batch is left. */
     public String getFurnacesForAi() { return level().isClientSide ? entityData.get(DATA_FURNACES) : batches.forAi(); }
+    public String getTradersForAi() { return entityData.get(DATA_TRADERS); }
+    /** The synced trader line, with the minutes since each sighting counted again. */
+    void refreshTraders() { if (!level().isClientSide) entityData.set(DATA_TRADERS, traders.text(blockPosition(), level().dimension().location().toString(), level().getGameTime())); }
     /** The long goal as the model is told of it (set once a second on the server, so a client reads it unchanged); empty without a goal. */
     public String getGoalForAi() { return entityData.get(DATA_GOAL); }
     public int deedCount() { return deeds.size(); }
@@ -500,7 +508,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         builder.define(DATA_PLACES, "известных рабочих мест нет");
         builder.define(DATA_DEEDS, "пока нет");
         builder.define(DATA_FURNACES, "");
-        builder.define(DATA_GOAL, "");
+        builder.define(DATA_GOAL, ""); builder.define(DATA_TRADERS, "");
         builder.define(DATA_ACTIVITY, "состояние ещё не обновлено");
         builder.define(DATA_MINING, false);
         builder.define(DATA_ACTION, 0); builder.define(DATA_ACTION_UNTIL, 0L); builder.define(DATA_ACTION_ITEM, ItemStack.EMPTY);
@@ -708,6 +716,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether a tree he felled gets a sapling of its wood back on the stump from his bag (the player can turn it off in the settings). */
     public boolean replantSaplings() { return replantOn; }
     public void setReplantSaplings(boolean on) { replantOn = on; }
+    /** Whether he takes the right tool for a block from his bag instead of breaking it with whatever is in his hand. */
+    public boolean rightToolForBlock() { return rightToolOn; }
+    public void setRightToolForBlock(boolean on) { rightToolOn = on; }
     /** Whether «подбери» takes what lies on the ground around him, and how far the scan goes (the player's setting). */
     public boolean pickUpNearby() { return pickUpNearby; }
     public int pickUpRadius() { return pickUpRadius; }
@@ -901,6 +912,13 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     NonNullList<ItemStack> copyBag() { return equipment.copyBag(); }
     public static EquipmentSlot equipmentSlot(String name) { return CompanionEquipment.equipmentSlot(name); }
     public void selectToolForBlock(BlockState state) { equipment.selectToolForBlock(state); }
+    /** The right tool for the block goes into his hand; what was there is put back by putToolAway after the break. */
+    public void takeToolForBlock(BlockState state) { equipment.takeToolForBlock(state); }
+    /** The Silk Touch tool for the block itself goes into his hand; false when he carries none of the kind. */
+    public boolean takeSilkToolForBlock(BlockState state) { return equipment.takeSilkToolForBlock(state); }
+    public void putToolAway() { equipment.putToolAway(); }
+    /** A hand kept for a break that the recovery's own restore ended is no longer owed. */
+    public void forgetKeptHand() { equipment.forgetKeptHand(); }
     public void selectWeaponForCombat() { equipment.selectWeaponForCombat(); }
     public void setEquipmentByPlayer(EquipmentSlot slot, ItemStack stack) { equipment.setEquipmentByPlayer(slot, stack); }
 
@@ -1103,7 +1121,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         }
         autonomy.tick();
         diagnostics.tick();
-        if (tickCount % 100 == 0) { places.discoverHome(); refreshPlaces(); }
+        if (tickCount % 100 == 0) { places.discoverHome(); refreshPlaces(); refreshTraders(); }
         if (tickCount % 20 == 0) {
             if (level() instanceof ServerLevel serverLevel) { batches.tick(serverLevel); entityData.set(DATA_FURNACES, batches.forAi()); entityData.set(DATA_GOAL, CompanionAgendaView.line(this)); }
             activityMoved = previousActivityPosition != null && position().distanceToSqr(previousActivityPosition) > .01;

@@ -459,8 +459,11 @@ final class CompanionFarming {
         if (reach < 0) { next(); return; }
         if (reach == 0) { w.owner.workStatus("Иду за травой — нужны семена пшеницы."); return; }
         w.owner.workStatus("Рву траву ради семян: " + have + " из " + todo.size() + ".");
+        if (!takeSeedTool(level, plant, state)) { endSeeds(have); return; }
         if (!w.breaking.tick(level, plant)) return;
-        if (!pluck(level, plant, state)) { endSeeds(have); return; }
+        boolean plucked = pluck(level, plant, state);
+        w.owner.putToolAway();
+        if (!plucked) { endSeeds(have); return; }
         grassCut++; w.gathered++;
         next();
     }
@@ -529,8 +532,11 @@ final class CompanionFarming {
         if (!farmland && !CropBlock.hasSufficientLight(level, cell)) { unfit++; letGo(); return; }
         if (!above.isAir()) {
             w.owner.workStatus("Расчищаю грядку от травы: " + planted + " из " + total + ".");
+            if (!takePlantTool(level, cell, above)) { finishWork(); return; }
             if (!w.breaking.tick(level, cell)) return;
-            if (!pluck(level, cell, above)) { finishWork(); return; }
+            boolean plucked = pluck(level, cell, above);
+            w.owner.putToolAway();
+            if (!plucked) { finishWork(); return; }
             cleared++; w.gathered++;
             return;
         }
@@ -546,8 +552,11 @@ final class CompanionFarming {
             BlockState weed = level.getBlockState(side);
             if (!clearable(weed) || !room(level, side.below())) continue;
             w.owner.workStatus("Пропалываю место под " + kind.plant + ": " + planted + " из " + total + ".");
+            if (!takePlantTool(level, side, weed)) { finishWork(); return; }
             if (!w.breaking.tick(level, side)) return;
-            if (!pluck(level, side, weed)) { finishWork(); return; }
+            boolean plucked = pluck(level, side, weed);
+            w.owner.putToolAway();
+            if (!plucked) { finishWork(); return; }
             cleared++; w.gathered++;
             return;
         }
@@ -631,9 +640,12 @@ final class CompanionFarming {
         BlockState state = level.getBlockState(cell);
         if (state.getBlock() instanceof CropBlock crop && crop.isMaxAge(state) && !replant.containsKey(cell)) {
             w.owner.workStatus("Собираю урожай: " + harvested + " из " + total + ".");
+            if (!takePlantTool(level, cell, state)) { finishWork(); return; }
             if (!w.breaking.tick(level, cell)) return;
             Item seed = crop.getCloneItemStack(level, cell, state).getItem();
-            if (!pluck(level, cell, state)) { finishWork(); return; }
+            boolean plucked = pluck(level, cell, state);
+            w.owner.putToolAway();
+            if (!plucked) { finishWork(); return; }
             replant.put(cell.immutable(), new Again(crop, seed));
             harvested++; w.gathered++;
             // The work waits for the pickup by itself; the next step finds the cell empty and sows it.
@@ -652,8 +664,11 @@ final class CompanionFarming {
         // A pumpkin or a melon at its stem: broken and picked up like a crop, and the stem stays to bear again (nothing to sow).
         if (CompanionCrops.onStem(level, cell)) {
             w.owner.workStatus("Собираю урожай: " + harvested + " из " + total + ".");
+            if (!takePlantTool(level, cell, state)) { finishWork(); return; }
             if (!w.breaking.tick(level, cell)) return;
-            if (!pluck(level, cell, state)) { finishWork(); return; }
+            boolean plucked = pluck(level, cell, state);
+            w.owner.putToolAway();
+            if (!plucked) { finishWork(); return; }
             harvested++; w.gathered++;
             return;
         }
@@ -666,12 +681,38 @@ final class CompanionFarming {
         next();
     }
 
-    /** Breaks a plant with the hand: the drops fall into the world to be picked up. False when the bag could not take them. */
+    /** The tool of the plant in his hand before the first swing; what it gives weighed against the bag first, as the swap takes a cell. */
+    private boolean takePlantTool(ServerLevel level, BlockPos cell, BlockState state) {
+        ItemStack tool = CompanionTools.bestToolForBlock(w.owner, state);
+        var drops = CompanionTools.drops(state, level, cell, null, w.owner, tool.isEmpty() ? w.owner.getMainHandItem() : tool);
+        if (!drops.isEmpty() && !w.items.canStore(drops)) { bagFull = true; return false; }
+        w.owner.takeToolForBlock(state);
+        return true;
+    }
+
+    /**
+     * The hand for a seed break: grass gives its seeds to a bare hand, while shears cut the tuft and the seed roll never happens.
+     * The shears leave his hand for the bag, so the grass comes down to the hand and not to the blade; this swap is made for what
+     * the block gives, not for its speed, so it is made with the right-tool switch off as well.
+     */
+    private boolean takeSeedTool(ServerLevel level, BlockPos cell, BlockState state) {
+        var drops = CompanionTools.drops(state, level, cell, null, w.owner, ItemStack.EMPTY);
+        if (!drops.isEmpty() && !w.items.canStore(drops)) { bagFull = true; return false; }
+        if (w.owner.getMainHandItem().is(net.neoforged.neoforge.common.Tags.Items.TOOLS_SHEAR)
+                && !w.owner.unequipForSupport("mainhand").success()) { bagFull = true; return false; }
+        return true;
+    }
+
+    /** Breaks a plant with the tool of the plant: the drops fall into the world to be picked up. False when the bag could not take them. */
     private boolean pluck(ServerLevel level, BlockPos cell, BlockState state) {
         var drops = CompanionTools.drops(state, level, cell, null, w.owner, w.owner.getMainHandItem());
         if (!drops.isEmpty() && !w.items.canStore(drops)) { bagFull = true; return false; }
         w.clearCracks();
         level.destroyBlock(cell, false, w.owner, 512);
+        // The tool of the plant wears on it as a player's does: a tool of the four classes skips a block that comes down at once,
+        // but shears wear on the grass they cut.
+        ItemStack tool = w.owner.getMainHandItem();
+        CompanionTools.wearOnBreak(tool, level, state, cell, w.owner);
         if (!drops.isEmpty()) w.owner.dropHarvest(cell, drops);
         return true;
     }

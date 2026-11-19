@@ -195,6 +195,9 @@ final class CompanionGatherGoals {
             BlockPos leaves = CompanionMiningNavigation.obstructingLeaves(c, target);
             if (leaves != null && c.distanceToSqr(leaves.getCenter()) <= CompanionEntity.LOG_INTERACTION_RANGE_SQR) {
                 c.work.route.stop();
+                // The tool of the leaf in his hand before the first swing: the cracks and the break's own time are the shears', not the
+                // axe's for the trunk (a leaf comes down in one tick with them, six with whatever he holds).
+                c.takeToolForBlock(c.level().getBlockState(leaves));
                 if (c.woodBreaking.tick((ServerLevel)c.level(), leaves)) {
                     c.gathering.mineLog(leaves); c.woodBreaking.reset();
                 }

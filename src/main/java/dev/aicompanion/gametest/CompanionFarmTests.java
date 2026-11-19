@@ -28,8 +28,10 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.CropBlock;
+import net.minecraft.world.level.block.DoublePlantBlock;
 import net.minecraft.world.level.block.FarmBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -78,6 +80,26 @@ public final class CompanionFarmTests {
             // The result carries its own facts: whose work it was, what was sown and how many.
             var facts = result.evidence();
             h.assertTrue(facts != null && facts.workId() == id && facts.action().equals("farm_crops") && facts.item().equals("minecraft:wheat_seeds") && facts.count() == 8, "Evidence: " + facts);
+        });
+    }
+
+    /** A pumpkin at its stem is the axe's block: taken with the axe he has, which wears on it, not by hand. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200, batch = "farm")
+    public static void aPumpkinIsTakenWithTheAxe(GameTestHelper h) {
+        ground(h); pond(h, 16, 16);
+        h.setBlock(new BlockPos(12, GROUND, 12), Blocks.FARMLAND.defaultBlockState().setValue(FarmBlock.MOISTURE, 7));
+        h.setBlock(new BlockPos(13, GROUND, 12), Blocks.FARMLAND.defaultBlockState().setValue(FarmBlock.MOISTURE, 7));
+        h.setBlock(new BlockPos(12, GROUND + 1, 12), Blocks.PUMPKIN);
+        h.setBlock(new BlockPos(13, GROUND + 1, 12), Blocks.ATTACHED_PUMPKIN_STEM.defaultBlockState()
+                .setValue(net.minecraft.world.level.block.AttachedStemBlock.FACING, net.minecraft.core.Direction.WEST));
+        CompanionEntity companion = spawn(h, 9, 9, 10, 10, 16);
+        companion.setItem(0, new ItemStack(Items.IRON_AXE));
+        long id = order(h, companion, "harvest_crops", "pumpkin", 1);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = result(h, companion, id);
+            h.assertTrue(result.success(), result.message());
+            h.assertTrue(count(companion, Items.PUMPKIN) == 1, "No pumpkin in the bag: " + companion.getStoredItemsSummary());
+            h.assertTrue(damage(companion, Items.IRON_AXE) >= 1, "The pumpkin was taken by hand: " + companion.getStoredItemsSummary());
         });
     }
 
@@ -175,6 +197,113 @@ public final class CompanionFarmTests {
             h.assertTrue(result.message().contains("Траву рвал ради семян"), "The seeds did not come from the grass: " + result.message());
             h.assertTrue(blocks(h, GROUND + 1, Blocks.SHORT_GRASS).size() < 30 * 30 - 9, "No grass was torn out");
             h.assertTrue(lying(h).isEmpty(), "Seeds left lying: " + lying(h));
+        });
+    }
+
+    /**
+     * The same grass with shears in his bag: the shears would cut the tuft where the seeds were asked for, and the seed roll would
+     * never happen, so he tears the grass with his hand and the shears stay whole. The meadow lies away from the water, so every
+     * field tile by the pond is bare ground and only the seed break could have swung the shears.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400, batch = "farm")
+    public static void seedsAreTornFromTheGrassByHandWithShearsInTheBag(GameTestHelper h) {
+        ground(h); pond(h, 16, 16);
+        for (int x = 1; x <= 10; x++) for (int z = 1; z <= 10; z++) h.setBlock(new BlockPos(x, GROUND + 1, z), Blocks.SHORT_GRASS);
+        CompanionEntity companion = spawn(h, 12, 12, 10, 10, 16);
+        give(companion, new ItemStack(Items.SHEARS), new ItemStack(Items.WOODEN_HOE));
+        long id = order(h, companion, "farm_crops", "minecraft:wheat_seeds", 2);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = result(h, companion, id);
+            h.assertTrue(result.success(), result.message());
+            h.assertTrue(result.message().contains("Траву рвал ради семян"), "The seeds did not come from the grass: " + result.message());
+            h.assertTrue(blocks(h, GROUND, Blocks.FARMLAND).size() == 2 && blocks(h, GROUND + 1, Blocks.WHEAT).size() == 2, "Farmland " + blocks(h, GROUND, Blocks.FARMLAND).size()
+                    + ", wheat " + blocks(h, GROUND + 1, Blocks.WHEAT).size() + ": " + result.message());
+            h.assertTrue(count(companion, Items.SHEARS) == 1 && damage(companion, Items.SHEARS) == 0,
+                    "The shears cut the grass the seeds were asked from: wear " + damage(companion, Items.SHEARS) + ", " + result.message());
+            h.assertTrue(lying(h).isEmpty(), "Seeds left lying: " + lying(h));
+        });
+    }
+
+    /**
+     * Tall grass is one plant in two halves: its foot rolls the seeds and its top goes with it, giving nothing (vanilla). With the
+     * shears in the bag he tears the feet by hand: two seeds for the two tiles, no top left without its foot, no tall grass in the
+     * bag, and the shears whole.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400, batch = "farm")
+    public static void seedsComeFromTheFootOfTallGrassAndItsTopGoesWithIt(GameTestHelper h) {
+        ground(h); pond(h, 16, 16);
+        for (int x = 1; x <= 9; x++) for (int z = 1; z <= 9; z++) {
+            BlockPos foot = new BlockPos(x, GROUND + 1, z);
+            h.setBlock(foot, Blocks.TALL_GRASS.defaultBlockState());
+            h.setBlock(foot.above(), Blocks.TALL_GRASS.defaultBlockState().setValue(DoublePlantBlock.HALF, DoubleBlockHalf.UPPER));
+        }
+        CompanionEntity companion = spawn(h, 12, 12, 10, 10, 16);
+        give(companion, new ItemStack(Items.SHEARS), new ItemStack(Items.WOODEN_HOE));
+        long id = order(h, companion, "farm_crops", "minecraft:wheat_seeds", 2);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = result(h, companion, id);
+            h.assertTrue(result.success(), result.message());
+            h.assertTrue(result.message().contains("Траву рвал ради семян"), "The seeds did not come from the grass: " + result.message());
+            int feet = blocks(h, GROUND + 1, Blocks.TALL_GRASS).size(), tops = blocks(h, GROUND + 2, Blocks.TALL_GRASS).size();
+            h.assertTrue(feet < 81 && feet == tops, "A half of a tall tuft was left standing: feet " + feet + ", tops " + tops);
+            int wheat = blocks(h, GROUND + 1, Blocks.WHEAT).size();
+            h.assertTrue(wheat == 2, "Wheat " + wheat + ": " + result.message());
+            h.assertTrue(wheat + count(companion, Items.WHEAT_SEEDS) == 2,
+                    "Seeds: " + wheat + " sown + " + count(companion, Items.WHEAT_SEEDS) + " in the bag");
+            h.assertTrue(count(companion, Items.SHORT_GRASS) == 0, "A shorn tuft went into the bag: " + count(companion, Items.SHORT_GRASS));
+            h.assertTrue(count(companion, Items.SHEARS) == 1 && damage(companion, Items.SHEARS) == 0,
+                    "The shears cut the tall grass: wear " + damage(companion, Items.SHEARS) + ", " + result.message());
+            h.assertTrue(lying(h).isEmpty(), "Items left lying: " + lying(h));
+        });
+    }
+
+    /**
+     * The right-tool switch off leaves the hand as it is for a speed swap; the seed break is a swap for what the block gives, and it
+     * is made all the same: the shears go to the bag, the grass comes down by hand, the seeds arrive.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400, batch = "farm")
+    public static void seedsAreStillTornWithTheSwitchOffAndTheShearsInHisHand(GameTestHelper h) {
+        ground(h); pond(h, 16, 16);
+        for (int x = 1; x <= 10; x++) for (int z = 1; z <= 10; z++) h.setBlock(new BlockPos(x, GROUND + 1, z), Blocks.SHORT_GRASS);
+        CompanionEntity companion = spawn(h, 12, 12, 10, 10, 16);
+        give(companion, new ItemStack(Items.WOODEN_HOE));
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.SHEARS));
+        companion.setRightToolForBlock(false);
+        long id = order(h, companion, "farm_crops", "minecraft:wheat_seeds", 2);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = result(h, companion, id);
+            h.assertTrue(result.success(), result.message());
+            h.assertTrue(result.message().contains("Траву рвал ради семян"), "The seeds did not come from the grass: " + result.message());
+            h.assertTrue(blocks(h, GROUND + 1, Blocks.WHEAT).size() == 2, "Wheat " + blocks(h, GROUND + 1, Blocks.WHEAT).size() + ": " + result.message());
+            h.assertTrue(!companion.getMainHandItem().is(Items.SHEARS), "The shears stayed in his hand: " + companion.getMainHandItem());
+            h.assertTrue(count(companion, Items.SHEARS) == 1 && damage(companion, Items.SHEARS) == 0,
+                    "The shears cut the grass: wear " + damage(companion, Items.SHEARS) + ", " + result.message());
+            h.assertTrue(lying(h).isEmpty(), "Items left lying: " + lying(h));
+        });
+    }
+
+    /**
+     * A full bag cannot take the shears: the tuft is not cut at all, so no seed is lost to the blade, and the answer names the bag
+     * rather than the seed rarity. One seed was carried and two tiles wait, so the field takes the one tile it can.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200, batch = "farm")
+    public static void aFullBagThatCannotTakeTheShearsIsNamed(GameTestHelper h) {
+        ground(h); pond(h, 16, 16);
+        for (int x = 1; x <= 10; x++) for (int z = 1; z <= 10; z++) h.setBlock(new BlockPos(x, GROUND + 1, z), Blocks.SHORT_GRASS);
+        CompanionEntity companion = spawn(h, 12, 12, 10, 10, 16);
+        give(companion, new ItemStack(Items.WHEAT_SEEDS, 1), new ItemStack(Items.WOODEN_HOE), new ItemStack(Items.SHORT_GRASS, 63));
+        for (int slot = 3; slot < companion.getContainerSize(); slot++) companion.setItem(slot, new ItemStack(Items.COBBLESTONE, 64));
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.SHEARS));
+        long id = order(h, companion, "farm_crops", "minecraft:wheat_seeds", 2);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = result(h, companion, id);
+            h.assertTrue(result.message().contains("В сумке нет места"), "The full bag was not named: " + result.message());
+            h.assertTrue(!result.message().contains("Траву рвал ради семян"), "A tuft was cut with the shears: " + result.message());
+            h.assertTrue(blocks(h, GROUND + 1, Blocks.WHEAT).size() == 1 && blocks(h, GROUND, Blocks.FARMLAND).size() == 1,
+                    "Wheat " + blocks(h, GROUND + 1, Blocks.WHEAT).size() + ", farmland " + blocks(h, GROUND, Blocks.FARMLAND).size() + ": " + result.message());
+            h.assertTrue(count(companion, Items.SHEARS) == 1 && damage(companion, Items.SHEARS) == 0,
+                    "The shears cut the grass: wear " + damage(companion, Items.SHEARS) + ", " + result.message());
+            h.assertTrue(count(companion, Items.WHEAT_SEEDS) == 0, "Seeds left: " + count(companion, Items.WHEAT_SEEDS));
         });
     }
 
@@ -624,6 +753,13 @@ public final class CompanionFarmTests {
         return ItemStack.EMPTY;
     }
 
+    /** The wear on the stack of this item, in the bag or in either hand; -1 when he has none. */
+    static int damage(CompanionEntity companion, Item item) {
+        int found = -1;
+        for (int slot = 0; slot < companion.getContainerSize(); slot++) if (companion.getItem(slot).is(item)) found = Math.max(found, companion.getItem(slot).getDamageValue());
+        for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND}) if (companion.getItemBySlot(slot).is(item)) found = Math.max(found, companion.getItemBySlot(slot).getDamageValue());
+        return found;
+    }
     static int count(CompanionEntity companion, Item item) {
         int count = 0;
         for (int slot = 0; slot < companion.getContainerSize(); slot++) if (companion.getItem(slot).is(item)) count += companion.getItem(slot).getCount();

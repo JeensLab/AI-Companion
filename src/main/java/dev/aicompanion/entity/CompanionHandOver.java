@@ -199,7 +199,7 @@ final class CompanionHandOver {
         if (!w.items.canStore(drops)) { w.breaking.reset(); return Taking.FULL; }
         if (!w.breaking.tick(level, pos)) return Taking.WORKING;
         if (!level.destroyBlock(pos, false, w.owner, 512)) return Taking.WORKING;
-        tool.getItem().mineBlock(tool, level, state, pos, w.owner);
+        CompanionTools.wearOnBreak(tool, level, state, pos, w.owner);
         w.owner.dropHarvest(pos, drops);
         w.breaking.reset();
         return Taking.DONE;

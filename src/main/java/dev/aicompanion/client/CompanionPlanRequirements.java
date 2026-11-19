@@ -21,6 +21,7 @@ public final class CompanionPlanRequirements {
         decoded = smeltAfterOre(text, decoded);
         decoded = cookAfterHunt(text, decoded);
         decoded = spokenQuantity(text, decoded);
+        decoded = freshVillagerConsent(text, decoded);
         if (text.matches("(?sU).*\\b(не|почему|зачем|где|как|нельзя|или|либо)\\b.*")
                 || !text.matches("(?sU).*\\b(поставь|размести|установи)\\b.*")
                 && !(text.matches("(?sU).*\\b(можешь|пожалуйста|прошу|нужно|надо|давай)\\b.*")
@@ -170,6 +171,28 @@ public final class CompanionPlanRequirements {
      * single block, and Oleg said «готово». The amount the player said is the amount: digits or words, «сколько сможешь» is
      * the most one order allows, no number for ore is four. Only a plan with one kind of gathering is touched.
      */
+    /**
+     * A fresh villager's goods are fixed for good by the first trade: the model's consent stands only when the player's own words
+     * answer yes. Otherwise it is dropped, and the server asks the question first (CompanionTrading).
+     */
+    static CompanionReply freshVillagerConsent(String text, CompanionReply decoded) {
+        boolean yes = text.matches("(?sU)\\s*(да|давай|меняем|меняй|бери|берем|покупай|продавай|ок|окей|хорошо|согласен|согласна|конечно|ага|угу|можно)\\b.*")
+                && !text.matches("(?sU).*\\b(нет|не)\\b.*");
+        if (yes) return decoded;
+        List<PlannedAction> result = new ArrayList<>();
+        boolean dropped = false;
+        for (PlannedAction step : decoded.actions()) {
+            var order = step.type().equals("trade_items") ? dev.aicompanion.entity.CompanionTradeOrder.parse(step.item()) : null;
+            if (order != null && order.consent()) {
+                order = new dev.aicompanion.entity.CompanionTradeOrder(order.get(), order.enchantment(), order.level(), order.pay(), order.profession(), false, order.count());
+                step = new PlannedAction(step.type(), step.seconds(), step.count(), order.pack(), step.slot(), step.location());
+                dropped = true;
+            }
+            result.add(step);
+        }
+        return dropped ? new CompanionReply(decoded.text(), List.copyOf(result), decoded.repeat()) : decoded;
+    }
+
     static CompanionReply spokenQuantity(String text, CompanionReply decoded) {
         var gathering = decoded.actions().stream().filter(step -> List.of("mine_ore", "gather_stone", "gather_loose", "gather_wood", "hunt_animals").contains(step.type())).toList();
         if (gathering.isEmpty() || gathering.stream().map(step -> step.type() + "|" + step.item()).distinct().count() != 1) return decoded;

@@ -65,6 +65,62 @@ public final class CompanionObsidianTests {
         h.succeed();
     }
 
+    /**
+     * Obsidian lying about him is mined where it lies: no lava to cool, so no bucket of water, no iron mined and smelted for it,
+     * and no log chopped for the bench that makes one.
+     */
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void obsidianLyingAboutIsMinedWithoutABucketOrIron(GameTestHelper h) {
+        var plan = CompanionObtain.plan(h.getLevel(), List.of(new ItemStack(Items.DIAMOND_PICKAXE)), false, OBSIDIAN, 2,
+                item -> item == Items.OBSIDIAN, item -> false);
+        h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("mine_obsidian", OBSIDIAN, 2))), "Not mined where it lies: " + plan);
+        h.succeed();
+    }
+
+    /** The plan for the player's own case: obsidian blocks set down beside him, a diamond pickaxe in his bag, no bucket. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void obsidianBlocksAboutHimGoIntoHisBagWithoutABucket(GameTestHelper h) {
+        ground(h);
+        List<BlockPos> blocks = List.of(new BlockPos(12, GROUND + 1, 16), new BlockPos(12, GROUND + 1, 18));
+        for (BlockPos cell : blocks) h.setBlock(cell, Blocks.OBSIDIAN);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        var plan = c.obtainPlan(OBSIDIAN, 2);
+        h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("mine_obsidian", OBSIDIAN, 2))), "Not mined where it lies: " + plan);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":2}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            h.assertTrue(count(c, Items.OBSIDIAN) == 2, "Not two obsidian: " + count(c, Items.OBSIDIAN) + ", " + future.join().report());
+            for (BlockPos cell : blocks) h.assertBlockPresent(Blocks.AIR, cell);
+            h.assertTrue(count(c, Items.BUCKET) == 0 && count(c, Items.WATER_BUCKET) == 0, "A bucket was made for nothing: " + future.join().report());
+        });
+    }
+
+    /** No obsidian about, lava there: it is still cooled with his bucket of water, and the plan says so first. */
+    @GameTest(template = "tall_tree", timeoutTicks = 20)
+    public static void lavaWithoutObsidianStillNeedsHisWaterBucket(GameTestHelper h) {
+        ground(h);
+        lava(h, 20, 14, 2, 1);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.BUCKET));
+        var plan = c.obtainPlan(OBSIDIAN, 2);
+        h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("fill_bucket", "minecraft:water_bucket", 1),
+                new CompanionObtain.Step("mine_obsidian", OBSIDIAN, 2))), "Not cooled with his water: " + plan);
+        h.succeed();
+    }
+
+    /** Neither obsidian nor lava about: he says what is missing, and no bucket is made of iron for it. */
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void withNeitherObsidianNorLavaHeNamesWhatIsMissing(GameTestHelper h) {
+        var plan = CompanionObtain.plan(h.getLevel(), List.of(new ItemStack(Items.DIAMOND_PICKAXE)), false, OBSIDIAN, 10,
+                item -> false, item -> false);
+        String refusal = plan.refusal();
+        h.assertTrue(plan.steps().isEmpty() && refusal != null && refusal.contains("обсидиан") && refusal.contains("лав")
+                && !refusal.contains("желез"), "Not refused with what is missing: " + plan);
+        h.succeed();
+    }
+
     /** The dragon goal gets its ten obsidian by obtain_item now: no more where it stops and says he cannot. */
     @GameTest(template = "empty", timeoutTicks = 20)
     public static void theDragonGoalGetsItsTenObsidianByObtainItem(GameTestHelper h) {
@@ -135,7 +191,7 @@ public final class CompanionObsidianTests {
         });
     }
 
-    /** No lava within his reach: he says so at once and pours nothing. */
+    /** No lava and no obsidian within his reach: he says so at once, before any bucket is made, and pours nothing. */
     @GameTest(template = "tall_tree", timeoutTicks = 400)
     public static void withNoLavaAboutHeSaysSoAndKeepsHisWater(GameTestHelper h) {
         ground(h);
@@ -146,7 +202,7 @@ public final class CompanionObsidianTests {
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
             String report = future.join().report();
-            h.assertTrue(report.contains("Не нашёл лавы рядом — отведи меня к ней."), "He does not say he found no lava: " + report);
+            h.assertTrue(report.contains("Рядом нечего копать: ни обсидиана, ни лавы"), "He does not say what is missing: " + report);
             h.assertTrue(count(c, Items.WATER_BUCKET) == 1 && count(c, Items.BUCKET) == 0, "His water is not in his bucket: " + report);
         });
     }
@@ -187,7 +243,7 @@ public final class CompanionObsidianTests {
         });
     }
 
-    /** Lava and obsidian where the player has a building are his: no water poured there, nothing mined, and he says he found no lava. */
+    /** Lava and obsidian where the player has a building are his: no water poured there, nothing mined, and he says what is missing. */
     @GameTest(template = "tall_tree", timeoutTicks = 600)
     public static void lavaAndObsidianWhereThePlayerBuildsAreLeftAlone(GameTestHelper h) {
         ground(h);
@@ -203,7 +259,7 @@ public final class CompanionObsidianTests {
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
             String report = future.join().report();
-            h.assertTrue(report.contains("Не нашёл лавы рядом — отведи меня к ней."), "He does not say he found no lava: " + report);
+            h.assertTrue(report.contains("Рядом нечего копать: ни обсидиана, ни лавы"), "He does not say what is missing: " + report);
             h.assertTrue(count(c, Items.WATER_BUCKET) == 1 && count(c, Items.OBSIDIAN) == 0, "He poured or mined: " + report);
             for (BlockPos cell : wall) h.assertBlockPresent(Blocks.OBSIDIAN, cell);
             for (BlockPos cell : pond) h.assertBlockPresent(Blocks.LAVA, cell);

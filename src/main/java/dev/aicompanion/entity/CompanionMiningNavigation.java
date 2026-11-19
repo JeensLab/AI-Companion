@@ -27,7 +27,15 @@ final class CompanionMiningNavigation {
         double x = Math.clamp(eye.x, block.getX() + .01, block.getX() + .99);
         double y = Math.clamp(eye.y, block.getY() + .01, block.getY() + .99);
         double z = Math.clamp(eye.z, block.getZ() + .01, block.getZ() + .99);
-        for (Vec3 point : new Vec3[]{block.getCenter(), new Vec3(x, y, z), new Vec3(x, block.getY() + .5, z)}) {
+        // The middle of the block's own shape: a layer of snow or a carpet is lower than its cell, and the middle of the cell
+        // lies over it, so a ray aimed there passes above the block and sees nothing of it.
+        var shape = level.getBlockState(block).getCollisionShape(level, block);
+        Vec3 middle = block.getCenter();
+        if (!shape.isEmpty()) {
+            var box = shape.bounds();
+            middle = new Vec3(block.getX() + (box.minX + box.maxX) / 2, block.getY() + (box.minY + box.maxY) / 2, block.getZ() + (box.minZ + box.maxZ) / 2);
+        }
+        for (Vec3 point : new Vec3[]{block.getCenter(), middle, new Vec3(x, y, z), new Vec3(x, block.getY() + .5, z)}) {
             var hit = level.clip(new ClipContext(eye, point, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, owner));
             if (hit.getType() == HitResult.Type.BLOCK && hit.getBlockPos().equals(block)) return true;
         }
@@ -160,14 +168,25 @@ final class CompanionMiningNavigation {
         return owner.getY() >= returnHeight - .5 || canWalkBackUp(owner, owner.blockPosition(), returnHeight, null, placed);
     }
 
+    /**
+     * Whether a player standing at {@code from} walks to one of these cells: a step up of one at a time, drops of up to three,
+     * through cells with room for a body, within a few thousand cells round him. A stair whose steps are two high is no way
+     * up it (the owner, 18.11).
+     */
+    static boolean canWalkTo(CompanionEntity owner, BlockPos from, Set<BlockPos> cells) { return walksFrom(owner, from, cells::contains, null, null); }
+
     private static boolean canWalkBackUp(CompanionEntity owner, BlockPos from, int toY, BlockPos removed, BlockPos filled) {
-        if (from.getY() >= toY) return true;
+        return walksFrom(owner, from, at -> at.getY() >= toY, removed, filled);
+    }
+
+    private static boolean walksFrom(CompanionEntity owner, BlockPos from, java.util.function.Predicate<BlockPos> goal, BlockPos removed, BlockPos filled) {
+        if (goal.test(from)) return true;
         java.util.ArrayDeque<BlockPos> open = new java.util.ArrayDeque<>();
         Set<BlockPos> seen = new HashSet<>();
         open.add(from.immutable()); seen.add(from.immutable());
         while (!open.isEmpty() && seen.size() < 3000) {
             BlockPos at = open.removeFirst();
-            if (at.getY() >= toY) return true;
+            if (goal.test(at)) return true;
             for (Direction side : Direction.Plane.HORIZONTAL) for (int dy = 1; dy >= -3; dy--) {
                 BlockPos next = at.relative(side).above(dy);
                 if (Math.abs(next.getX() - from.getX()) > 24 || Math.abs(next.getZ() - from.getZ()) > 24 || seen.contains(next)) continue;

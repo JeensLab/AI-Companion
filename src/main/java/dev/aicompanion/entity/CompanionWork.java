@@ -25,8 +25,8 @@ import java.util.Set;
 
 /** Bounded server-side work. Prerequisites use real recipes, tools, blocks and inventories. */
 public final class CompanionWork {
-    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, FARM, EXPEDITION, COURSE, WATER, OBSIDIAN, PORTAL, COBBLE_GEN, GOLEM, PICK_UP, PLACE, GRIND, COMPOST, BLOCK, CHORE, ERRAND }
-    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, FARM, EXPEDITION, COURSE, WATER, OBSIDIAN, PORTAL, COBBLE, GOLEM, PICKUP, PLACE, GRIND, COMPOST, BLOCK, DROPS, CHORE, ERRAND }
+    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, SCOUT, TRADE, FARM, EXPEDITION, COURSE, WATER, OBSIDIAN, PORTAL, COBBLE_GEN, GOLEM, PICK_UP, PLACE, GRIND, COMPOST, BLOCK, CHORE, ERRAND }
+    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, SCOUT, TRADE, FARM, EXPEDITION, COURSE, WATER, OBSIDIAN, PORTAL, COBBLE, GOLEM, PICKUP, PLACE, GRIND, COMPOST, BLOCK, DROPS, CHORE, ERRAND }
     final CompanionEntity owner;
     final CompanionWorkItems items = new CompanionWorkItems(this);
     final CompanionHunting hunting = new CompanionHunting(this);
@@ -42,7 +42,7 @@ public final class CompanionWork {
     final CompanionHandOver handOver = new CompanionHandOver(this);
     final CompanionExpedition expedition;
     final CompanionHomeTrip trip = new CompanionHomeTrip(this);
-    final CompanionPen pen = new CompanionPen(this); final CompanionBreeding breeding = new CompanionBreeding(this);
+    final CompanionPen pen = new CompanionPen(this); final CompanionBreeding breeding = new CompanionBreeding(this); final CompanionScouting scouting = new CompanionScouting(this); final CompanionTrading trading = new CompanionTrading(this);
     final CompanionCourse course = new CompanionCourse(this);
     final CompanionHouse house;
     /** A building of the catalogue, kept apart from the plank house so that neither forgets the other. */
@@ -192,6 +192,8 @@ public final class CompanionWork {
     final java.util.Map<BlockPos, BlockState> oreBlockedCells = new java.util.HashMap<>();
     /** hunt_animals: the kind (null — any), how many, kills by his own blows, the chase, and the bag before for the report. */
     public static final int MAX_GAME = 16;
+    /** A leaf order may be a few stacks («два стака листвы», 128, «добудь 500 листвы»): the chain splits it into steps of a stack each, and the plan carries it in the same steps of 64. */
+    public static final int MAX_LEAVES = 768;
     boolean gameForFood;
     /** How a hunt without a single animal begins its report; the plan then does not go on to the furnace. */
     public static final String NOTHING_HUNTED = "Никого не добыл";
@@ -354,6 +356,8 @@ public final class CompanionWork {
             case IRON -> "подготовка железа";
             case EXPEDITION -> "шахта";
             case BREED -> "разведение животных";
+            case SCOUT -> "обход торговцев";
+            case TRADE -> "обмен с торговцем";
             case FARM -> "в поле";
             case COURSE -> "в пути";
             case WATER -> "за водой";
@@ -379,6 +383,8 @@ public final class CompanionWork {
             case HOUSE -> "стройку дома";
             case PEN -> "постройку загона";
             case BREED -> "разведение животных";
+            case SCOUT -> "обход торговцев";
+            case TRADE -> "обмен с торговцем";
             case DIRT -> "добычу " + ground.genitive();
             case COME -> "путь к тебе";
             case HUNT -> "бой с монстрами";
@@ -562,6 +568,8 @@ public final class CompanionWork {
             }
             case "build_pen" -> { CompanionActionResult refusal = pen.begin(item, count); if (refusal != null) return refusal; job = Job.PEN; phase = Phase.PEN; }
             case "breed_animals" -> { CompanionActionResult refusal = breeding.begin(item, count); if (refusal != null) return refusal; job = Job.BREED; phase = Phase.BREED; }
+            case "scout_traders" -> { CompanionActionResult refusal = scouting.begin(); if (refusal != null) return refusal; job = Job.SCOUT; phase = Phase.SCOUT; }
+            case "trade_items" -> { CompanionActionResult refusal = trading.begin(item); if (refusal != null) return refusal; job = Job.TRADE; phase = Phase.TRADE; }
             case "mine_ore" -> {
                 ore = CompanionOre.Kind.of(item);
                 if (ore == null) return CompanionActionResult.failed("Не понял, какую руду добыть: уголь, железо, медь, лазурит, золото, редстоун, алмазы или изумруды.");
@@ -612,7 +620,7 @@ public final class CompanionWork {
         stoneCollectedBefore = owner.collectedStone(); lastHarvestStand = null;
         // Gathering wood, finishing its crown, collecting drops, returning and crafting are
         // real prerequisite stages. A single three-minute budget used to expire before mining began.
-        deadline = level.getGameTime() + 20 * (job == Job.COURSE ? CompanionCourse.LIMIT_SECONDS + 60 : 600);
+        deadline = level.getGameTime() + 20 * (job == Job.COURSE ? CompanionCourse.LIMIT_SECONDS + 60 : job == Job.SCOUT ? CompanionScouting.WORK_SECONDS : job == Job.TRADE ? CompanionTrading.WORK_SECONDS : 600);
         rejected.clear(); triedChests.clear(); stoneCandidates = null; stoneLootRetried = false;
         lots.clear(); triedFurnaces.clear(); heading = furnaceRoom = null; ownFurnaceFailed = furnacesShort = smokerTried = false; furnacesPlaced = 0; benchClimbs = 0;
         stoneSearch = null; quarrySoil.clear(); quarryTried = selectingStone = false; exitCell = null; stairs = 0;
@@ -662,11 +670,13 @@ public final class CompanionWork {
             owner.noteDeed("Прервал: " + jobName() + " — остановили или дали другое дело." + furnaces.furnaceNote(), false);
         }
         lots.clear(); heading = null; chests.kind = null;
+        // A tool taken for a swing is the work's too: the hand it replaced comes back before the work ends, never into the next one.
+        owner.putToolAway();
         items.putHeldStackBack();
         clearCracks();
         closeChest();
         if (job == Job.ERRAND) owner.errand.cancelled();
-        house.cancel(); templateHouse.cancel(); route.abandon(); expedition.reset(); pen.cancel(); breeding.cancel(); course.cancel(); trip.reset(); obsidian.cancel(); portal.cancel(); cobbleGen.cancel(); golem.cancel();
+        house.cancel(); templateHouse.cancel(); route.abandon(); expedition.reset(); pen.cancel(); breeding.cancel(); scouting.cancel(); trading.cancel(); course.cancel(); trip.reset(); obsidian.cancel(); portal.cancel(); cobbleGen.cancel(); golem.cancel();
         // The chest he set down served this order only: a later store order goes the old way again.
         if (job == Job.STORE) owner.lastPlacedPosition = null;
         job = null; phase = null; afterWood = null;
@@ -684,7 +694,10 @@ public final class CompanionWork {
         if (!(owner.level() instanceof ServerLevel level) || job == null) return;
         if (owner.gathering.workEnded(level)) return;
         if (job != Job.HOUSE && owner.actionAnimation() != 0) return;
-        if (job != Job.COME && job != Job.COURSE && job != Job.HUNT && job != Job.PICK_UP && job != Job.PLACE && owner.hasPendingLoot() && !(job == Job.HOUSE && templateJob && templateHouse.scaffolding())) return;
+        // Breaking does not wait for the last drop: the next block goes while the drop is still on its way to him, and the
+        // pickup settles after the breaking. Waiting per block is what made a crown one block at a time.
+        if (job != Job.BLOCK && job != Job.COME && job != Job.COURSE && job != Job.HUNT && job != Job.PICK_UP && job != Job.PLACE
+                && owner.hasPendingLoot() && !(job == Job.HOUSE && templateJob && templateHouse.scaffolding())) return;
         if (owner.getOwnerId() == null || level.getServer().getPlayerList().getPlayer(owner.getOwnerId()) == null) {
             finish(false, "Потерял связь с игроком, остановился."); return;
         }
@@ -728,6 +741,8 @@ public final class CompanionWork {
             case EXPEDITION -> expedition.tick(level);
             case PEN -> pen.tick(level);
             case BREED -> breeding.tick(level);
+            case SCOUT -> scouting.tick(level);
+            case TRADE -> trading.tick(level);
             case FARM -> farming.tick(level);
             case COURSE -> course.tick(level);
             case WATER -> owner.waterFill.orderTick(level);

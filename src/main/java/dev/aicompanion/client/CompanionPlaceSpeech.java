@@ -96,11 +96,11 @@ public final class CompanionPlaceSpeech {
         var remembered = REMEMBER.matcher(said);
         if (remembered.matches()) return remember(remembered.group(1));
         var carried = CARRY.matcher(said);
-        if (carried.matches()) return place(Kind.CARRY, carried.group(1), knownNames);
+        if (carried.matches()) return place(Kind.CARRY, carried.group(1), knownNames, said);
         var guarded = GUARD.matcher(said);
-        if (guarded.matches()) return place(Kind.GUARD, guarded.group(1), knownNames);
+        if (guarded.matches()) return place(Kind.GUARD, guarded.group(1), knownNames, said);
         var went = GO.matcher(said);
-        if (went.matches()) return place(Kind.GO, went.group(1), knownNames);
+        if (went.matches()) return place(Kind.GO, went.group(1), knownNames, said);
         return Result.none();
     }
 
@@ -162,7 +162,7 @@ public final class CompanionPlaceSpeech {
         return new Result(Kind.FORGET, CompanionMarkerNames.clean(target), null);
     }
 
-    private static Result place(Kind kind, String tail, List<String> knownNames) {
+    private static Result place(Kind kind, String tail, List<String> knownNames, String said) {
         String target = tail.strip();
         List<String> words = CompanionMarkerNames.tokens(target);
         if (words.isEmpty() || personWord(words)) return Result.none();
@@ -176,6 +176,9 @@ public final class CompanionPlaceSpeech {
         }
         // No marker: «дом» and «домик» are the home he knows, not an unknown name to ask about.
         if (HOME_WORDS.contains(stemOfFirstHomeWord(words))) return Result.none();
+        // A trade errand («сходи купи шлем у кузнеца», «сходи в деревню, проверь торговцев») or the village itself, with no marker of
+        // that name, is the model's: it knows the traders and the way (game 18.11; review round 3 — the verb stands before the «у/в»).
+        if (CompanionTradeWords.about(said) || words.getFirst().startsWith("деревн")) return Result.none();
         return new Result(Kind.UNKNOWN, target, unknown(target, knownNames));
     }
 
