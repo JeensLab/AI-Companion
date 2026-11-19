@@ -170,13 +170,36 @@ final class CompanionPicking {
 
     /** The nearest of these leaf blocks he can come at: a tree's own first, the ground reach before a column, the player's own last. */
     private static BlockPos nearestLeaf(CompanionEntity c, ServerLevel level, List<CompanionPickable.Source> all) {
+        return nearestLeaf(c, level, all, false);
+    }
+
+    /** The same, {@code naturalOnly} leaving out the leaves a player set down: only the crowns a tree grew. */
+    private static BlockPos nearestLeaf(CompanionEntity c, ServerLevel level, List<CompanionPickable.Source> all, boolean naturalOnly) {
         if (all.isEmpty()) return null;
         Predicate<BlockPos> site = sites(c, level);
         boolean dug = soilAbout(c, level);
-        for (boolean natural : new boolean[]{true, false})
+        for (boolean natural : naturalOnly ? new boolean[]{true} : new boolean[]{true, false})
             for (boolean soil : new boolean[]{false, true}) {
                 if (soil && !dug) continue;
                 BlockPos found = find(c, level, all, site, Set.of(), new HashSet<>(), soil, natural, false);
+                if (found != null) return found;
+            }
+        return null;
+    }
+
+    /**
+     * The leaf the gather comes at first, in the gather's own order: the named species' own crown, another tree's or hedge's
+     * leaves about, the named one's leaves a player set down, then any set-down leaf — so the plan names the species it really
+     * cuts (the soil for a crown is sized for it, CompanionLeaves.leafTarget).
+     */
+    static BlockPos firstLeaf(CompanionEntity c, ServerLevel level, Item requested) {
+        List<CompanionPickable.Source> named = requested == null ? List.of()
+                : allowed(level, CompanionPickable.sources(level, requested)).stream()
+                        .filter(source -> source.block().defaultBlockState().is(BlockTags.LEAVES)).toList();
+        List<CompanionPickable.Source> all = allowed(level, CompanionPickable.leaves(level));
+        for (boolean natural : new boolean[]{true, false})
+            for (List<CompanionPickable.Source> from : List.of(named, all)) {
+                BlockPos found = nearestLeaf(c, level, from, natural);
                 if (found != null) return found;
             }
         return null;
@@ -257,14 +280,6 @@ final class CompanionPicking {
         // one beside it, as it was — a leaf on a stone shelf with the dirt twenty blocks off (the owner, 18.11).
         if (!soilAbout(c, level)) return 0;
         return Math.max(0, steps - c.temporaryPillar.soilCarried());
-    }
-
-    /** The nearest leaf of this item's blocks he can come at, or null: the species of an order that named one. */
-    static BlockPos nearestOf(CompanionEntity c, ServerLevel level, Item item) {
-        if (item == null) return null;
-        List<CompanionPickable.Source> all = allowed(level, CompanionPickable.sources(level, item)).stream()
-                .filter(source -> source.block().defaultBlockState().is(BlockTags.LEAVES)).toList();
-        return nearestLeaf(c, level, all);
     }
 
     /**

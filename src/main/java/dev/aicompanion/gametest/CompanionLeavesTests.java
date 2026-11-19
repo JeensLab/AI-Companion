@@ -746,6 +746,45 @@ public final class CompanionLeavesTests {
     }
 
     /**
+     * The soil is sized for the leaves the gather really comes at (19.11): a leaf the player set down is no crown of its
+     * species, so «добудь 16 oak leaves» with only a set-down oak hedge about and a spruce crown six blocks up names the spruce
+     * the gather comes at, digs the soil for that crown and climbs it — not zero soil for the oak, which would leave the crown
+     * where it hangs.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 8000)
+    public static void theSoilIsSizedForTheSpeciesTheGatherComesAt(GameTestHelper h) {
+        ground(h);
+        // The player's own oak leaves beside him: within his reach from the ground, and no oak crown of a tree.
+        BlockPos hedgeTrunk = new BlockPos(14, GROUND + 1, 16);
+        for (int up = 0; up < 3; up++) h.setBlock(hedgeTrunk.above(up), Blocks.OAK_LOG);
+        var hedge = Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.PERSISTENT, true).setValue(LeavesBlock.DISTANCE, 7);
+        List<BlockPos> beside = List.of(hedgeTrunk.above().west(), hedgeTrunk.above().east(), hedgeTrunk.above().north(),
+                hedgeTrunk.above(2).west(), hedgeTrunk.above(2).east(), hedgeTrunk.above(2).north());
+        for (BlockPos cell : beside) h.setBlock(cell, hedge);
+        // A spruce crown six and seven blocks up: no stand cell under it, the soil about him is dirt.
+        BlockPos trunk = new BlockPos(20, GROUND + 1, 16);
+        for (int up = 0; up < 6; up++) h.setBlock(trunk.above(up), Blocks.SPRUCE_LOG);
+        var crown = Blocks.SPRUCE_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = 6; dy <= 7; dy++) {
+            BlockPos cell = trunk.offset(dx, dy, dz);
+            if (!cell.equals(trunk.above(dy))) h.setBlock(cell, crown);
+        }
+        CompanionEntity c = withTheOwnersTools(h);
+        h.assertTrue("minecraft:spruce_leaves".equals(CompanionLeaves.leafTarget(c, h.getLevel(), "minecraft:oak_leaves")),
+                "The set-down oak was named over the spruce the gather comes at: " + CompanionLeaves.leafTarget(c, h.getLevel(), "minecraft:oak_leaves"));
+        h.assertTrue(CompanionLeaves.soilToDig(c, h.getLevel(), "minecraft:spruce_leaves", 16) > 0,
+                "The spruce crown six blocks up asks no soil");
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":16}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.SPRUCE_LEAVES) >= 16, "Not sixteen spruce leaves: " + count(c, Items.SPRUCE_LEAVES) + ", " + report);
+            h.assertTrue(count(c, Items.DIRT) > 0, "He dug no soil for the spruce crown: " + report);
+            for (BlockPos cell : beside) h.assertBlockPresent(Blocks.OAK_LEAVES, cell);
+        });
+    }
+
+    /**
      * The owner's modest crown (18.11): six and seven blocks up on flat ground, no stand cell under it, and no soil in the
      * bag — the ground about him is dirt. A four-step column reaches it, so «Добудь листву» digs the soil, builds the column
      * and cuts the crown: «Рядом листвы не вижу» is for no leaves at all, not for a modest crown over him. A leaf the column
