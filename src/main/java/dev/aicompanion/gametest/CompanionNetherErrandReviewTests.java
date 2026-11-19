@@ -95,7 +95,7 @@ public final class CompanionNetherErrandReviewTests {
         long[] since = {0};
         h.onEachTick(() -> {
             if (!added[0]) {
-                if (!CompanionNetherErrandTests.FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) return;
+                if (!CompanionNetherErrandTests.forcedLoaded(nether)) return;
                 nether.addFreshEntity(there); added[0] = true;
             }
             if (phase[0] == 0) {
@@ -134,7 +134,7 @@ public final class CompanionNetherErrandReviewTests {
         ServerPlayer owner = server.getPlayerList().getPlayer(there.getOwnerId());
         boolean[] added = {false};
         h.onEachTick(() -> {
-            if (!added[0] && CompanionNetherErrandTests.FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) { CompanionNetherErrandTests.noPortalsNear(nether, cell); nether.addFreshEntity(there); added[0] = true; }
+            if (!added[0] && CompanionNetherErrandTests.forcedLoaded(nether)) { CompanionNetherErrandTests.noPortalsNear(nether, cell); nether.addFreshEntity(there); added[0] = true; }
         });
         h.succeedWhen(() -> {
             h.assertTrue(added[0] && there.tickCount >= 100, "Ticked " + there.tickCount + " times only");
@@ -164,7 +164,7 @@ public final class CompanionNetherErrandReviewTests {
         NeoForge.EVENT_BUS.post(new BlockEvent.EntityPlaceEvent(BlockSnapshot.create(Level.NETHER, nether, chest), Blocks.NETHERRACK.defaultBlockState(), player));
         boolean[] added = {false};
         h.onEachTick(() -> {
-            if (!added[0] && CompanionNetherErrandTests.FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) { nether.addFreshEntity(there); added[0] = true; }
+            if (!added[0] && CompanionNetherErrandTests.forcedLoaded(nether)) { nether.addFreshEntity(there); added[0] = true; }
         });
         h.succeedWhen(() -> {
             h.assertTrue(added[0] && there.tickCount >= 450, "Not yet ticked long enough: " + (added[0] ? there.tickCount : -1));
