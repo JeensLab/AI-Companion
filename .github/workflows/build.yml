@@ -28,6 +28,10 @@ jobs:
       # needs only the JDK and takes about a second, so it runs in this job instead of being remembered by hand.
       - name: Check enum switches
         run: bash scripts/switch-check.sh
+      # Unused imports are a violation as well; the guard is a plain JDK script like the switch check, with no
+      # dependency added to the build, so it runs here and a regression fails the job.
+      - name: Check unused imports
+        run: bash scripts/unused-imports.sh
       - name: Build with Gradle
         run: ./gradlew build
       # The guitar tracks are not in the JAR: they are packed from music/ into the ready config/aicompanion/music structure,
