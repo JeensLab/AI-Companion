@@ -164,7 +164,8 @@ public final class CompanionPlanCodec {
             if (steps == null || steps.size() > MAX_STEPS) throw invalid();
             int repeat = input.isJsonArray() ? 1 : repeatOf(input.getAsJsonObject());
             List<PlannedAction> result = new ArrayList<>();
-            for (JsonElement element : steps) {
+            for (int index = 0; index < steps.size(); index++) {
+                JsonElement element = steps.get(index);
                 JsonObject step = element.getAsJsonObject();
                 step.entrySet().removeIf(field -> field.getValue().isJsonNull()); // "count": null is a missing count, not a broken plan
                 String type = step.get("action").getAsString();
@@ -254,9 +255,13 @@ public final class CompanionPlanCodec {
                         && (!dev.aicompanion.entity.CompanionMarkerNames.valid(item) || count != 1 || !"near_player".equals(location))) throw invalid();
                 // A leaf order of several stacks is carried as growing targets of a stack each, the bag checked against the
                 // whole count: «добудь 500 листвы» is targets of 64 up to 448 and the whole 500, not refused for being longer
-                // than a stack.
+                // than a stack. The split fits the steps the plan has left after the written steps still to come, so the
+                // widest leaf order (768) beside another step is no refusal either.
                 if ("obtain_item".equals(type) && count > 64) {
-                    for (int at = 64; at < count; at += 64) result.add(new PlannedAction(type, 0, at, item, slot, location));
+                    int budget = MAX_STEPS - result.size() - (steps.size() - 1 - index);
+                    int chunks = Math.min(budget, (count + 63) / 64);
+                    if (chunks < 1) throw invalid();
+                    for (int part = 1; part < chunks; part++) result.add(new PlannedAction(type, 0, 64 * part, item, slot, location));
                     result.add(new PlannedAction(type, 0, count, item, slot, location));
                     if (result.size() > MAX_STEPS) throw invalid();
                     continue;

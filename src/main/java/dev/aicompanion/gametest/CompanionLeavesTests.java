@@ -1167,6 +1167,39 @@ public final class CompanionLeavesTests {
     }
 
     /**
+     * The widest leaf order (19.11): 768 leaves is the most CompanionWork takes, and with another step beside it the split has
+     * to fit the plan's twelve steps instead of refusing the whole plan. Alone it keeps its steps of a stack; 769 is beyond
+     * the widest leaf order and stays refused.
+     */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void aLeafOrderOf768FitsThePlanBesideAnotherStep(GameTestHelper h) {
+        List<PlannedAction> decoded = CompanionPlanCodec.parsePlan(com.google.gson.JsonParser.parseString(
+                "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":768},{\"action\":\"equip_item\",\"item\":\"minecraft:shears\"}]"));
+        h.assertTrue(decoded.size() <= CompanionPlanCodec.MAX_STEPS,
+                "768 leaves and the shears take more than the plan's steps: " + decoded);
+        List<PlannedAction> obtains = decoded.stream().filter(step -> "obtain_item".equals(step.type())).toList();
+        h.assertTrue(obtains.getLast().count() == 768 && decoded.getLast().type().equals("equip_item"),
+                "The order of 768 and the shears were not both carried: " + decoded);
+        int grew = 0;
+        for (PlannedAction step : obtains) {
+            h.assertTrue(step.count() > grew, "A step of the order does not grow: " + obtains);
+            grew = step.count();
+        }
+        // Alone, the same order still goes in steps of a stack each.
+        List<PlannedAction> alone = CompanionPlanCodec.parsePlan(com.google.gson.JsonParser.parseString(
+                "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":768}]"));
+        h.assertTrue(alone.size() == CompanionPlanCodec.MAX_STEPS && alone.getLast().count() == 768,
+                "768 leaves alone are not twelve steps ending at the order: " + alone);
+        boolean refused = false;
+        try {
+            CompanionPlanCodec.parsePlan(com.google.gson.JsonParser.parseString(
+                    "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":769}]"));
+        } catch (RuntimeException expected) { refused = true; }
+        h.assertTrue(refused, "769 leaves were taken: the widest leaf order is 768");
+        h.succeed();
+    }
+
+    /**
      * The owner's tree with a stair and his own leaves (18.11): the tree's crown hangs on a shelf three blocks over stone, no
      * soil about to build a column, so the leaf he first goes for is one he cannot walk to; the leaves he set down on the
      * ground about him are inside a site of his (a chest stands there) and were left for the site's rule. The order falls
