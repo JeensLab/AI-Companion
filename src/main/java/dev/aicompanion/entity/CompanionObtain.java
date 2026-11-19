@@ -276,8 +276,12 @@ public final class CompanionObtain {
                 String refusal = CompanionObsidian.refusal(level, carried);
                 if (refusal != null) return refuse(refusal);
                 if (grows != null && about(Items.OBSIDIAN)) return add("mine_obsidian", key, count);
-                if (grows != null && !about(Items.LAVA_BUCKET) && bag.getOrDefault("minecraft:lava_bucket", 0) == 0)
+                int buckets = bag.getOrDefault("minecraft:lava_bucket", 0);
+                if (grows != null && !about(Items.LAVA_BUCKET) && buckets == 0)
                     return refuse("Рядом нечего копать: ни обсидиана, ни лавы — отведи меня туда, где они есть.");
+                // With no obsidian lying about and no lava to cool, his own buckets are the only source: one bucket of lava makes one
+                // block, so no more is promised than they can give (the rest is planned again after, the player 19.11).
+                if (grows != null && !about(Items.LAVA_BUCKET)) count = Math.min(count, buckets);
                 return need("minecraft:water_bucket", 1, depth + 1) && add("mine_obsidian", key, count);
             }
             // An empty bucket of his (or one made now) under a cow, a mooshroom or a goat about him (CompanionChores).

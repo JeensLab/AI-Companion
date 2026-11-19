@@ -70,8 +70,8 @@ final class CompanionObsidian {
     private boolean retried;
     /** The obsidian he mines; the cell over lava he goes to pour into; his water standing; the cells to stand at for either. */
     private BlockPos target, aim, water;
-    /** The hole his own lava goes into, his water over it, the stage of it, when the water was poured, and blocks made of buckets. */
-    private BlockPos made, madeWater;
+    /** The hole his own lava goes into, his water over it, the stage of it, when the water was poured, blocks made of buckets, and the lava of a block that did not set. */
+    private BlockPos made, madeWater, madeLava;
     private int madeStep, fromBuckets;
     private long madeAt;
     private Set<BlockPos> stands = Set.of();
@@ -116,7 +116,7 @@ final class CompanionObsidian {
         if (refusal != null) return CompanionActionResult.failed(refusal);
         reset();
         wanted = count; before = w.items.countCarried(Items.OBSIDIAN); mined = pours = 0; water = null; ending = null; nextLook = settleAt = 0; retried = false;
-        made = madeWater = null; madeStep = fromBuckets = 0; madeAt = 0;
+        made = madeWater = madeLava = null; madeStep = fromBuckets = 0; madeAt = 0;
         his.clear(); passed.clear();
         return null;
     }
@@ -175,6 +175,12 @@ final class CompanionObsidian {
 
     private void end(CompanionActionResult result) {
         if (water != null) { ending = result; return; }
+        // The lava of a block that did not set goes back into his empty bucket once his water is in its own.
+        if (madeLava != null && c.level() instanceof ServerLevel level) {
+            boolean back = takeLavaBack(c, level, madeLava);
+            event(back ? "obsidian_lava_scooped" : "obsidian_lava_left", "lava", madeLava.toShortString(), "took", back);
+        }
+        madeLava = null;
         if (mined > got()) c.retryHarvestPickup();
         ending = null;
         reset();
@@ -185,7 +191,7 @@ final class CompanionObsidian {
     void cancel() {
         if (water != null && c.level() instanceof ServerLevel level && inReach(level, water)) CompanionWaterBucket.scoopInto(c, level, water);
         if (madeWater != null && c.level() instanceof ServerLevel level && inReach(level, madeWater)) CompanionWaterBucket.scoopInto(c, level, madeWater);
-        water = madeWater = null; made = null; madeStep = 0; ending = null;
+        water = madeWater = null; made = madeLava = null; madeStep = 0; ending = null;
         reset();
     }
 
@@ -284,7 +290,11 @@ final class CompanionObsidian {
                 // What he mined and has not picked up yet is picked up before he says how far he got.
                 if (mined > got) { collect(level, got); return; }
                 // No lava here to cool: with his own bucket of lava and his water he makes the obsidian where he stands.
-                if (slot(Items.LAVA_BUCKET) >= 0 && slot(Items.WATER_BUCKET) >= 0) { madeStep = MADE_DIG; return; }
+                boolean lavaOfHis = slot(Items.LAVA_BUCKET) >= 0;
+                if (lavaOfHis && slot(Items.WATER_BUCKET) >= 0) { madeStep = MADE_DIG; return; }
+                // The one that is missing is named, never the lava he holds: with his own lava and no water, the water is what he lacks.
+                // The order stops there (the next one plans the water first), as it does when nothing is left to pour.
+                if (lavaOfHis) { end(false, NO_WATER + short_(got)); return; }
                 end(false, pours == 0 && got == 0 && fromBuckets == 0 ? NO_LAVA
                         : "Накопал " + got + " из " + wanted + (fromBuckets > 0 ? ": вёдра лавы кончились." : ": лава рядом кончилась."));
                 return;
@@ -376,9 +386,10 @@ final class CompanionObsidian {
                     event("obsidian_made", "block", block.toShortString());
                     return;
                 }
-                // Not set in time: his water comes back first, then he says so.
+                // Not set in time: his water comes back first (over the block it would float the drop), the lava he poured with it after
+                // — a source left standing in the hole is no use to him, and the empty bucket of the pour takes it back as his own does.
                 if (level.getGameTime() - madeAt > SET_TICKS) {
-                    water = madeWater; madeWater = null; made = null; madeStep = 0; reset();
+                    water = madeWater; madeWater = null; madeLava = made; made = null; madeStep = 0; reset();
                     end(false, NOT_SET + short_(got));
                     return;
                 }
@@ -470,6 +481,15 @@ final class CompanionObsidian {
         ItemStack empty = new ItemStack(Items.BUCKET);
         c.storeLoot(empty);
         if (!empty.isEmpty() && c.level() instanceof ServerLevel level) net.minecraft.world.level.block.Block.popResource(level, c.blockPosition(), empty);
+    }
+
+    /**
+     * The lava of his own pour back into an empty bucket of his, by the game's own bucket (the one the pour left empty): false when the
+     * cell holds no lava source any more, or he has no empty bucket to take it — then it stays, a source in a walled hole.
+     */
+    static boolean takeLavaBack(CompanionEntity c, ServerLevel level, BlockPos cell) {
+        return level.getFluidState(cell).isSourceOfType(net.minecraft.world.level.material.Fluids.LAVA)
+                && CompanionWaterBucket.scoopInto(c, level, cell);
     }
 
     /** His water back into the bucket it came from: true once it is (or gone, or given up as out of his way). */
