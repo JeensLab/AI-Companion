@@ -171,6 +171,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionBoatRide boatRide = new CompanionBoatRide(this);
     final CompanionWaterBucket waterBucket = new CompanionWaterBucket(this);
     final CompanionBoatClutch boatClutch = new CompanionBoatClutch(this);
+    /** The gate goal, so a gate he opened is shut when he leaves the world in the middle of it. */
+    private final CompanionGateGoal gateGoal = new CompanionGateGoal(this);
     /** Saplings for the stumps of the trees he fells (RYVTB). */
     final CompanionReplant replant = new CompanionReplant(this);
     final CompanionWaterFill waterFill = new CompanionWaterFill(this);
@@ -397,7 +399,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DANGER_POWDER_SNOW, -1.0F);
         this.goalSelector.addGoal(0, new CompanionSwimming.WadingFloatGoal(this));
         this.goalSelector.addGoal(0, new net.minecraft.world.entity.ai.goal.OpenDoorGoal(this, true));
-        this.goalSelector.addGoal(0, new CompanionGateGoal(this));
+        this.goalSelector.addGoal(0, this.gateGoal);
         this.goalSelector.addGoal(0, new CompanionCreeperGuard.GuardGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverSupportsGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverRouteGoal(this));
@@ -1196,6 +1198,12 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             CompanionEvents.companionDied(this, nbt.memory(), where, dropped);
         }
         super.die(source);
+    }
+
+    /** A gate he opened is shut when he is taken out of the world in the middle of it: a goal is not stopped then. */
+    @Override public void remove(net.minecraft.world.entity.Entity.RemovalReason reason) {
+        gateGoal.shutBehind();
+        super.remove(reason);
     }
 
 

@@ -11,13 +11,14 @@ import net.minecraft.world.level.pathfinder.Path;
 /**
  * A shut wooden fence gate on his route, opened, walked through and shut behind him as a door is (idea BDGLW, #105). The game's
  * own OpenDoorGoal knows only doors; a shut gate is a fence to it and to the game's judgement of cells. A gate a redstone signal
- * decides is never touched, and the gate he opened is shut again when he gives up or walks past it.
+ * decides is never touched. The state he found the gate in is remembered: only the gate he opened himself is shut again when he
+ * gives up, walks past it or leaves the world in the middle of it, a gate found open stays open.
  */
 final class CompanionGateGoal extends Goal {
     private final CompanionEntity companion;
-    /** The gate he is walking through, where he found it shut, and whether he is the one who opened it. */
+    /** The gate he is walking through, whether he found it open, and whether he is the one who opened it. */
     private BlockPos gate = BlockPos.ZERO;
-    private boolean opened, passed;
+    private boolean foundOpen, opened, passed;
     private float gateDirX, gateDirZ;
     private int forgetTime;
 
@@ -40,6 +41,8 @@ final class CompanionGateGoal extends Goal {
 
     @Override public void start() {
         forgetTime = 20; opened = false; passed = false;
+        BlockState found = companion.level().getBlockState(gate);
+        foundOpen = found.getBlock() instanceof FenceGateBlock && found.getValue(FenceGateBlock.OPEN);
         gateDirX = (float)(gate.getX() + .5 - companion.getX());
         gateDirZ = (float)(gate.getZ() + .5 - companion.getZ());
         set(true);
@@ -53,9 +56,18 @@ final class CompanionGateGoal extends Goal {
         if (!passed) set(true);
     }
 
-    @Override public void stop() { if (opened) set(false); opened = false; }
+    @Override public void stop() { shutBehind(); }
 
     @Override public boolean requiresUpdateEveryTick() { return true; }
+
+    /**
+     * Shut the gate he opened himself: when he gives up, walks past it, or is taken out of the world in the middle of it
+     * (a goal's stop() is not called for an entity removed with the gate still open). A gate found open stays as it was found.
+     */
+    void shutBehind() {
+        if (opened && !foundOpen && companion.level().isLoaded(gate)) set(false);
+        opened = false; foundOpen = false; passed = false; forgetTime = 0;
+    }
 
     /** A shut wooden gate he may open by hand: no redstone signal decides it. */
     private static boolean shutByHand(net.minecraft.world.level.Level level, BlockPos at) {
@@ -68,9 +80,12 @@ final class CompanionGateGoal extends Goal {
         var level = companion.level();
         BlockState state = level.getBlockState(gate);
         if (!(state.getBlock() instanceof FenceGateBlock block)) return;
-        if (state.getValue(FenceGateBlock.OPEN) == open) { if (open) opened = true; return; }
+        // Already as he wants it: not his doing, so it is not his to shut later.
+        if (state.getValue(FenceGateBlock.OPEN) == open) return;
         if (level.hasNeighborSignal(gate)) return;
-        level.setBlock(gate, state.setValue(FenceGateBlock.OPEN, open), 3);
+        // Flag 10 as the game's OpenDoorGoal: clients see it, and the known shape of the cells around is updated, so the path
+        // through the opened gate is walked rather than judged against the shut gate he was stopped at.
+        level.setBlock(gate, state.setValue(FenceGateBlock.OPEN, open), 10);
         level.playSound(null, gate, open ? block.openSound : block.closeSound, SoundSource.BLOCKS, 1F, 1F);
         if (open) opened = true;
     }
