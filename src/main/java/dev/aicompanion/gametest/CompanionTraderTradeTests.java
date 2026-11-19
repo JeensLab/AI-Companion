@@ -354,6 +354,25 @@ public final class CompanionTraderTradeTests {
         h.succeed();
     }
 
+    /**
+     * A fresh villager's goods are fixed for good by the first trade, so the model's consent flag counts only when the player's own words
+     * answer yes: on «купи стрел» the flag is dropped (the server then asks), on «да, меняем» it stays.
+     */
+    @GameTest(template = "empty")
+    public static void theConsentForAFreshVillagerIsThePlayersOwnYes(GameTestHelper h) {
+        var plan = CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"trade_items\",\"item\":\"arrow\",\"consent\":true}]"));
+        var decoded = new dev.aicompanion.client.CompanionReply("Ага, схожу обменяюсь.", plan);
+        for (String asked : new String[]{"купи стрел у лучника", "нет, не надо", "да не, не меняй"}) {
+            var order = dev.aicompanion.entity.CompanionTradeOrder.parse(dev.aicompanion.client.CompanionPlanRequirements.apply(asked, decoded).actions().getFirst().item());
+            h.assertTrue(order != null && !order.consent(), "Consent kept on «" + asked + "»: " + order);
+        }
+        for (String yes : new String[]{"да", "Да, меняем!", "давай", "ок, бери", "конечно"}) {
+            var order = dev.aicompanion.entity.CompanionTradeOrder.parse(dev.aicompanion.client.CompanionPlanRequirements.apply(yes, decoded).actions().getFirst().item());
+            h.assertTrue(order != null && order.consent() && order.get().equals("minecraft:arrow"), "Consent dropped on «" + yes + "»: " + order);
+        }
+        h.succeed();
+    }
+
     /** Stopped on the way to the trader: nothing is paid, the trader is as he was. */
     @GameTest(template = "tall_tree", timeoutTicks = 600, batch = "trade6")
     public static void stoppingOnTheWayCostsNothing(GameTestHelper h) {
