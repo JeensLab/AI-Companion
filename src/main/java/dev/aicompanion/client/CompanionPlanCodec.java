@@ -24,6 +24,9 @@ public final class CompanionPlanCodec {
     static final int FLINT_DEFAULT = 2;
     /** The items a gather_loose order may name: the loose blocks the server digs with a shovel, and the flint in gravel. */
     private static final Set<String> LOOSE_ITEMS = Set.of("minecraft:sand", "minecraft:red_sand", "minecraft:gravel", FLINT);
+    /** The stone dug by name where it shows (CompanionPickable): obtain_item's, not gather_stone's, which digs any stone. */
+    private static final Set<String> NAMED_STONE = Set.of("minecraft:granite", "minecraft:diorite", "minecraft:andesite", "minecraft:tuff", "minecraft:calcite",
+            "minecraft:cobbled_deepslate");
     /** One invoke of the plan tool: its parameters are read inside its own tags, so another invoke's repeat is not taken for this plan's. */
     private static final Pattern DSML_INVOKE = Pattern.compile("(?s)<\\|DSML\\|invoke\\s+name=\"queue_companion_plan\"[^>]*>(.*?)</\\|DSML\\|invoke>");
     private static final Pattern DSML_STEPS = Pattern.compile("(?s)<\\|DSML\\|parameter\\s+name=\"steps\"[^>]*>(.*?)</\\|DSML\\|parameter>");
@@ -188,6 +191,10 @@ public final class CompanionPlanCodec {
                 if (("build_house".equals(type) || "sort_chests".equals(type) || "set_home".equals(type) || "build_portal".equals(type) || "build_cobble_gen".equals(type) || "build_golem".equals(type) || "campfire_song".equals(type)) && count != 1) throw invalid();
                 if ("wait".equals(type) && (seconds < 1 || seconds > 30)) throw invalid();
                 String item = step.has("item") ? step.get("item").getAsString().trim() : "";
+                // gather_stone digs any stone: granite, tuff or cobbled deepslate named there is obtain_item's, dug by name where it shows
+                // (in game 17.11: «добудь 2 диорита» given to gather_stone dug two of plain stone and said done).
+                String stoneId = item.contains(":") ? item : "minecraft:" + item;
+                if ("gather_stone".equals(type) && NAMED_STONE.contains(stoneId)) { type = "obtain_item"; item = stoneId; }
                 // «Подбери всё» may come with no item or with a word for the whole ground: the codec's own meaning for any drop.
                 if ("pick_up".equals(type) && (item.isEmpty() || "any".equals(item) || "all".equals(item) || "minecraft:all".equals(item)))
                     item = dev.aicompanion.entity.CompanionPickUp.ANY_ITEM;

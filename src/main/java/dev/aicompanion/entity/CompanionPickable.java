@@ -31,7 +31,11 @@ import java.util.Set;
  * a dead bush) is a source for shears. What grows on the bed of the sea holds its water (kelp, seagrass, a sea pickle), and a coral
  * block gives the dead block to a pickaxe: those are sources too (CompanionPicking dives for them).
  *
- * Left to other skills and later work: what a pickaxe mines (stone of every kind: the mine), crops and saplings (the farm and the
+ * A player digs granite, diorite, andesite, tuff and calcite by name where a face of them shows, and deepslate for its cobbles
+ * (the player 17.11): those stones are sources too, though the first three have recipes (of the Nether's quartz; CompanionPicking
+ * takes only what shows).
+ *
+ * Left to other skills and later work: what a pickaxe mines (any other stone: the mine), crops and saplings (the farm and the
  * replanting are his own; a young crop broken for its seed is a loss), blocks that hold things.
  */
 final class CompanionPickable {
@@ -42,6 +46,8 @@ final class CompanionPickable {
     private static final int ROLLS = 16;
     /** Light of a lamp: a brown mushroom glows at one, glowstone and the lanterns at fifteen. */
     private static final int LAMP = 10;
+    /** The stone a player digs by name where it shows; deepslate gives cobbled deepslate. */
+    private static final Set<Block> STONES = Set.of(Blocks.GRANITE, Blocks.DIORITE, Blocks.ANDESITE, Blocks.TUFF, Blocks.CALCITE, Blocks.DEEPSLATE);
     // ponytail: built once for a server; a data pack reloaded in a running world keeps the old tables until the world is reopened.
     private static WeakReference<MinecraftServer> builtFor = new WeakReference<>(null);
     private static Map<Item, List<Source>> sources = Map.of();
@@ -73,7 +79,7 @@ final class CompanionPickable {
             ItemStack given = sure(level, state, tool(state));
             boolean shears = given.isEmpty();
             if (shears) given = sure(level, state, new ItemStack(Items.SHEARS));
-            if (given.isEmpty() || made.contains(given.getItem())) continue;
+            if (given.isEmpty() || made.contains(given.getItem()) && !STONES.contains(block)) continue;
             found.computeIfAbsent(given.getItem(), key -> new ArrayList<>()).add(new Source(block, given.getCount(), shears));
         }
         return found;
@@ -107,12 +113,22 @@ final class CompanionPickable {
         // a stripped block (stripping is not his skill, so one that stands was put there).
         if (state.getLightEmission() >= LAMP || state.getBlock() instanceof FallingBlock || state.is(Blocks.SNIFFER_EGG)
                 || BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath().startsWith("stripped_")) return false;
-        // The mine has no coral: the block is mined here for the dead block it gives. Nor has it the Nether's own stone, which any pickaxe takes.
-        return !state.is(BlockTags.MINEABLE_WITH_PICKAXE) || state.is(BlockTags.CORAL_BLOCKS) || nether(state.getBlock());
+        // The mine has no coral: the block is mined here for the dead block it gives. Nor has it the Nether's own stone, which any pickaxe
+        // takes, nor the stone dug by name.
+        return !state.is(BlockTags.MINEABLE_WITH_PICKAXE) || state.is(BlockTags.CORAL_BLOCKS) || nether(state.getBlock()) || stone(state.getBlock());
     }
 
     /** The Nether's own stone: the only sources he takes there (CompanionPicking), the rest of this skill's kinds stay in the overworld. */
     static boolean nether(Block block) { return block == Blocks.NETHERRACK || block == Blocks.BASALT; }
+
+    /** The stone dug by name (granite, tuff, deepslate…): taken only where a face of it shows (CompanionPicking). */
+    static boolean stone(Block block) { return STONES.contains(block); }
+
+    /** Whether the item is that stone's (granite, cobbled deepslate): dug where it shows, else made at home, never fetched from the Nether. */
+    static boolean stone(ServerLevel level, Item item) {
+        List<Source> all = sources(level, item);
+        return !all.isEmpty() && all.stream().allMatch(source -> stone(source.block()));
+    }
 
     /** Whether every block that gives the item wants a pickaxe (a coral block for the dead one). */
     static boolean mined(ServerLevel level, Item item) {

@@ -57,7 +57,7 @@ public final class CompanionGatherBlockTests {
         h.assertTrue(!bare.refused() && bare.steps().getLast().equals(new CompanionObtain.Step("gather_block", "minecraft:snowball", 2))
                 && bare.steps().contains(new CompanionObtain.Step("craft_item", "minecraft:wooden_shovel", 1)), "Snowball with no shovel: " + bare);
         // Chance drops, the mine's stone, crops and saplings, someone's lamp, egg or trap: no block is broken for them.
-        for (String item : List.of("minecraft:tuff", "minecraft:wheat_seeds", "minecraft:oak_sapling", "minecraft:apple",
+        for (String item : List.of("minecraft:cobblestone", "minecraft:wheat_seeds", "minecraft:oak_sapling", "minecraft:apple",
                 "minecraft:glowstone_dust", "minecraft:prismarine_crystals", "minecraft:dragon_egg", "minecraft:sniffer_egg", "minecraft:ochre_froglight", "minecraft:stripped_bamboo_block", "minecraft:string")) {
             var plan = CompanionObtain.plan(level, List.of(), false, item, 1, thing -> true);
             h.assertTrue(plan.steps().stream().noneMatch(step -> step.type().equals("gather_block") && step.item().equals(item)), item + " is not picked: " + plan);
@@ -392,6 +392,118 @@ public final class CompanionGatherBlockTests {
             h.assertTrue(nether.getBlockState(hung[0]).is(block), "The block with nothing under it was broken");
             c[0].discard();
             nether.setChunkForced(chunk.x, chunk.z, false);
+        });
+    }
+
+    /**
+     * Plan only (the player 17.11): granite, diorite, andesite, tuff, calcite and cobbled deepslate are dug by name where a face of
+     * them shows about him, as a player does it; none in sight is said, never fetched by a trip to the Nether for quartz. Quartz in his
+     * bag makes them at home, a diorite about him makes andesite, the deepslate about him makes polished deepslate.
+     */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void stoneByNameIsDugWhereItShows(GameTestHelper h) {
+        var level = h.getLevel();
+        var portal = new CompanionObtain.Trip(h.absolutePos(new BlockPos(1, 2, 1)), false);
+        var pick = List.of(new ItemStack(Items.STONE_PICKAXE));
+        for (String item : List.of("minecraft:granite", "minecraft:diorite", "minecraft:andesite", "minecraft:tuff", "minecraft:calcite", "minecraft:cobbled_deepslate")) {
+            var plan = CompanionObtain.plan(level, pick, false, item, 6, thing -> true, null, portal);
+            h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("gather_block", item, 6))), item + " seen about him: " + plan);
+        }
+        var bare = CompanionObtain.plan(level, List.of(), false, "minecraft:granite", 2, thing -> true);
+        h.assertTrue(!bare.refused() && bare.steps().getLast().equals(new CompanionObtain.Step("gather_block", "minecraft:granite", 2))
+                && bare.steps().contains(new CompanionObtain.Step("craft_item", "minecraft:wooden_pickaxe", 1)), "Granite with no pickaxe: " + bare);
+        var unseen = CompanionObtain.plan(level, pick, false, "minecraft:granite", 2, thing -> false, null, portal);
+        h.assertTrue(unseen.refused() && unseen.steps().isEmpty() && unseen.refusal().contains("Рядом не вижу") && unseen.refusal().contains("пещер"), "Granite not seen: " + unseen);
+        var quartz = CompanionObtain.plan(level, List.of(new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.QUARTZ, 4)), false, "minecraft:granite", 1, thing -> false, null, portal);
+        h.assertTrue(!quartz.refused() && quartz.steps().getLast().equals(new CompanionObtain.Step("craft_item", "minecraft:granite", 1))
+                && quartz.steps().stream().noneMatch(step -> step.type().startsWith("nether_") || step.type().equals("mine_ore")), "Granite of the quartz he carries: " + quartz);
+        var andesite = CompanionObtain.plan(level, pick, false, "minecraft:andesite", 2, thing -> thing == Items.DIORITE, null, portal);
+        h.assertTrue(!andesite.refused() && andesite.steps().contains(new CompanionObtain.Step("gather_block", "minecraft:diorite", 1))
+                && andesite.steps().getLast().equals(new CompanionObtain.Step("craft_item", "minecraft:andesite", 2)), "Andesite of a diorite about him: " + andesite);
+        var polished = CompanionObtain.plan(level, pick, true, "minecraft:polished_deepslate", 4, thing -> thing == Items.COBBLED_DEEPSLATE);
+        h.assertTrue(polished.steps().equals(List.of(new CompanionObtain.Step("gather_block", "minecraft:cobbled_deepslate", 4), new CompanionObtain.Step("craft_item", "minecraft:polished_deepslate", 4))),
+                "Polished deepslate of the deepslate about him, not of any stone: " + polished);
+        // Four crafts deep and no pickaxe in the bag: the pickaxe is made too, it is no link of that chain.
+        var tiles = CompanionObtain.plan(level, List.of(), true, "minecraft:deepslate_tiles", 4, thing -> thing == Items.COBBLED_DEEPSLATE);
+        h.assertTrue(!tiles.refused() && tiles.steps().contains(new CompanionObtain.Step("gather_block", "minecraft:cobbled_deepslate", 4))
+                && tiles.steps().contains(new CompanionObtain.Step("craft_item", "minecraft:wooden_pickaxe", 1))
+                && tiles.steps().getLast().equals(new CompanionObtain.Step("craft_item", "minecraft:deepslate_tiles", 4)), "Deepslate tiles with no pickaxe: " + tiles);
+        // «Добудь 2 диорита» given to gather_stone (in game 17.11: two of plain stone dug, and «готово»): that action digs any stone,
+        // so the stone dug by name is obtain_item's, named with its namespace or without; its own kinds and anything else stay with it.
+        var given = CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"gather_stone\",\"item\":\"minecraft:diorite\",\"count\":2},"
+                + "{\"action\":\"gather_stone\",\"item\":\"granite\",\"count\":2},{\"action\":\"gather_stone\",\"item\":\"minecraft:cobblestone\",\"count\":3},"
+                + "{\"action\":\"gather_stone\",\"item\":\"minecraft:deepslate\",\"count\":3},{\"action\":\"gather_stone\",\"item\":\"minecraft:furnace\",\"count\":3}]"));
+        h.assertTrue(given.size() == 5 && given.get(0).type().equals("obtain_item") && given.get(0).item().equals("minecraft:diorite") && given.get(0).count() == 2
+                && given.get(1).type().equals("obtain_item") && given.get(1).item().equals("minecraft:granite")
+                && given.subList(2, 5).stream().allMatch(step -> step.type().equals("gather_stone")), "Stone named to gather_stone: " + given);
+        // In game 17.11 a longer line was heard as «С этим пока не справился»: with the longest name the ask is said whole.
+        String line = "«Колотый глубинный сланец» вижу только у лавы, не трогал: отведи меня к склону или в пещеру.";
+        String said = dev.aicompanion.client.CompanionDialogue.summarize(List.of(new dev.aicompanion.client.PlannedAction("gather_block", 0, 2, "minecraft:cobbled_deepslate")),
+                "План остановлен: " + line);
+        h.assertTrue(said.equals(line), "Said: " + said);
+        h.succeed();
+    }
+
+    /**
+     * «Добудь 2 гранита, потом туф»: two blocks of granite show on the ground farther off. Nearer ones he leaves: one lies under the
+     * dirt, one the player set down (his path), one holds a torch, one holds a pond back. The tuff shows only into a sealed hollow
+     * under the ground: he says he cannot get to it and asks to be led to a slope or a cave, and it is left whole.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void graniteThatShowsIsDugAndTheHiddenIsLeft(GameTestHelper h) {
+        ground(h);
+        BlockPos hidden = new BlockPos(14, GROUND - 2, 16);
+        h.setBlock(hidden, Blocks.GRANITE);
+        List<BlockPos> shown = List.of(new BlockPos(20, GROUND, 16), new BlockPos(20, GROUND + 1, 20));
+        for (BlockPos cell : shown) h.setBlock(cell, Blocks.GRANITE);
+        BlockPos lit = new BlockPos(16, GROUND + 1, 13), torch = lit.north();
+        h.setBlock(lit, Blocks.GRANITE);
+        h.setBlock(torch, Blocks.WALL_TORCH.defaultBlockState().setValue(net.minecraft.world.level.block.WallTorchBlock.FACING, net.minecraft.core.Direction.NORTH));
+        BlockPos shore = new BlockPos(17, GROUND, 19);
+        h.setBlock(shore, Blocks.GRANITE);
+        h.setBlock(shore.south(), Blocks.WATER);
+        BlockPos tuff = new BlockPos(9, GROUND - 2, 12);
+        h.setBlock(tuff, Blocks.TUFF);
+        for (int y = GROUND - 3; y <= GROUND - 2; y++) h.setBlock(new BlockPos(8, y, 12), Blocks.AIR);
+        CompanionEntity c = spawn(h, 12, 16);
+        BlockPos path = new BlockPos(15, GROUND, 18);
+        placedByPlayer(h, c, path, Blocks.GRANITE);
+        c.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:granite\",\"count\":2},{\"action\":\"obtain_item\",\"item\":\"minecraft:tuff\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.GRANITE) == 2, "Not two granite: " + count(c, Items.GRANITE) + ", " + report);
+            h.assertTrue(count(c, Items.TUFF) == 0 && report.contains("подойти не смог") && report.contains("склону"), "Tuff in a sealed hollow: " + report);
+            for (BlockPos cell : shown) h.assertBlockNotPresent(Blocks.GRANITE, cell);
+            for (BlockPos cell : List.of(hidden, path, lit, shore)) h.assertBlockPresent(Blocks.GRANITE, cell);
+            h.assertBlockPresent(Blocks.WALL_TORCH, torch);
+            h.assertBlockPresent(Blocks.TUFF, tuff);
+        });
+    }
+
+    /**
+     * «Добудь туф»: a sealed hollow under the ground nearer to him is lined with twelve faces of tuff, a block of it stands on the
+     * ground farther off. The first face he finds no way to marks the whole hollow: its other faces are passed without a search and
+     * do not end the order, and the tuff on the ground is dug. The hollow is left whole.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void tuffBeyondASealedHollowIsReached(GameTestHelper h) {
+        ground(h);
+        List<BlockPos> lining = new java.util.ArrayList<>();
+        for (int x = 6; x <= 8; x++) for (int z = 10; z <= 12; z++) for (int y = GROUND - 3; y <= GROUND - 2; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        for (int y = GROUND - 3; y <= GROUND - 2; y++) for (int i = 0; i < 3; i++) { lining.add(new BlockPos(5, y, 10 + i)); lining.add(new BlockPos(6 + i, y, 9)); }
+        for (BlockPos cell : lining) h.setBlock(cell, Blocks.TUFF);
+        BlockPos shown = new BlockPos(22, GROUND + 1, 22);
+        h.setBlock(shown, Blocks.TUFF);
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:tuff\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            h.assertTrue(count(c, Items.TUFF) == 1, "Not the tuff on the ground: " + count(c, Items.TUFF) + ", " + future.join().report());
+            h.assertBlockNotPresent(Blocks.TUFF, shown);
+            for (BlockPos cell : lining) h.assertBlockPresent(Blocks.TUFF, cell);
         });
     }
 

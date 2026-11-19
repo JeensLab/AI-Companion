@@ -83,6 +83,8 @@ public final class CompanionObtain {
     /** A step of the chain is Nether-only and is fetched through the portal; and why the trip cannot be made (no portal, no chunk loading: said instead of any other refusal). */
     private boolean viaNether;
     private String errandRefusal;
+    /** Stone dug by name is being made of what he carries: nothing is fetched from the Nether for it. */
+    private boolean home;
     /** He carries a sword or an axe for a fight. */
     private final boolean blade;
     /** What he would pick and does not see about him: named when the plan is refused. */
@@ -139,7 +141,8 @@ public final class CompanionObtain {
         if (grown != null) return planner.stripped(id, item, grown.asItem(), count);
         // Wood of a species that chopping does not give: the wood block is crafted of its own logs.
         if (species != null) return namedWood(carried, id, item, count);
-        String target = key(item);
+        // Cobbled deepslate by name is that stone, dug where the deepslate shows (stone below), not any of the family.
+        String target = CompanionPickable.stone(level, item) ? id.toString() : key(item);
         // Stone is a family inside a chain only: asked for by name, digging promises cobblestone and nothing else.
         if (target.equals(STONE) && item != Items.COBBLESTONE)
             return new Plan(List.of(), carried(carried, item) >= count ? null : "Камень копаю какой попадётся: именно «" + name(item) + "» добыть не умею.");
@@ -311,6 +314,7 @@ public final class CompanionObtain {
         if (CompanionChores.fleece(item) != null && about(item) && shears(depth)) return addSplit("shear_sheep", key, count, 64);
         // A blow at a shorn sheep gives no wool: where the world about him is known, one is hunted for it only if it wears white wool.
         if (item == Items.WHITE_WOOL && grows != null && !about(item)) { absent.add("овцы с шерстью"); return refuse(ABSENT + " овцы, на которой есть шерсть."); }
+        if (CompanionPickable.stone(level, item)) return stone(item, key, count, depth);
         if (viaPortal(item)) return nether(item, count, depth);
         for (CompanionOre.Kind ore : CompanionOre.Kind.values())
             if (ore.drop == item) return addSplit("mine_ore", "minecraft:" + ore.key() + "_ore", ceil(count, perOre(ore)), CompanionWork.MAX_ORE);
@@ -341,9 +345,7 @@ public final class CompanionObtain {
         // A block gives it when broken (sugar cane, a flower, clay): found and picked, if one is to be had here.
         // What only shears take (leaves, a vine, a cobweb): his shears, made by the whole chain if he has none, as for a comb.
         // A coral block is mined for the dead one: any pickaxe of his, else a wooden one. Snow gives snowballs to a shovel only: the same.
-        if (picked(item)) return (!CompanionPickable.shorn(level, item) || hasShears() || need("minecraft:shears", 1, depth + 1))
-                && (!CompanionPickable.mined(level, item) || hasPickaxe() || need("minecraft:wooden_pickaxe", 1, depth + 1))
-                && (!CompanionPickable.shoveled(level, item) || hasShovel() || need("minecraft:wooden_shovel", 1, depth + 1)) && addSplit("gather_block", key, count, 64);
+        if (picked(item)) return gather(item, key, count, depth);
         // A monster drops it (string, a bone, gunpowder): fought for, if one is about.
         List<String> prey = CompanionMobDrops.names(level, item);
         // Not with bare hands (in game 12.11: five spiders, one killed, and he was dead): a wooden sword first, unless he carries a blade.
@@ -351,6 +353,35 @@ public final class CompanionObtain {
         if (!CompanionPickable.sources(level, item).isEmpty()) { absent.add(name(item)); return refuse(ABSENT + ", где взять «" + name(item) + "»: отведи меня туда, где это есть."); }
         if (!prey.isEmpty()) { absent.add(name(item) + " (" + String.join(", ", prey) + ")"); return refuse(ABSENT + ", с кого добыть «" + name(item) + "» (" + String.join(", ", prey) + ")."); }
         return refuse("Не знаю, где взять «" + name(item) + "»: копать, охотиться, плавить и крафтить его я не умею" + (why == null ? "." : ". " + why));
+    }
+
+    /** gather_block with the tool the block wants: his shears, pickaxe or shovel, else one made by the whole chain first. */
+    private boolean gather(Item item, String key, int count, int depth) {
+        return (!CompanionPickable.shorn(level, item) || hasShears() || need("minecraft:shears", 1, depth + 1))
+                && (!CompanionPickable.mined(level, item) || hasPickaxe() || need("minecraft:wooden_pickaxe", 1, depth + 1))
+                && (!CompanionPickable.shoveled(level, item) || hasShovel() || need("minecraft:wooden_shovel", 1, depth + 1)) && addSplit("gather_block", key, count, 64);
+    }
+
+    /**
+     * Granite, tuff, cobbled deepslate…: dug where a face of it shows about him, else made of what he carries; never of quartz fetched
+     * from the Nether for it (the player 17.11: no player goes there for granite), and none in sight is said.
+     */
+    private boolean stone(Item item, String key, int count, int depth) {
+        // Cobbled deepslate is counted with the family in the bag: what he carries of it is taken off here, as for a stripped log.
+        int lacking = key(item).equals(STONE) ? count - carried(carried, item) : count;
+        if (lacking <= 0) return true;
+        // The pickaxe is no link of the stone's chain (deepslate tiles are four crafts deep): its own chain counts from the top.
+        if (picked(item)) return gather(item, key, lacking, 0);
+        boolean wasHome = home;
+        home = true;
+        try {
+            if (craft(item, lacking, depth)) return true;
+        } finally {
+            home = wasHome;
+        }
+        absent.add(name(item));
+        // Short enough to be said whole with the longest name (cobbled deepslate).
+        return refuse(ABSENT + " «" + name(item) + "»: отведи меня к склону или в пещеру, где он есть.");
     }
 
     /**
@@ -367,6 +398,7 @@ public final class CompanionObtain {
     /** The steps of the Nether trip for the item: a pickaxe made at home first (none can be made there), then the digging itself. */
     private boolean nether(Item item, int count, int depth) {
         boolean away = level.dimension() == Level.NETHER;
+        if (home) return false;
         if (!away && (trip == null || trip.portal() == null)) { errandRefusal = CompanionErrand.NO_PORTAL; return refuse(CompanionErrand.NO_PORTAL); }
         if (!away && !trip.chunks()) { errandRefusal = CompanionErrand.CHUNKS_OFF; return refuse(CompanionErrand.CHUNKS_OFF); }
         if (!hasPickaxe()) {
@@ -427,9 +459,10 @@ public final class CompanionObtain {
     /** Of the items an ingredient takes, the one already carried, else the one with the shortest chain; null if none can be got. */
     private String cheapest(Ingredient ingredient, int count, int depth) {
         if (ingredient == null) return null;
-        // A recipe that names one stripped block (a hanging sign) takes no other log: that block, not the family of logs.
+        // A recipe that names one stripped block (a hanging sign) takes no other log: that block, not the family of logs. So with
+        // cobbled deepslate (polished deepslate): that stone, not any.
         ItemStack[] named = ingredient.getItems();
-        if (named.length == 1 && CompanionChores.unstripped(named[0].getItem()) != null) return cheapest(List.of(BuiltInRegistries.ITEM.getKey(named[0].getItem()).toString()), count, depth);
+        if (named.length == 1 && (CompanionChores.unstripped(named[0].getItem()) != null || CompanionPickable.stone(level, named[0].getItem()))) return cheapest(List.of(BuiltInRegistries.ITEM.getKey(named[0].getItem()).toString()), count, depth);
         List<String> options = new ArrayList<>();
         for (ItemStack option : ingredient.getItems()) { String key = key(option.getItem()); if (!options.contains(key)) options.add(key); }
         return cheapest(options, count, depth);

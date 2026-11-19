@@ -22,6 +22,7 @@ import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -35,7 +36,8 @@ import java.util.function.Predicate;
  * the root is left to grow; cocoa is taken ripe; what only shears take (leaves, a vine, a cobweb) is cut with his shears, and a leaf
  * block someone set down (it does not fade) is left; nothing is taken where the player builds (his flower bed, his cane by the house),
  * but for a pumpkin or a melon at its stem there, his harvest (the stem stays to bear again), nor outside
- * the overworld, but for the Nether's own stone there (netherrack, basalt; never beside lava); the End is later work. What grows on the bed of the water (kelp, seagrass, a sea pickle, a coral
+ * the overworld, but for the Nether's own stone there (netherrack, basalt; never beside lava); the End is later work. Granite, tuff
+ * and the other stone dug by name are taken where a face of them shows, not out of the ground. What grows on the bed of the water (kelp, seagrass, a sea pickle, a coral
  * block) he swims over and dives for, as for a foe under water (CompanionSwimming): under open water no deeper than his breath
  * takes him, never under a roof; what only lies under water (clay in a pond) is left for the dry kind.
  */
@@ -57,12 +59,26 @@ final class CompanionPicking {
     private static final double REACH = 4.5;
     /** Ticks over the block, down and up for air, before it is passed over. */
     private static final int DIVE = 900;
+    /**
+     * Searches for a way to the stone dug by name that found none, before he says so. Each marks the hollow behind the face, so its
+     * other faces are passed without another search: this counts the hollows (and the faces of a cave too big to mark), not faces.
+     */
+    private static final int STONE_TRIES = 8;
+    /** Open cells a hollow is marked up to: more is no hollow but the open ground or a cave system, and only the face's cells are. */
+    private static final int HOLLOW = 2048;
 
     private final CompanionWork w;
     /** The work is made before it knows its owner: taken at the order. */
     private CompanionEntity c;
     private Item item;
     private List<CompanionPickable.Source> sources = List.of();
+    /** The order is for the stone dug by name (granite, tuff…). */
+    private boolean stone;
+    /** Searches for a way to a stone face that found none, and the cells no way leads to: the hollows behind those faces. */
+    private int missed;
+    private final Set<BlockPos> unreached = new HashSet<>();
+    /** The last walk ended because the search found no way (not a wait, not walks without progress). */
+    private boolean noWay;
     /** Ordered, in his bag at the order, dropped by the blocks he broke (picked up or not). */
     private int wanted, before, due;
     private long settleAt;
@@ -87,8 +103,10 @@ final class CompanionPicking {
         sources = asked == null || !(c.level() instanceof ServerLevel level) ? List.of() : allowed(level, CompanionPickable.sources(level, asked));
         if (sources.isEmpty()) return CompanionActionResult.failed("Такое я с земли не собираю: " + id + ".");
         item = asked; wanted = count; before = w.items.countCarried(item); due = 0; settleAt = 0; retried = false;
+        stone = sources.stream().allMatch(source -> CompanionPickable.stone(source.block()));
+        missed = 0;
         release();
-        passed.clear(); lavaKept.clear();
+        passed.clear(); lavaKept.clear(); unreached.clear();
         return null;
     }
 
@@ -107,7 +125,7 @@ final class CompanionPicking {
     /** Whether one of these blocks stands within his search radius where he may take it. */
     static boolean near(CompanionEntity c, ServerLevel level, List<CompanionPickable.Source> sources) {
         List<CompanionPickable.Source> here = allowed(level, sources);
-        return !here.isEmpty() && find(c, level, here, sites(c, level), Set.of(), new HashSet<>()) != null;
+        return !here.isEmpty() && find(c, level, here, kept(c, level), Set.of(), new HashSet<>()) != null;
     }
 
     /** What is taken in this dimension: the overworld's own, not the Nether's stone (put there by the player), in the Nether only that stone, nothing elsewhere. */
@@ -125,6 +143,13 @@ final class CompanionPicking {
     private static boolean lavaBeside(ServerLevel level, BlockPos pos) {
         for (Direction side : Direction.values()) if (CompanionLava.at(level, pos.relative(side))) return true;
         return false;
+    }
+
+    /** What he leaves where it stands: the player's buildings, and the stone the player set down anywhere (a path, a wall of andesite). */
+    private static Predicate<BlockPos> kept(CompanionEntity c, ServerLevel level) {
+        if (c.getOwnerId() == null) return pos -> false;
+        Predicate<BlockPos> site = sites(c, level), stone = CompanionPlayerBuilds.get(level.getServer()).placedStone(c.getOwnerId(), level);
+        return pos -> site.test(pos) || stone.test(pos);
     }
 
     static Predicate<BlockPos> sites(CompanionEntity c, ServerLevel level) {
@@ -153,6 +178,10 @@ final class CompanionPicking {
     /** A block of the kind he may take now: dry, not on a site of the player's (but the fruit of a stem), ripe, and not the root of a growing column. */
     private static boolean takes(ServerLevel level, BlockPos pos, Predicate<BlockPos> site) {
         BlockState state = level.getBlockState(pos);
+        // Stone dug by name where a face of it shows, as a player sees it: one hidden in the ground is not dug for (the player 17.11);
+        // nor one that holds a torch or a pond back, as gather_stone leaves them.
+        if (CompanionPickable.stone(state.getBlock()) && (!shows(level, pos) || CompanionLighting.supportsLight(level, pos) || CompanionLava.floods(level, pos, List.of())))
+            return false;
         if (site.test(pos) && !CompanionCrops.onStem(level, pos)) return false;
         // Clay on the bed of a pond has no water in its own cell: the water over it counts too. Only what grows there is dived for.
         // A coral block under another one, or a sea pickle sat on it, is not under open water: none of it is dived for.
@@ -167,6 +196,12 @@ final class CompanionPicking {
         // The block above the root, within his reach from the ground: the root grows again.
         if (column(state)) return kin(state, level.getBlockState(pos.below())) && !kin(state, level.getBlockState(pos.below(2)));
         return true;
+    }
+
+    /** A face of the block is open: nothing solid on one of its sides. */
+    private static boolean shows(ServerLevel level, BlockPos pos) {
+        for (Direction side : Direction.values()) if (level.getBlockState(pos.relative(side)).getCollisionShape(level, pos.relative(side)).isEmpty()) return true;
+        return false;
     }
 
     private static boolean wet(ServerLevel level, BlockPos pos) { return !level.getFluidState(pos).isEmpty() || !level.getFluidState(pos.above()).isEmpty(); }
@@ -257,7 +292,7 @@ final class CompanionPicking {
         // He is in the air or the search goes on: asked again at the next tick.
         // Not for ever: under a ledge in running water no search came about and he stood there until the watchdog (in game 12.11).
         if (reach.busy() || CompanionRoute.NOT_SEARCHED.equals(reach.reason())) { legs--; return ++waited < WAIT; }
-        if (!reach.found()) return false;
+        if (!reach.found()) { noWay = true; return false; }
         waited = 0;
         path = reach.path();
         route.walk(path);
@@ -279,9 +314,9 @@ final class CompanionPicking {
         int got = got();
         if (got >= wanted) { end(true, "Собрал: «" + name() + "», " + got + " шт."); return; }
         if (due >= wanted) { collect(level, got); return; }
-        Predicate<BlockPos> site = sites(c, level);
+        Predicate<BlockPos> site = kept(c, level);
         if (target != null && (gives(sources, level.getBlockState(target)) == 0 || !takes(level, target, site) || lavaBeside(level, target))) release();
-        if (target == null) target = find(c, level, sources, site, passed, lavaKept);
+        if (target == null && !(stone && missed >= STONE_TRIES)) target = find(c, level, sources, site, passed, lavaKept);
         if (target == null) {
             // What he broke and has not picked up yet is picked up before he says how far he got.
             if (due > got) { collect(level, got); return; }
@@ -289,7 +324,10 @@ final class CompanionPicking {
             String lava = lavaKept.isEmpty() ? "" : " Рядом с лавой " + CompanionWorkItems.blocks(lavaKept.size()) + " — не трогал.";
             // Some gathered: obtain_item plans the rest again (red dye goes on with the tulips once the poppies are out). None: it ends here.
             if (got > 0) { release(); w.finish(CompanionActionResult.failed("Собрал «" + name() + "»: " + got + " из " + wanted + ", " + rest + "." + lava)); return; }
-            end(false, (passed.isEmpty() ? "Рядом не нашёл, где взять «" + name() + "»." : "Вижу, где взять «" + name() + "», но подойти не смог.") + lava);
+            // The stone's ask in one line short enough to be spoken whole with the longest name (CompanionDialogue).
+            if (stone) end(false, (!passed.isEmpty() ? "«" + name() + "» вижу, но подойти не смог" : !lavaKept.isEmpty() ? "«" + name() + "» вижу только у лавы, не трогал"
+                    : "Рядом не нашёл, где взять «" + name() + "»") + ": отведи меня к склону или в пещеру.");
+            else end(false, (passed.isEmpty() ? "Рядом не нашёл, где взять «" + name() + "»." : "Вижу, где взять «" + name() + "», но подойти не смог.") + lava);
             return;
         }
         BlockState state = level.getBlockState(target);
@@ -301,10 +339,18 @@ final class CompanionPicking {
             end(false, "Ножниц нет: срезать «" + name() + "» нечем.");
             return;
         }
-        if (stands.isEmpty()) stands = standsFor(level, target);
+        if (stands.isEmpty()) {
+            stands = standsFor(level, target);
+            // A face of a hollow no way led to already: passed at once, without a search.
+            if (stone) stands.removeAll(unreached);
+        }
         if (!stands.contains(c.blockPosition())) {
             c.workStatus("Иду за: " + name() + ".");
-            if (!walk()) { passed.add(target); release(); }
+            if (!walk()) {
+                if (stone && noWay) { missed++; unreached.addAll(hollow(level, stands, c.blockPosition())); }
+                passed.add(target);
+                release();
+            }
             return;
         }
         c.getNavigation().stop();
@@ -352,7 +398,24 @@ final class CompanionPicking {
         due = got; settleAt = 0; retried = false;
     }
 
-    private void release() { target = null; stands = Set.of(); path = null; legs = waited = dived = 0; w.breaking.reset(); w.resetApproach(); }
+    private void release() { target = null; stands = Set.of(); path = null; legs = waited = dived = 0; noWay = false; w.breaking.reset(); w.resetApproach(); }
+
+    /**
+     * The open cells joined to these, if they make a hollow smaller than {@link #HOLLOW} and he does not stand in it (a mine whose
+     * way out is shut: a ledge in it is no way, the rest is); else only these cells.
+     */
+    private static Set<BlockPos> hollow(ServerLevel level, Set<BlockPos> cells, BlockPos here) {
+        Set<BlockPos> seen = new HashSet<>(cells);
+        ArrayDeque<BlockPos> open = new ArrayDeque<>(cells);
+        while (!open.isEmpty() && seen.size() < HOLLOW) {
+            BlockPos at = open.poll();
+            for (Direction side : Direction.values()) {
+                BlockPos next = at.relative(side);
+                if (!seen.contains(next) && level.isLoaded(next) && level.getBlockState(next).getCollisionShape(level, next).isEmpty()) { seen.add(next); open.add(next); }
+            }
+        }
+        return seen.size() < HOLLOW && !seen.contains(here) ? seen : cells;
+    }
 
     /** A failure ends obtain_item at once with what he says (BLOCKED): planned again, the same ground was looked over twice more. */
     private void end(boolean success, String message) {
