@@ -23,10 +23,11 @@ import java.util.function.Predicate;
 /**
  * Obsidian like a player gets it (decided 08.11): lava he can walk to within his search radius, his bucket of water poured over it
  * so the lava under the water sets, the obsidian mined with a pickaxe that takes it and picked up, his water scooped back before
- * the next lava and at the end. Obsidian already lying about is mined too, but never a portal's or one on a site where the player
- * builds; the obsidian his own water set is his wherever it lies. Under the obsidian there is often more lava: a block with his
- * water over it is mined, as the water runs into the hole and sets the lava under it before the drop falls; a dry one over lava
- * or beside it is left (its drop would burn).
+ * the next lava and at the end. With no lava about he makes it of his own bucket of lava (the player 19.11): a hole dug beside him
+ * in the ground, his lava poured into it, his water over it, the block waited for, his water scooped back before the dig. Obsidian
+ * already lying about is mined too, but never a portal's or one on a site where the player builds; the obsidian his own water set is
+ * his wherever it lies. Under the obsidian there is often more lava: a block with his water over it is mined, as the water runs into
+ * the hole and sets the lava under it before the drop falls; a dry one over lava or beside it is left (its drop would burn).
  */
 final class CompanionObsidian {
     static final String NO_PICKAXE = "Обсидиан берёт только алмазная кирка — дай мне её.";
@@ -34,6 +35,8 @@ final class CompanionObsidian {
     static final String END = "В Энде обсидиан не сделать: лавы здесь нет.";
     static final String NO_LAVA = "Не нашёл лавы рядом — отведи меня к ней.";
     static final String NO_WATER = "Нет ведра воды — нечем залить лаву.";
+    static final String NO_SITE = "Негде вылить лаву: рядом нет ямки, где она не растечётся.";
+    static final String NOT_SET = "Лава не застыла — обсидиан не вышел.";
     static final String FULL_BAG = "Сумка забита — некуда сложить обсидиан.";
     static final String WATER_LEFT = "Не дотянулся до своей воды — осталась у лавы.";
     /** A player's reach for a block, as his bucket has it (CompanionWaterBucket); a cell to stand at keeps a margin. */
@@ -52,6 +55,12 @@ final class CompanionObsidian {
     private static final int SETTLE = 60;
     /** How long the drops floating in his water are left alone at most (ticks), as long as his harvest is remembered. */
     private static final int SHUN = 20 * 300;
+    /** Stages of a block he makes of his own buckets: the hole dug beside him, his lava in it, his water over it, the block waited for. */
+    private static final int MADE_DIG = 1, MADE_LAVA = 2, MADE_WATER = 3, MADE_SET = 4;
+    /** How far beside him a hole is dug for his lava (blocks), the hardest ground dug for it, and how long the water may take to set it (ticks). */
+    private static final int HOLE_NEAR = 3;
+    private static final float HOLE_HARDEST = 3;
+    private static final int SET_TICKS = 60;
 
     private final CompanionWork w;
     private final CompanionEntity c;
@@ -61,6 +70,10 @@ final class CompanionObsidian {
     private boolean retried;
     /** The obsidian he mines; the cell over lava he goes to pour into; his water standing; the cells to stand at for either. */
     private BlockPos target, aim, water;
+    /** The hole his own lava goes into, his water over it, the stage of it, when the water was poured, and blocks made of buckets. */
+    private BlockPos made, madeWater;
+    private int madeStep, fromBuckets;
+    private long madeAt;
     private Set<BlockPos> stands = Set.of();
     private Path path;
     /** Where he stood when the block came within his reach and sight. */
@@ -92,8 +105,9 @@ final class CompanionObsidian {
      */
     static boolean liesAbout(CompanionEntity c, ServerLevel level, Predicate<BlockPos> laid) {
         Predicate<BlockPos> site = CompanionPicking.sites(c, level);
+        // The block under his feet is one a player mines too: its drop comes to rest in the hole it leaves and he steps down to it.
         return nearest(c, level, DEPTH, state -> state.is(Blocks.OBSIDIAN),
-                pos -> !pos.equals(c.blockPosition().below()) && !laid.test(pos) && free(level, pos, site)) != null;
+                pos -> !laid.test(pos) && free(level, pos, site)) != null;
     }
 
     /** mine_obsidian: {@code count} more obsidian in his bag. Null when the work may start, else why not. */
@@ -102,6 +116,7 @@ final class CompanionObsidian {
         if (refusal != null) return CompanionActionResult.failed(refusal);
         reset();
         wanted = count; before = w.items.countCarried(Items.OBSIDIAN); mined = pours = 0; water = null; ending = null; nextLook = settleAt = 0; retried = false;
+        made = madeWater = null; madeStep = fromBuckets = 0; madeAt = 0;
         his.clear(); passed.clear();
         return null;
     }
@@ -113,13 +128,15 @@ final class CompanionObsidian {
 
     private int got() { return Math.max(0, w.items.countCarried(Items.OBSIDIAN) - before); }
 
-    /** One tick of the order: obsidian mined while there is some, else his water back, else on to the next lava and over it. */
+    /** One tick of the order: obsidian mined while there is some, else his water back, else on to the next lava and over it, else made of his own buckets. */
     void tick(ServerLevel level) {
         if (ending != null) { if (takeWaterBack(level)) end(ending); return; }
         site = c.getOwnerId() == null ? pos -> false : CompanionPlayerBuilds.get(level.getServer()).sites(c.getOwnerId(), level);
         int got = got();
         if (got >= wanted) { if (takeWaterBack(level)) end(true, "Накопал обсидиана: " + got + "."); return; }
         if (refusal(level, w.items.carriedItems()) != null) { end(false, NO_PICKAXE + short_(got)); return; }
+        // A block of his own buckets is being made: the hole, his lava, his water, the block waited for.
+        if (madeStep != 0) { make(level, got); return; }
         if (mined >= wanted) { collect(level, got); return; }
         if (target != null && !minable(level, target)) { target = null; w.breaking.reset(); w.resetApproach(); }
         if (target == null && level.getGameTime() >= nextLook) {
@@ -167,7 +184,8 @@ final class CompanionObsidian {
     /** Stopped or given another order: his water is scooped if his hand reaches it, else it stays (stop means stop). */
     void cancel() {
         if (water != null && c.level() instanceof ServerLevel level && inReach(level, water)) CompanionWaterBucket.scoopInto(c, level, water);
-        water = null; ending = null;
+        if (madeWater != null && c.level() instanceof ServerLevel level && inReach(level, madeWater)) CompanionWaterBucket.scoopInto(c, level, madeWater);
+        water = madeWater = null; made = null; madeStep = 0; ending = null;
         reset();
     }
 
@@ -175,7 +193,8 @@ final class CompanionObsidian {
 
     /** Obsidian he may mine now: his own or lying about but no portal's nor on a site of the player's, and its drop safe from lava. */
     private boolean minable(ServerLevel level, BlockPos pos) {
-        if (passed.contains(pos) || pos.equals(c.blockPosition().below())) return false;
+        // The block under his feet is mined too, as a player mines it: its drop rests in the hole and he steps down into it.
+        if (passed.contains(pos)) return false;
         // While his water is out, only what it sets: a walk to obsidian far off would leave the water behind him.
         if (water != null && !pos.closerThan(water, SPREAD + 1)) return false;
         if (site.test(pos) || w.portal.laid(pos)) return false;
@@ -256,7 +275,7 @@ final class CompanionObsidian {
         w.resetApproach();
     }
 
-    /** To the nearest lava with air over it and his water poured there; the lava under the water is his from now on. */
+    /** To the nearest lava with air over it and his water poured there; the lava under the water is his from now on. With no lava about, his own bucket of it makes the block (see {@link #make}). */
     private void pour(ServerLevel level, int got) {
         if (aim == null) {
             BlockPos lava = pours >= POURS ? null
@@ -264,7 +283,10 @@ final class CompanionObsidian {
             if (lava == null) {
                 // What he mined and has not picked up yet is picked up before he says how far he got.
                 if (mined > got) { collect(level, got); return; }
-                end(false, pours == 0 && got == 0 ? NO_LAVA : "Накопал " + got + " из " + wanted + ": лава рядом кончилась.");
+                // No lava here to cool: with his own bucket of lava and his water he makes the obsidian where he stands.
+                if (slot(Items.LAVA_BUCKET) >= 0 && slot(Items.WATER_BUCKET) >= 0) { madeStep = MADE_DIG; return; }
+                end(false, pours == 0 && got == 0 && fromBuckets == 0 ? NO_LAVA
+                        : "Накопал " + got + " из " + wanted + (fromBuckets > 0 ? ": вёдра лавы кончились." : ": лава рядом кончилась."));
                 return;
             }
             aim = lava.above(); stands = CompanionWaterFill.standsFor(c, level, List.of(aim)); legs = 0; path = null;
@@ -286,11 +308,168 @@ final class CompanionObsidian {
         c.getLookControl().setLookAt(Vec3.atCenterOf(aim));
         his.addAll(under);
         if (!((BucketItem) bucket.getItem()).emptyContents(null, level, aim, null, bucket)) { passed.addAll(pond(level, aim.below())); aim = null; return; }
-        c.setItem(slot, new ItemStack(Items.BUCKET));
+        emptyBucket(slot);
         c.animateAction(1, aim, bucket);
         water = aim; aim = null; pours++; nextLook = 0; reset();
         c.workStatus("Заливаю лаву водой.");
         event("obsidian_water_poured", "water", water.toShortString(), "pours", pours);
+    }
+
+    /**
+     * Obsidian made of his own buckets, as a player makes it (the player 19.11): a hole dug beside him in the ground, which walls
+     * his lava in, the lava poured into it, his water poured over it, the block waited for until the game sets it, his water scooped
+     * back before the dig (it would otherwise lie over the block and float its drop), and the block mined by the mining step that
+     * follows. One pour takes one of his buckets of lava; the empty buckets stay in his bag, and his water comes back into its own.
+     */
+    private void make(ServerLevel level, int got) {
+        switch (madeStep) {
+            case MADE_DIG -> {
+                if (made == null) made = siteFor(level);
+                if (made == null) { end(false, NO_SITE + short_(got)); return; }
+                // His own hole of the block before is air: the lava goes straight in.
+                if (level.getBlockState(made).isAir()) { madeStep = MADE_LAVA; reset(); return; }
+                // Something else stands there since: another hole is looked for.
+                if (!holeFor(level, made)) { made = null; reset(); return; }
+                if (dig(level, made, got)) { madeStep = MADE_LAVA; reset(); }
+            }
+            case MADE_LAVA -> {
+                // No lava of his left: the pour step says how far he got.
+                if (slot(Items.LAVA_BUCKET) < 0) { made = null; madeStep = 0; reset(); return; }
+                if (!level.getBlockState(made).isAir()) { made = null; madeStep = MADE_DIG; reset(); return; }
+                if (!inReach(level, made) && !walkTo(level, made)) return;
+                int slot = slot(Items.LAVA_BUCKET);
+                ItemStack bucket = c.getItem(slot);
+                c.getLookControl().setLookAt(Vec3.atCenterOf(made));
+                if (!((BucketItem) bucket.getItem()).emptyContents(null, level, made, null, bucket)) { made = null; madeStep = MADE_DIG; reset(); return; }
+                emptyBucket(slot);
+                c.animateAction(1, made, bucket);
+                his.add(made);
+                madeStep = MADE_WATER;
+                c.workStatus("Лью лаву.");
+                event("obsidian_lava_poured", "lava", made.toShortString());
+            }
+            case MADE_WATER -> {
+                // The lava ran off or was taken: another hole, or the pour step's own words.
+                if (!level.getFluidState(made).isSourceOfType(net.minecraft.world.level.material.Fluids.LAVA)) { made = null; madeStep = MADE_DIG; reset(); return; }
+                if (slot(Items.WATER_BUCKET) < 0) { end(CompanionActionResult.failed(NO_WATER + short_(got))); return; }
+                if (!inReach(level, made.above()) && !walkTo(level, made.above())) return;
+                int slot = slot(Items.WATER_BUCKET);
+                if (slot < 0) { end(CompanionActionResult.failed(NO_WATER + short_(got))); return; }
+                ItemStack bucket = c.getItem(slot);
+                c.getLookControl().setLookAt(Vec3.atCenterOf(made.above()));
+                if (!((BucketItem) bucket.getItem()).emptyContents(null, level, made.above(), null, bucket)) { made = null; madeStep = MADE_DIG; reset(); return; }
+                emptyBucket(slot);
+                c.animateAction(1, made.above(), bucket);
+                madeWater = made.above();
+                madeAt = level.getGameTime();
+                madeStep = MADE_SET;
+                c.workStatus("Заливаю лаву водой.");
+                event("obsidian_water_poured", "water", madeWater.toShortString(), "lava", made.toShortString());
+            }
+            case MADE_SET -> {
+                if (level.getBlockState(made).is(Blocks.OBSIDIAN)) {
+                    // His water back first: over the block it would float the drop away from the hole.
+                    if (CompanionWaterBucket.scoopInto(c, level, madeWater)) event("obsidian_water_scooped", "water", madeWater.toShortString());
+                    else water = madeWater;
+                    BlockPos block = made;
+                    madeWater = null; made = null; madeStep = 0; fromBuckets++; reset();
+                    event("obsidian_made", "block", block.toShortString());
+                    return;
+                }
+                // Not set in time: his water comes back first, then he says so.
+                if (level.getGameTime() - madeAt > SET_TICKS) {
+                    water = madeWater; madeWater = null; made = null; madeStep = 0; reset();
+                    end(false, NOT_SET + short_(got));
+                    return;
+                }
+                c.workStatus("Жду, пока лава застынет.");
+            }
+            default -> { }
+        }
+    }
+
+    /**
+     * The nearest hole for his own lava beside him: ground he can dig, or the hole his last block left, walled by the ground itself
+     * on every side, with a firm dry floor, air over it and over that, dry about it, no one standing in it but him, and not where the
+     * player builds. Null when there is none.
+     */
+    private BlockPos siteFor(ServerLevel level) {
+        BlockPos feet = c.blockPosition();
+        BlockPos best = null;
+        double bestFar = Double.MAX_VALUE;
+        for (int dx = -HOLE_NEAR; dx <= HOLE_NEAR; dx++) for (int dz = -HOLE_NEAR; dz <= HOLE_NEAR; dz++) for (int dy = 1; dy >= -2; dy--) {
+            BlockPos cell = feet.offset(dx, dy, dz);
+            // Never the cell he stands in, nor the block under his feet: the lava there would be under him.
+            if (cell.equals(feet) || cell.equals(feet.below())) continue;
+            if (!level.hasChunkAt(cell) || site.test(cell) || !holeFor(level, cell)) continue;
+            double far = cell.distSqr(feet);
+            if (far < bestFar) { bestFar = far; best = cell.immutable(); }
+        }
+        return best;
+    }
+
+    /** Whether this cell is a hole his lava stays in: air or ground he can dig, the ground walling it on every side, a firm floor, air over it and dry about. */
+    private boolean holeFor(ServerLevel level, BlockPos cell) {
+        BlockState state = level.getBlockState(cell);
+        if (!level.getFluidState(cell).isEmpty() || !level.hasChunkAt(cell.below())) return false;
+        if (!state.isAir()) {
+            float hardness = state.getDestroySpeed(level, cell);
+            if (hardness < 0 || hardness > HOLE_HARDEST || state.hasBlockEntity() || state.requiresCorrectToolForDrops() && !anyToolTakes(state)) return false;
+        }
+        BlockPos above = cell.above();
+        if (!level.getBlockState(above).isAir()) return false;
+        if (!level.getEntitiesOfClass(net.minecraft.world.entity.LivingEntity.class, new net.minecraft.world.phys.AABB(above),
+                entity -> entity != c && entity.isAlive()).isEmpty()) return false;
+        // Nothing runs in from above, and the ground itself holds the lava in.
+        for (Direction side : Direction.Plane.HORIZONTAL) {
+            if (!level.getFluidState(above.relative(side)).isEmpty()) return false;
+            BlockState wall = level.getBlockState(cell.relative(side));
+            if (wall.canBeReplaced() || !wall.getFluidState().isEmpty()) return false;
+        }
+        BlockState floor = level.getBlockState(cell.below());
+        return floor.isFaceSturdy(level, cell.below(), Direction.UP) && floor.getFluidState().isEmpty();
+    }
+
+    /** A tool of his that gives this block its drop. */
+    private boolean anyToolTakes(BlockState state) {
+        for (ItemStack stack : w.items.carriedItems()) if (!stack.isEmpty() && stack.isCorrectToolForDrops(state)) return true;
+        return false;
+    }
+
+    /** The hole dug out of the ground beside him, what it dropped picked up: false while he walks to it or swings. */
+    private boolean dig(ServerLevel level, BlockPos cell, int got) {
+        BlockState state = level.getBlockState(cell);
+        int reach = w.items.reachBlock(level, cell, true);
+        if (reach < 0) { made = null; reset(); return false; }
+        if (reach == 0) return false;
+        c.takeToolForBlock(state);
+        c.workStatus("Копаю ямку для лавы.");
+        if (!w.breaking.tick(level, cell)) return false;
+        ItemStack tool = c.getMainHandItem();
+        var drops = CompanionTools.drops(state, level, cell, null, c, tool);
+        if (!w.items.canStore(drops)) { c.putToolAway(); end(false, FULL_BAG + short_(got)); return false; }
+        if (!level.destroyBlock(cell, false, c, 512)) { c.putToolAway(); made = null; return false; }
+        CompanionTools.wearOnBreak(tool, level, state, cell, c);
+        c.dropHarvest(cell, drops);
+        c.putToolAway();
+        event("obsidian_hole_dug", "hole", cell.toShortString(), "block", net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()));
+        return true;
+    }
+
+    /** A walk to the cell he pours into: false when there is no way to it (another hole is looked for). */
+    private boolean walkTo(ServerLevel level, BlockPos cell) {
+        if (stands.isEmpty()) { stands = CompanionWaterFill.standsFor(c, level, List.of(cell)); legs = 0; path = null; }
+        if (walk()) return true;
+        made = null; madeStep = MADE_DIG; reset();
+        return false;
+    }
+
+    /** One bucket of this slot emptied, as the game's own: the empty one takes its place in his bag and the rest of the stack stays his (one that finds no cell lies at his feet, never lost). */
+    private void emptyBucket(int slot) {
+        c.removeItem(slot, 1);
+        ItemStack empty = new ItemStack(Items.BUCKET);
+        c.storeLoot(empty);
+        if (!empty.isEmpty() && c.level() instanceof ServerLevel level) net.minecraft.world.level.block.Block.popResource(level, c.blockPosition(), empty);
     }
 
     /** His water back into the bucket it came from: true once it is (or gone, or given up as out of his way). */

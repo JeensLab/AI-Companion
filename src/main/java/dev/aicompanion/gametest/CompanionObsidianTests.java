@@ -266,6 +266,90 @@ public final class CompanionObsidianTests {
         });
     }
 
+    /**
+     * The player's own case (19.11): two buckets of water and two of lava in his bag, no lava anywhere about. «добудь 2 обсидиана»
+     * and «сделай обсидиан» are no refusal any more: the plan asks for the obsidian (his water he has), because his own bucket of
+     * lava is a source too. Before this only a lava source in the world counted, and the order was refused with «Рядом нечего
+     * копать: ни обсидиана, ни лавы» while he held four buckets.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 20)
+    public static void hisOwnBucketsOfLavaAreASourceForThePlan(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.WATER_BUCKET, 2));
+        c.setItem(2, new ItemStack(Items.LAVA_BUCKET, 2));
+        var two = c.obtainPlan(OBSIDIAN, 2);
+        h.assertTrue(!two.refused() && two.steps().equals(List.of(new CompanionObtain.Step("mine_obsidian", OBSIDIAN, 2))),
+                "Refused with two buckets of lava in his bag: " + two);
+        var ten = c.obtainPlan(OBSIDIAN, 10);
+        h.assertTrue(!ten.refused() && ten.steps().equals(List.of(new CompanionObtain.Step("mine_obsidian", OBSIDIAN, 10))),
+                "Refused for «сделай обсидиан»: " + ten);
+        // And the phrase reaches the same order without a model.
+        String route = CompanionLocalCommands.route("Олег, добудь 2 обсидиана", "Олег");
+        var asked = CompanionLocalCommands.actions(route);
+        h.assertTrue(asked.size() == 1 && "obtain_item".equals(asked.getFirst().type()) && asked.getFirst().count() == 2
+                && OBSIDIAN.equals(asked.getFirst().item()), "«добудь 2 обсидиана» is not the order: " + route + " -> " + asked);
+        h.succeed();
+    }
+
+    /**
+     * «Добудь 2 обсидиана» by the player's phrase with two buckets of water and two of lava in his bag and no lava in the world
+     * (the player 19.11): he digs a hole beside him, pours his lava into it, pours his water over it, waits for the block to set,
+     * scoops his water back so it does not lie over the dig, mines the obsidian and puts his buckets away — two of water back in the
+     * bag and two empty ones from his lava, none lost and none doubled, and nothing left standing in the world.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void hisOwnBucketsMakeTheObsidianTheOrderAskedFor(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.WATER_BUCKET, 2));
+        c.setItem(2, new ItemStack(Items.LAVA_BUCKET, 2));
+        String route = CompanionLocalCommands.route("Олег, добудь 2 обсидиана", "Олег");
+        var plan = CompanionLocalCommands.actions(route);
+        h.assertTrue(plan != null && plan.size() == 1, "The phrase is not one step: " + route + " -> " + plan);
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-buckets", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 2, "Not two obsidian: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertTrue(count(c, Items.WATER_BUCKET) == 2 && count(c, Items.BUCKET) == 2 && count(c, Items.LAVA_BUCKET) == 0,
+                    "His buckets are lost or doubled: " + c.getStoredItemsSummary() + ", " + report);
+            for (BlockPos pos : BlockPos.betweenClosed(h.absolutePos(new BlockPos(1, GROUND - 3, 1)), h.absolutePos(new BlockPos(30, GROUND + 4, 30)))) {
+                h.assertTrue(!h.getLevel().getFluidState(pos).is(FluidTags.WATER), "His water is left at " + pos.toShortString() + ": " + report);
+                h.assertTrue(!h.getLevel().getFluidState(pos).is(FluidTags.LAVA), "His lava is left at " + pos.toShortString() + ": " + report);
+            }
+        });
+    }
+
+    /**
+     * The obsidian he stands on is his to mine, as a player digs the block under his feet: its drop comes to rest in the hole it
+     * leaves and he steps down into it. The guard that kept the block under his feet out of the minable ones left it in the world
+     * (the player 19.11: of several placed blocks he mined all but one). Here two blocks are set down, one of them the ground he
+     * stands on: the other one he mines from where he stands, so the block under his feet is the last one — and it stayed.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1800)
+    public static void theObsidianUnderHisFeetIsMinedToo(GameTestHelper h) {
+        ground(h);
+        BlockPos under = new BlockPos(10, GROUND, 16);
+        BlockPos beside = new BlockPos(11, GROUND + 1, 16);
+        h.setBlock(under, Blocks.OBSIDIAN);
+        h.setBlock(beside, Blocks.OBSIDIAN);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        var plan = c.obtainPlan(OBSIDIAN, 2);
+        h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("mine_obsidian", OBSIDIAN, 2))), "Not mined where it lies: " + plan);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":2}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 2, "Not two obsidian, the block he stood on left: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertBlockPresent(Blocks.AIR, under);
+            h.assertBlockPresent(Blocks.AIR, beside);
+        });
+    }
+
     /** A pond of lava sources {@code depth} deep and {@code size} square, its top level with the ground, its cells (relative). */
     private static List<BlockPos> lava(GameTestHelper h, int x0, int z0, int size, int depth) {
         List<BlockPos> cells = new ArrayList<>();

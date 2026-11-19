@@ -269,12 +269,15 @@ public final class CompanionObtain {
                 return need("minecraft:bucket", count, depth + 1) && add("fill_bucket", key, count);
             }
             // Obsidian lying about him is mined where it lies (CompanionObsidian): no lava to cool, so no bucket, no iron and no
-            // smelting for one. Only with none about is obsidian made of lava, and that takes his bucket of water.
+            // smelting for one. Else lava about him is cooled with his bucket of water. With neither, his own bucket of lava makes
+            // it: poured into a hole he digs, his water over it (the player 19.11: two buckets of lava in the bag, no lava in the
+            // world, and the order was refused as if there were nothing to dig — the bag was never asked).
             case "minecraft:obsidian" -> {
                 String refusal = CompanionObsidian.refusal(level, carried);
                 if (refusal != null) return refuse(refusal);
                 if (grows != null && about(Items.OBSIDIAN)) return add("mine_obsidian", key, count);
-                if (grows != null && !about(Items.LAVA_BUCKET)) return refuse("Рядом нечего копать: ни обсидиана, ни лавы — отведи меня туда, где они есть.");
+                if (grows != null && !about(Items.LAVA_BUCKET) && bag.getOrDefault("minecraft:lava_bucket", 0) == 0)
+                    return refuse("Рядом нечего копать: ни обсидиана, ни лавы — отведи меня туда, где они есть.");
                 return need("minecraft:water_bucket", 1, depth + 1) && add("mine_obsidian", key, count);
             }
             // An empty bucket of his (or one made now) under a cow, a mooshroom or a goat about him (CompanionChores).
