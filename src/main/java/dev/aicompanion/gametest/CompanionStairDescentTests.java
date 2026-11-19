@@ -7,6 +7,9 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.pathfinder.Node;
+import net.minecraft.world.level.pathfinder.Path;
+import net.minecraft.world.level.pathfinder.PathType;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -111,6 +114,46 @@ public final class CompanionStairDescentTests {
             h.assertTrue(!Float.isNaN(turn[0]), "He did not come to the step's edge with the node below him next");
             h.assertTrue(turn[0] < MOST_TICK_TURN, "He turned " + Math.round(turn[0]) + "° in a tick over the node below him");
         });
+    }
+
+    /**
+     * The walk down the owner's stair after the step below was skipped at its edge (19.11): the path's next node is the
+     * ground four blocks below the step he stands on, and its column is off the way he walks. He steps down into the step
+     * first, not off the edge of the one he stands on: walked off it, the fall was four, and a heart (19.0 of 20.0).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 200)
+    public static void downTheStairTheGroundFourBelowIsNotWalkedOff(GameTestHelper h) {
+        for (int x = 1; x < 31; x++) for (int z = 1; z < 31; z++) {
+            h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
+            for (int y = 1; y <= 5; y++) h.setBlock(new BlockPos(x, y, z), Blocks.GRASS_BLOCK);
+            for (int y = 6; y <= 12; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        }
+        // A step at feet ten, the step below it south at feet nine, the ground at feet six all about.
+        h.setBlock(new BlockPos(10, 9, 10), Blocks.DIRT);
+        h.setBlock(new BlockPos(10, 8, 11), Blocks.DIRT);
+        var c = h.spawn(AICompanionMod.COMPANION.get(), new Vec3(10.5, 10, 10.5));
+        c.setFollowing(false);
+        BlockPos corner = h.absolutePos(BlockPos.ZERO);
+        // The path the walk has after the skip: the step below was passed at the edge, the ground west of it is next.
+        var path = new Path(List.of(node(corner, 10, 10, 10), node(corner, 10, 9, 11), node(corner, 8, 6, 10)),
+                new BlockPos(corner.getX() + 8, corner.getY() + 6, corner.getZ() + 10), true);
+        path.setNextNodeIndex(2);
+        h.runAfterDelay(2, () -> c.getNavigation().moveTo(path, 1.0));
+        float[] fall = {0};
+        h.onEachTick(() -> fall[0] = Math.max(fall[0], c.fallDistance));
+        h.succeedWhen(() -> {
+            h.assertTrue(c.getHealth() == c.getMaxHealth(), "The walk off the step hurt him: " + c.getHealth() + " of "
+                    + c.getMaxHealth() + ", a fall of " + fall[0]);
+            h.assertTrue(c.onGround() && Math.abs(c.getY() - corner.getY() - 6) < 1.0,
+                    "He did not come down to the ground: y " + (c.getY() - corner.getY()));
+        });
+    }
+
+    /** A node of a built path, at this test's cell. */
+    private static Node node(BlockPos corner, int x, int y, int z) {
+        Node node = new Node(corner.getX() + x, corner.getY() + y, corner.getZ() + z);
+        node.type = PathType.WALKABLE;
+        return node;
     }
 
     /** The height he stands at in a lane's column: the landing, the four steps, the floor. */
