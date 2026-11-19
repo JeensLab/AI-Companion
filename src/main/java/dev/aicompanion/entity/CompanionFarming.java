@@ -692,12 +692,14 @@ final class CompanionFarming {
 
     /**
      * The hand for a seed break: grass gives its seeds to a bare hand, while shears cut the tuft and the seed roll never happens.
-     * The shears leave his hand for the bag, so the grass comes down to the hand and not to the blade.
+     * The shears leave his hand for the bag, so the grass comes down to the hand and not to the blade; this swap is made for what
+     * the block gives, not for its speed, so it is made with the right-tool switch off as well.
      */
     private boolean takeSeedTool(ServerLevel level, BlockPos cell, BlockState state) {
         var drops = CompanionTools.drops(state, level, cell, null, w.owner, ItemStack.EMPTY);
         if (!drops.isEmpty() && !w.items.canStore(drops)) { bagFull = true; return false; }
-        if (w.owner.getMainHandItem().is(net.neoforged.neoforge.common.Tags.Items.TOOLS_SHEAR)) w.owner.unequipForSupport("mainhand");
+        if (w.owner.getMainHandItem().is(net.neoforged.neoforge.common.Tags.Items.TOOLS_SHEAR)
+                && !w.owner.unequipForSupport("mainhand").success()) { bagFull = true; return false; }
         return true;
     }
 
