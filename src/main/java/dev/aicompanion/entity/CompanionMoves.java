@@ -25,8 +25,8 @@ final class CompanionMoves {
     private static final float CLIMB = 6, DROP = 2;
     /** The deepest drop into water that is taken (a fall into water does no harm). */
     private static final int WATER_DROP = 20;
-    /** The deepest drop onto land, chasing or not (the game's own allows a mob with a target up to 12 on Normal, 16 on Hard). */
-    private static final int LAND_DROP = 3;
+    /** The deepest drop onto land, chasing or not (the game's own allows a mob with a target up to 12 on Normal, 16 on Hard). The walk follows it too: no step is skipped onto a deeper one. */
+    static final int LAND_DROP = 3;
 
     /** The widest pit he jumps (a player's sprinting jump clears far more; two blocks leave room for a miss of a few tenths). */
     private static final int JUMP_WIDTH = 2;
