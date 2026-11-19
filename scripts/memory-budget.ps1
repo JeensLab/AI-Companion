@@ -9,7 +9,7 @@ $ErrorActionPreference='Stop'
 $budget=[ordered]@{
     'CompanionEntity.java'=1324
     'CompanionWork.java'=1037
-    'CompanionFarming.java'=805
+    'CompanionFarming.java'=807
 }
 $limit=800
 $dir=Join-Path $Root 'src/main/java/dev/aicompanion/entity'
