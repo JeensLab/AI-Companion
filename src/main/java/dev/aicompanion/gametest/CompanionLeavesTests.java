@@ -1044,8 +1044,9 @@ public final class CompanionLeavesTests {
             String report = future.join().report();
             h.assertTrue(count(c, Items.OAK_LEAVES) >= 8, "Not eight leaves: " + count(c, Items.OAK_LEAVES) + ", " + report);
             h.assertTrue(supports[0] > 0, "No column was built for a crown the stair cannot serve: " + supports[0] + ", " + report);
-            // The soil of the column comes back to him: the blocks he stood on are in the bag, not left on the ground.
-            h.assertTrue(count(c, Items.DIRT) >= supports[0], "The soil of the column did not come back: " + count(c, Items.DIRT) + " of " + supports[0] + ", " + report);
+            // The soil of the column comes back to him: six blocks were dug for it and every one is in the bag, five of them
+            // raised as supports — nothing of it left on the ground.
+            h.assertTrue(count(c, Items.DIRT) == 6, "The soil of the column did not come back: " + count(c, Items.DIRT) + " of 6 dug, supports " + supports[0] + ", " + report);
             h.assertTrue(c.getHealth() == c.getMaxHealth(), "A fall off the column hurt him: " + c.getHealth() + " of " + c.getMaxHealth() + ", " + report);
             h.assertTrue(c.onGround() && Math.abs(c.getY() - groundY) < 0.6, "He did not come back down: y " + c.getY() + ", " + report);
             h.assertTrue(c.getTemporarySupportCount() == 0 && dirtAboveGround(h) == stairDirt, "The column was left standing: " + dirtAboveGround(h) + " of " + stairDirt + ", " + report);
