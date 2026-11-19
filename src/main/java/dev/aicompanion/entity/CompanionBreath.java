@@ -47,6 +47,9 @@ final class CompanionBreath {
     }
     void end() { active = false; way = List.of(); nearest = null; c.getNavigation().stop(); }
 
+    /** Going up for air and breathing: no dive holds him under meanwhile (CompanionSwimming, CompanionMobDrops.watch). */
+    boolean active() { return active; }
+
     void tick() {
         // In the air: the stroke is over, the rest is waiting for the lungs to fill.
         if (!eyesInWater()) { c.getNavigation().stop(); return; }

@@ -176,10 +176,9 @@ final class CompanionChores {
                 animal -> animal.isAlive() && !animal.isBaby() && !passed.contains(animal.getUUID()) && c.leashAllows(animal.blockPosition()) && fits.test(animal));
     }
 
-    /** Of the kind under open water about him (or on the bank by it), where his leash lets him go. */
+    /** Of the kind under open water about him (or on the bank by it), down to the floor of the sea, where his leash lets him go. */
     private static List<Mob> swimmers(CompanionEntity c, ServerLevel level, EntityType<?> kind, Set<UUID> passed) {
-        int radius = c.getSearchRadius();
-        return level.getEntitiesOfClass(Mob.class, new AABB(c.blockPosition()).inflate(radius, DEPTH, radius), mob -> !passed.contains(mob.getUUID()) && scoopable(c, level, kind, mob));
+        return level.getEntitiesOfClass(Mob.class, CompanionMobDrops.around(c), mob -> !passed.contains(mob.getUUID()) && scoopable(c, level, kind, mob));
     }
 
     /** Alive, nobody's (no name, not let out of a bucket, not on a lead), under open water (not a lake in a cave). */
@@ -417,15 +416,15 @@ final class CompanionChores {
         // A player's bucket reaches what his eye sees, not a fish behind the glass of a pond or a block of the bank.
         if (distance > REACH * REACH || !c.hasLineOfSight(mob)) {
             if (distance + .05 < best) { best = distance; since = now; }
-            if (now - since > STALL) { passed.add(target); c.getNavigation().stop(); release(); return; }
+            if (now - since > (c.isInWater() ? CompanionMobDrops.SWIM_STALL : STALL)) { passed.add(target); c.getNavigation().stop(); release(); return; }
             c.workStatus("Ловлю в ведро.");
             // In the water with it he swims straight at it (as for a fish to fight, CompanionMobDrops.watch): a route would pull him
             // back to the surface over it. Not against the way up: with his air short the swim for air has him. Also out of sight
             // (round a pillar of the bed): he swims on to it, and behind glass the stall gives it up.
             if (mob.isInWater() && c.isInWater()) {
                 c.getNavigation().stop();
-                if (c.getAirSupply() > c.getMaxAirSupply() / 2) c.getMoveControl().setWantedPosition(mob.getX(), mob.getY(), mob.getZ(), 1.15);
-            } else if (w.route.follow(mob.blockPosition(), 2) != CompanionTravel.Step.WALKING) c.travel().reset();
+                if (c.getAirSupply() > c.getMaxAirSupply() / 2) CompanionMobDrops.swimAt(c, mob);
+            } else if (CompanionMobDrops.wade(w, level, mob) != CompanionTravel.Step.WALKING) c.travel().reset();
             return;
         }
         c.getNavigation().stop();

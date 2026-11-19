@@ -44,8 +44,18 @@ final class CompanionMobDrops {
     private static final int ROLLS = 48;
     /** Blocks above and below his feet that are looked at: the hill he stands on, not the cave under it. */
     private static final int DEPTH = 12;
+    /**
+     * Blocks of water over a fish or a squid looked up through for the sky (open), and as many more under the hill it is looked for
+     * at: a cod swims down to the floor of the sea, 20 to 30 blocks under it (de-flandres #178: deeper than 12 it was «not about»).
+     */
+    private static final int SEA = 32;
     /** Ticks with no step and no blow landed before the monster is passed over. */
     private static final int STALL = 300;
+    /**
+     * The same for a fish or a squid while he is in the water: one way up for air and back down is in it. A cod 18 down, gone for
+     * with his breath short after the one before, was passed over on the way back (CompanionBreath, some 340 ticks).
+     */
+    static final int SWIM_STALL = 2 * STALL;
     // ponytail: built once for a server; a data pack reloaded in a running world keeps the old tables until the world is reopened.
     private static WeakReference<MinecraftServer> builtFor = new WeakReference<>(null);
     private static Map<Item, List<EntityType<?>>> sources = Map.of();
@@ -126,10 +136,17 @@ final class CompanionMobDrops {
      */
     private static List<Mob> targets(CompanionEntity c, ServerLevel level, List<EntityType<?>> kinds, Set<UUID> passed, Set<UUID> engaged) {
         if (kinds.isEmpty() || level.dimension() != Level.OVERWORLD) return List.of();
-        int radius = c.getSearchRadius();
-        return level.getEntitiesOfClass(Mob.class, new AABB(c.blockPosition()).inflate(radius, DEPTH, radius), mob -> !passed.contains(mob.getUUID())
-                && fought(c, kinds, mob) && (engaged.contains(mob.getUUID()) || c.hasLineOfSight(mob) || swims(mob) && open(level, mob)
+        return level.getEntitiesOfClass(Mob.class, around(c), mob -> !passed.contains(mob.getUUID()) && fought(c, kinds, mob)
+                // Under the hill only a fish or a squid of the sea about him (or one struck, gone under a ledge), never the cave.
+                && (mob.getBlockY() < c.getBlockY() - DEPTH ? swims(mob) && (engaged.contains(mob.getUUID()) || open(level, mob))
+                : engaged.contains(mob.getUUID()) || c.hasLineOfSight(mob) || swims(mob) && open(level, mob)
                 || mob.getBlockY() >= level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, mob.getBlockX(), mob.getBlockZ()) - 1));
+    }
+
+    /** Where a mob is looked for: within his search radius, DEPTH above and below his feet and SEA deeper for what swims (open). */
+    static AABB around(CompanionEntity c) {
+        int radius = c.getSearchRadius();
+        return new AABB(c.blockPosition()).inflate(radius, DEPTH, radius).expandTowards(0, -SEA, 0);
     }
 
     /**
@@ -137,9 +154,37 @@ final class CompanionMobDrops {
      * eyes on the shore (a squid at the foot of a pond's bank was «no one about» in a test); not a lake in a cave.
      */
     static boolean open(ServerLevel level, Mob mob) {
-        net.minecraft.core.BlockPos.MutableBlockPos cell = mob.blockPosition().mutable();
-        for (int up = 0; up < 32 && level.getFluidState(cell).is(net.minecraft.tags.FluidTags.WATER); up++) cell.move(0, 1, 0);
+        net.minecraft.core.BlockPos cell = surface(level, mob);
         return level.getFluidState(cell).isEmpty() && level.canSeeSky(cell);
+    }
+
+    /** The first cell over the water a fish or a squid is in (its own one out of the water), looked up through SEA blocks at most. */
+    private static net.minecraft.core.BlockPos surface(ServerLevel level, Mob mob) {
+        net.minecraft.core.BlockPos.MutableBlockPos cell = mob.blockPosition().mutable();
+        for (int up = 0; up < SEA && level.getFluidState(cell).is(net.minecraft.tags.FluidTags.WATER); up++) cell.move(0, 1, 0);
+        return cell.immutable();
+    }
+
+    /**
+     * Where he is walked to for a fish or a squid in the water while he is out of it: into the top of the water over it, not near it
+     * (no route goes down under the surface: 18 blocks down «no leg found», he stood on the bank). In the water he dives for it.
+     * One whose own cell holds no water (on the bank, at its edge) is walked up to, as anything else.
+     */
+    static CompanionTravel.Step wade(CompanionWork w, ServerLevel level, Mob mob) {
+        net.minecraft.core.BlockPos top = surface(level, mob);
+        return top.equals(mob.blockPosition()) ? w.route.follow(top, 2) : w.route.follow(top.below(), 0);
+    }
+
+    /**
+     * He swims at a fish or a squid in the water with him; straight over it he only goes down (the dive, CompanionSwimming). Steered
+     * at a point a hair across, the game turned his body up to a quarter round a tick, and he spun all the way down to a cod
+     * under him (the player 17.11, «крутится как больной»).
+     */
+    static void swimAt(CompanionEntity c, Mob mob) {
+        double dx = mob.getX() - c.getX(), dz = mob.getZ() - c.getZ();
+        // His own place: no step and no turn (the game's MoveControl does not turn a body that is already where it is wanted).
+        if (dx * dx + dz * dz > .5 * .5) c.getMoveControl().setWantedPosition(mob.getX(), mob.getY(), mob.getZ(), 1.15);
+        else c.getMoveControl().setWantedPosition(c.getX(), c.getY(), c.getZ(), 1);
     }
 
     /** Of the kind, alive, nobody's (no name, not let out of a bucket), on land (a fish anywhere), on its own feet, and one he may fight by this order. */
@@ -188,9 +233,10 @@ final class CompanionMobDrops {
         w.huntTargets.add(target.getUUID());
         c.selectWeaponForCombat(); c.setTarget(target); c.movementIntent(target.blockPosition());
         c.workStatus("Добываю «" + name() + "»: " + got + " из " + wanted + ".");
-        // In the water with it he swims at it (watch); a route there would pull him back to the surface over it.
-        if (swims(target) && target.isInWater() && c.isInWater()) c.getNavigation().stop();
-        else if (w.route.follow(target.blockPosition(), 2) != CompanionTravel.Step.WALKING) c.travel().reset();
+        // In the water with it he swims at it (watch); a route there would pull him back to the surface over it. The work's own
+        // route does not wade him onto one he strikes from where he stands (a pufferfish by the bank stings who comes to it).
+        if (swims(target) && (target.isInWater() && c.isInWater() || c.isWithinMeleeAttackRange(target) && c.hasLineOfSight(target))) c.getNavigation().stop();
+        else if ((swims(target) ? wade(w, level, target) : w.route.follow(target.blockPosition(), 2)) != CompanionTravel.Step.WALKING) c.travel().reset();
     }
 
     /**
@@ -211,12 +257,21 @@ final class CompanionMobDrops {
         // starts only within a blow, so he swims straight at it, as a player does; down to it is CompanionSwimming's dive
         // (in game 13.11 two squids in the sea were passed over, not one blow landed).
         // Not against the way up: with his air short the swim for air (CompanionBreath) and the float have him, not the fish.
-        if (swims(mob) && mob.isInWater() && c.isInWater() && !c.isWithinMeleeAttackRange(mob) && c.hasLineOfSight(mob)
-                && c.getAirSupply() > c.getMaxAirSupply() / 2)
-            c.getMoveControl().setWantedPosition(mob.getX(), mob.getY(), mob.getZ(), 1.15);
+        // In the water with it the legs are this watch's, not the melee goal's: its route to the fish ends at the surface over it,
+        // pulled him back up and turned him round on the spot (the player 17.11). This runs after the route's step and before the
+        // legs move (Mob.serverAiStep: navigation, customServerAiStep, moveControl), so its step is undone here.
+        if (swims(mob) && mob.isInWater() && c.isInWater() && !c.breath.active()) {
+            c.getNavigation().stop();
+            // Out of sight too (round a pillar of the bed, behind a coral): he swims on to it, as for the scoop; held still he only waited
+            // for the stall. Behind glass the stall gives it up.
+            if (!c.isWithinMeleeAttackRange(mob) && c.getAirSupply() > c.getMaxAirSupply() / 2) swimAt(c, mob);
+            else c.getMoveControl().setWantedPosition(c.getX(), c.getY(), c.getZ(), 1);
+        }
+        // Out of his search radius across, as it is looked for (around): a cod down by the floor of the sea is farther from his eyes.
         int radius = c.getSearchRadius();
-        boolean gone = !fought(c, kinds, mob) || distance > radius * radius;
-        if (now - since <= STALL && !gone) return;
+        double dx = mob.getX() - c.getX(), dz = mob.getZ() - c.getZ();
+        boolean gone = !fought(c, kinds, mob) || dx * dx + dz * dz > radius * radius;
+        if (now - since <= (swims(mob) && c.isInWater() ? SWIM_STALL : STALL) && !gone) return;
         passed.add(mob.getUUID()); chased = null;
         c.setTarget(null);
         c.getNavigation().stop();
