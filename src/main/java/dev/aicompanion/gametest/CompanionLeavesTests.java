@@ -899,7 +899,8 @@ public final class CompanionLeavesTests {
      * The owner's own geometry (18.11): a tree eight blocks tall on flat ground, the dirt stair he built up to it — its top
      * two blocks below the crown, three from the trunk, the highest cell under the crown itself. The crown is cut from the
      * stair, no column raised and no soil dug: «Вижу, где взять «Oak Leaves», но подойти не смог» was for a stair that stands
-     * right under the crown.
+     * right under the crown. The walk back down the stair leaves him on his feet: the step he stands over is stepped into
+     * before the drop to the ground (19.11: a step skipped at the stair's edge was a fall of four, and a heart).
      */
     @GameTest(template = "tall_tree", timeoutTicks = 8000)
     public static void aCrownTwoBelowTheStairTopIsCutFromTheStair(GameTestHelper h) {
@@ -1007,7 +1008,8 @@ public final class CompanionLeavesTests {
             String report = future.join().report();
             h.assertTrue(count(c, Items.OAK_LEAVES) >= 8, "Not eight leaves: " + count(c, Items.OAK_LEAVES) + ", " + report);
             h.assertTrue(supports[0] > 0, "No column was built for a crown the stair cannot serve: " + supports[0] + ", " + report);
-            h.assertTrue(count(c, Items.DIRT) > 0, "He dug no soil for the column: " + count(c, Items.DIRT) + ", " + report);
+            // The soil of the column comes back to him: the blocks he stood on are in the bag, not left on the ground.
+            h.assertTrue(count(c, Items.DIRT) >= supports[0], "The soil of the column did not come back: " + count(c, Items.DIRT) + " of " + supports[0] + ", " + report);
             h.assertTrue(c.getHealth() == c.getMaxHealth(), "A fall off the column hurt him: " + c.getHealth() + " of " + c.getMaxHealth() + ", " + report);
             h.assertTrue(c.onGround() && Math.abs(c.getY() - groundY) < 0.6, "He did not come back down: y " + c.getY() + ", " + report);
             h.assertTrue(c.getTemporarySupportCount() == 0 && dirtAboveGround(h) == stairDirt, "The column was left standing: " + dirtAboveGround(h) + " of " + stairDirt + ", " + report);
