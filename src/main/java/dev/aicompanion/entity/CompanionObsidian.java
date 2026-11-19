@@ -361,13 +361,15 @@ final class CompanionObsidian {
             case MADE_WATER -> {
                 // The lava ran off or was taken: another hole, or the pour step's own words.
                 if (!level.getFluidState(made).isSourceOfType(net.minecraft.world.level.material.Fluids.LAVA)) { made = null; madeStep = MADE_DIG; reset(); return; }
-                if (slot(Items.WATER_BUCKET) < 0) { end(CompanionActionResult.failed(NO_WATER + short_(got))); return; }
+                // No water left for the lava he has already poured: the lava is his, so it goes back into the empty bucket of the pour (end).
+                if (slot(Items.WATER_BUCKET) < 0) { abandonMade(CompanionActionResult.failed(NO_WATER + short_(got))); return; }
                 if (!inReach(level, made.above()) && !walkTo(level, made.above())) return;
                 int slot = slot(Items.WATER_BUCKET);
-                if (slot < 0) { end(CompanionActionResult.failed(NO_WATER + short_(got))); return; }
+                if (slot < 0) { abandonMade(CompanionActionResult.failed(NO_WATER + short_(got))); return; }
                 ItemStack bucket = c.getItem(slot);
                 c.getLookControl().setLookAt(Vec3.atCenterOf(made.above()));
-                if (!((BucketItem) bucket.getItem()).emptyContents(null, level, made.above(), null, bucket)) { made = null; madeStep = MADE_DIG; reset(); return; }
+                // The pour found no cell: the lava of it goes back into his bucket and another hole is dug.
+                if (!((BucketItem) bucket.getItem()).emptyContents(null, level, made.above(), null, bucket)) { madeLava = made; made = null; madeStep = MADE_DIG; reset(); return; }
                 emptyBucket(slot);
                 c.animateAction(1, made.above(), bucket);
                 madeWater = made.above();
@@ -400,6 +402,12 @@ final class CompanionObsidian {
     }
 
     /**
+     * The lava of the make is his once poured: with no water to pour over it, it goes back into the empty bucket the pour left him
+     * (end) instead of standing in the hole, so no bucket is spent for a block that was not made.
+     */
+    private void abandonMade(CompanionActionResult result) { madeLava = made; made = null; madeStep = 0; reset(); end(result); }
+
+    /**
      * The nearest hole for his own lava beside him: ground he can dig, or the hole his last block left, walled by the ground itself
      * on every side, with a firm dry floor, air over it and over that, dry about it, no one standing in it but him, and not where the
      * player builds. Null when there is none.
@@ -410,8 +418,8 @@ final class CompanionObsidian {
         double bestFar = Double.MAX_VALUE;
         for (int dx = -HOLE_NEAR; dx <= HOLE_NEAR; dx++) for (int dz = -HOLE_NEAR; dz <= HOLE_NEAR; dz++) for (int dy = 1; dy >= -2; dy--) {
             BlockPos cell = feet.offset(dx, dy, dz);
-            // Never the cell he stands in, nor the block under his feet: the lava there would be under him.
-            if (cell.equals(feet) || cell.equals(feet.below())) continue;
+            // Never the cell he stands in, nor the block under his feet: the lava there would be under him. Nor one he found no way to.
+            if (cell.equals(feet) || cell.equals(feet.below()) || passed.contains(cell)) continue;
             if (!level.hasChunkAt(cell) || site.test(cell) || !holeFor(level, cell)) continue;
             double far = cell.distSqr(feet);
             if (far < bestFar) { bestFar = far; best = cell.immutable(); }
@@ -451,7 +459,8 @@ final class CompanionObsidian {
     private boolean dig(ServerLevel level, BlockPos cell, int got) {
         BlockState state = level.getBlockState(cell);
         int reach = w.items.reachBlock(level, cell, true);
-        if (reach < 0) { made = null; reset(); return false; }
+        // No way to it: the cell is passed over, so it is not dug at again every tick until the watchdog (another hole is looked for).
+        if (reach < 0) { passed.add(cell); made = null; reset(); return false; }
         if (reach == 0) return false;
         c.takeToolForBlock(state);
         c.workStatus("Копаю ямку для лавы.");
@@ -467,11 +476,11 @@ final class CompanionObsidian {
         return true;
     }
 
-    /** A walk to the cell he pours into: false when there is no way to it (another hole is looked for). */
+    /** A walk to the cell he pours into: false when there is no way to it (another hole is looked for, this one passed over). */
     private boolean walkTo(ServerLevel level, BlockPos cell) {
         if (stands.isEmpty()) { stands = CompanionWaterFill.standsFor(c, level, List.of(cell)); legs = 0; path = null; }
         if (walk()) return true;
-        made = null; madeStep = MADE_DIG; reset();
+        passed.add(cell); made = null; madeStep = MADE_DIG; reset();
         return false;
     }
 

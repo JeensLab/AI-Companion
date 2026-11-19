@@ -277,8 +277,14 @@ public final class CompanionObtain {
                 if (refusal != null) return refuse(refusal);
                 if (grows != null && about(Items.OBSIDIAN)) return add("mine_obsidian", key, count);
                 int buckets = bag.getOrDefault("minecraft:lava_bucket", 0);
-                if (grows != null && !about(Items.LAVA_BUCKET) && buckets == 0)
-                    return refuse("Рядом нечего копать: ни обсидиана, ни лавы — отведи меня туда, где они есть.");
+                if (grows != null && !about(Items.LAVA_BUCKET) && buckets == 0) {
+                    // After the blocks his own buckets made, the old line said there was nothing about to dig over a bag that already
+                    // held them (the player 19.11: one of two made, then «Рядом нечего копать: ни обсидиана, ни лавы»).
+                    int have = carried(carried, Items.OBSIDIAN);
+                    return refuse(have > 0
+                            ? "Обсидиана у меня " + have + ", а лавы рядом и в вёдрах больше нет — принеси мне её в ведре."
+                            : "Рядом нечего копать: ни обсидиана, ни лавы — отведи меня туда, где они есть.");
+                }
                 // With no obsidian lying about and no lava to cool, his own buckets are the only source: one bucket of lava makes one
                 // block, so no more is promised than they can give (the rest is planned again after, the player 19.11).
                 if (grows != null && !about(Items.LAVA_BUCKET)) count = Math.min(count, buckets);
