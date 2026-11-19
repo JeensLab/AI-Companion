@@ -35,6 +35,8 @@ public final class CompanionNumbers {
             + "|до\\s+упора|максимум|как\\s+можно\\s+больше|\\bмного\\b|\\bвсё\\s+что|\\bвсе\\s+что|\\bвсю\\b|\\bвсе\\b|\\bвсё\\b)");
     private static final Pattern MORE_WORDS = Pattern.compile("(?U)\\b(больше|побольше|еще|ещё)\\b");
     private static final Pattern TOKEN = Pattern.compile("(?U)\\d+|[\\p{L}]+");
+    /** «Два стака», «полтора стака», «три стопки»: a stack is 64, and the amount is said before it. */
+    private static final Pattern STACKS = Pattern.compile("(?U)(?:(\\d{1,3}|полтора|полутора|[\\p{L}]+)\\s+)?(стак\\p{L}*|стопк\\p{L}*)");
 
     private CompanionNumbers() { }
 
@@ -42,7 +44,7 @@ public final class CompanionNumbers {
     public record Said(int count, String rest) { }
 
     public static Said parse(String text) {
-        String value = text.toLowerCase(Locale.ROOT).replace('ё', 'е');
+        String value = stacks(text.toLowerCase(Locale.ROOT).replace('ё', 'е'));
         record Token(String word, int start, int end) { }
         List<Token> words = new ArrayList<>();
         for (Matcher matcher = TOKEN.matcher(value); matcher.find(); ) words.add(new Token(matcher.group(), matcher.start(), matcher.end()));
@@ -72,5 +74,30 @@ public final class CompanionNumbers {
         if (many.find()) return new Said(AS_MANY, many.replaceAll(" ").replaceAll("\\s+", " ").trim());
         if (MORE_WORDS.matcher(remaining).find()) return new Said(MORE, MORE_WORDS.matcher(remaining).replaceAll(" ").replaceAll("\\s+", " ").trim());
         return new Said(0, remaining);
+    }
+
+    /**
+     * «Два стака» said as a number: the amount before a stack word counts stacks of 64, «полтора» a stack and a half. A stack
+     * word with no amount before it is one stack, as it always was; an unknown word before it is left for the tokenizer.
+     */
+    private static String stacks(String value) {
+        Matcher matcher = STACKS.matcher(value);
+        StringBuilder result = new StringBuilder();
+        int copied = 0;
+        while (matcher.find()) {
+            String many = matcher.group(1);
+            int count;
+            if (many == null) count = 64;
+            else if ("полтора".equals(many) || "полутора".equals(many)) count = 96;
+            else {
+                Integer amount = many.chars().allMatch(Character::isDigit) ? Integer.valueOf(many)
+                        : WHOLE.containsKey(many) ? WHOLE.get(many) : TENS.containsKey(many) ? TENS.get(many) : UNITS.get(many);
+                if (amount == null) continue;
+                count = amount * 64;
+            }
+            result.append(value, copied, matcher.start()).append(count);
+            copied = matcher.end();
+        }
+        return result.append(value.substring(copied)).toString();
     }
 }

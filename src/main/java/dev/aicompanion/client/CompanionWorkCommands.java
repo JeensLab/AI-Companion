@@ -181,6 +181,24 @@ public final class CompanionWorkCommands {
             int count = amount(said.count(), 2, CompanionPlanCodec.FLINT_STEP, 4);
             return count >= 1 && count <= CompanionPlanCodec.FLINT_STEP ? new PlannedAction("gather_loose", 0, count, CompanionPlanCodec.FLINT) : null;
         }
+        // «Добудь листву», «собери листву», «набери листья», «добудь листья» (decided 17.11): the leaves of the tree nearest him,
+        // whatever species grows there, never its trunk. The species is resolved where the world is known (CompanionLeaves).
+        var leaves = Pattern.compile("^(?:(?:до|да)будь(?:ка)?|собери|набери|нарви)(?: мне| нам| себе)?\\s+(листв\\p{L}*|листь\\p{L}*|листьев)"
+                + "(?:\\s+(?:рядом|поблизости|с дерева|с деревьев|на дереве))?$").matcher(bare);
+        if (leaves.matches()) {
+            // «Два стака» is 128, «добудь 500 листвы» is a few stacks: the plan takes the order in steps of a stack each, and the
+            // chain the server plans splits it the same way — a long leaf order is not refused.
+            int count = amount(said.count(), 16, dev.aicompanion.entity.CompanionWork.MAX_LEAVES, 32);
+            return count >= 1 && count <= dev.aicompanion.entity.CompanionWork.MAX_LEAVES
+                    ? new PlannedAction("obtain_item", 0, count, dev.aicompanion.entity.CompanionLeaves.FAMILY) : null;
+        }
+        // «Сруби дерево», «наруби дров»: the trunk, any species — the wood order the model used to plan, now without it.
+        var wood = Pattern.compile("^(?:сруби|наруби|поруби|наколи)(?: мне| нам| себе)?\\s+(дерево|дерева|деревце|дров|дрова|дровец|бревна|бревен)"
+                + "(?:\\s+(?:рядом|поблизости))?$").matcher(bare);
+        if (wood.matches()) {
+            int count = amount(said.count(), 8, 16, 16);
+            return count >= 1 && count <= 16 ? new PlannedAction("gather_wood", 0, count, "") : null;
+        }
         var ore = Pattern.compile("^(?:(?:до|да)будь(?:ка)?|накопай|выкопай|наколи)(?: мне| нам| себе)?\\s+(угля|уголь|железа|железо|железной|меди|медь|медной|золота|золото|золотой"
                 + "|алмазов|алмазы|алмаз|изумрудов|изумруды|изумруд|лазурита|лазурит|редстоуна|редстоун)(?:\\s+(?:руды|руда|руду))?(?:\\s+(?:рядом|поблизости))?$").matcher(bare);
         if (ore.matches()) {

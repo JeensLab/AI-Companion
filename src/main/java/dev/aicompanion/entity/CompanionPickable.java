@@ -73,6 +73,15 @@ final class CompanionPickable {
         return sources.getOrDefault(item, List.of());
     }
 
+    /** Every leaf block the world has: the family word of an order, whatever species grows here. */
+    static synchronized List<Source> leaves(ServerLevel level) {
+        ensure(level);
+        List<Source> all = new ArrayList<>();
+        for (List<Source> list : sources.values()) for (Source source : list)
+            if (source.block().defaultBlockState().is(BlockTags.LEAVES)) all.add(source);
+        return all;
+    }
+
     /** Whether the item is had with shears only: no block gives it to a hand. */
     static synchronized boolean shorn(ServerLevel level, Item item) {
         List<Source> all = sources(level, item);

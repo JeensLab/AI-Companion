@@ -168,14 +168,25 @@ final class CompanionMiningNavigation {
         return owner.getY() >= returnHeight - .5 || canWalkBackUp(owner, owner.blockPosition(), returnHeight, null, placed);
     }
 
+    /**
+     * Whether a player standing at {@code from} walks to one of these cells: a step up of one at a time, drops of up to three,
+     * through cells with room for a body, within a few thousand cells round him. A stair whose steps are two high is no way
+     * up it (the owner, 18.11).
+     */
+    static boolean canWalkTo(CompanionEntity owner, BlockPos from, Set<BlockPos> cells) { return walksFrom(owner, from, cells::contains, null, null); }
+
     private static boolean canWalkBackUp(CompanionEntity owner, BlockPos from, int toY, BlockPos removed, BlockPos filled) {
-        if (from.getY() >= toY) return true;
+        return walksFrom(owner, from, at -> at.getY() >= toY, removed, filled);
+    }
+
+    private static boolean walksFrom(CompanionEntity owner, BlockPos from, java.util.function.Predicate<BlockPos> goal, BlockPos removed, BlockPos filled) {
+        if (goal.test(from)) return true;
         java.util.ArrayDeque<BlockPos> open = new java.util.ArrayDeque<>();
         Set<BlockPos> seen = new HashSet<>();
         open.add(from.immutable()); seen.add(from.immutable());
         while (!open.isEmpty() && seen.size() < 3000) {
             BlockPos at = open.removeFirst();
-            if (at.getY() >= toY) return true;
+            if (goal.test(at)) return true;
             for (Direction side : Direction.Plane.HORIZONTAL) for (int dy = 1; dy >= -3; dy--) {
                 BlockPos next = at.relative(side).above(dy);
                 if (Math.abs(next.getX() - from.getX()) > 24 || Math.abs(next.getZ() - from.getZ()) > 24 || seen.contains(next)) continue;
