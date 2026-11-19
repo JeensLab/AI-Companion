@@ -140,10 +140,8 @@ final class CompanionOreMining {
         if (!opensSafely(level, w.target, false)) { rejectOre(); return; }
         if (!safeOreSwing(level, w.target)) return;
         if (w.items.prepareMiningTool(state)) return;
-        if (!w.owner.getMainHandItem().isCorrectToolForDrops(state)) {
-            w.owner.selectToolForBlock(state);
-            if (!w.owner.getMainHandItem().isCorrectToolForDrops(state)) { w.resetTarget(); w.phase = CompanionWork.Phase.ORE_PICK; return; }
-        }
+        w.owner.selectToolForBlock(state);
+        if (!w.owner.getMainHandItem().isCorrectToolForDrops(state)) { w.resetTarget(); w.phase = CompanionWork.Phase.ORE_PICK; return; }
         // Ore at the feet in a wall leaves a one-high pocket: its drop and the rest of the vein would be out of sight and reach.
         // Like a player's 1x2, the block above goes first, unless it lets in lava or a spring he has nothing to plug: then the ore
         // goes from the pocket, as before (game 30.10: a spring behind that block cost him the ore).
@@ -295,6 +293,8 @@ final class CompanionOreMining {
         // Leave the step used to get back up, as in stone mining. A vein can contain that very step.
         if (!safeOreSwing(level, pos)) return false;
         BlockState state = level.getBlockState(pos);
+        // The tool of the ore in his hand, not whatever the tunnel left there: its drop and its wear are the pickaxe's.
+        w.owner.takeToolForBlock(state);
         ItemStack tool = w.owner.getMainHandItem();
         var drops = CompanionTools.drops(state, level, pos, level.getBlockEntity(pos), w.owner, tool);
         if (!drops.isEmpty() && !w.items.canStore(drops)) { w.finish(false, "В сумке нет места для добычи. Освободи место или попроси сложить ресурсы в сундук."); return false; }
@@ -308,7 +308,7 @@ final class CompanionOreMining {
         // Water too, with what is left of the plugs, but only a spring in the wall: the cells of his own way (a flooded one too) and any pond are open, not plugged.
         List<BlockPos> water = CompanionLava.waterInflow(level, pos, ownWater());
         if (!level.destroyBlock(pos, false, w.owner, 512)) { blockOreCell(level, pos, "destroy_rejected"); return false; }
-        tool.getItem().mineBlock(tool, level, state, pos, w.owner);
+        CompanionTools.wearOnBreak(tool, level, state, pos, w.owner);
         w.owner.dropHarvest(pos, drops);
         CompanionLava.plug(w.owner, level, lava);
         CompanionLava.plug(w.owner, level, water);

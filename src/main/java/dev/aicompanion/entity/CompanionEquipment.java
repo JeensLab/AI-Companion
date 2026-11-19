@@ -166,18 +166,128 @@ final class CompanionEquipment {
         return score * 10000 + (stack.isDamageableItem() ? stack.getMaxDamage() - stack.getDamageValue() : 0);
     }
 
-    public void selectToolForBlock(BlockState state) {
-        if (state.is(net.minecraft.tags.BlockTags.MINEABLE_WITH_SHOVEL)) {
-            if (!CompanionTools.equip(c, ItemTags.SHOVELS, state) && !c.getMainHandItem().isEmpty()) unequipForSupport("mainhand");
+    /**
+     * The hand item a tool for the block replaced, kept to be put back after the break (issue #105). Null when nothing is pending:
+     * the work puts the tool away when it ends or is cancelled, so a hand kept for one break is not restored into another.
+     */
+    private ItemStack handBeforeTool;
+
+    /** A kept hand the dig itself ended is no longer owed: the recovery restores its own hand instead. */
+    public void forgetKeptHand() { handBeforeTool = null; }
+
+    /** The tool that breaks this block best goes into his hand and stays there: for the paths that break many blocks in a row. */
+    public void selectToolForBlock(BlockState state) { takeToolForBlock(state, false); }
+
+    /** The same, keeping what was in his hand for {@link #putToolAway()} after the break. */
+    public void takeToolForBlock(BlockState state) { takeToolForBlock(state, true); }
+
+    /**
+     * The Silk Touch tool that gives the block itself goes into his hand, keeping the hand for {@link #putToolAway()}; false when
+     * he carries none of the kind. A plain tool of the same kind would give the block's drop, not the block.
+     */
+    public boolean takeSilkToolForBlock(BlockState state) {
+        ItemStack best = CompanionTools.bestSilkToolForBlock(c, state);
+        if (best.isEmpty()) return false;
+        if (best == c.getMainHandItem()) return true;
+        ItemStack previous = c.getMainHandItem().copy();
+        if (best == c.getOffhandItem()) {
+            if (!c.unequipForSupport("offhand").success()) return false;
+            best = CompanionTools.bestSilkToolForBlock(c, state);
+            if (best.isEmpty()) return false;
+            if (best == c.getMainHandItem()) return true;
+        }
+        if (!equipStackForWork(best).success()) return false;
+        if (handBeforeTool == null) handBeforeTool = previous;
+        return true;
+    }
+
+    /** Puts back what was in his hand before the tool for the block: that same stack goes into the hand again, the tool into the bag. */
+    public void putToolAway() {
+        ItemStack previous = handBeforeTool;
+        handBeforeTool = null;
+        if (previous == null) return;
+        if (previous.isEmpty()) { unequipForSupport("mainhand"); return; }
+        // The stack he held, not the first of its item: a plain pickaxe comes back, not the Efficiency one he broke with.
+        ItemStack same = findInBag(previous);
+        if (!same.isEmpty()) { equipStackForWork(same); return; }
+        equipForSupport(BuiltInRegistries.ITEM.getKey(previous.getItem()).toString());
+    }
+
+    private ItemStack findInBag(ItemStack like) {
+        for (ItemStack stack : c.companionInventory)
+            if (!stack.isEmpty() && ItemStack.isSameItemSameComponents(stack, like)) return stack;
+        return ItemStack.EMPTY;
+    }
+
+    /**
+     * The chosen stack itself goes into his hand, not a stack of the same item: the one the work picked (the fastest, the enchanted
+     * one) is the one that wears. The hand item it replaces goes into the bag first; with no room for it the two trade places, as a
+     * player swaps them: the hand item takes the cell the tool leaves and no cell is needed. Only a tool of the other hand (no cell
+     * of its own) is refused then.
+     */
+    CompanionActionResult equipStackForWork(ItemStack chosen) {
+        if (c.level().isClientSide) return CompanionActionResult.failed("Экипировка меняется на сервере мира.");
+        if (chosen.isEmpty()) return CompanionActionResult.failed("В руке нечего взять.");
+        NonNullList<ItemStack> before = copyBag();
+        ItemStack previous = c.getMainHandItem();
+        int slot = bagSlotOf(chosen);
+        ItemStack toStore = previous.copy();
+        ItemStack incoming;
+        if (!toStore.isEmpty() && !c.storeInCompanionInventory(toStore)) {
+            // The bag has no cell for what his hand held (a full bag, a stack that only half fits): the tool leaves its own cell
+            // for it. One tool at a time: a stack of several stays in the bag, its cell still taken.
+            if (slot < 0 || before.get(slot).getCount() != 1) {
+                restoreBag(before);
+                return CompanionActionResult.failed("В сумке нет места для прежнего предмета. Освободи ячейку.");
+            }
+            incoming = before.get(slot);
+            restoreBag(before);
+            c.companionInventory.set(slot, previous);
+            c.setItemSlot(EquipmentSlot.MAINHAND, incoming);
+        } else {
+            incoming = chosen.split(1);
+            c.setItemSlot(EquipmentSlot.MAINHAND, incoming);
+        }
+        String id = BuiltInRegistries.ITEM.getKey(incoming.getItem()).toString();
+        dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "equipment_changed", "entity", c.getUUID(), "slot", "mainhand",
+                "before", previous.isEmpty() ? "empty" : BuiltInRegistries.ITEM.getKey(previous.getItem()),
+                "after", id, "requested", id);
+        c.refreshInventorySummary();
+        return CompanionActionResult.ok("Взял в правую руку: " + incoming.getHoverName().getString() + ".");
+    }
+
+    /** The bag cell this very stack lies in, or -1 for a stack of a hand. */
+    private int bagSlotOf(ItemStack stack) {
+        for (int slot = 0; slot < c.companionInventory.size(); slot++)
+            if (c.companionInventory.get(slot) == stack) return slot;
+        return -1;
+    }
+
+    private void takeToolForBlock(BlockState state, boolean keepPrevious) {
+        // The switch off: he breaks with whatever he happens to hold, as a player who does not bother changing tools.
+        if (!c.rightToolForBlock()) return;
+        // This path leaves the tool in his hand: a hand kept for a restore belongs to another break.
+        if (!keepPrevious) handBeforeTool = null;
+        ItemStack best = CompanionTools.bestToolForBlock(c, state);
+        if (best.isEmpty()) {
+            // Nothing of his speeds the block up: a tool of another class is no faster than a bare hand, and a player puts it away
+            // rather than digs with it in the way (the shovel branch emptied the hand like this).
+            if (!CompanionTools.wrongToolForBlock(c, c.getMainHandItem(), state)) return;
+            ItemStack previous = c.getMainHandItem().copy();
+            if (!c.unequipForSupport("mainhand").success()) return;
+            if (keepPrevious && handBeforeTool == null) handBeforeTool = previous;
             return;
         }
-        double best = c.getMainHandItem().getDestroySpeed(state);
-        ItemStack choice = ItemStack.EMPTY;
-        for (ItemStack stack : c.companionInventory) if (!stack.isEmpty() && stack.getDestroySpeed(state) > best) {
-            best = stack.getDestroySpeed(state);
-            choice = stack;
+        if (best == c.getMainHandItem()) return;
+        ItemStack previous = c.getMainHandItem().copy();
+        if (best == c.getOffhandItem()) {
+            // The whole offhand stack goes into the bag first, as unequipping it does; the fastest stack is then taken from there.
+            if (!c.unequipForSupport("offhand").success()) return;
+            best = CompanionTools.bestToolForBlock(c, state);
+            if (best.isEmpty() || best == c.getMainHandItem()) return;
         }
-        if (!choice.isEmpty()) equipItemInternal(BuiltInRegistries.ITEM.getKey(choice.getItem()).toString(), "mainhand");
+        if (!equipStackForWork(best).success()) return;
+        if (keepPrevious && handBeforeTool == null) handBeforeTool = previous;
     }
 
     public void selectWeaponForCombat() {

@@ -151,6 +151,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether he plays by the fire at all (the player's switch, on in old saves: CompanionEntityNbt). */
     private boolean playsByTheFire = true;
     private boolean replantOn = true;
+    /** Whether he takes the tool that breaks a block best from his bag, or breaks with whatever is in his hand (issue #105). */
+    private boolean rightToolOn = true;
     /** Whether «подбери» looks at the ground first, and how far around him (the player's setting, not saved). */
     private boolean pickUpNearby = true;
     private int pickUpRadius = 16;
@@ -693,6 +695,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether a tree he felled gets a sapling of its wood back on the stump from his bag (the player can turn it off in the settings). */
     public boolean replantSaplings() { return replantOn; }
     public void setReplantSaplings(boolean on) { replantOn = on; }
+    /** Whether he takes the right tool for a block from his bag instead of breaking it with whatever is in his hand. */
+    public boolean rightToolForBlock() { return rightToolOn; }
+    public void setRightToolForBlock(boolean on) { rightToolOn = on; }
     /** Whether «подбери» takes what lies on the ground around him, and how far the scan goes (the player's setting). */
     public boolean pickUpNearby() { return pickUpNearby; }
     public int pickUpRadius() { return pickUpRadius; }
@@ -924,6 +929,13 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     NonNullList<ItemStack> copyBag() { return equipment.copyBag(); }
     public static EquipmentSlot equipmentSlot(String name) { return CompanionEquipment.equipmentSlot(name); }
     public void selectToolForBlock(BlockState state) { equipment.selectToolForBlock(state); }
+    /** The right tool for the block goes into his hand; what was there is put back by putToolAway after the break. */
+    public void takeToolForBlock(BlockState state) { equipment.takeToolForBlock(state); }
+    /** The Silk Touch tool for the block itself goes into his hand; false when he carries none of the kind. */
+    public boolean takeSilkToolForBlock(BlockState state) { return equipment.takeSilkToolForBlock(state); }
+    public void putToolAway() { equipment.putToolAway(); }
+    /** A hand kept for a break that the recovery's own restore ended is no longer owed. */
+    public void forgetKeptHand() { equipment.forgetKeptHand(); }
     public void selectWeaponForCombat() { equipment.selectWeaponForCombat(); }
     public void setEquipmentByPlayer(EquipmentSlot slot, ItemStack stack) { equipment.setEquipmentByPlayer(slot, stack); }
 

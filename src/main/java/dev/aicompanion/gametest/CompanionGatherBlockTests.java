@@ -193,6 +193,255 @@ public final class CompanionGatherBlockTests {
         });
     }
 
+    /**
+     * «Добудь 2 травы» with shears in his other hand: grass is no tool's block and comes down at once, yet shears wear on every
+     * block they cut but fire, as a player's do — one for each tuft — and the tufts land in the bag as themselves, not as the seeds
+     * a hand would shake out. A real harvest path, not the wear helper: the shears in his hand are the ones the plan puts there.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 800)
+    public static void grassIsCutWithShearsAndTheyWear(GameTestHelper h) {
+        ground(h);
+        h.setBlock(new BlockPos(14, GROUND + 1, 16), Blocks.SHORT_GRASS);
+        h.setBlock(new BlockPos(13, GROUND + 1, 18), Blocks.SHORT_GRASS);
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItemSlot(net.minecraft.world.entity.EquipmentSlot.OFFHAND, new ItemStack(Items.SHEARS));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:short_grass\",\"count\":2}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.SHORT_GRASS) == 2, "Not two tufts: " + count(c, Items.SHORT_GRASS) + ", " + report);
+            h.assertTrue(wear(c, Items.SHEARS) == 2, "Shears worn by " + wear(c, Items.SHEARS) + ", not by the two tufts");
+        });
+    }
+
+    /**
+     * The crown is cut block after block: the leaf after the first one comes down while the first one's drop still lies on the
+     * ground, so the pickup comes after the cutting and not between two leaves.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void leavesAreCutWithoutWaitingForEachDrop(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.DISTANCE, 1);
+        List<BlockPos> crown = List.of(trunk.above().west(), trunk.above().east(), trunk.above().north(), trunk.above(2).west());
+        for (BlockPos cell : crown) h.setBlock(cell, leaves);
+        for (int up = 0; up < 3; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
+        CompanionEntity c = withTheOwnersTools(h);
+        int[] standing = {crown.size()}, broken = {0};
+        boolean[] keptCutting = {false};
+        h.onEachTick(() -> {
+            int left = 0;
+            for (BlockPos cell : crown) if (h.getBlockState(cell).is(Blocks.OAK_LEAVES)) left++;
+            if (left < standing[0]) {
+                broken[0] += standing[0] - left;
+                // A second leaf gone with the first one's drop still lying there: the drop did not hold the work up.
+                if (broken[0] >= 2 && leafDrops(h) >= 2) keptCutting[0] = true;
+            }
+            standing[0] = left;
+        });
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":3}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            h.assertTrue(count(c, Items.OAK_LEAVES) >= 3, "The leaves did not drop: " + count(c, Items.OAK_LEAVES) + ", " + future.join().report());
+            h.assertTrue(keptCutting[0], "He waited for each leaf's drop before the next leaf");
+        });
+    }
+
+    /** Leaf items of his harvest lying in the test: what a cut leaf leaves on the ground for a while. */
+    private static int leafDrops(GameTestHelper h) {
+        return h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, h.getBounds().inflate(3),
+                item -> item.getItem().is(Items.OAK_LEAVES)).stream().mapToInt(item -> item.getItem().getCount()).sum();
+    }
+
+    /** The owner's bag (in game 16.11): the stone pickaxe in his hand, an iron pickaxe, an axe, shears and a shovel in the bag. */
+    private static CompanionEntity withTheOwnersTools(GameTestHelper h) {
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        c.setItem(0, new ItemStack(Items.IRON_PICKAXE));
+        c.setItem(1, new ItemStack(Items.IRON_AXE));
+        c.setItem(2, new ItemStack(Items.SHEARS));
+        c.setItem(3, new ItemStack(Items.IRON_SHOVEL));
+        return c;
+    }
+
+    /**
+     * The owner's own run (16.11): the tree a bonemealed sapling grew, its leaves natural and fading, low enough to be reached from the
+     * ground; Oleg holds a pickaxe and his bag carries a pickaxe, an axe, shears and a shovel. «Добудь листву»: the leaves are cut with
+     * the shears — fifteen times a bare hand on a leaf, and the only tool that brings the leaf itself — and the shears are what wears;
+     * no pickaxe touches a leaf.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void naturallyGrownLeavesAreCutWithTheShearsWhileAPickaxeIsHeld(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.DISTANCE, 1);
+        for (BlockPos cell : List.of(trunk.above().west(), trunk.above().east(), trunk.above().north(), trunk.above(2).west()))
+            h.setBlock(cell, leaves);
+        // The trunk after the leaves: they count their way to it and do not fade, as those of a grown oak.
+        for (int up = 0; up < 3; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
+        CompanionEntity c = withTheOwnersTools(h);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":3}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OAK_LEAVES) >= 3, "The leaves did not drop: " + count(c, Items.OAK_LEAVES) + ", " + report);
+            h.assertTrue(damage(c, Items.SHEARS) >= 3, "The shears were not the tool that cut the leaves: " + damage(c, Items.SHEARS) + ", " + report);
+            h.assertTrue(damage(c, Items.STONE_PICKAXE) == 0 && damage(c, Items.IRON_PICKAXE) == 0,
+                    "A pickaxe broke the leaves: stone " + damage(c, Items.STONE_PICKAXE) + ", iron " + damage(c, Items.IRON_PICKAXE) + ", " + report);
+        });
+    }
+
+    /**
+     * The pickup of a harvest lying in a dip under a leaf of a bush of natural leaves, with the owner's bag: the leaves shut the cells it
+     * could be taken from, so they are broken out of the way — as a player breaks into a bush — and a leaf is the shears' block, not the
+     * pickaxe's in his hand: it comes down as itself, fifteen times faster, and the pickaxe is not worn.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void aLeafInTheWayOfADropIsCutWithTheShearsNotThePickaxeInHisHand(GameTestHelper h) {
+        ground(h);
+        BlockPos pit = new BlockPos(14, GROUND, 14);
+        h.setBlock(pit, Blocks.AIR);
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.DISTANCE, 1);
+        // The dip roofed by a leaf, the step down into it a leaf too: two of them shut the drop in.
+        for (BlockPos cell : List.of(pit.above(), pit.west().above()))
+            h.setBlock(cell, leaves);
+        CompanionEntity c = withTheOwnersTools(h);
+        var at = h.absoluteVec(net.minecraft.world.phys.Vec3.atBottomCenterOf(pit).add(0, .1, 0));
+        var log = new net.minecraft.world.entity.item.ItemEntity(h.getLevel(), at.x, at.y, at.z, new ItemStack(Items.OAK_LOG));
+        log.setDeltaMovement(net.minecraft.world.phys.Vec3.ZERO);
+        h.getLevel().addFreshEntity(log);
+        c.claimDrops(List.of(log));
+        h.succeedWhen(() -> {
+            String report = c.getLastTaskResult();
+            h.assertTrue(count(c, Items.OAK_LOG) == 1, "The log stays under the bush: " + report);
+            h.assertTrue(damage(c, Items.SHEARS) >= 1, "The leaf in the way was not cut with the shears: " + damage(c, Items.SHEARS) + ", " + report);
+            h.assertTrue(damage(c, Items.STONE_PICKAXE) == 0 && damage(c, Items.IRON_PICKAXE) == 0,
+                    "A pickaxe broke the leaf in the way: stone " + damage(c, Items.STONE_PICKAXE) + ", iron " + damage(c, Items.IRON_PICKAXE) + ", " + report);
+        });
+    }
+
+    /**
+     * The owner's bag one cell short of full: the leaf in the way comes down as it did before the tool rule (one cell free for what it
+     * gives, nothing carried lost), and its swing begins with the shears — not with the pickaxe in his hand, whose six ticks it used to
+     * spend first. The swap fills that cell and takes the shears out of their own, so the room is weighed before it.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void aLeafInTheWayWithOneFreeCellIsBrokenWithTheShearsFromItsFirstTick(GameTestHelper h) {
+        ground(h);
+        BlockPos pit = new BlockPos(14, GROUND, 14);
+        h.setBlock(pit, Blocks.AIR);
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.DISTANCE, 1);
+        for (BlockPos cell : List.of(pit.above(), pit.west().above())) h.setBlock(cell, leaves);
+        CompanionEntity c = withTheOwnersTools(h);
+        // One cell free: the pickaxe goes into it and the shears out of their own cell into his hand.
+        for (int slot = 4; slot < c.getContainerSize() - 1; slot++) c.setItem(slot, new ItemStack(Items.COBBLESTONE, 64));
+        var at = h.absoluteVec(net.minecraft.world.phys.Vec3.atBottomCenterOf(pit).add(0, .1, 0));
+        var log = new net.minecraft.world.entity.item.ItemEntity(h.getLevel(), at.x, at.y, at.z, new ItemStack(Items.OAK_LOG));
+        log.setDeltaMovement(net.minecraft.world.phys.Vec3.ZERO);
+        h.getLevel().addFreshEntity(log);
+        c.claimDrops(List.of(log));
+        h.succeedWhen(() -> {
+            String report = c.getLastTaskResult();
+            h.assertTrue(!h.getBlockState(pit.above()).is(Blocks.OAK_LEAVES) || !h.getBlockState(pit.west().above()).is(Blocks.OAK_LEAVES),
+                    "The leaf in the way was refused: " + report);
+            h.assertTrue(count(c, Items.OAK_LEAVES) + leavesOnTheGround(h) >= 1, "The leaf's drop is gone: " + c.getStoredItemsSummary());
+            h.assertTrue(damage(c, Items.SHEARS) >= 1, "The leaf was not cut with the shears: " + damage(c, Items.SHEARS) + ", " + report);
+            h.assertTrue(damage(c, Items.STONE_PICKAXE) == 0, "The pickaxe broke the leaf: " + damage(c, Items.STONE_PICKAXE) + ", " + report);
+            h.assertTrue(count(c, Items.COBBLESTONE) == 22 * 64, "A stack he carried is gone: " + count(c, Items.COBBLESTONE));
+            List<String> swings = swingsAt(c, "oak_leaves");
+            h.assertTrue(swings.stream().filter(line -> line.contains("\"event\":\"mining_started\""))
+                            .allMatch(line -> line.contains("\"tool\":\"minecraft:shears\"")),
+                    "The leaf's swing began with another tool: " + swings);
+            h.assertTrue(swings.stream().anyMatch(line -> line.contains("\"event\":\"mining_duration_reached\"") && line.contains("\"ticks\":1}")),
+                    "The leaf did not come down on the shears' own tick: " + swings);
+        });
+    }
+
+    /**
+     * The leaf that hides a log from his eyes while a tree is felled, with the owner's bag: it is cut with the shears — the leaf's tool —
+     * not with the axe the trunk wants, and the pickaxe in his hand is not worn; the log itself is the axe's, and the axe is back in his
+     * hand for it once the leaf is down.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void leavesInTheWayOfALogAreCutWithTheShearsWhileThePickaxeIsHeld(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
+        for (int up = 0; up < 3; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.DISTANCE, 1);
+        for (int x = 17; x <= 19; x++) for (int z = 15; z <= 17; z++) for (int y = 1; y <= 3; y++)
+            if (x != trunk.getX() || z != trunk.getZ()) h.setBlock(new BlockPos(x, GROUND + y, z), leaves);
+        CompanionEntity c = withTheOwnersTools(h);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_log\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OAK_LOG) >= 1, "No log: " + count(c, Items.OAK_LOG) + ", " + report);
+            h.assertTrue(damage(c, Items.SHEARS) >= 1, "The leaf in the way was not cut with the shears: " + damage(c, Items.SHEARS) + ", " + report);
+            h.assertTrue(damage(c, Items.IRON_AXE) >= 1, "The log was not the axe's: " + damage(c, Items.IRON_AXE) + ", " + report);
+            h.assertTrue(damage(c, Items.STONE_PICKAXE) == 0 && damage(c, Items.IRON_PICKAXE) == 0,
+                    "A pickaxe broke a leaf: stone " + damage(c, Items.STONE_PICKAXE) + ", iron " + damage(c, Items.IRON_PICKAXE) + ", " + report);
+            // The swing itself: the leaf's first tick is journalled with the tool in his hand then, and it came down on that tool's own
+            // tick — a leaf is the only block here that comes down in one, the trunk takes eight with the axe.
+            List<String> swings = swingsAt(c, "oak_leaves");
+            h.assertTrue(swings.stream().anyMatch(line -> line.contains("\"event\":\"mining_started\"")), "No swing at a leaf was journalled: " + swings);
+            h.assertTrue(swings.stream().filter(line -> line.contains("\"event\":\"mining_started\""))
+                            .allMatch(line -> line.contains("\"tool\":\"minecraft:shears\"")),
+                    "The leaf's swing began with another tool: " + swings);
+            h.assertTrue(swings.stream().anyMatch(line -> line.contains("\"event\":\"mining_duration_reached\"") && line.contains("\"ticks\":1}")),
+                    "The leaf did not come down on the shears' own tick: " + swings);
+        });
+    }
+
+    /**
+     * The same bag, stone: a pickaxe is the tool the game's own rule gives stone's drop to, so it comes out of the bag for the axe in
+     * his hand — the shears and the shovel stay in it, and nothing but the pickaxe wears.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void thePickaxeIsTakenForStoneWithAShearsAnAxeAndAShovelInTheBag(GameTestHelper h) {
+        ground(h);
+        for (int x = 15; x <= 19; x++) for (int z = 13; z <= 17; z++) for (int y = GROUND - 2; y <= GROUND - 1; y++)
+            h.setBlock(new BlockPos(x, y, z), Blocks.STONE);
+        CompanionEntity c = withTheOwnersTools(h);
+        // As after felling: the axe in his hand, the pickaxe in the bag.
+        c.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_AXE));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:cobblestone\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.COBBLESTONE) >= 1, "No cobblestone: " + count(c, Items.COBBLESTONE) + ", " + report);
+            h.assertTrue(damage(c, Items.IRON_PICKAXE) >= 1, "The pickaxe was not the tool that mined the stone: " + damage(c, Items.IRON_PICKAXE) + ", " + report);
+            // The dirt over the stone is the shovel's own work; the shears and the axe are neither stone's nor dirt's.
+            h.assertTrue(damage(c, Items.SHEARS) <= 0 && damage(c, Items.IRON_AXE) <= 0 && damage(c, Items.STONE_PICKAXE) <= 0,
+                    "Another tool wore on stone: shears " + damage(c, Items.SHEARS) + ", axe " + damage(c, Items.IRON_AXE)
+                            + ", stone pickaxe " + damage(c, Items.STONE_PICKAXE) + ", " + report);
+        });
+    }
+
+    /**
+     * A ripe crop, with the same bag: no tool is faster on a crop and its drop comes to a bare hand, so the pickaxe in his hand is not
+     * put away for it and nothing in the bag is swapped in — the harvest is reaped as a player reaps it, and no tool wears.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void aRipeCropIsReapedWithTheHandAndNoToolIsSwapped(GameTestHelper h) {
+        ground(h);
+        h.setBlock(new BlockPos(20, GROUND, 16), Blocks.WATER);
+        for (int z = 14; z <= 18; z++) {
+            h.setBlock(new BlockPos(21, GROUND, z), Blocks.FARMLAND);
+            h.setBlock(new BlockPos(21, GROUND + 1, z), Blocks.CARROTS.defaultBlockState().setValue(net.minecraft.world.level.block.CropBlock.AGE, net.minecraft.world.level.block.CropBlock.MAX_AGE));
+        }
+        CompanionEntity c = withTheOwnersTools(h);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:carrot\",\"count\":3}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.CARROT) >= 3, "Not three carrots: " + count(c, Items.CARROT) + ", " + report);
+            h.assertTrue(damage(c, Items.STONE_PICKAXE) == 0 && damage(c, Items.IRON_PICKAXE) == 0 && damage(c, Items.SHEARS) == 0
+                            && damage(c, Items.IRON_AXE) == 0 && damage(c, Items.IRON_SHOVEL) == 0,
+                    "A tool wore on a crop: pickaxe " + damage(c, Items.STONE_PICKAXE) + ", shears " + damage(c, Items.SHEARS)
+                            + ", axe " + damage(c, Items.IRON_AXE) + ", shovel " + damage(c, Items.IRON_SHOVEL) + ", " + report);
+        });
+    }
+
     /** A crown high over the ground is out of his reach: said at once, and the two ingots he carries are not spent on shears for it. */
     @GameTest(template = "tall_tree", timeoutTicks = 400)
     public static void leavesOutOfReachAreNotPlanned(GameTestHelper h) {
@@ -212,7 +461,9 @@ public final class CompanionGatherBlockTests {
 
     /**
      * Plan only: what grows on the bed of the sea is picked too: kelp, a sea pickle, seagrass (with shears), and a coral block
-     * mined with a pickaxe for the dead block it gives. A coral itself and its fan give anything only to Silk Touch: no source.
+     * mined with a pickaxe for the dead block it gives. A coral itself and its fan give anything only to Silk Touch: they are
+     * sources of themselves for a silk tool, so the chain goes for them as they stand when he carries such a tool, and refuses
+     * before the walk without one, as the picking would (silk is an enchantment and never made).
      */
     @GameTest(template = "empty", timeoutTicks = 40)
     public static void whatGrowsUnderWaterIsPlannedAsPicking(GameTestHelper h) {
@@ -230,10 +481,20 @@ public final class CompanionGatherBlockTests {
         var bare = CompanionObtain.plan(level, List.of(), false, "minecraft:dead_tube_coral_block", 1, thing -> true);
         h.assertTrue(!bare.refused() && bare.steps().getLast().equals(new CompanionObtain.Step("gather_block", "minecraft:dead_tube_coral_block", 1))
                 && bare.steps().stream().anyMatch(step -> step.type().equals("craft_item") && step.item().endsWith("_pickaxe")), "Dead coral block with no pickaxe: " + bare);
-        for (String item : List.of("minecraft:tube_coral", "minecraft:tube_coral_fan", "minecraft:dead_tube_coral", "minecraft:tube_coral_block")) {
-            var plan = CompanionObtain.plan(level, List.of(new ItemStack(Items.WOODEN_PICKAXE)), false, item, 1, thing -> true);
-            h.assertTrue(plan.steps().stream().noneMatch(step -> step.type().equals("gather_block") && step.item().equals(item)), item + " is not picked: " + plan);
+        // A coral, its fan and a live coral block are taken as they stand with Silk Touch: the source table knows them, and the
+        // chain goes for them when a silk tool is carried; with none it refuses at the plan, naming the silk the picking would ask for.
+        ItemStack silk = new ItemStack(Items.WOODEN_PICKAXE);
+        silk.enchant(level.registryAccess().holderOrThrow(net.minecraft.world.item.enchantment.Enchantments.SILK_TOUCH), 1);
+        for (String item : List.of("minecraft:tube_coral", "minecraft:tube_coral_fan", "minecraft:tube_coral_block")) {
+            var plan = CompanionObtain.plan(level, List.of(silk), false, item, 1, thing -> true);
+            h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("gather_block", item, 1))), item + " is picked with silk: " + plan);
+            var plain = CompanionObtain.plan(level, List.of(new ItemStack(Items.WOODEN_PICKAXE)), false, item, 1, thing -> true);
+            h.assertTrue(plain.refused() && plain.refusal().contains("Шёлковым касанием"), item + " without silk: " + plain);
         }
+        // The dead coral plant is the mine's own block (any pickaxe takes it): no source of the plant itself.
+        var deadCoral = CompanionObtain.plan(level, List.of(new ItemStack(Items.WOODEN_PICKAXE)), false, "minecraft:dead_tube_coral", 1, thing -> true);
+        h.assertTrue(deadCoral.steps().stream().noneMatch(step -> step.type().equals("gather_block") && step.item().equals("minecraft:dead_tube_coral")),
+                "Dead tube coral is not picked: " + deadCoral);
         h.succeed();
     }
 
@@ -265,6 +526,37 @@ public final class CompanionGatherBlockTests {
             for (Item item : List.of(Items.SEAGRASS, Items.SEA_PICKLE, Items.DEAD_TUBE_CORAL_BLOCK)) h.assertTrue(count(c, item) == 1, "Not one " + item + ": " + count(c, item) + ", " + report);
             h.assertTrue(count(c, Items.KELP) == 3, "Not three kelp: " + count(c, Items.KELP) + ", " + report);
             h.assertTrue(h.getBlockState(root).is(Blocks.KELP) || h.getBlockState(root).is(Blocks.KELP_PLANT), "The root of the kelp is gone");
+        });
+    }
+
+    /**
+     * A coral plant and its fan are taken as they stand with Silk Touch: he dives for them where they grow on the bed, and the
+     * block itself lands in the bag, broken with a silk tool of his. A silk wooden pickaxe and silk shears are as fast as a bare
+     * hand on them (a coral plant is no pickaxe's block, a fan no shears' block), yet silk is the drop and not the speed: the plan
+     * promises the block and the picking keeps the promise instead of ending the order over a tool he carries.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void coralAndItsFanArePickedWithASilkTool(GameTestHelper h) {
+        ground(h);
+        pond(h, 16, 14, 22, 20, GROUND);
+        // On the bed, waterlogged as it stands there: a coral dies out of water, and the bed is what he dives to.
+        h.setBlock(new BlockPos(18, 1, 16), Blocks.TUBE_CORAL.defaultBlockState()
+                .setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.WATERLOGGED, true));
+        h.setBlock(new BlockPos(20, 1, 18), Blocks.TUBE_CORAL_FAN.defaultBlockState()
+                .setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.WATERLOGGED, true));
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, withSilk(h, Items.WOODEN_PICKAXE));
+        c.setItem(1, withSilk(h, Items.SHEARS));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:tube_coral\",\"count\":1},"
+                + "{\"action\":\"obtain_item\",\"item\":\"minecraft:tube_coral_fan\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.TUBE_CORAL) == 1 && count(c, Items.TUBE_CORAL_FAN) == 1,
+                    "The coral or its fan did not land in the bag: coral " + count(c, Items.TUBE_CORAL) + ", fan " + count(c, Items.TUBE_CORAL_FAN) + ", " + report);
+            // Both are instabreak plants, yet shears wear on every block they cut but fire, as a player's do: the silk tie-break
+            // puts them in his hand for both, so they wear on both, and the silk block in the bag is what proves the tool broke it.
+            h.assertTrue(wear(c, Items.SHEARS) >= 2, "The shears did not wear on both plants: shears " + wear(c, Items.SHEARS) + ", " + report);
         });
     }
 
@@ -519,6 +811,51 @@ public final class CompanionGatherBlockTests {
         NeoForge.EVENT_BUS.post(new BlockEvent.EntityPlaceEvent(BlockSnapshot.create(h.getLevel().dimension(), h.getLevel(), h.absolutePos(cell)), Blocks.GRASS_BLOCK.defaultBlockState(), player));
     }
 
+    /**
+     * The layers a snow golem leaves (not the block): «добудь снег» finds them. A layer of snow gives its snowballs to a shovel,
+     * but its loot table asks for the entity that broke it, and the source table weighed the drops of a bare null breaker: it
+     * saw nothing of a layer at all, so the chain refused «Рядом не вижу снежок» beside a golem's trail. The layer is a source
+     * of snowballs now, and the order goes for them with the shovel it has (here a stone one).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void theSnowLayersAGolemLeavesAreASourceOfSnowballs(GameTestHelper h) {
+        ground(h);
+        for (BlockPos cell : List.of(new BlockPos(18, GROUND + 1, 16), new BlockPos(19, GROUND + 1, 16), new BlockPos(18, GROUND + 1, 17)))
+            h.setBlock(cell, Blocks.SNOW.defaultBlockState().setValue(net.minecraft.world.level.block.SnowLayerBlock.LAYERS, 3));
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.STONE_SHOVEL));
+        var plan = c.obtainPlan("minecraft:snow", 4);
+        h.assertTrue(!plan.refused(), "«Добудь снег» was refused beside the layers: " + plan.refusal());
+        h.assertTrue(plan.steps().stream().anyMatch(step -> step.type().equals("gather_block") && step.item().equals("minecraft:snowball")),
+                "No snowball is picked from the layers: " + plan);
+        h.assertTrue(plan.steps().stream().noneMatch(step -> step.type().equals("gather_block") && step.item().equals("minecraft:snow_block")),
+                "A snow block was picked where only layers stand: " + plan);
+        h.assertTrue(plan.steps().getLast().equals(new CompanionObtain.Step("craft_item", "minecraft:snow", 4)), "The chain does not end in snow: " + plan);
+        h.succeed();
+    }
+
+    /**
+     * «Добудь снежков» from the layers a golem leaves: the order walks to them and digs them with the shovel it has, the
+     * snowballs are picked up and the shovel wears. A layer gives three snowballs at three layers, so two of them are enough.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void snowballsAreGatheredFromTheLayersAGolemLeaves(GameTestHelper h) {
+        ground(h);
+        List<BlockPos> layers = List.of(new BlockPos(18, GROUND + 1, 16), new BlockPos(19, GROUND + 1, 16), new BlockPos(18, GROUND + 1, 17));
+        for (BlockPos cell : layers)
+            h.setBlock(cell, Blocks.SNOW.defaultBlockState().setValue(net.minecraft.world.level.block.SnowLayerBlock.LAYERS, 3));
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.STONE_SHOVEL));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:snowball\",\"count\":4}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.SNOWBALL) >= 4, "No four snowballs: " + count(c, Items.SNOWBALL) + ", " + report);
+            h.assertTrue(damage(c, Items.STONE_SHOVEL) >= 1, "The shovel did not dig a layer: " + damage(c, Items.STONE_SHOVEL) + ", " + report);
+            h.assertTrue(layers.stream().anyMatch(cell -> h.getBlockState(cell).isAir()), "No layer was broken: " + report);
+        });
+    }
+
     private static void ground(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= GROUND + 6; y++) {
             boolean border = x == 0 || x == 31 || z == 0 || z == 31;
@@ -546,10 +883,54 @@ public final class CompanionGatherBlockTests {
         return CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-gather-block", () -> false));
     }
 
+    /** A stack of the item carrying Silk Touch, as the enchantment of this world's registry. */
+    private static ItemStack withSilk(GameTestHelper h, Item item) {
+        ItemStack stack = new ItemStack(item);
+        stack.enchant(h.getLevel().registryAccess().holderOrThrow(net.minecraft.world.item.enchantment.Enchantments.SILK_TOUCH), 1);
+        return stack;
+    }
+
     private static int count(CompanionEntity c, Item item) {
         int count = 0;
         for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(item)) count += c.getItem(slot).getCount();
         if (c.getMainHandItem().is(item)) count += c.getMainHandItem().getCount();
         return count;
+    }
+
+    /** The wear on the stack of this item, in the bag or in either hand; -1 when he has none. */
+    private static int damage(CompanionEntity c, Item item) {
+        int found = -1;
+        for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(item)) found = Math.max(found, c.getItem(slot).getDamageValue());
+        for (net.minecraft.world.entity.EquipmentSlot hand : net.minecraft.world.entity.EquipmentSlot.values())
+            if (hand.getType() == net.minecraft.world.entity.EquipmentSlot.Type.HAND && c.getItemBySlot(hand).is(item)) found = Math.max(found, c.getItemBySlot(hand).getDamageValue());
+        return found;
+    }
+
+    /** The total wear on his stacks of this item, in the bag or in either hand; 0 when he has none. */
+    private static int wear(CompanionEntity c, Item item) {
+        int total = 0;
+        for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(item)) total += c.getItem(slot).getDamageValue();
+        for (net.minecraft.world.entity.EquipmentSlot hand : net.minecraft.world.entity.EquipmentSlot.values())
+            if (hand.getType() == net.minecraft.world.entity.EquipmentSlot.Type.HAND && c.getItemBySlot(hand).is(item)) total += c.getItemBySlot(hand).getDamageValue();
+        return total;
+    }
+
+    /** The journalled swings of this companion: at this block (mining_started, with the tool in his hand then) and the tick they came down on. */
+    private static List<String> swingsAt(CompanionEntity c, String block) {
+        dev.aicompanion.CompanionDiagnostics.flush();
+        var directory = net.neoforged.fml.loading.FMLPaths.GAMEDIR.get().resolve("logs").resolve("aicompanion");
+        List<String> lines = new java.util.ArrayList<>();
+        for (String name : List.of("companion-1.jsonl", "companion-latest.jsonl")) {
+            try { lines.addAll(java.nio.file.Files.readAllLines(directory.resolve(name))); } catch (java.io.IOException | java.io.UncheckedIOException ignored) { }
+        }
+        return lines.stream().filter(line -> line.contains(c.getUUID().toString())
+                && (line.contains("\"event\":\"mining_started\"") && line.contains(block) || line.contains("\"event\":\"mining_duration_reached\""))).toList();
+    }
+
+    /** Oak leaves lying in the walls of the test: what a leaf broken with no free cell for it gives, kept as a drop of his. */
+    private static int leavesOnTheGround(GameTestHelper h) {
+        var box = new net.minecraft.world.phys.AABB(h.absolutePos(new BlockPos(1, 1, 1))).minmax(new net.minecraft.world.phys.AABB(h.absolutePos(new BlockPos(30, GROUND + 6, 30))));
+        return h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, box, item -> item.getItem().is(Items.OAK_LEAVES)).stream()
+                .mapToInt(item -> item.getItem().getCount()).sum();
     }
 }

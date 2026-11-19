@@ -135,6 +135,7 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Сохраняемая цель | `.\scripts\verify-goals.ps1 -Repetitions 1` |
 | Цель при настоящем перезапуске сервера | `.\scripts\verify-goal-restart.ps1` после создания `build/diagnostics/` |
 | Сыпучие блоки, кремень, стекло, огниво | `.\scripts\verify-loose.ps1` (всегда `CompanionLooseTests`; `-Classes CompanionObtainTests,...` добавляет другие классы, `-Repetitions N` повторы) |
+| Инструмент под блок (`rightToolForBlock`: чем ломается блок, какой стек берётся из сумки, что остаётся в руке, отмена посреди удара) | `./gradlew runGameTestServer -PgameTestClasses=CompanionRightToolTests,CompanionBanterToolsTests` (на Windows — `.\gradlew.bat runGameTestServer -PgameTestClasses=...`) |
 | Долгая цель: движок, этапы, фразы, строка для модели, доска задач | `.\scripts\verify-agenda.ps1 -Repetitions 1` (`CompanionAgendaTests`, `CompanionAgendaModelTests`, `CompanionAgendaBoardTests`; по умолчанию 3 повтора; нужны загруженные зависимости: Gradle идёт с `--offline`) |
 | Долгая цель при настоящем перезапуске сервера | `.\scripts\verify-agenda-restart.ps1`: этапы prepare, resume, verify; каталог `build/diagnostics/` скрипт создаёт сам |
 | Партия плавки при настоящем перезапуске сервера | `.\scripts\verify-furnace-restart.ps1` после создания `build/diagnostics/` |

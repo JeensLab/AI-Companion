@@ -81,6 +81,26 @@ public final class CompanionFarmTests {
         });
     }
 
+    /** A pumpkin at its stem is the axe's block: taken with the axe he has, which wears on it, not by hand. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200, batch = "farm")
+    public static void aPumpkinIsTakenWithTheAxe(GameTestHelper h) {
+        ground(h); pond(h, 16, 16);
+        h.setBlock(new BlockPos(12, GROUND, 12), Blocks.FARMLAND.defaultBlockState().setValue(FarmBlock.MOISTURE, 7));
+        h.setBlock(new BlockPos(13, GROUND, 12), Blocks.FARMLAND.defaultBlockState().setValue(FarmBlock.MOISTURE, 7));
+        h.setBlock(new BlockPos(12, GROUND + 1, 12), Blocks.PUMPKIN);
+        h.setBlock(new BlockPos(13, GROUND + 1, 12), Blocks.ATTACHED_PUMPKIN_STEM.defaultBlockState()
+                .setValue(net.minecraft.world.level.block.AttachedStemBlock.FACING, net.minecraft.core.Direction.WEST));
+        CompanionEntity companion = spawn(h, 9, 9, 10, 10, 16);
+        companion.setItem(0, new ItemStack(Items.IRON_AXE));
+        long id = order(h, companion, "harvest_crops", "pumpkin", 1);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = result(h, companion, id);
+            h.assertTrue(result.success(), result.message());
+            h.assertTrue(count(companion, Items.PUMPKIN) == 1, "No pumpkin in the bag: " + companion.getStoredItemsSummary());
+            h.assertTrue(damage(companion, Items.IRON_AXE) >= 1, "The pumpkin was taken by hand: " + companion.getStoredItemsSummary());
+        });
+    }
+
     /**
      * A 4x4 patch of ripe wheat, one carrot and two crops still growing; the middle of the patch is not reachable from its edge, so the
      * drops there are picked up from the farmland. The ripe ones are broken and sown again in the same place; the young are left alone.
@@ -174,6 +194,30 @@ public final class CompanionFarmTests {
                     + ", wheat " + blocks(h, GROUND + 1, Blocks.WHEAT).size() + ": " + result.message());
             h.assertTrue(result.message().contains("Траву рвал ради семян"), "The seeds did not come from the grass: " + result.message());
             h.assertTrue(blocks(h, GROUND + 1, Blocks.SHORT_GRASS).size() < 30 * 30 - 9, "No grass was torn out");
+            h.assertTrue(lying(h).isEmpty(), "Seeds left lying: " + lying(h));
+        });
+    }
+
+    /**
+     * The same grass with shears in his bag: the shears would cut the tuft where the seeds were asked for, and the seed roll would
+     * never happen, so he tears the grass with his hand and the shears stay whole. The meadow lies away from the water, so every
+     * field tile by the pond is bare ground and only the seed break could have swung the shears.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400, batch = "farm")
+    public static void seedsAreTornFromTheGrassByHandWithShearsInTheBag(GameTestHelper h) {
+        ground(h); pond(h, 16, 16);
+        for (int x = 1; x <= 10; x++) for (int z = 1; z <= 10; z++) h.setBlock(new BlockPos(x, GROUND + 1, z), Blocks.SHORT_GRASS);
+        CompanionEntity companion = spawn(h, 12, 12, 10, 10, 16);
+        give(companion, new ItemStack(Items.SHEARS), new ItemStack(Items.WOODEN_HOE));
+        long id = order(h, companion, "farm_crops", "minecraft:wheat_seeds", 2);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = result(h, companion, id);
+            h.assertTrue(result.success(), result.message());
+            h.assertTrue(result.message().contains("Траву рвал ради семян"), "The seeds did not come from the grass: " + result.message());
+            h.assertTrue(blocks(h, GROUND, Blocks.FARMLAND).size() == 2 && blocks(h, GROUND + 1, Blocks.WHEAT).size() == 2, "Farmland " + blocks(h, GROUND, Blocks.FARMLAND).size()
+                    + ", wheat " + blocks(h, GROUND + 1, Blocks.WHEAT).size() + ": " + result.message());
+            h.assertTrue(count(companion, Items.SHEARS) == 1 && damage(companion, Items.SHEARS) == 0,
+                    "The shears cut the grass the seeds were asked from: wear " + damage(companion, Items.SHEARS) + ", " + result.message());
             h.assertTrue(lying(h).isEmpty(), "Seeds left lying: " + lying(h));
         });
     }
@@ -624,6 +668,13 @@ public final class CompanionFarmTests {
         return ItemStack.EMPTY;
     }
 
+    /** The wear on the stack of this item, in the bag or in either hand; -1 when he has none. */
+    static int damage(CompanionEntity companion, Item item) {
+        int found = -1;
+        for (int slot = 0; slot < companion.getContainerSize(); slot++) if (companion.getItem(slot).is(item)) found = Math.max(found, companion.getItem(slot).getDamageValue());
+        for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND}) if (companion.getItemBySlot(slot).is(item)) found = Math.max(found, companion.getItemBySlot(slot).getDamageValue());
+        return found;
+    }
     static int count(CompanionEntity companion, Item item) {
         int count = 0;
         for (int slot = 0; slot < companion.getContainerSize(); slot++) if (companion.getItem(slot).is(item)) count += companion.getItem(slot).getCount();

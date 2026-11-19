@@ -7,7 +7,6 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.FluidTags;
-import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -175,6 +174,12 @@ final class CompanionPicking {
         return false;
     }
 
+    /** Whether this block gives the item only to Silk Touch: the block itself, not its drop. */
+    private static boolean silked(List<CompanionPickable.Source> sources, BlockState state) {
+        for (CompanionPickable.Source source : sources) if (state.is(source.block())) return source.silk();
+        return false;
+    }
+
     /** A block of the kind he may take now: dry, not on a site of the player's (but the fruit of a stem), ripe, and not the root of a growing column. */
     private static boolean takes(ServerLevel level, BlockPos pos, Predicate<BlockPos> site) {
         BlockState state = level.getBlockState(pos);
@@ -207,11 +212,13 @@ final class CompanionPicking {
     private static boolean wet(ServerLevel level, BlockPos pos) { return !level.getFluidState(pos).isEmpty() || !level.getFluidState(pos.above()).isEmpty(); }
 
     /**
-     * What grows on the bed of the sea: kelp, seagrass, a sea pickle, a coral block. Not a dry kind that happens to stand in water
-     * (mangrove roots in a swamp, glow lichen, dripleaf): those are not dived for.
+     * What grows on the bed of the sea: kelp, seagrass, a sea pickle, a coral block, a coral plant or its fan (waterlogged, as it
+     * stands there). Not a dry kind that happens to stand in water (mangrove roots in a swamp, glow lichen, dripleaf): those are
+     * not dived for.
      */
     private static boolean grows(BlockState state) {
-        return kelp(state) || state.is(Blocks.SEAGRASS) || state.is(Blocks.TALL_SEAGRASS) || state.is(Blocks.SEA_PICKLE) || state.is(BlockTags.CORAL_BLOCKS);
+        return kelp(state) || state.is(Blocks.SEAGRASS) || state.is(Blocks.TALL_SEAGRASS) || state.is(Blocks.SEA_PICKLE)
+                || state.is(BlockTags.CORAL_BLOCKS) || state.is(BlockTags.CORALS) || state.is(BlockTags.WALL_CORALS);
     }
 
     /** Still water over the block he swims through, up to the sky: -1 under a roof (a cave's too), in running water or deeper than {@link #DEEP}. */
@@ -332,6 +339,7 @@ final class CompanionPicking {
         }
         BlockState state = level.getBlockState(target);
         boolean shorn = shorn(sources, state);
+        boolean silked = silked(sources, state);
         if (shorn && w.items.countCarried(Items.SHEARS) == 0) {
             if (due > got) { collect(level, got); return; }
             // His shears wore out on the way: obtain_item plans the rest again, new shears first.
@@ -362,14 +370,16 @@ final class CompanionPicking {
         }
         if (shorn) {
             // From the bag or from the other hand.
-            if (!c.getMainHandItem().is(Items.SHEARS) && !CompanionTools.equip(c, net.neoforged.neoforge.common.Tags.Items.TOOLS_SHEAR, state)) { end(false, "Не могу взять ножницы в руку: в сумке нет места."); return; }
+            c.takeToolForBlock(state);
+            if (!c.getMainHandItem().is(Items.SHEARS) && !CompanionTools.equip(c, net.neoforged.neoforge.common.Tags.Items.TOOLS_SHEAR, state)) { c.putToolAway(); end(false, "Не могу взять ножницы в руку: в сумке нет места."); return; }
+        } else if (silked) {
+            // The block itself, not its drop: only Silk Touch gives it, and a plain tool of the kind would give the drop.
+            if (!c.takeSilkToolForBlock(state)) { c.putToolAway(); end(false, "Для «" + name() + "» нужен инструмент с «Шёлковым касанием»: в сумке такого нет."); return; }
         } else if (w.items.prepareMiningTool(state)) return;
-        else if (state.is(BlockTags.MINEABLE_WITH_AXE)) CompanionTools.equip(c, ItemTags.AXES, state);
-        else if (state.is(BlockTags.MINEABLE_WITH_HOE)) CompanionTools.equip(c, ItemTags.HOES, state);
-        else if (state.is(BlockTags.MINEABLE_WITH_PICKAXE)) CompanionTools.equip(c, ItemTags.PICKAXES, state);
+        else c.takeToolForBlock(state);
         ItemStack tool = c.getMainHandItem();
-        if (state.requiresCorrectToolForDrops() && !tool.isCorrectToolForDrops(state)) { end(false, "Нечем взять «" + name() + "»: нужен инструмент."); return; }
-        if (!w.items.canStore(List.of(new ItemStack(item)))) { end(false, FULL_BAG + (got == 0 ? "" : " Собрал " + got + " из " + wanted + ".")); return; }
+        if (state.requiresCorrectToolForDrops() && !tool.isCorrectToolForDrops(state)) { c.putToolAway(); end(false, "Нечем взять «" + name() + "»: нужен инструмент."); return; }
+        if (!w.items.canStore(List.of(new ItemStack(item)))) { c.putToolAway(); end(false, FULL_BAG + (got == 0 ? "" : " Собрал " + got + " из " + wanted + ".")); return; }
         c.workStatus("Собираю: " + name() + ".");
         if (!w.breaking.tick(level, target)) return;
         // A cane cut low comes down whole: what stands over the cut is his harvest too, from the top.
@@ -383,7 +393,8 @@ final class CompanionPicking {
             c.dropHarvest(pos, drops);
             for (ItemStack drop : drops) if (drop.is(item)) due += drop.getCount();
         }
-        tool.getItem().mineBlock(tool, level, state, target, c);
+        CompanionTools.wearOnBreak(tool, level, state, target, c);
+        c.putToolAway();
         // A tool with Silk Touch brings the block itself (clay, not its balls): one is enough to see it, not every block about.
         if (due == dueBefore) { end(false, "С этим инструментом «" + name() + "» не выходит: в руке " + tool.getHoverName().getString() + "."); return; }
         release();

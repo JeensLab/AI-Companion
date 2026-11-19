@@ -216,7 +216,7 @@ final class CompanionScaffold {
             leftDirt += drops.stream().mapToInt(ItemStack::getCount).sum(); leftAt = top;
         }
         if (!level.destroyBlock(top, false, owner, 512)) return Outcome.WORKING;
-        tool.getItem().mineBlock(tool, level, state, top, owner);
+        CompanionTools.wearOnBreak(tool, level, state, top, owner);
         owner.swing(InteractionHand.MAIN_HAND);
         owner.dropHarvest(top, drops);
         breaking.reset();

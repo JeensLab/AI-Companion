@@ -648,6 +648,8 @@ public final class CompanionWork {
             owner.noteDeed("Прервал: " + jobName() + " — остановили или дали другое дело." + furnaces.furnaceNote(), false);
         }
         lots.clear(); heading = null; chests.kind = null;
+        // A tool taken for a swing is the work's too: the hand it replaced comes back before the work ends, never into the next one.
+        owner.putToolAway();
         items.putHeldStackBack();
         clearCracks();
         closeChest();
@@ -671,7 +673,10 @@ public final class CompanionWork {
         if (level.getGameTime() > deadline) { finish(CompanionActionResult.timeout("Не успел закончить работу. Остановился, вещи у меня.")); return; }
         if (stalled()) return;
         if (job != Job.HOUSE && owner.actionAnimation() != 0) return;
-        if (job != Job.COME && job != Job.COURSE && job != Job.HUNT && job != Job.PICK_UP && job != Job.PLACE && owner.hasPendingLoot() && !(job == Job.HOUSE && templateJob && templateHouse.scaffolding())) return;
+        // Breaking does not wait for the last drop: the next block goes while the drop is still on its way to him, and the
+        // pickup settles after the breaking. Waiting per block is what made a crown one block at a time.
+        if (job != Job.BLOCK && job != Job.COME && job != Job.COURSE && job != Job.HUNT && job != Job.PICK_UP && job != Job.PLACE
+                && owner.hasPendingLoot() && !(job == Job.HOUSE && templateJob && templateHouse.scaffolding())) return;
         if (owner.getOwnerId() == null || level.getServer().getPlayerList().getPlayer(owner.getOwnerId()) == null) {
             finish(false, "Потерял связь с игроком, остановился."); return;
         }

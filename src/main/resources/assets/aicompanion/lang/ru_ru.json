@@ -36,5 +36,6 @@
   "config.aicompanion.model_thinking": "Размышление модели",
   "config.aicompanion.temperature": "Температура",
   "config.aicompanion.top_p": "top_p",
-  "config.aicompanion.replant_saplings": "Саженцы на месте срубленных деревьев"
+  "config.aicompanion.replant_saplings": "Саженцы на месте срубленных деревьев",
+  "config.aicompanion.right_tool_for_block": "Инструмент под блок при ломании"
 }
