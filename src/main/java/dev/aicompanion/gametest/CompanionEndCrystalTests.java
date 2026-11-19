@@ -409,7 +409,9 @@ public final class CompanionEndCrystalTests {
 
     /** Bedrock under everything and air over it, whatever the template held. */
     private static void arena(GameTestHelper h) {
-        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y < 24; y++)
+        // Air well over the template too: a stand is found by the height map, and a block another test left above this cell of the
+        // run (26 blocks up, CI shard 19.11) put every stand on top of it, out of his reach.
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y < 48; y++)
             h.setBlock(new BlockPos(x, y, z), y <= GROUND ? Blocks.BEDROCK : Blocks.AIR);
     }
 
