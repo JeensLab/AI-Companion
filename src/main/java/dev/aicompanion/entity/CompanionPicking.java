@@ -190,19 +190,42 @@ final class CompanionPicking {
     /**
      * The leaf the gather comes at first, in the gather's own order: the named species' own crown, another tree's or hedge's
      * leaves about, the named one's leaves a player set down, then any set-down leaf — so the plan names the species it really
-     * cuts (the soil for a crown is sized for it, CompanionLeaves.leafTarget).
+     * cuts (the soil for a crown is sized for it, CompanionLeaves.leafTarget). A kind whose reachable leaves cannot give the
+     * order is passed over for one that can: a small crown beside a hedge that meets the count is no reason to come short
+     * (the owner, 19.11). When none of them meets it, the first found stands as before.
      */
-    static BlockPos firstLeaf(CompanionEntity c, ServerLevel level, Item requested) {
+    static BlockPos firstLeaf(CompanionEntity c, ServerLevel level, Item requested, int count) {
         List<CompanionPickable.Source> named = requested == null ? List.of()
                 : allowed(level, CompanionPickable.sources(level, requested)).stream()
                         .filter(source -> source.block().defaultBlockState().is(BlockTags.LEAVES)).toList();
         List<CompanionPickable.Source> all = allowed(level, CompanionPickable.leaves(level));
+        BlockPos first = null;
         for (boolean natural : new boolean[]{true, false})
             for (List<CompanionPickable.Source> from : List.of(named, all)) {
                 BlockPos found = nearestLeaf(c, level, from, natural);
-                if (found != null) return found;
+                if (found == null) continue;
+                if (first == null) first = found;
+                if (reachable(c, level, from, natural) >= count) return found;
             }
-        return null;
+        return first;
+    }
+
+    /**
+     * How many leaves of these sources the gather can come at now: from a stand under them or up a column on the soil about
+     * him, as {@link #atHand} takes them. The count an order asks for is what a kind must be able to give before it is named
+     * over another kind that can (the owner, 19.11).
+     */
+    private static int reachable(CompanionEntity c, ServerLevel level, List<CompanionPickable.Source> from, boolean natural) {
+        Predicate<BlockPos> site = sites(c, level);
+        boolean dug = soilAbout(c, level);
+        int found = 0;
+        for (BlockPos pos : CompanionLogSearch.find(level, c.blockPosition(), c.searchRadius, BlockTags.LEAVES)) {
+            BlockState state = level.getBlockState(pos);
+            if (gives(from, state) == 0 || natural && setDown(state) || !c.errand.within(pos) || !takes(level, pos, site)
+                    || !grounded(c, level, pos) || lavaBeside(level, pos) || !atHand(c, level, pos, dug, false)) continue;
+            found++;
+        }
+        return found;
     }
 
     /**

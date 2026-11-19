@@ -770,8 +770,8 @@ public final class CompanionLeavesTests {
             if (!cell.equals(trunk.above(dy))) h.setBlock(cell, crown);
         }
         CompanionEntity c = withTheOwnersTools(h);
-        h.assertTrue("minecraft:spruce_leaves".equals(CompanionLeaves.leafTarget(c, h.getLevel(), "minecraft:oak_leaves")),
-                "The set-down oak was named over the spruce the gather comes at: " + CompanionLeaves.leafTarget(c, h.getLevel(), "minecraft:oak_leaves"));
+        h.assertTrue("minecraft:spruce_leaves".equals(CompanionLeaves.leafTarget(c, h.getLevel(), "minecraft:oak_leaves", 16)),
+                "The set-down oak was named over the spruce the gather comes at: " + CompanionLeaves.leafTarget(c, h.getLevel(), "minecraft:oak_leaves", 16));
         h.assertTrue(CompanionLeaves.soilToDig(c, h.getLevel(), "minecraft:spruce_leaves", 16) > 0,
                 "The spruce crown six blocks up asks no soil");
         var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":16}]");
@@ -781,6 +781,42 @@ public final class CompanionLeavesTests {
             h.assertTrue(count(c, Items.SPRUCE_LEAVES) >= 16, "Not sixteen spruce leaves: " + count(c, Items.SPRUCE_LEAVES) + ", " + report);
             h.assertTrue(count(c, Items.DIRT) > 0, "He dug no soil for the spruce crown: " + report);
             for (BlockPos cell : beside) h.assertBlockPresent(Blocks.OAK_LEAVES, cell);
+        });
+    }
+
+    /**
+     * A small crown is no stand-in for a hedge that meets the order (19.11): six spruce leaves six blocks up, above every
+     * stand cell, and sixteen oak leaves the player set down beside him. «Добудь 8 oak leaves» names the oak — the leaves that
+     * can give the order — and gathers them from the hedge: no column is raised for the six spruce leaves, no soil dug.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 8000)
+    public static void aSmallCrownDoesNotOutbidTheHedgeThatMeetsTheOrder(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = withTheOwnersTools(h);
+        // Sixteen oak leaves the player set down beside him, within his reach from the ground.
+        var hedge = Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.PERSISTENT, true).setValue(LeavesBlock.DISTANCE, 7);
+        for (int dx = 0; dx < 4; dx++) for (int dz = 0; dz < 4; dz++)
+            placedByPlayer(h, c, new BlockPos(12 + dx, GROUND + 1, 12 + dz), hedge);
+        // A small natural spruce crown: six leaves six blocks up, above every stand cell.
+        BlockPos trunk = new BlockPos(20, GROUND + 1, 16);
+        for (int up = 0; up < 6; up++) h.setBlock(trunk.above(up), Blocks.SPRUCE_LOG);
+        var spruce = Blocks.SPRUCE_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        for (BlockPos cell : List.of(trunk.above(5).west(), trunk.above(5).east(), trunk.above(5).north(), trunk.above(5).south(),
+                trunk.above(6).west(), trunk.above(6).east())) h.setBlock(cell, spruce);
+        h.assertTrue("minecraft:oak_leaves".equals(CompanionLeaves.leafTarget(c, h.getLevel(), "minecraft:oak_leaves", 8)),
+                "The small spruce crown was named over the hedge that meets the order: "
+                        + CompanionLeaves.leafTarget(c, h.getLevel(), "minecraft:oak_leaves", 8));
+        int[] supports = {0};
+        h.onEachTick(() -> supports[0] = Math.max(supports[0], c.getTemporarySupportCount()));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":8}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(CompanionLeaves.carried(c) == 8, "Not eight leaves: " + CompanionLeaves.carried(c) + ", " + report);
+            h.assertTrue(count(c, Items.OAK_LEAVES) == 8, "The hedge that meets the order was not the one taken: "
+                    + count(c, Items.OAK_LEAVES) + ", " + report);
+            h.assertTrue(supports[0] == 0 && count(c, Items.DIRT) == 0, "A column was raised for the small crown: supports "
+                    + supports[0] + ", dirt " + count(c, Items.DIRT) + ", " + report);
         });
     }
 

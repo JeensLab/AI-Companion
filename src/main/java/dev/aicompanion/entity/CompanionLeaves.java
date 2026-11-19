@@ -50,16 +50,17 @@ public final class CompanionLeaves {
     /**
      * The leaf block an order will come at, as the gather itself comes at it: the species it named when a tree's own leaves of
      * it can be come at, else another tree's or hedge's leaves about, then the leaves a player set down — and null when no leaf
-     * is reachable. A leaf he set down is no crown of its species, so the named species is named only while a tree grew it in
-     * his reach: the soil the plan digs is sized for the leaves it really comes at. A named species is no limit on a leaf order.
+     * is reachable. A kind that cannot give the order is passed over for one that can (the count it asks for, the owner 19.11).
+     * A leaf he set down is no crown of its species, so the named species is named only while a tree grew it in his reach: the
+     * soil the plan digs is sized for the leaves it really comes at. A named species is no limit on a leaf order.
      */
-    public static String leafTarget(CompanionEntity c, ServerLevel level, String requested) {
+    public static String leafTarget(CompanionEntity c, ServerLevel level, String requested, int count) {
         Item named = null;
         if (requested != null && !isFamily(requested) && isLeaf(requested)) {
             var id = net.minecraft.resources.ResourceLocation.tryParse(requested);
             named = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
         }
-        return leafAt(level, CompanionPicking.firstLeaf(c, level, named));
+        return leafAt(level, CompanionPicking.firstLeaf(c, level, named, count));
     }
 
     /**
