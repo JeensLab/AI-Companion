@@ -162,8 +162,8 @@ public final class CompanionGateTests {
     }
 
     /**
-     * The gate he was stopped at opened by another hand: he walks through it and leaves it open, it was not his to shut.
-     * The state he found the gate in is remembered, so a gate that stood open when he came to it stays open.
+     * The gate he was stopped at opened by another hand while he stood before it: he walks through it and leaves it open,
+     * it was not his to shut. Only the gate he opened himself is shut behind him.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 1200)
     public static void aGateOpenedByAnotherHandStaysOpen(GameTestHelper h) {
