@@ -57,6 +57,8 @@ public final class CompanionParkHold {
                 yield ore != null && produces(batch, Set.of(id(ore.drop)));
             }
             case "gather_wood" -> touches("logs", batch);
+            // An iron golem's blocks are crafted of ingots: a parked iron smelt is collected first, not fresh ore dug (review).
+            case "build_golem" -> "iron".equals(step.item()) && produces(batch, Set.of(id("minecraft:iron_ingot"), id("minecraft:iron_block")));
             case "gather_stone" -> touches("stone", batch);
             case "gather_loose" -> touches(item, batch);
             case "gather_dirt", "set_home", "follow", "wait", "come", "walk_heading", "protect", "stop_protect", "wander", "stop", "enter_portal", "collect_smelt", "campfire_song",
