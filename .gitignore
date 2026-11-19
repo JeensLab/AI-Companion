@@ -49,6 +49,7 @@ repo/
 .env.*
 !.env.example
 **/config/
+!/config/
 **/logs/
 **/saves/
 **/screenshots/
