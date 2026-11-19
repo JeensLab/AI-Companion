@@ -1245,18 +1245,20 @@ public final class CompanionLeavesTests {
 
     /**
      * The widest leaf order (19.11): 768 leaves is the most CompanionWork takes, and with another step beside it the split has
-     * to fit the plan's twelve steps instead of refusing the whole plan. Alone it keeps its steps of a stack; 769 is beyond
-     * the widest leaf order and stays refused.
+     * to fit the plan's twelve steps instead of refusing the whole plan. Eleven steps then carry twelve stacks: the last one
+     * the rest, 128. Alone it keeps its steps of a stack; 769 is beyond the widest leaf order and stays refused.
      */
     @GameTest(template = "empty", timeoutTicks = 40)
     public static void aLeafOrderOf768FitsThePlanBesideAnotherStep(GameTestHelper h) {
         List<PlannedAction> decoded = CompanionPlanCodec.parsePlan(com.google.gson.JsonParser.parseString(
                 "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":768},{\"action\":\"equip_item\",\"item\":\"minecraft:shears\"}]"));
-        h.assertTrue(decoded.size() <= CompanionPlanCodec.MAX_STEPS,
-                "768 leaves and the shears take more than the plan's steps: " + decoded);
+        h.assertTrue(decoded.size() == CompanionPlanCodec.MAX_STEPS,
+                "768 leaves and the shears do not take exactly the plan's steps: " + decoded);
         List<PlannedAction> obtains = decoded.stream().filter(step -> "obtain_item".equals(step.type())).toList();
-        h.assertTrue(obtains.getLast().count() == 768 && decoded.getLast().type().equals("equip_item"),
-                "The order of 768 and the shears were not both carried: " + decoded);
+        // Eleven steps for twelve stacks: the last one carries the rest, 128, as the codec's own split says.
+        h.assertTrue(obtains.size() == 11 && obtains.getFirst().count() == 64 && obtains.get(9).count() == 640
+                && obtains.getLast().count() == 768 && decoded.getLast().type().equals("equip_item"),
+                "The order of 768 and the shears were not carried as eleven steps of a stack and the rest: " + decoded);
         int grew = 0;
         for (PlannedAction step : obtains) {
             h.assertTrue(step.count() > grew, "A step of the order does not grow: " + obtains);

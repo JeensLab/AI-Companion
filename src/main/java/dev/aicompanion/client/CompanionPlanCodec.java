@@ -253,10 +253,11 @@ public final class CompanionPlanCodec {
                 // A marker is named by the player's own word: 1..24 characters, never a coordinate triple.
                 if (("remember_place".equals(type) || "go_to_place".equals(type))
                         && (!dev.aicompanion.entity.CompanionMarkerNames.valid(item) || count != 1 || !"near_player".equals(location))) throw invalid();
-                // A leaf order of several stacks is carried as growing targets of a stack each, the bag checked against the
-                // whole count: «добудь 500 листвы» is targets of 64 up to 448 and the whole 500, not refused for being longer
-                // than a stack. The split fits the steps the plan has left after the written steps still to come, so the
-                // widest leaf order (768) beside another step is no refusal either.
+                // A leaf order of several stacks is carried as growing targets of a stack each while the plan has room for
+                // them, the bag checked against the whole count: «добудь 500 листвы» is targets of 64 up to 448 and the whole
+                // 500, not refused for being longer than a stack. The split fits the steps the plan has left after the written
+                // steps still to come. With no room for a step a stack the last one carries the rest (768 beside another step
+                // is eleven steps for twelve stacks: 64 up to 640, then 768 — 128 in the last), and the plan is no refusal.
                 if ("obtain_item".equals(type) && count > 64) {
                     int budget = MAX_STEPS - result.size() - (steps.size() - 1 - index);
                     int chunks = Math.min(budget, (count + 63) / 64);
