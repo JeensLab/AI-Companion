@@ -10,7 +10,6 @@ import dev.aicompanion.client.CompanionPlanRequirements;
 import dev.aicompanion.client.CompanionPlanRunner;
 import dev.aicompanion.client.CompanionServerPlanPort;
 import dev.aicompanion.client.OpenRouterClient;
-import dev.aicompanion.client.PlannedAction;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
 import dev.aicompanion.entity.CompanionMarkers;

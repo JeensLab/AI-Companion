@@ -117,6 +117,24 @@ public final class CompanionRavineTests {
         });
     }
 
+    /** A pickaxe nearly used up in his hand is no reason to wear it out: the fresh one in the bag cuts the steps. */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void theFresherPickaxeInTheBagCutsTheSteps(GameTestHelper h) {
+        ravine(h);
+        CompanionEntity companion = spawn(h, 16, 3, 16);
+        ItemStack worn = new ItemStack(Items.STONE_PICKAXE);
+        worn.setDamageValue(worn.getMaxDamage() - 1);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, worn);
+        companion.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        companion.setFollowing(true);
+        h.succeedWhen(() -> {
+            h.assertTrue(companion.getY() >= h.absolutePos(new BlockPos(0, TOP + 1, 0)).getY() - .01, "Still down in the ravine at "
+                    + h.relativePos(companion.blockPosition()) + ": " + companion.getLastTaskResult());
+            h.assertTrue(count(companion, Items.STONE_PICKAXE) == 2, "The nearly broken pickaxe was worn out on the steps: " + companion.getStoredItemsSummary());
+            h.assertTrue(damage(companion, Items.STONE_PICKAXE) >= 1, "No pickaxe wore on the steps: " + companion.getStoredItemsSummary());
+        });
+    }
+
     /**
      * Stone below, soil above it, grass on top (y=TOP), bedrock border. A ravine three wide along x 15..17, z 8..28, its floor
      * at y=2: from the north end ledges three blocks apart lead down (one way: a mob jumps one block), its walls are sheer.
@@ -150,6 +168,13 @@ public final class CompanionRavineTests {
         return h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
     }
 
+    /** The wear on the stack of this item, in the bag or in either hand; -1 when he has none. */
+    private static int damage(CompanionEntity companion, Item item) {
+        int found = -1;
+        for (int slot = 0; slot < companion.getContainerSize(); slot++) if (companion.getItem(slot).is(item)) found = Math.max(found, companion.getItem(slot).getDamageValue());
+        for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND}) if (companion.getItemBySlot(slot).is(item)) found = Math.max(found, companion.getItemBySlot(slot).getDamageValue());
+        return found;
+    }
     private static int count(CompanionEntity companion, Item item) {
         int count = 0;
         for (int slot = 0; slot < companion.getContainerSize(); slot++) if (companion.getItem(slot).is(item)) count += companion.getItem(slot).getCount();

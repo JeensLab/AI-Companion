@@ -150,6 +150,12 @@ public final class OpenRouterConfig {
             .translation("config.aicompanion.replant_saplings")
             .define("replantSaplings", true);
 
+    /** Whether he breaks a block with the tool from his bag that speeds it up most, or with whatever is in his hand. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue RIGHT_TOOL_FOR_BLOCK = BUILDER
+            .comment("Break a block with the tool from his bag that speeds it up most — a pickaxe for stone, an axe for wood, a shovel for earth, shears for leaves — and by hand when he has none. Off: he breaks with whatever is in his hand.")
+            .translation("config.aicompanion.right_tool_for_block")
+            .define("rightToolForBlock", true);
+
     public static final ModConfigSpec.BooleanValue LONG_TERM_MEMORY = BUILDER
             .comment("Let the companion remember facts, promises and recent talk between sessions, adapt his character and raise topics of his own. Stored in the world save.")
             .translation("config.aicompanion.long_term_memory")

@@ -269,6 +269,26 @@ public final class CompanionOreTests {
         h.succeed();
     }
 
+    /** A stone pickaxe in his hand is no reason to leave the iron one in the bag: the ore is taken with the pickaxe that breaks it fastest. */
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void theBetterPickaxeInTheBagTakesTheOre(GameTestHelper h) {
+        CompanionEntity companion = flat(h);
+        wall(h);
+        BlockPos ore = new BlockPos(20, 1, 16); h.setBlock(ore, Blocks.IRON_ORE);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        companion.setItem(0, new ItemStack(Items.IRON_PICKAXE));
+        h.assertTrue(companion.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted");
+        long id = companion.activeWorkId();
+        h.succeedWhen(() -> {
+            done(h, companion);
+            CompanionActionResult result = companion.workResult(id);
+            h.assertTrue(result != null && result.success(), report(companion));
+            h.assertTrue(h.getBlockState(ore).isAir() && count(companion, Items.RAW_IRON) == 1, "No real raw iron: " + companion.getStoredItemsSummary());
+            h.assertTrue(damage(companion, Items.IRON_PICKAXE) >= 1, "The iron pickaxe in the bag did not take the ore: " + companion.getStoredItemsSummary());
+            h.assertTrue(damage(companion, Items.STONE_PICKAXE) == 0, "The stone pickaxe from his hand took the ore: " + companion.getStoredItemsSummary());
+        });
+    }
+
     private static CompanionEntity flat(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
         CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), 16, 1, 16);
@@ -298,6 +318,13 @@ public final class CompanionOreTests {
     private static String report(CompanionEntity companion) { return companion.getDeedsForAi() + " | bag: " + companion.getStoredItemsSummary(); }
     private static void done(GameTestHelper h, CompanionEntity companion) {
         h.assertTrue(!companion.isGatheringTask() && !companion.isWorking(), "Work still active: " + companion.getLastTaskResult());
+    }
+    /** The wear on the stack of this item, in the bag or in either hand; -1 when he has none. */
+    private static int damage(CompanionEntity companion, Item item) {
+        int found = -1;
+        for (int slot = 0; slot < companion.getContainerSize(); slot++) if (companion.getItem(slot).is(item)) found = Math.max(found, companion.getItem(slot).getDamageValue());
+        for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND}) if (companion.getItemBySlot(slot).is(item)) found = Math.max(found, companion.getItemBySlot(slot).getDamageValue());
+        return found;
     }
     private static int count(CompanionEntity companion, Item item) {
         int count = 0;

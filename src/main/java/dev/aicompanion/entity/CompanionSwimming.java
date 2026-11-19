@@ -31,6 +31,9 @@ final class CompanionSwimming {
          * shoots from above (the owner asked so, 03.11), see CompanionArchery.
          */
         @Override public void tick() {
+            // Going up for air the float has him, no dive: from half his breath to full both pulled, and he hung a block under the
+            // surface over a cod 18 down until it was passed over (a test of de-flandres #178/#179).
+            if (c.breath.active()) { super.tick(); return; }
             var target = c.getTarget();
             var hand = c.getMainHandItem();
             boolean dives = target != null && target.isAlive() && c.isInWater() && !c.isInLava() && target.isInWater()

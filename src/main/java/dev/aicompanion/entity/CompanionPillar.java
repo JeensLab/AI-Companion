@@ -25,6 +25,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -58,6 +59,10 @@ public final class CompanionPillar {
     private int cleanupTicks;
     private boolean recovering;
     private String failureReason = "";
+    /** The hand a gather keeps while its column comes down: the tool for a support goes back into it after each break. */
+    private ItemStack keptHand;
+    /** Whether the tool of the gather that asked for this descent stays in his hand: also a failed climb leaves it there. */
+    private boolean keepTool;
 
     public CompanionPillar(CompanionEntity owner) {
         this.owner = owner;
@@ -71,25 +76,33 @@ public final class CompanionPillar {
     public String failureReason() { return failureReason; }
 
     /** Called every server tick while harvesting. READY means that a normal log swing is in range. */
-    public Outcome tickToward(BlockPos log) {
+    public Outcome tickToward(BlockPos log) { return tickToward(log, true); }
+
+    /**
+     * The same climb toward a block he breaks — a log of the trunk, or a leaf of a crown that stands above every stand cell
+     * (a tree grown with bone meal, the owner 17.11: «он должен понимать что до него можно добраться если прокопать что то
+     * или подстроиться»). A crown of leaves has no branch to switch to, so {@code wood} only decides what a swing over the
+     * column means.
+     */
+    public Outcome tickToward(BlockPos block, boolean wood) {
         if (!(owner.level() instanceof ServerLevel level) || recovering) return Outcome.FAILED;
-        if (!level.hasChunkAt(log) || !level.getBlockState(log).is(BlockTags.LOGS)) return Outcome.FAILED;
-        if (owner.distanceToSqr(log.getX() + 0.5D, log.getY() + 0.5D, log.getZ() + 0.5D) <= REACH_SQR) {
+        if (!level.hasChunkAt(block) || (wood ? !level.getBlockState(block).is(BlockTags.LOGS) : level.getBlockState(block).isAir())) return Outcome.FAILED;
+        if (owner.distanceToSqr(block.getX() + 0.5D, block.getY() + 0.5D, block.getZ() + 0.5D) <= REACH_SQR) {
             if (jumpCell == null && owner.onGround()) return Outcome.READY;
         }
         if (base == null) {
             int busy = owner.work.route.busyAnswers();
-            Column column = planColumn(level, log);
+            Column column = planColumn(level, block);
             // A column it could not search to for want of this tick's cells is not one without a way: planned again next tick.
             if (column == null) return owner.work.route.busyAnswers() != busy ? Outcome.WORKING : Outcome.FAILED;
             base = column.feet();
             approach = column.path();
-            resetWatchdog(log);
-        } else if (!log.equals(target)) {
-            resetWatchdog(log);
+            resetWatchdog(block);
+        } else if (!block.equals(target)) {
+            resetWatchdog(block);
         }
 
-        int needed = requiredSteps(log, base);
+        int needed = requiredSteps(block, base);
         if (needed < 0) return fail("С этой опоры не достану до соседней ветки");
         if (needed > MAX_SUPPORTS) return fail("Верхушка слишком высокая для короткой опоры");
         if (soilCount() < Math.max(0, needed - supports.size())) return fail("Для подъёма не хватает земли в сумке");
@@ -127,12 +140,12 @@ public final class CompanionPillar {
         owner.getNavigation().stop();
         if (!owner.onGround()) return Outcome.WORKING;
         if (Math.abs(owner.getY() - surfaceY) > 0.2D) return fail("Здесь неудобно подниматься, поищу другое место");
-        if (owner.distanceToSqr(log.getX() + 0.5D, log.getY() + 0.5D, log.getZ() + 0.5D) <= REACH_SQR) return Outcome.READY;
+        if (owner.distanceToSqr(block.getX() + 0.5D, block.getY() + 0.5D, block.getZ() + 0.5D) <= REACH_SQR) return Outcome.READY;
         if (supports.size() >= needed || supports.size() >= MAX_SUPPORTS || cooldown > 0) return Outcome.WORKING;
 
         BlockPos placement = base.above(supports.size());
         // A branch of the same crown hanging over the column is not an obstacle: it is the next log to chop from here.
-        BlockPos overhead = reachableLogAbove(level, placement);
+        BlockPos overhead = wood ? reachableLogAbove(level, placement) : null;
         if (overhead != null) { branch = overhead; return Outcome.WORKING; }
         if (!clearJumpSpace(level, placement)) return fail("Над опорой не хватает свободного места");
         // Clearing one leaf at a time is visible; wait until the next tick before jumping.
@@ -187,8 +200,23 @@ public final class CompanionPillar {
     }
 
     /** Cancel wood swings immediately; keep the pillar until normal descent has finished. */
-    public void requestCleanup() {
+    public void requestCleanup() { requestCleanup(false); }
+
+    /**
+     * The same, with {@code keepTool} for a gather whose own tool stays in his hand: the shears of a leaf order are not put
+     * away while its column comes down — the tool for a support goes back into that hand after each break, and the hand the
+     * gather replaced waits for the end of the gather (the owner, 19.11).
+     */
+    public void requestCleanup(boolean keepTool) {
         breaking.reset();
+        this.keepTool = keepTool && isActive();
+        if (this.keepTool) {
+            keptHand = owner.getMainHandItem().copy();
+        } else {
+            // A tool taken for the last swing goes back with the hand it replaced: the pillar may stand for a while before it is taken down.
+            keptHand = null;
+            owner.putToolAway();
+        }
         if (!recovering) cleanupTicks = 0;
         recovering = isActive();
         jumpCell = null;
@@ -247,11 +275,10 @@ public final class CompanionPillar {
         }
         if (anotherEntityDependsOn(level, pos)) return false;
         owner.getLookControl().setLookAt(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D);
-        owner.selectToolForBlock(highest.state());
-        if (!owner.getMainHandItem().isEmpty() && !owner.getMainHandItem().is(net.minecraft.tags.ItemTags.SHOVELS)
-                && !owner.getMainHandItem().is(net.minecraft.tags.ItemTags.PICKAXES)) owner.unequipForSupport("mainhand");
+        owner.takeToolForBlock(highest.state());
         if (!canDrop(highest.state())) {
             // The pickaxe is gone (broken, or taken): by hand the block would vanish without a drop. It stays where it is.
+            owner.putToolAway();
             supports.clear();
             failureReason = "Опоры оставил на месте: нечем их забрать";
             clearColumn();
@@ -264,6 +291,63 @@ public final class CompanionPillar {
         cleanupTicks = 0;
         cooldown = 5;
         return false;
+    }
+
+    /**
+     * The cells a short column could be built from to reach this block: ground under the crown, room over the feet for the
+     * body and the supports, and at least one step up — a cell he is already within a swing from is no column's cell — no more
+     * than his soil and {@link #MAX_SUPPORTS} allow. Empty when he cannot build up to it: no soil in the bag, a ceiling over
+     * the column, or a crown too high for a short column.
+     */
+    public Set<BlockPos> buildCells(BlockPos block) { return buildCells(block, soilCount()); }
+
+    /**
+     * The same cells as if the bag held the soil for the longest column: what the crown asks of him with the soil aside. When
+     * these are there and {@link #buildCells} has none, the soil is what he lacks for it.
+     */
+    public Set<BlockPos> buildCellsWithAnySoil(BlockPos block) { return buildCells(block, MAX_SUPPORTS); }
+
+    /** The soil he carries for a column now: what the bag and the hands hold. */
+    public int soilCarried() { return soilCount(); }
+
+    /**
+     * The longest column this block asks of him, in steps of soil: the most steps among the cells a column could stand at, so
+     * the soil gathered for it is enough for whichever of them he raises. 0 when no column reaches it at all.
+     */
+    public int columnSteps(BlockPos block) {
+        int longest = 0;
+        for (int steps : columns(block).values()) longest = Math.max(longest, steps);
+        return longest;
+    }
+
+    private Set<BlockPos> buildCells(BlockPos block, int supply) {
+        Set<BlockPos> cells = new HashSet<>();
+        for (var column : columns(block).entrySet())
+            if (column.getValue() > 0 && column.getValue() <= MAX_SUPPORTS && column.getValue() <= supply) cells.add(column.getKey());
+        return cells;
+    }
+
+    /** The cells a column to this block could stand at, each with the steps it asks: ground below, room over it, the reach. */
+    private java.util.Map<BlockPos, Integer> columns(BlockPos block) {
+        java.util.Map<BlockPos, Integer> cells = new java.util.LinkedHashMap<>();
+        if (!(owner.level() instanceof ServerLevel level) || !level.hasChunkAt(block)) return cells;
+        for (int down = 1; down <= MAX_SUPPORTS + 2; down++) for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
+            BlockPos feet = block.offset(dx, -down, dz);
+            if (!safeFoundation(level, feet.below())) continue;
+            int steps = requiredSteps(block, feet);
+            if (steps < 0 || steps > MAX_SUPPORTS || !columnClearable(level, feet, steps)) continue;
+            cells.put(feet.immutable(), steps);
+        }
+        return cells;
+    }
+
+    /** Whether the column is being raised toward this block: the climb for it is what stands, not soil to be taken back. */
+    public boolean climbingTo(BlockPos block) { return !recovering && target != null && target.equals(block); }
+
+    /** Whether a swing from where he stands now reaches this block: the same reach the climb works to. */
+    public boolean inReach(BlockPos block) {
+        return jumpCell == null && owner.onGround()
+                && owner.distanceToSqr(block.getX() + 0.5D, block.getY() + 0.5D, block.getZ() + 0.5D) <= REACH_SQR;
     }
 
     private Column planColumn(ServerLevel level, BlockPos log) {
@@ -417,14 +501,18 @@ public final class CompanionPillar {
 
     private boolean breakAndStore(ServerLevel level, BlockPos pos, BlockState state) {
         if (!level.hasChunkAt(pos) || level.getBlockState(pos) != state) return false;
-        owner.selectToolForBlock(state);
-        if (!canDrop(state)) return false;
+        owner.takeToolForBlock(state);
+        if (!canDrop(state)) { owner.putToolAway(); return false; }
         ItemStack tool = owner.getMainHandItem();
         var drops = CompanionTools.drops(state, level, pos, level.getBlockEntity(pos), owner, tool);
-        if (!level.destroyBlock(pos, false, owner, 512)) return false;
-        tool.getItem().mineBlock(tool, level, state, pos, owner);
+        if (!level.destroyBlock(pos, false, owner, 512)) { owner.putToolAway(); return false; }
+        CompanionTools.wearOnBreak(tool, level, state, pos, owner);
         owner.swing(InteractionHand.MAIN_HAND);
         owner.dropHarvest(pos, drops);
+        // A gather whose tool is kept gets it back into his hand after the support's own tool; the hand the gather replaced
+        // still waits for the end of the gather (CompanionWork.cancel).
+        if (keptHand == null || keptHand.isEmpty()) owner.putToolAway();
+        else owner.equipForSupport(BuiltInRegistries.ITEM.getKey(keptHand.getItem()).toString());
         return true;
     }
 
@@ -471,7 +559,7 @@ public final class CompanionPillar {
 
     private Outcome fail(String reason) {
         failureReason = reason;
-        requestCleanup();
+        requestCleanup(keepTool);
         return Outcome.FAILED;
     }
 
@@ -482,6 +570,8 @@ public final class CompanionPillar {
         lastProgress = null;
         attemptTicks = stalledTicks = jumpTicks = failedJumps = cooldown = cleanupTicks = 0;
         recovering = false;
+        keptHand = null;
+        keepTool = false;
     }
 
     public void save(CompoundTag tag) {

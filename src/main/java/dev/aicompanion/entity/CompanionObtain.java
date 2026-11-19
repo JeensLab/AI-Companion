@@ -5,6 +5,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.ItemTags;
+import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -79,9 +80,13 @@ public final class CompanionObtain {
     private final java.util.function.Predicate<Item> roams;
     private final Map<Item, Boolean> roamed = new HashMap<>();
     private final Trip trip;
+    /** Whether a stack he carries is his to use now: what he carries for the player (a sort) is not. */
+    private final java.util.function.Predicate<ItemStack> his;
     /** A step of the chain is Nether-only and is fetched through the portal; and why the trip cannot be made (no portal, no chunk loading: said instead of any other refusal). */
     private boolean viaNether;
     private String errandRefusal;
+    /** Stone dug by name is being made of what he carries: nothing is fetched from the Nether for it. */
+    private boolean home;
     /** He carries a sword or an axe for a fight. */
     private final boolean blade;
     /** What he would pick and does not see about him: named when the plan is refused. */
@@ -92,8 +97,9 @@ public final class CompanionObtain {
     private static final int LAYERS = 7;
     private static final double SPARE = 1.25;
 
-    private CompanionObtain(ServerLevel level, List<ItemStack> carried, boolean bench, java.util.function.Predicate<Item> grows, java.util.function.Predicate<Item> roams, Trip trip) {
-        this.level = level; this.carried = carried; this.bench = bench; this.grows = grows; this.roams = roams; this.trip = trip;
+    private CompanionObtain(ServerLevel level, List<ItemStack> carried, boolean bench, java.util.function.Predicate<Item> grows, java.util.function.Predicate<Item> roams, Trip trip,
+                            java.util.function.Predicate<ItemStack> his) {
+        this.level = level; this.carried = carried; this.bench = bench; this.grows = grows; this.roams = roams; this.trip = trip; this.his = his;
         blade = carried.stream().anyMatch(stack -> stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES));
         for (ItemStack stack : carried) if (!stack.isEmpty()) bag.merge(key(stack.getItem()), stack.getCount(), Integer::sum);
     }
@@ -116,16 +122,25 @@ public final class CompanionObtain {
     /** {@code trip}: the portal to the Nether he can walk to, and whether he is on the errand there now. */
     public static Plan plan(ServerLevel level, List<ItemStack> carried, boolean benchNearby, String requested, int count, java.util.function.Predicate<Item> grows,
                             java.util.function.Predicate<Item> roams, Trip trip) {
+        return plan(level, carried, benchNearby, requested, count, grows, roams, trip, stack -> true);
+    }
+
+    /**
+     * {@code his}: whether a stack he carries is his to use now — what he carries for the player during a sort is not, and no
+     * tool of it is promised for a block only that tool would give (CompanionTools skips it too).
+     */
+    public static Plan plan(ServerLevel level, List<ItemStack> carried, boolean benchNearby, String requested, int count, java.util.function.Predicate<Item> grows,
+                            java.util.function.Predicate<Item> roams, Trip trip, java.util.function.Predicate<ItemStack> his) {
         boolean[] viaNether = {false};
-        return errand(planned(level, carried, benchNearby, requested, count, grows, roams, trip, viaNether), level, trip, viaNether[0]);
+        return errand(planned(level, carried, benchNearby, requested, count, grows, roams, trip, viaNether, his), level, trip, viaNether[0]);
     }
 
     private static Plan planned(ServerLevel level, List<ItemStack> carried, boolean benchNearby, String requested, int count, java.util.function.Predicate<Item> grows,
-                                java.util.function.Predicate<Item> roams, Trip trip, boolean[] viaNether) {
+                                java.util.function.Predicate<Item> roams, Trip trip, boolean[] viaNether, java.util.function.Predicate<ItemStack> his) {
         var id = ResourceLocation.tryParse(requested == null ? "" : requested.trim());
         Item item = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
         if (item == null || item == Items.AIR) return new Plan(List.of(), "Не понял, какой предмет нужен.");
-        CompanionObtain planner = new CompanionObtain(level, carried, benchNearby || carried.stream().anyMatch(stack -> stack.is(Items.CRAFTING_TABLE)), grows, roams, trip);
+        CompanionObtain planner = new CompanionObtain(level, carried, benchNearby || carried.stream().anyMatch(stack -> stack.is(Items.CRAFTING_TABLE)), grows, roams, trip, his);
         // Logs the player asked for by name are that species, wherever the plan goes on; inside a chain wood stays a family (key).
         var species = CompanionWoodKind.of(id.toString());
         if (species != null && plainLog(id.getPath())) {
@@ -138,7 +153,8 @@ public final class CompanionObtain {
         if (grown != null) return planner.stripped(id, item, grown.asItem(), count);
         // Wood of a species that chopping does not give: the wood block is crafted of its own logs.
         if (species != null) return namedWood(carried, id, item, count);
-        String target = key(item);
+        // Cobbled deepslate by name is that stone, dug where the deepslate shows (stone below), not any of the family.
+        String target = CompanionPickable.stone(level, item) ? id.toString() : key(item);
         // Stone is a family inside a chain only: asked for by name, digging promises cobblestone and nothing else.
         if (target.equals(STONE) && item != Items.COBBLESTONE)
             return new Plan(List.of(), carried(carried, item) >= count ? null : "Камень копаю какой попадётся: именно «" + name(item) + "» добыть не умею.");
@@ -252,10 +268,13 @@ public final class CompanionObtain {
                 if (refusal != null) return refuse(refusal);
                 return need("minecraft:bucket", count, depth + 1) && add("fill_bucket", key, count);
             }
-            // Lava he walks to, set by his bucket of water and mined (CompanionObsidian); with a pickaxe that takes it only, he does not go for diamonds.
+            // Obsidian lying about him is mined where it lies (CompanionObsidian): no lava to cool, so no bucket, no iron and no
+            // smelting for one. Only with none about is obsidian made of lava, and that takes his bucket of water.
             case "minecraft:obsidian" -> {
                 String refusal = CompanionObsidian.refusal(level, carried);
                 if (refusal != null) return refuse(refusal);
+                if (grows != null && about(Items.OBSIDIAN)) return add("mine_obsidian", key, count);
+                if (grows != null && !about(Items.LAVA_BUCKET)) return refuse("Рядом нечего копать: ни обсидиана, ни лавы — отведи меня туда, где они есть.");
                 return need("minecraft:water_bucket", 1, depth + 1) && add("mine_obsidian", key, count);
             }
             // An empty bucket of his (or one made now) under a cow, a mooshroom or a goat about him (CompanionChores).
@@ -310,6 +329,7 @@ public final class CompanionObtain {
         if (CompanionChores.fleece(item) != null && about(item) && shears(depth)) return addSplit("shear_sheep", key, count, 64);
         // A blow at a shorn sheep gives no wool: where the world about him is known, one is hunted for it only if it wears white wool.
         if (item == Items.WHITE_WOOL && grows != null && !about(item)) { absent.add("овцы с шерстью"); return refuse(ABSENT + " овцы, на которой есть шерсть."); }
+        if (CompanionPickable.stone(level, item)) return stone(item, key, count, depth);
         if (viaPortal(item)) return nether(item, count, depth);
         for (CompanionOre.Kind ore : CompanionOre.Kind.values())
             if (ore.drop == item) return addSplit("mine_ore", "minecraft:" + ore.key() + "_ore", ceil(count, perOre(ore)), CompanionWork.MAX_ORE);
@@ -340,9 +360,12 @@ public final class CompanionObtain {
         // A block gives it when broken (sugar cane, a flower, clay): found and picked, if one is to be had here.
         // What only shears take (leaves, a vine, a cobweb): his shears, made by the whole chain if he has none, as for a comb.
         // A coral block is mined for the dead one: any pickaxe of his, else a wooden one. Snow gives snowballs to a shovel only: the same.
-        if (picked(item)) return (!CompanionPickable.shorn(level, item) || hasShears() || need("minecraft:shears", 1, depth + 1))
-                && (!CompanionPickable.mined(level, item) || hasPickaxe() || need("minecraft:wooden_pickaxe", 1, depth + 1))
-                && (!CompanionPickable.shoveled(level, item) || hasShovel() || need("minecraft:wooden_shovel", 1, depth + 1)) && addSplit("gather_block", key, count, 64);
+        // What only Silk Touch gives (a coral, its fan, a live coral block) is picked only with a tool that carries it; none is
+        // made for it (silk is an enchantment, not a craft), so the chain refuses before the walk when he carries none.
+        if (picked(item)) {
+            if (silked(item) && !carriesSilk(item)) return refuse("Для «" + name(item) + "» нужен инструмент с «Шёлковым касанием»: в сумке такого нет.");
+            return gather(item, key, count, depth);
+        }
         // A monster drops it (string, a bone, gunpowder): fought for, if one is about.
         List<String> prey = CompanionMobDrops.names(level, item);
         // Not with bare hands (in game 12.11: five spiders, one killed, and he was dead): a wooden sword first, unless he carries a blade.
@@ -350,6 +373,35 @@ public final class CompanionObtain {
         if (!CompanionPickable.sources(level, item).isEmpty()) { absent.add(name(item)); return refuse(ABSENT + ", где взять «" + name(item) + "»: отведи меня туда, где это есть."); }
         if (!prey.isEmpty()) { absent.add(name(item) + " (" + String.join(", ", prey) + ")"); return refuse(ABSENT + ", с кого добыть «" + name(item) + "» (" + String.join(", ", prey) + ")."); }
         return refuse("Не знаю, где взять «" + name(item) + "»: копать, охотиться, плавить и крафтить его я не умею" + (why == null ? "." : ". " + why));
+    }
+
+    /** gather_block with the tool the block wants: his shears, pickaxe or shovel, else one made by the whole chain first. */
+    private boolean gather(Item item, String key, int count, int depth) {
+        return (!CompanionPickable.shorn(level, item) || hasShears() || need("minecraft:shears", 1, depth + 1))
+                && (!CompanionPickable.mined(level, item) || hasPickaxe() || need("minecraft:wooden_pickaxe", 1, depth + 1))
+                && (!CompanionPickable.shoveled(level, item) || hasShovel() || need("minecraft:wooden_shovel", 1, depth + 1)) && addSplit("gather_block", key, count, 64);
+    }
+
+    /**
+     * Granite, tuff, cobbled deepslate…: dug where a face of it shows about him, else made of what he carries; never of quartz fetched
+     * from the Nether for it (the player 17.11: no player goes there for granite), and none in sight is said.
+     */
+    private boolean stone(Item item, String key, int count, int depth) {
+        // Cobbled deepslate is counted with the family in the bag: what he carries of it is taken off here, as for a stripped log.
+        int lacking = key(item).equals(STONE) ? count - carried(carried, item) : count;
+        if (lacking <= 0) return true;
+        // The pickaxe is no link of the stone's chain (deepslate tiles are four crafts deep): its own chain counts from the top.
+        if (picked(item)) return gather(item, key, lacking, 0);
+        boolean wasHome = home;
+        home = true;
+        try {
+            if (craft(item, lacking, depth)) return true;
+        } finally {
+            home = wasHome;
+        }
+        absent.add(name(item));
+        // Short enough to be said whole with the longest name (cobbled deepslate).
+        return refuse(ABSENT + " «" + name(item) + "»: отведи меня к склону или в пещеру, где он есть.");
     }
 
     /**
@@ -366,6 +418,7 @@ public final class CompanionObtain {
     /** The steps of the Nether trip for the item: a pickaxe made at home first (none can be made there), then the digging itself. */
     private boolean nether(Item item, int count, int depth) {
         boolean away = level.dimension() == Level.NETHER;
+        if (home) return false;
         if (!away && (trip == null || trip.portal() == null)) { errandRefusal = CompanionErrand.NO_PORTAL; return refuse(CompanionErrand.NO_PORTAL); }
         if (!away && !trip.chunks()) { errandRefusal = CompanionErrand.CHUNKS_OFF; return refuse(CompanionErrand.CHUNKS_OFF); }
         if (!hasPickaxe()) {
@@ -426,9 +479,10 @@ public final class CompanionObtain {
     /** Of the items an ingredient takes, the one already carried, else the one with the shortest chain; null if none can be got. */
     private String cheapest(Ingredient ingredient, int count, int depth) {
         if (ingredient == null) return null;
-        // A recipe that names one stripped block (a hanging sign) takes no other log: that block, not the family of logs.
+        // A recipe that names one stripped block (a hanging sign) takes no other log: that block, not the family of logs. So with
+        // cobbled deepslate (polished deepslate): that stone, not any.
         ItemStack[] named = ingredient.getItems();
-        if (named.length == 1 && CompanionChores.unstripped(named[0].getItem()) != null) return cheapest(List.of(BuiltInRegistries.ITEM.getKey(named[0].getItem()).toString()), count, depth);
+        if (named.length == 1 && (CompanionChores.unstripped(named[0].getItem()) != null || CompanionPickable.stone(level, named[0].getItem()))) return cheapest(List.of(BuiltInRegistries.ITEM.getKey(named[0].getItem()).toString()), count, depth);
         List<String> options = new ArrayList<>();
         for (ItemStack option : ingredient.getItems()) { String key = key(option.getItem()); if (!options.contains(key)) options.add(key); }
         return cheapest(options, count, depth);
@@ -515,14 +569,38 @@ public final class CompanionObtain {
         return bag.getOrDefault("minecraft:shears", 0) > 0 || steps.stream().anyMatch(step -> step.type().equals("craft_item") && step.item().equals("minecraft:shears"));
     }
 
-    private boolean hasPickaxe() { return hasTool("_pickaxe"); }
+    private boolean hasPickaxe() { return hasTool(ItemTags.PICKAXES); }
 
-    private boolean hasShovel() { return hasTool("_shovel"); }
+    private boolean hasShovel() { return hasTool(ItemTags.SHOVELS); }
 
-    /** A tool of the kind ({@code _pickaxe}, {@code _shovel}) carried or made earlier in this plan. */
-    private boolean hasTool(String suffix) {
-        return bag.keySet().stream().anyMatch(id -> id.endsWith(suffix) && bag.get(id) > 0)
-                || steps.stream().anyMatch(step -> step.type().equals("craft_item") && step.item().endsWith(suffix));
+    /** Whether every block that gives the item gives it only to Silk Touch (a coral, its fan, a live coral block). */
+    private boolean silked(Item item) {
+        List<CompanionPickable.Source> all = CompanionPickable.sources(level, item);
+        return !all.isEmpty() && all.stream().allMatch(CompanionPickable.Source::silk);
+    }
+
+    /** Whether he carries a tool with Silk Touch that takes one of the blocks giving the item as it stands (silk is never made). */
+    private boolean carriesSilk(Item item) {
+        for (ItemStack stack : carried) {
+            if (stack.isEmpty() || !his.test(stack) || net.minecraft.world.item.enchantment.EnchantmentHelper.getItemEnchantmentLevel(
+                    level.registryAccess().holderOrThrow(net.minecraft.world.item.enchantment.Enchantments.SILK_TOUCH), stack) <= 0) continue;
+            for (CompanionPickable.Source source : CompanionPickable.sources(level, item)) {
+                var state = source.block().defaultBlockState();
+                if (!state.requiresCorrectToolForDrops() || stack.isCorrectToolForDrops(state)) return true;
+            }
+        }
+        return false;
+    }
+
+    /** A tool of the kind carried or made earlier in this plan, by the game's tag as elsewhere: a pickaxe of another mod is one too. */
+    private boolean hasTool(TagKey<Item> kind) {
+        return bag.keySet().stream().anyMatch(id -> bag.get(id) > 0 && tagged(id, kind))
+                || steps.stream().anyMatch(step -> step.type().equals("craft_item") && tagged(step.item(), kind));
+    }
+
+    private static boolean tagged(String id, TagKey<Item> kind) {
+        ResourceLocation key = ResourceLocation.tryParse(id);
+        return key != null && BuiltInRegistries.ITEM.getOptional(key).map(item -> new ItemStack(item).is(kind)).orElse(false);
     }
 
     private boolean hunted(Item item) {
