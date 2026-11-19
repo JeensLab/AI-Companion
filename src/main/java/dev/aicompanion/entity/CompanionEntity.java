@@ -154,6 +154,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private boolean replantOn = true;
     /** Whether he takes the tool that breaks a block best from his bag, or breaks with whatever is in his hand (issue #105). */
     private boolean rightToolOn = true;
+    /** Whether a shut wooden fence gate on his route is opened, walked through and shut behind him (idea BDGLW, #105). */
+    private boolean fenceGatesOn = true;
     /** Whether «подбери» looks at the ground first, and how far around him (the player's setting, not saved). */
     private boolean pickUpNearby = true;
     private int pickUpRadius = 16;
@@ -395,6 +397,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DANGER_POWDER_SNOW, -1.0F);
         this.goalSelector.addGoal(0, new CompanionSwimming.WadingFloatGoal(this));
         this.goalSelector.addGoal(0, new net.minecraft.world.entity.ai.goal.OpenDoorGoal(this, true));
+        this.goalSelector.addGoal(0, new CompanionGateGoal(this));
         this.goalSelector.addGoal(0, new CompanionCreeperGuard.GuardGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverSupportsGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverRouteGoal(this));
@@ -704,6 +707,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether he takes the right tool for a block from his bag instead of breaking it with whatever is in his hand. */
     public boolean rightToolForBlock() { return rightToolOn; }
     public void setRightToolForBlock(boolean on) { rightToolOn = on; }
+    /** Whether a shut wooden fence gate on his route is opened, walked through and shut behind him (the player can turn it off in the settings). */
+    public boolean fenceGates() { return fenceGatesOn; }
+    public void setFenceGates(boolean on) { fenceGatesOn = on; }
     /** Whether «подбери» takes what lies on the ground around him, and how far the scan goes (the player's setting). */
     public boolean pickUpNearby() { return pickUpNearby; }
     public int pickUpRadius() { return pickUpRadius; }
