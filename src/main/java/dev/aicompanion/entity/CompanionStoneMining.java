@@ -28,6 +28,27 @@ final class CompanionStoneMining {
     CompanionStoneMining(CompanionWork w) { this.w = w; }
 
     void mine(ServerLevel level) {
+        trackReturnRoute(level);
+        if (finishWhenGathered(level)) return;
+        if (!w.owner.onGround() && !w.owner.isInWater()) return;
+        if (generatorStep(level)) return;
+        if (findStoneCandidates(level)) return;
+        trackSurfaceProgress(level);
+        if (dropInvalidQuarryTarget(level)) return;
+        if (chooseTarget(level)) return;
+        if (w.items.prepareMiningTool(level.getBlockState(w.target))) return;
+        boolean soil = !w.quarrySoil.isEmpty() && w.target.equals(w.quarrySoil.peekFirst()); // a stair cell, soil or stone
+        boolean stairStone = soil && isStone(level.getBlockState(w.target));
+        if (prepareToMine(level, soil, stairStone)) return;
+        if (alignWithTarget(level, soil)) return;
+        w.route.stop();
+        BlockState state = level.getBlockState(w.target);
+        ItemStack pickaxe = w.owner.getMainHandItem();
+        if (verifyBeforeBreak(level, soil, stairStone, state, pickaxe)) return;
+        breakAndCollect(level, soil, stairStone, state, pickaxe);
+    }
+
+    private void trackReturnRoute(ServerLevel level) {
         // On a long walk to far stone the way back is not to the old spot: mining starts anew where he arrives.
         if (w.stoneTravel == null && w.owner.getY() < w.workOrigin.getY() - 1.5) {
             // Vanilla returns no path at all while the mob is airborne, and going down stairs is a series of hops.
@@ -48,31 +69,40 @@ final class CompanionStoneMining {
             // climbs out afterwards; no way back only forbids going deeper (no stairs down below), the climb is the self-rescue
             // once the work no longer holds him here.
         } else { w.returnRouteBlocked = false; w.returnMisses = 0; }
+    }
+
+    private boolean finishWhenGathered(ServerLevel level) {
         w.gathered = w.owner.collectedStone() - w.stoneCollectedBefore;
         if (w.gathered >= w.wantedStone) {
             // One more round for the drops given up from where they could not be reached, before leaving the spot (marathon 23.10:
             // a stone in a narrow dip of the ravine stayed behind), as the ore does.
-            if (!w.stoneLootRetried) { w.stoneLootRetried = true; w.owner.retryHarvestPickup(); return; }
+            if (!w.stoneLootRetried) { w.stoneLootRetried = true; w.owner.retryHarvestPickup(); return true; }
             // Like a player: walk back up the own stairs first, then craft or store at the surface where the bench and chest are.
             w.resetTarget(); w.quarrySoil.clear();
-            if (w.exitCell != null && w.owner.getY() < w.exitCell.getY() - .5) { w.phase = CompanionWork.Phase.EXIT; w.resetApproach(); return; }
+            if (w.exitCell != null && w.owner.getY() < w.exitCell.getY() - .5) { w.phase = CompanionWork.Phase.EXIT; w.resetApproach(); return true; }
             // Down a slope or a cut for the stone, not by his own stairs: the bench and the furnace are set up where he came from,
             // not in the cut (marathon 23.10, «долина»: the bench stood on the step of his way back, no room was left for the
             // furnace and he had to dig his way out).
             if (w.job != CompanionWork.Job.STONE && w.workOrigin != null && w.owner.getY() < w.workOrigin.getY() - 1.5 && w.owner.onGround()) {
                 var home = w.route.cells(Set.of(w.workOrigin), 0);
-                if (home.busy()) return;
-                if (home.found()) { w.exitCell = w.workOrigin; w.phase = CompanionWork.Phase.EXIT; w.resetApproach(); return; }
+                if (home.busy()) return true;
+                if (home.found()) { w.exitCell = w.workOrigin; w.phase = CompanionWork.Phase.EXIT; w.resetApproach(); return true; }
             }
             afterMining();
-            return;
+            return true;
         }
-        if (!w.owner.onGround() && !w.owner.isInWater()) return;
-        if (generatorStep(level)) return;
+        return false;
+    }
+
+    private boolean findStoneCandidates(ServerLevel level) {
         if (w.stoneCandidates == null) {
-            if (!w.stoneSearch.scan(level)) { w.owner.workStatus("Ищу выходы камня в пределах " + w.owner.getSearchRadius() + " блоков."); return; }
+            if (!w.stoneSearch.scan(level)) { w.owner.workStatus("Ищу выходы камня в пределах " + w.owner.getSearchRadius() + " блоков."); return true; }
             w.stoneCandidates = new ArrayList<>(w.stoneSearch.results());
         }
+        return false;
+    }
+
+    private void trackSurfaceProgress(ServerLevel level) {
         // Game log 21.10: every surface face was checked one by one while he stood still for two minutes, and the
         // stairs come only after the last one. Stone or walking somewhere new is progress; otherwise go down instead.
         // Game log 22.10: two minutes walking from one far face to the next without a single stone. Walking counts as
@@ -88,11 +118,18 @@ final class CompanionStoneMining {
                     "candidates", w.stoneCandidates.size(), "rejected", w.rejected.size(), "seconds", CompanionWork.SURFACE_STONE_TICKS / 20);
             w.stoneCandidates.clear(); w.resetTarget(); w.dryTicks = 0;
         }
+    }
+
+    private boolean dropInvalidQuarryTarget(ServerLevel level) {
         if (w.target != null && !w.quarrySoil.isEmpty() && w.target.equals(w.quarrySoil.peekFirst()) && !CompanionQuarry.diggable(level.getBlockState(w.target))) {
             if (level.getBlockState(w.target).isAir()) { w.quarrySoil.removeFirst(); w.resetTarget(); }
-            else { w.finish(false, "Проход к камню изменился. Не буду ломать чужие блоки."); return; }
+            else { w.finish(false, "Проход к камню изменился. Не буду ломать чужие блоки."); return true; }
         }
-        if (w.target == null && w.stoneTravel != null && travelToStone(level)) return;
+        return false;
+    }
+
+    private boolean chooseTarget(ServerLevel level) {
+        if (w.target == null && w.stoneTravel != null && travelToStone(level)) return true;
         boolean stairTarget = w.target != null && !w.quarrySoil.isEmpty() && w.target.equals(w.quarrySoil.peekFirst());
         if (w.target == null || !safeToMine(level, w.target) && !isSafeStoneExceptOwnFeet(level, w.target) || !stairTarget && deepensOwnHole(w.target)) {
             w.clearCracks();
@@ -110,12 +147,12 @@ final class CompanionStoneMining {
                     if (!w.target.equals(w.blockedStair)) { w.blockedStair = w.target.immutable(); w.blockedStairSince = level.getGameTime(); }
                     w.route.stop();
                     w.owner.workStatus("Ступенька занята или небезопасна, ищу другой подход.");
-                    if (level.getGameTime() - w.blockedStairSince < 40) return;
-                    if (w.blockedStairReplans++ >= 2) { w.finish(false, "Проход к камню занят или небезопасен. Не буду копать под стоящими рядом."); return; }
+                    if (level.getGameTime() - w.blockedStairSince < 40) return true;
+                    if (w.blockedStairReplans++ >= 2) { w.finish(false, "Проход к камню занят или небезопасен. Не буду копать под стоящими рядом."); return true; }
                     dev.aicompanion.CompanionDiagnostics.event(w.owner.diagnosticTrace(), "work_replanned", "entity", w.owner.getUUID(),
                             "reason", "stair_became_unsafe", "blocked", w.blockedStair, "attempt", w.blockedStairReplans);
                     w.quarrySoil.clear(); w.quarryTried = false; w.blockedStair = null; w.resetTarget();
-                    return;
+                    return true;
                 }
                 w.blockedStair = null;
                 // After a pickup Oleg often stands on the very next stair cell. That is his own feet, not a
@@ -123,20 +160,20 @@ final class CompanionStoneMining {
                 if (!safeToMine(level, w.target) && safeToMine(level, w.target, true) && CompanionQuarry.diggable(level.getBlockState(w.target))) {
                     if (w.path == null || w.route.legOver()) {
                         var step = w.route.to(w.target, STEP_OFF);
-                        if (step.busy()) return;
+                        if (step.busy()) return true;
                         w.path = step.path();
                     }
-                    if (w.path != null && w.path.canReach()) { w.route.walk(w.path); return; }
+                    if (w.path != null && w.path.canReach()) { w.route.walk(w.path); return true; }
                 }
                 if (!safeToMine(level, w.target) && w.lastHarvestStand != null && CompanionMiningNavigation.standable(w.owner, w.lastHarvestStand)) {
                     int busy = w.route.busyAnswers();
                     Path retreat = w.route.toCells(Set.of(w.lastHarvestStand));
-                    if (retreat != null) { w.route.walk(retreat); return; }
+                    if (retreat != null) { w.route.walk(retreat); return true; }
                     // This tick's cells went elsewhere: not "no way back" yet, asked again next tick.
-                    if (w.route.busyAnswers() != busy) return;
+                    if (w.route.busyAnswers() != busy) return true;
                 }
                 if (!CompanionQuarry.diggable(level.getBlockState(w.target)) || !CompanionQuarry.safeCell(level, w.target) || !safeToMine(level, w.target)) {
-                    w.finish(false, "Не могу безопасно продолжить проход к камню. Вещи сохранил."); return;
+                    w.finish(false, "Не могу безопасно продолжить проход к камню. Вещи сохранил."); return true;
                 }
             } else w.target = nextStone(level);
             // Past the limit with a face already found: that face (the best so far, as at the search limit), not the stairs, which would
@@ -145,54 +182,59 @@ final class CompanionStoneMining {
             if (w.target == null) {
                 // Faces that no route reaches can keep him choosing for twenty seconds (marathon: a plain with the stone below the dirt);
                 // after a few the stairs are tried first, and the choice goes on if none can be dug.
-                if (w.selectingStone && (w.choosingTicks <= CompanionWork.STONE_CHOICE_TICKS || w.quarryTried)) { w.owner.workStatus("Проверяю подход к камню, ищу другой выход."); return; }
+                if (w.selectingStone && (w.choosingTicks <= CompanionWork.STONE_CHOICE_TICKS || w.quarryTried)) { w.owner.workStatus("Проверяю подход к камню, ищу другой выход."); return true; }
                 if (!w.quarryTried && !w.returnRouteBlocked && (w.exitCell == null || w.workOrigin.getY() - w.owner.getY() < CompanionWork.MAX_MINE_DEPTH)) {
                     w.quarryTried = true;
                     int busy = w.route.busyAnswers();
                     var quarry = CompanionQuarry.find(w.owner, w.wantedStone - w.gathered, w.rejected);
                     // A start it could not search to for want of this tick's cells is not one without a way: the plan is made again next tick.
-                    if (quarry == null && w.route.busyAnswers() != busy) { w.quarryTried = false; return; }
+                    if (quarry == null && w.route.busyAnswers() != busy) { w.quarryTried = false; return true; }
                     if (quarry != null && quarry.cells().stream().allMatch(w.stoneMining::withinWorkDepth)) {
                         w.quarrySoil.addAll(quarry.cells()); w.quarrySupports.addAll(quarry.supports());
                         if (w.exitCell == null) w.exitCell = quarry.start();
                         w.stairs++;
                         endStoneChoice();
                         w.owner.workStatus(w.stairs == 1 ? "Камня рядом на моём уровне нет. Копаю лестницу вниз, камень со ступенек тоже беру."
-                                : "Здесь камень кончился. Продолжаю лестницу ещё ниже."); return;
+                                : "Здесь камень кончился. Продолжаю лестницу ещё ниже."); return true;
                     }
                 }
-                if (w.selectingStone) { w.owner.workStatus("Проверяю подход к камню, ищу другой выход."); return; }
+                if (w.selectingStone) { w.owner.workStatus("Проверяю подход к камню, ищу другой выход."); return true; }
                 // No stairs possible here (rock or bedrock under him, the stairs done): the far faces, walked to in legs.
-                if (startStoneTravel(level)) return;
-                w.finish(false, "Добыл " + w.gathered + " из " + w.wantedStone + (madeUp() > 0 ? " (" + orderAndMadeUp() + ")" : "") + ". Проверил доступные выходы камня в пределах " + w.owner.getSearchRadius() + " блоков; безопасного подхода или неглубокого спуска не нашёл."); return;
+                if (startStoneTravel(level)) return true;
+                w.finish(false, "Добыл " + w.gathered + " из " + w.wantedStone + (madeUp() > 0 ? " (" + orderAndMadeUp() + ")" : "") + ". Проверил доступные выходы камня в пределах " + w.owner.getSearchRadius() + " блоков; безопасного подхода или неглубокого спуска не нашёл."); return true;
             }
         }
-        if (w.items.prepareMiningTool(level.getBlockState(w.target))) return;
-        boolean soil = !w.quarrySoil.isEmpty() && w.target.equals(w.quarrySoil.peekFirst()); // a stair cell, soil or stone
-        boolean stairStone = soil && isStone(level.getBlockState(w.target));
+        return false;
+    }
+
+    private boolean prepareToMine(ServerLevel level, boolean soil, boolean stairStone) {
         // Pickup/movement can put our feet over a queued stair between ticks. Its old queue membership is not permission
         // to swing: re-enter the existing step-off/blocked-stair handling before making any cracks.
-        if (soil && !safeToMine(level, w.target)) { w.breaking.reset(); w.resetTarget(); return; }
+        if (soil && !safeToMine(level, w.target)) { w.breaking.reset(); w.resetTarget(); return true; }
         if (!soil && !safeToMine(level, w.target)) {
             // Pickup can leave our feet partly over the next stone. Step off it before mining
             // instead of declaring the entire newly opened seam inaccessible.
-            if (w.breaking.swinging()) { w.rejectTarget(); return; }
+            if (w.breaking.swinging()) { w.rejectTarget(); return true; }
             w.breaking.reset();
             if (w.path == null || w.route.legOver()) {
                 var step = w.route.to(w.target, STEP_OFF);
-                if (step.busy()) return;
+                if (step.busy()) return true;
                 w.path = step.path();
             }
-            if (w.path == null || !w.path.canReach()) { w.rejectTarget(); return; }
-            w.route.walk(w.path); return;
+            if (w.path == null || !w.path.canReach()) { w.rejectTarget(); return true; }
+            w.route.walk(w.path); return true;
         }
         w.owner.movementIntent(w.target);
-        if (!soil && !isStone(level.getBlockState(w.target))) { w.rejectTarget(); return; }
+        if (!soil && !isStone(level.getBlockState(w.target))) { w.rejectTarget(); return true; }
         if ((!soil || stairStone) && !w.items.usablePickaxe(w.owner.getMainHandItem())) {
             w.owner.selectToolForBlock(level.getBlockState(w.target));
-            if (!w.items.usablePickaxe(w.owner.getMainHandItem())) { w.resetTarget(); w.phase = CompanionWork.Phase.PICKAXE; return; }
+            if (!w.items.usablePickaxe(w.owner.getMainHandItem())) { w.resetTarget(); w.phase = CompanionWork.Phase.PICKAXE; return true; }
         }
         if (soil && !stairStone) w.owner.selectToolForBlock(level.getBlockState(w.target));
+        return false;
+    }
+
+    private boolean alignWithTarget(ServerLevel level, boolean soil) {
         w.owner.getLookControl().setLookAt(w.target.getX() + 0.5D, w.target.getY() + 0.5D, w.target.getZ() + 0.5D);
         if (w.owner.distanceToSqr(w.target.getCenter()) > 3.8D * 3.8D || !CompanionMiningNavigation.visible(w.owner, w.owner.getEyePosition(), w.target)
                 || !soil && !CompanionMiningNavigation.dropCollectable(level, w.target, w.owner.blockPosition())) {
@@ -205,13 +247,13 @@ final class CompanionStoneMining {
                     if (w.blockedStairReplans++ >= 2) w.finish(CompanionActionResult.blocked("Подход к ступенькам нестабилен. Проверил другие спуски, вещи сохранил."));
                     else { w.resetTarget(); w.owner.workStatus("Потерял безопасный подход к ступеньке, ищу другой спуск."); }
                 }
-                return;
+                return true;
             }
             // The walk (in legs when it is longer than one search) and its patience are the route's.
             if (w.route.approach(level, w.target, new CompanionRoute.Need(3.5, false, false, !soil)) < 0) {
                 if (soil) w.finish(false, "Проход к камню закрыт, остановился."); else w.rejectTarget();
             }
-            return;
+            return true;
         }
         if (!soil) {
             // Game log 22.10: a face with stone above was rejected and a face with soil above had the soil dug off first
@@ -219,17 +261,18 @@ final class CompanionStoneMining {
             // is picked up from the cell in front. Only sand or gravel above is left alone, it would pour into the hole.
             BlockPos overhead = w.target.above();
             BlockState cover = level.getBlockState(overhead);
-            if (cover.getBlock() instanceof net.minecraft.world.level.block.FallingBlock) { w.rejectTarget(); return; }
+            if (cover.getBlock() instanceof net.minecraft.world.level.block.FallingBlock) { w.rejectTarget(); return true; }
             // Stone on stone at his feet: the upper one first, like a player's 1x2. It is stone too, and the lower drop stays in sight.
             if (isStone(cover) && w.target.getY() <= w.owner.getBlockY() && !w.dug.contains(overhead) && safeToMine(level, overhead)
                     && w.owner.distanceToSqr(overhead.getCenter()) <= 3.8 * 3.8 && CompanionMiningNavigation.visible(w.owner, w.owner.getEyePosition(), overhead)) {
-                w.breaking.reset(); w.target = overhead.immutable(); return;
+                w.breaking.reset(); w.target = overhead.immutable(); return true;
             }
         }
-        w.route.stop();
-        BlockState state = level.getBlockState(w.target);
-        ItemStack pickaxe = w.owner.getMainHandItem();
-        if ((!soil || stairStone) && !pickaxe.isCorrectToolForDrops(state)) { w.phase = CompanionWork.Phase.PICKAXE; w.clearCracks(); return; }
+        return false;
+    }
+
+    private boolean verifyBeforeBreak(ServerLevel level, boolean soil, boolean stairStone, BlockState state, ItemStack pickaxe) {
+        if ((!soil || stairStone) && !pickaxe.isCorrectToolForDrops(state)) { w.phase = CompanionWork.Phase.PICKAXE; w.clearCracks(); return true; }
         // Marathon 23.10, «пещера»: for the furnace stone he mined the steps of the passage he had come down by and cut off his own
         // way up («не смог добраться до верстака»). A player leaves the steps he goes back by.
         if ((!soil || w.owner.autonomy().running()) && !w.target.equals(w.stepChecked) && w.workOrigin != null
@@ -241,10 +284,14 @@ final class CompanionStoneMining {
                     && !CompanionMiningNavigation.canWalkBackUp(w.owner, feet, w.workOrigin.getY(), w.target)) {
                 if (w.owner.autonomy().running() && soil) w.finish(CompanionActionResult.blocked("Дальнейшая добыча разрушит обратные ступеньки. Остановился, вещи сохранил."));
                 else w.rejectTarget();
-                return;
+                return true;
             }
         }
-        if (!autonomousReturnAllows(w.target)) { if (soil) w.finish(CompanionActionResult.blocked("Безопасный обратный ход не подтверждён. Дальше не копаю, вещи сохранил.")); else w.rejectTarget(); return; }
+        if (!autonomousReturnAllows(w.target)) { if (soil) w.finish(CompanionActionResult.blocked("Безопасный обратный ход не подтверждён. Дальше не копаю, вещи сохранил.")); else w.rejectTarget(); return true; }
+        return false;
+    }
+
+    private void breakAndCollect(ServerLevel level, boolean soil, boolean stairStone, BlockState state, ItemStack pickaxe) {
         w.owner.workStatus(stairStone ? "Копаю ступеньку вниз, камень: " + w.gathered + " из " + w.wantedStone + "."
                 : soil ? "Убираю землю для спуска к камню." : "Добываю камень: " + w.gathered + " из " + w.wantedStone + ".");
         if (!w.breaking.tick(level, w.target)) return;
