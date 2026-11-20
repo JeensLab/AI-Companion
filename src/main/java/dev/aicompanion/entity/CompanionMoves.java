@@ -25,8 +25,8 @@ final class CompanionMoves {
     private static final float CLIMB = 6, DROP = 2;
     /** The deepest drop into water that is taken (a fall into water does no harm). */
     private static final int WATER_DROP = 20;
-    /** The deepest drop onto land, chasing or not (the game's own allows a mob with a target up to 12 on Normal, 16 on Hard). */
-    private static final int LAND_DROP = 3;
+    /** The deepest drop onto land, chasing or not (the game's own allows a mob with a target up to 12 on Normal, 16 on Hard). The walk follows it too: no step is skipped onto a deeper one. */
+    static final int LAND_DROP = 3;
     /** How many drops in a row are added up (a chain longer than that is far over what he may fall anyway). */
     private static final int CHAIN_LINKS = 8;
     /** A block in a cell no higher than this (a bottom slab, a carpet, a few layers of snow) is stepped onto; a higher one fills the cell. */

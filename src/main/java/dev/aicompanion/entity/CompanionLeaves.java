@@ -4,6 +4,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.ItemTags;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
 /**
@@ -33,7 +34,10 @@ public final class CompanionLeaves {
 
     /** The leaf block of a tree he can gather from, or null when no tree's leaves are within his reach. */
     public static String nearest(CompanionEntity c, ServerLevel level) {
-        BlockPos found = CompanionPicking.nearestLeaf(c, level);
+        return leafAt(level, CompanionPicking.nearestLeaf(c, level));
+    }
+
+    private static String leafAt(ServerLevel level, BlockPos found) {
         return found == null ? null : BuiltInRegistries.ITEM.getKey(level.getBlockState(found).getBlock().asItem()).toString();
     }
 
@@ -44,16 +48,19 @@ public final class CompanionLeaves {
     }
 
     /**
-     * The leaf block an order will come at: the species it named when its leaves can be come at, else the nearest leaf of any
-     * other tree or hedge about (any #minecraft:leaves), else null. A named species is no limit on a leaf order.
+     * The leaf block an order will come at, as the gather itself comes at it: the species it named when a tree's own leaves of
+     * it can be come at, else another tree's or hedge's leaves about, then the leaves a player set down — and null when no leaf
+     * is reachable. A kind that cannot give the order is passed over for one that can (the count it asks for, the owner 19.11).
+     * A leaf he set down is no crown of its species, so the named species is named only while a tree grew it in his reach: the
+     * soil the plan digs is sized for the leaves it really comes at. A named species is no limit on a leaf order.
      */
-    public static String leafTarget(CompanionEntity c, ServerLevel level, String requested) {
+    public static String leafTarget(CompanionEntity c, ServerLevel level, String requested, int count) {
+        Item named = null;
         if (requested != null && !isFamily(requested) && isLeaf(requested)) {
             var id = net.minecraft.resources.ResourceLocation.tryParse(requested);
-            var item = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
-            if (item != null && CompanionPicking.nearestOf(c, level, item) != null) return requested;
+            named = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
         }
-        return nearest(c, level);
+        return leafAt(level, CompanionPicking.firstLeaf(c, level, named, count));
     }
 
     /**

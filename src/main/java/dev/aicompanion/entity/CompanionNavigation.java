@@ -22,8 +22,19 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
 
     CompanionNavigation(Mob mob, Level level) { super(mob, level); }
 
-    /** A jump of the route is walked on the tick the game follows the path (CompanionJumps). */
-    @Override public void tick() { super.tick(); jumps.tick(path); jumps.climb(path); }
+    /**
+     * A jump of the route is walked on the tick the game follows the path (CompanionJumps). A node the game passed while he was in
+     * the air over its column may lie below the step he came down on: the next one is then deeper than the fall he may take, and
+     * the walk off that step hurt (the stair of the owner's crown, 19.11). He steps down into the node he skipped first.
+     */
+    @Override public void tick() {
+        if (path != null && !path.isDone() && mob.onGround() && path.getNextNodeIndex() > 0
+                && mob.getY() - path.getNextNodePos().getY() > CompanionMoves.LAND_DROP)
+            path.setNextNodeIndex(path.getNextNodeIndex() - 1);
+        super.tick();
+        jumps.tick(path);
+        jumps.climb(path);
+    }
 
     /**
      * How far short of a lower node's centre it counts as passed on the step's edge. The game advances that node on the next tick
@@ -46,7 +57,11 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
             var node = path.getNodePos(next);
             var from = path.getNodePos(next - 1);
             double drop = mob.getY() - node.getY(), dx = mob.getX() - (node.getX() + .5), dz = mob.getZ() - (node.getZ() + .5);
-            if (drop > 0 && drop <= 1 && Math.abs(dx) <= .5 && Math.abs(dz) <= .5
+            // Only while the node after it is within the fall he may take: a step skipped at the stair's edge while he still stood a
+            // block over it left the next node four blocks below his feet, and the walk off that step took a heart (the stair of the
+            // owner's crown, 19.11). He steps down into the node first, and the next one is then a fall he may take.
+            boolean withinTheFall = mob.getY() - path.getNodePos(next + 1).getY() <= CompanionMoves.LAND_DROP;
+            if (drop > 0 && drop <= 1 && withinTheFall && Math.abs(dx) <= .5 && Math.abs(dz) <= .5
                     && dx * (node.getX() - from.getX()) + dz * (node.getZ() - from.getZ()) >= -SHORT_OF_CENTRE) path.advance();
         }
         super.followThePath();

@@ -746,6 +746,81 @@ public final class CompanionLeavesTests {
     }
 
     /**
+     * The soil is sized for the leaves the gather really comes at (19.11): a leaf the player set down is no crown of its
+     * species, so «добудь 16 oak leaves» with only a set-down oak hedge about and a spruce crown six blocks up names the spruce
+     * the gather comes at, digs the soil for that crown and climbs it — not zero soil for the oak, which would leave the crown
+     * where it hangs.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 8000)
+    public static void theSoilIsSizedForTheSpeciesTheGatherComesAt(GameTestHelper h) {
+        ground(h);
+        // The player's own oak leaves beside him: within his reach from the ground, and no oak crown of a tree.
+        BlockPos hedgeTrunk = new BlockPos(14, GROUND + 1, 16);
+        for (int up = 0; up < 3; up++) h.setBlock(hedgeTrunk.above(up), Blocks.OAK_LOG);
+        var hedge = Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.PERSISTENT, true).setValue(LeavesBlock.DISTANCE, 7);
+        List<BlockPos> beside = List.of(hedgeTrunk.above().west(), hedgeTrunk.above().east(), hedgeTrunk.above().north(),
+                hedgeTrunk.above(2).west(), hedgeTrunk.above(2).east(), hedgeTrunk.above(2).north());
+        for (BlockPos cell : beside) h.setBlock(cell, hedge);
+        // A spruce crown six and seven blocks up: no stand cell under it, the soil about him is dirt.
+        BlockPos trunk = new BlockPos(20, GROUND + 1, 16);
+        for (int up = 0; up < 6; up++) h.setBlock(trunk.above(up), Blocks.SPRUCE_LOG);
+        var crown = Blocks.SPRUCE_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = 6; dy <= 7; dy++) {
+            BlockPos cell = trunk.offset(dx, dy, dz);
+            if (!cell.equals(trunk.above(dy))) h.setBlock(cell, crown);
+        }
+        CompanionEntity c = withTheOwnersTools(h);
+        h.assertTrue("minecraft:spruce_leaves".equals(CompanionLeaves.leafTarget(c, h.getLevel(), "minecraft:oak_leaves", 16)),
+                "The set-down oak was named over the spruce the gather comes at: " + CompanionLeaves.leafTarget(c, h.getLevel(), "minecraft:oak_leaves", 16));
+        h.assertTrue(CompanionLeaves.soilToDig(c, h.getLevel(), "minecraft:spruce_leaves", 16) > 0,
+                "The spruce crown six blocks up asks no soil");
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":16}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.SPRUCE_LEAVES) >= 16, "Not sixteen spruce leaves: " + count(c, Items.SPRUCE_LEAVES) + ", " + report);
+            h.assertTrue(count(c, Items.DIRT) > 0, "He dug no soil for the spruce crown: " + report);
+            for (BlockPos cell : beside) h.assertBlockPresent(Blocks.OAK_LEAVES, cell);
+        });
+    }
+
+    /**
+     * A small crown is no stand-in for a hedge that meets the order (19.11): six spruce leaves six blocks up, above every
+     * stand cell, and sixteen oak leaves the player set down beside him. «Добудь 8 oak leaves» names the oak — the leaves that
+     * can give the order — and gathers them from the hedge: no column is raised for the six spruce leaves, no soil dug.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 8000)
+    public static void aSmallCrownDoesNotOutbidTheHedgeThatMeetsTheOrder(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = withTheOwnersTools(h);
+        // Sixteen oak leaves the player set down beside him, within his reach from the ground.
+        var hedge = Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.PERSISTENT, true).setValue(LeavesBlock.DISTANCE, 7);
+        for (int dx = 0; dx < 4; dx++) for (int dz = 0; dz < 4; dz++)
+            placedByPlayer(h, c, new BlockPos(12 + dx, GROUND + 1, 12 + dz), hedge);
+        // A small natural spruce crown: six leaves six blocks up, above every stand cell.
+        BlockPos trunk = new BlockPos(20, GROUND + 1, 16);
+        for (int up = 0; up < 6; up++) h.setBlock(trunk.above(up), Blocks.SPRUCE_LOG);
+        var spruce = Blocks.SPRUCE_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        for (BlockPos cell : List.of(trunk.above(5).west(), trunk.above(5).east(), trunk.above(5).north(), trunk.above(5).south(),
+                trunk.above(6).west(), trunk.above(6).east())) h.setBlock(cell, spruce);
+        h.assertTrue("minecraft:oak_leaves".equals(CompanionLeaves.leafTarget(c, h.getLevel(), "minecraft:oak_leaves", 8)),
+                "The small spruce crown was named over the hedge that meets the order: "
+                        + CompanionLeaves.leafTarget(c, h.getLevel(), "minecraft:oak_leaves", 8));
+        int[] supports = {0};
+        h.onEachTick(() -> supports[0] = Math.max(supports[0], c.getTemporarySupportCount()));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":8}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(CompanionLeaves.carried(c) == 8, "Not eight leaves: " + CompanionLeaves.carried(c) + ", " + report);
+            h.assertTrue(count(c, Items.OAK_LEAVES) == 8, "The hedge that meets the order was not the one taken: "
+                    + count(c, Items.OAK_LEAVES) + ", " + report);
+            h.assertTrue(supports[0] == 0 && count(c, Items.DIRT) == 0, "A column was raised for the small crown: supports "
+                    + supports[0] + ", dirt " + count(c, Items.DIRT) + ", " + report);
+        });
+    }
+
+    /**
      * The owner's modest crown (18.11): six and seven blocks up on flat ground, no stand cell under it, and no soil in the
      * bag — the ground about him is dirt. A four-step column reaches it, so «Добудь листву» digs the soil, builds the column
      * and cuts the crown: «Рядом листвы не вижу» is for no leaves at all, not for a modest crown over him. A leaf the column
@@ -860,7 +935,8 @@ public final class CompanionLeavesTests {
      * The owner's own geometry (18.11): a tree eight blocks tall on flat ground, the dirt stair he built up to it — its top
      * two blocks below the crown, three from the trunk, the highest cell under the crown itself. The crown is cut from the
      * stair, no column raised and no soil dug: «Вижу, где взять «Oak Leaves», но подойти не смог» was for a stair that stands
-     * right under the crown.
+     * right under the crown. The walk back down the stair leaves him on his feet: the step he stands over is stepped into
+     * before the drop to the ground (19.11: a step skipped at the stair's edge was a fall of four, and a heart).
      */
     @GameTest(template = "tall_tree", timeoutTicks = 8000)
     public static void aCrownTwoBelowTheStairTopIsCutFromTheStair(GameTestHelper h) {
@@ -968,7 +1044,9 @@ public final class CompanionLeavesTests {
             String report = future.join().report();
             h.assertTrue(count(c, Items.OAK_LEAVES) >= 8, "Not eight leaves: " + count(c, Items.OAK_LEAVES) + ", " + report);
             h.assertTrue(supports[0] > 0, "No column was built for a crown the stair cannot serve: " + supports[0] + ", " + report);
-            h.assertTrue(count(c, Items.DIRT) > 0, "He dug no soil for the column: " + count(c, Items.DIRT) + ", " + report);
+            // The soil of the column comes back to him: six blocks were dug for it and every one is in the bag, five of them
+            // raised as supports — nothing of it left on the ground.
+            h.assertTrue(count(c, Items.DIRT) == 6, "The soil of the column did not come back: " + count(c, Items.DIRT) + " of 6 dug, supports " + supports[0] + ", " + report);
             h.assertTrue(c.getHealth() == c.getMaxHealth(), "A fall off the column hurt him: " + c.getHealth() + " of " + c.getMaxHealth() + ", " + report);
             h.assertTrue(c.onGround() && Math.abs(c.getY() - groundY) < 0.6, "He did not come back down: y " + c.getY() + ", " + report);
             h.assertTrue(c.getTemporarySupportCount() == 0 && dirtAboveGround(h) == stairDirt, "The column was left standing: " + dirtAboveGround(h) + " of " + stairDirt + ", " + report);
@@ -1163,6 +1241,41 @@ public final class CompanionLeavesTests {
         h.assertTrue(chain.steps().size() == 8 && chain.steps().getLast().count() == 52
                 && chain.steps().stream().allMatch(step -> step.type().equals("gather_block")),
                 "The chain is not eight steps of a stack: " + chain);
+        h.succeed();
+    }
+
+    /**
+     * The widest leaf order (19.11): 768 leaves is the most CompanionWork takes, and with another step beside it the split has
+     * to fit the plan's twelve steps instead of refusing the whole plan. Eleven steps then carry twelve stacks: the last one
+     * the rest, 128. Alone it keeps its steps of a stack; 769 is beyond the widest leaf order and stays refused.
+     */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void aLeafOrderOf768FitsThePlanBesideAnotherStep(GameTestHelper h) {
+        List<PlannedAction> decoded = CompanionPlanCodec.parsePlan(com.google.gson.JsonParser.parseString(
+                "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":768},{\"action\":\"equip_item\",\"item\":\"minecraft:shears\"}]"));
+        h.assertTrue(decoded.size() == CompanionPlanCodec.MAX_STEPS,
+                "768 leaves and the shears do not take exactly the plan's steps: " + decoded);
+        List<PlannedAction> obtains = decoded.stream().filter(step -> "obtain_item".equals(step.type())).toList();
+        // Eleven steps for twelve stacks: the last one carries the rest, 128, as the codec's own split says.
+        h.assertTrue(obtains.size() == 11 && obtains.getFirst().count() == 64 && obtains.get(9).count() == 640
+                && obtains.getLast().count() == 768 && decoded.getLast().type().equals("equip_item"),
+                "The order of 768 and the shears were not carried as eleven steps of a stack and the rest: " + decoded);
+        int grew = 0;
+        for (PlannedAction step : obtains) {
+            h.assertTrue(step.count() > grew, "A step of the order does not grow: " + obtains);
+            grew = step.count();
+        }
+        // Alone, the same order still goes in steps of a stack each.
+        List<PlannedAction> alone = CompanionPlanCodec.parsePlan(com.google.gson.JsonParser.parseString(
+                "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":768}]"));
+        h.assertTrue(alone.size() == CompanionPlanCodec.MAX_STEPS && alone.getLast().count() == 768,
+                "768 leaves alone are not twelve steps ending at the order: " + alone);
+        boolean refused = false;
+        try {
+            CompanionPlanCodec.parsePlan(com.google.gson.JsonParser.parseString(
+                    "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":769}]"));
+        } catch (RuntimeException expected) { refused = true; }
+        h.assertTrue(refused, "769 leaves were taken: the widest leaf order is 768");
         h.succeed();
     }
 
