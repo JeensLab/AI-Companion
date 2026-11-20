@@ -626,8 +626,11 @@ final class CompanionObsidian {
 
     /**
      * The nearest hole for his own lava beside him: ground he can dig, or the hole his last block left, walled by the ground itself
-     * on every side, with a firm dry floor, air over it and over that, dry about it, no one standing in it but him, and not where the
-     * player builds. Null when there is none.
+     * on every side, with a firm dry floor, air over it and over that, dry about it, and no one standing in it but him. Null when
+     * there is none. A site of the player's is no reason to say there is none (the player 20.11, world test3): the site is the whole
+     * yard round his home, so every cell beside him lies on it, and the ground there is the ground a player digs a hole in for the
+     * same lava. What stands on the site is left alone by the digging itself — a chest is no hole, a fluid is no hole, bedrock is
+     * none — so no building of his is broken by the hole.
      */
     private BlockPos siteFor(ServerLevel level) {
         BlockPos feet = c.blockPosition();
@@ -637,7 +640,7 @@ final class CompanionObsidian {
             BlockPos cell = feet.offset(dx, dy, dz);
             // Never the cell he stands in, nor the block under his feet: the lava there would be under him. Nor one he found no way to.
             if (cell.equals(feet) || cell.equals(feet.below()) || passed.contains(cell)) continue;
-            if (!level.hasChunkAt(cell) || site.test(cell) || !holeFor(level, cell)) continue;
+            if (!level.hasChunkAt(cell) || !holeFor(level, cell)) continue;
             double far = cell.distSqr(feet);
             if (far < bestFar) { bestFar = far; best = cell.immutable(); }
         }

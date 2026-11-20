@@ -944,6 +944,125 @@ public final class CompanionObsidianTests {
     }
 
     /**
+     * The player's own case (20.11, world test3, one lava bucket): «сделай 2 обсидиана» with one bucket of lava and one of water
+     * lying on the ground beside him in his own yard — a chest set down there makes it a site of the player's — and no lava in the
+     * world. One bucket of lava makes one block, so the plan promises the one and the order makes it — and the line about it is the
+     * honest one. Before this he picked both buckets up and said «Негде вылить лаву: рядом нет ямки, где она не растечётся.» over
+     * open ground, and made nothing: the site of his own yard was taken for no hole at all.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void oneLavaBucketOnTheGroundMakesTheOneBlockItCanAndSaysSo(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        placedByPlayer(h, c, new BlockPos(14, GROUND + 1, 20), Blocks.CHEST);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        BlockPos feet = h.absolutePos(new BlockPos(10, GROUND + 1, 16));
+        lying(h, feet.offset(2, 0, 0), Items.LAVA_BUCKET, 1);
+        lying(h, feet.offset(0, 0, 2), Items.WATER_BUCKET, 1);
+        String route = CompanionLocalCommands.route("Олег, сделай 2 обсидиана", "Олег");
+        var plan = CompanionLocalCommands.actions(route);
+        h.assertTrue(plan != null && plan.size() == 1, "«сделай 2 обсидиана» is not one step: " + route + " -> " + plan);
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-one-lava", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1, "Not the one obsidian his lava can make: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertTrue(!report.contains("Негде вылить лаву"), "He says there is no hole over open ground: " + report);
+            h.assertTrue(!report.contains("не дотянуться") && !report.contains("Не нашёл лавы"), "He says a bucket beside him is missing: " + report);
+            h.assertTrue(report.contains("Обсидиана у меня 1, а лавы рядом и в вёдрах больше нет"),
+                    "He does not say what he made and what is missing: " + report);
+            h.assertTrue(count(c, Items.LAVA_BUCKET) == 0 && count(c, Items.BUCKET) == 1 && count(c, Items.WATER_BUCKET) == 1,
+                    "His buckets are lost or doubled: " + c.getStoredItemsSummary() + ", " + report);
+        });
+    }
+
+    /**
+     * The same scene after the player drops a second bucket of lava, as in world test3: the repeated «сделай 2 обсидиана» takes
+     * the new bucket, makes the second block in a hole again and the bag holds both. The first order made the one block its lava
+     * gave and said what was missing; the second one is what the player brings for it.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void afterASecondLavaBucketAppearsTheOrderMakesBoth(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        placedByPlayer(h, c, new BlockPos(14, GROUND + 1, 20), Blocks.CHEST);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        BlockPos feet = h.absolutePos(new BlockPos(10, GROUND + 1, 16));
+        lying(h, feet.offset(2, 0, 0), Items.LAVA_BUCKET, 1);
+        lying(h, feet.offset(0, 0, 2), Items.WATER_BUCKET, 1);
+        String route = CompanionLocalCommands.route("Олег, сделай 2 обсидиана", "Олег");
+        var plan = CompanionLocalCommands.actions(route);
+        h.assertTrue(plan != null && plan.size() == 1, "«сделай 2 обсидиана» is not one step: " + route + " -> " + plan);
+        var first = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-one-lava", () -> false));
+        var second = new java.util.concurrent.atomic.AtomicReference<CompletableFuture<CompanionPlanRunner.Outcome>>();
+        h.succeedWhen(() -> {
+            h.assertTrue(first.isDone() && !first.isCompletedExceptionally(), "First plan still running: " + c.getLastTaskResult());
+            if (second.get() == null) {
+                h.assertTrue(count(c, Items.OBSIDIAN) == 1, "The first order did not make the one block its lava gives: "
+                        + count(c, Items.OBSIDIAN) + ", " + first.join().report());
+                lying(h, feet.offset(-2, 0, 0), Items.LAVA_BUCKET, 1);
+                second.set(CompanionPlanRunner.run(CompanionLocalCommands.actions(route),
+                        new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-second-lava", () -> false)));
+            }
+            h.assertTrue(second.get().isDone() && !second.get().isCompletedExceptionally(), "Second plan still running: " + c.getLastTaskResult());
+            String report = second.get().join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 2, "Not two obsidian after the second bucket of lava: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertTrue(!report.contains("Негде вылить лаву"), "He says there is no hole over open ground: " + report);
+            h.assertTrue(count(c, Items.LAVA_BUCKET) == 0 && count(c, Items.BUCKET) == 2 && count(c, Items.WATER_BUCKET) == 1,
+                    "His buckets are lost or doubled: " + c.getStoredItemsSummary() + ", " + report);
+        });
+    }
+
+    /**
+     * The hole the first block was made in is the hole the second one is made in: the arena has one cell of ground he can dig, the
+     * rest bedrock. The block is mined out of the hole first, and the hole is air again — a site for the next pour, never refused
+     * because obsidian stood in it a moment ago. Two buckets of lava make two blocks in that one hole.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void theHoleOfTheFirstBlockIsUsedForTheSecond(GameTestHelper h) {
+        ground(h);
+        for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) h.setBlock(new BlockPos(10 + dx, GROUND, 16 + dz), Blocks.BEDROCK);
+        BlockPos hole = new BlockPos(12, GROUND, 16);
+        h.setBlock(hole, Blocks.DIRT);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.WATER_BUCKET));
+        c.setItem(2, new ItemStack(Items.LAVA_BUCKET, 2));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":2}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 2, "Not two obsidian out of the one hole: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertTrue(!report.contains("Негде вылить лаву"), "He says there is no hole with the one he used standing empty: " + report);
+            h.assertBlockPresent(Blocks.AIR, hole);
+        });
+    }
+
+    /**
+     * The same yard of the player's site with the buckets in his bag instead of lying: the site is the whole yard round his home,
+     * so every cell beside him lies on it, and that was taken for no hole at all — «Негде вылить лаву» over the open ground he
+     * stands on. The hole is dug there as anywhere else, and one bucket of lava makes the one block.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void thePlayersSiteIsNoReasonToSayThereIsNoHole(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        placedByPlayer(h, c, new BlockPos(14, GROUND + 1, 20), Blocks.CHEST);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.WATER_BUCKET));
+        c.setItem(2, new ItemStack(Items.LAVA_BUCKET));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1, "Not one obsidian in the yard of his site: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertTrue(!report.contains("Негде вылить лаву"), "He says there is no hole in the yard of the player's site: " + report);
+            h.assertTrue(report.contains("Накопал обсидиана: 1."), "He does not say the one block is made: " + report);
+            h.assertBlockPresent(Blocks.CHEST, new BlockPos(14, GROUND + 1, 20));
+        });
+    }
+
+    /**
      * Buckets of the item lying at this cell, as the player drops them: with the game's pickup delay, so his passing pickup leaves
      * them for the order to take up. The entity is returned, so a test may hold it past the loose pickup.
      */
