@@ -8,6 +8,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -30,6 +31,9 @@ import static dev.aicompanion.gametest.CompanionMineFightTests.zombie;
 public final class CompanionMineK19Tests {
     private static final int KILL_TICKS = 1200, FROM_STEP = 10, CLIMB = 8, CLIMB_TICKS = 300;
     private static final float LOW = 4;
+    /** A zombie on him and five health: the wound that sends him off (CompanionExpeditionFight.wounded). */
+    private static final float WOUNDED = 5;
+    private static final int PASSAGE_LENGTH = 4, PASSAGE_OFFSET = 2, PASSAGE_HEIGHT = 2, ACT_TICKS = 60;
 
     private CompanionMineK19Tests() { }
 
@@ -66,6 +70,43 @@ public final class CompanionMineK19Tests {
             h.assertTrue(c.isAlive(), "Died" + trace);
             if (rise >= CLIMB || foes.stream().noneMatch(Zombie::isAlive)) h.succeed();
             h.assertTrue(h.getTick() - begun < CLIMB_TICKS, "He did not climb away in time" + trace);
+        });
+    }
+
+    /**
+     * Run r20261031-d2/water: wounded in a cave he was sealing, the fight let the zombies go for the climb, while the cave's own turn kept the
+     * climb from starting; he neither struck nor left, and two zombies killed him in seven seconds. Wounded with a zombie on him while the cave
+     * is being sealed, he either starts up his stairs or strikes it within three seconds.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void woundedWhileTheCaveIsBeingSealedHeLeavesOrStrikesNotNeither(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        BlockPos foot = stairs.get(stairs.size() - 1);
+        for (int dx = -PASSAGE_LENGTH; dx <= 1; dx++) for (int dy = 0; dy < PASSAGE_HEIGHT; dy++) {
+            h.getLevel().setBlock(foot.offset(dx, dy, -PASSAGE_OFFSET), Blocks.AIR.defaultBlockState(), 2 | 16);
+        }
+        place(c, stairs.get(stairs.size() - 3));
+        Zombie foe = zombie(h, foot.offset(-2, 0, -PASSAGE_OFFSET));
+        foe.setNoAi(true);
+        long begun = h.getTick();
+        long[] sealing = {-1};
+        start(h, c, 1);
+        h.onEachTick(() -> {
+            String phase = c.expeditionCavePhase();
+            if (sealing[0] < 0 && phase.equals("SEAL")) {
+                sealing[0] = h.getTick();
+                place(c, foot.offset(0, 0, -PASSAGE_OFFSET));
+                foe.setNoAi(false);
+                foe.setTarget(c);
+            }
+            if (sealing[0] >= 0 && c.getHealth() != WOUNDED) c.setHealth(WOUNDED);
+            String trace = " | cave phase " + phase + ", stage " + c.expeditionStage() + ", he at " + rel(h, c.blockPosition()).toShortString()
+                    + ", zombie health " + foe.getHealth() + ", target " + c.getTarget() + " | " + report(c);
+            if (sealing[0] < 0) { h.assertTrue(h.getTick() - begun < KILL_TICKS, "SETUP: the cave was never sealed" + trace); return; }
+            if (c.expeditionStage().equals("RETREAT") || foe.getHealth() < foe.getMaxHealth()) h.succeed();
+            h.assertTrue(h.getTick() - sealing[0] < ACT_TICKS, "Wounded by the cave, he neither started up nor struck" + trace);
         });
     }
 

@@ -211,6 +211,12 @@ final class CompanionExpedition {
         boolean digging = stage == Stage.DESCEND || stage == Stage.BRANCH;
         // A foe is fought before anything else is done; the time it takes is given back to the step.
         if (!expired && fight.hold(level, stage == Stage.RETREAT)) return;
+        // Wounded with a mob on him, the fight has let it go for the climb: the climb starts before the cave's turn, which would else keep it
+        // from starting and leave him neither fighting nor leaving (run r20261031-d2/water: two zombies, seven seconds, not a blow struck).
+        if (!expired && stage != Stage.LOCATE && stage != Stage.CLIMB && stage != Stage.RETREAT && fight.fleeable()) {
+            String danger = hazard.now();
+            if (danger != null) { startRetreat(level, danger); return; }
+        }
         // The cave looks at a breach a tick after it opens, so it must look before the timeout may end the step.
         boolean caveTurn = cave.tick(level, plan == null ? List.of() : plan.cells(), digging);
         if (expired && (!cave.busy() || level.getGameTime() >= stepEnd + CAVE_RESERVE)) { end(Ending.TIMEOUT, "Время вылазки вышло, остановился на месте."); return; }

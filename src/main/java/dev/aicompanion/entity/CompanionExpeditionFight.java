@@ -167,7 +167,7 @@ final class CompanionExpeditionFight {
     }
 
     /** Low health, his way up under him, and a mob about that he can leave behind: whatever mob is on him, the work takes the turn to climb away (the melee goal would hold it). */
-    private boolean fleeable() { return wounded() && owner.level() instanceof ServerLevel level && hounded(level); }
+    boolean fleeable() { return wounded() && owner.level() instanceof ServerLevel level && hounded(level); }
 
     /** True when a mob is on him or on its way at low health and he can leave it: see {@link #canEscape}. */
     boolean hounded(ServerLevel level) {
