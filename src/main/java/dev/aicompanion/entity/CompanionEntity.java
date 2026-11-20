@@ -712,6 +712,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether a shut wooden fence gate on his route is opened, walked through and shut behind him (the player can turn it off in the settings). */
     public boolean fenceGates() { return fenceGatesOn; }
     public void setFenceGates(boolean on) { fenceGatesOn = on; }
+    /** A shut gate in the cell he stands in, opened before the game's movement control reads its 1.5-high shape as a step. */
+    boolean openGateUnder() { return gateGoal.openUnder(); }
     /** Whether «подбери» takes what lies on the ground around him, and how far the scan goes (the player's setting). */
     public boolean pickUpNearby() { return pickUpNearby; }
     public int pickUpRadius() { return pickUpRadius; }

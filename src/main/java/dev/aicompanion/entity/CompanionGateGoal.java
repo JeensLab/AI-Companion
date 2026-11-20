@@ -25,7 +25,15 @@ final class CompanionGateGoal extends Goal {
     CompanionGateGoal(CompanionEntity companion) { this.companion = companion; }
 
     @Override public boolean canUse() {
-        if (!companion.fenceGates() || !companion.horizontalCollision) return false;
+        if (!companion.fenceGates()) return false;
+        // The gate the movement control opened under him (that control runs every tick, this goal's canUse only every other):
+        // take it over, so it stays open while he is in it and is shut behind him.
+        if (opened && !passed) return true;
+        // A shut gate in the cell he stands in: the movement control hops a mob whose feet are below the top of the block it stands
+        // in, and a fence gate's 1.5-high shape is in neither the doors' nor the fences' tag. Its leaf is 4/16 thick in the middle of
+        // the cell, so he may stand in the cell without touching it, and no collision starts the goal.
+        if (shutByHand(companion.level(), companion.blockPosition())) { gate = companion.blockPosition(); return true; }
+        if (!companion.horizontalCollision) return false;
         Path path = companion.getNavigation().getPath();
         if (path == null || path.isDone()) return false;
         for (int i = 0; i < Math.min(path.getNextNodeIndex() + 2, path.getNodeCount()); i++) {
@@ -37,13 +45,33 @@ final class CompanionGateGoal extends Goal {
         return false;
     }
 
-    @Override public boolean canContinueToUse() { return forgetTime > 0 && !passed; }
+    /** Not while he stands in the gate he walks through: a gate shut under him is a step to the movement control, and he is hopped. */
+    @Override public boolean canContinueToUse() { return !passed && (forgetTime > 0 || companion.blockPosition().equals(gate)); }
 
     @Override public void start() {
-        forgetTime = 20; opened = false; passed = false;
+        forgetTime = 20; passed = false;
         gateDirX = (float)(gate.getX() + .5 - companion.getX());
         gateDirZ = (float)(gate.getZ() + .5 - companion.getZ());
         set(true);
+    }
+
+    /**
+     * A shut wooden gate in the cell he stands in, opened before the game's movement control reads its 1.5-high shape as a step:
+     * that control runs every tick while this goal's canUse is asked only every other, so the tick he steps into the cell can fall
+     * between them and he is hopped there. The gate is his: the goal takes it over and shuts it behind him.
+     */
+    boolean openUnder() {
+        BlockPos in = companion.blockPosition();
+        if (!companion.fenceGates() || !shutByHand(companion.level(), in)) return false;
+        if (!in.equals(gate)) {
+            gate = in;
+            gateDirX = (float)(gate.getX() + .5 - companion.getX());
+            gateDirZ = (float)(gate.getZ() + .5 - companion.getZ());
+            passed = false;
+            forgetTime = Math.max(forgetTime, 20);
+        }
+        set(true);
+        return true;
     }
 
     @Override public void tick() {
