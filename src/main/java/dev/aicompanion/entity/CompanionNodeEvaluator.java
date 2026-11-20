@@ -19,9 +19,17 @@ final class CompanionNodeEvaluator extends WalkNodeEvaluator {
     @Override
     public net.minecraft.world.level.pathfinder.PathType getPathType(net.minecraft.world.level.pathfinder.PathfindingContext context, int x, int y, int z) {
         var cell = new net.minecraft.core.BlockPos(x, y, z);
-        if (context.getBlockState(cell).is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL) && !mob.getBoundingBox().intersects(new net.minecraft.world.phys.AABB(cell)))
+        var state = context.getBlockState(cell);
+        if (state.is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL) && !mob.getBoundingBox().intersects(new net.minecraft.world.phys.AABB(cell)))
             return net.minecraft.world.level.pathfinder.PathType.BLOCKED;
-        return super.getPathType(context, x, y, z);
+        var type = super.getPathType(context, x, y, z);
+        // A shut wooden gate he may open by hand is a way through, as a shut wooden door is (idea BDGLW, #105): the game judges
+        // it a fence, so his search went round the garden. A gate a redstone signal decides stays a fence: he is not to touch it.
+        boolean gates = !(mob instanceof CompanionEntity companion) || companion.fenceGates();
+        if (type != net.minecraft.world.level.pathfinder.PathType.FENCE || !canPassDoors() || !gates) return type;
+        return state.getBlock() instanceof net.minecraft.world.level.block.FenceGateBlock
+                && !state.getValue(net.minecraft.world.level.block.FenceGateBlock.OPEN) && !mob.level().hasNeighborSignal(cell)
+                ? net.minecraft.world.level.pathfinder.PathType.WALKABLE_DOOR : type;
     }
     // What the companion's own search (CompanionSearch) asks of the game's judgement of cells; a cell is one Node for the search.
     net.minecraft.world.level.pathfinder.PathType typeAt(int x, int y, int z) { return getCachedPathType(x, y, z); }
