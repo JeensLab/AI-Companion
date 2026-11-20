@@ -108,8 +108,11 @@ final class CompanionBag {
         }
         for (int slot = 0; slot < c.companionInventory.size() && !remaining.isEmpty(); slot++) {
             if (c.companionInventory.get(slot).isEmpty()) {
-                c.companionInventory.set(slot, remaining.copy());
-                remaining.setCount(0);
+                // One cell holds what the item stacks to: a stack of two unstackable buckets takes two cells, and what finds
+                // none stays with the caller (the drop on the ground), never lost and never doubled.
+                int moved = Math.min(remaining.getCount(), remaining.getMaxStackSize());
+                c.companionInventory.set(slot, remaining.copyWithCount(moved));
+                remaining.shrink(moved);
             }
         }
         refreshInventorySummary();

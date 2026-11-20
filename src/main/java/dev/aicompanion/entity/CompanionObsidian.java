@@ -156,6 +156,16 @@ final class CompanionObsidian {
     }
 
     /**
+     * «Сумка забита — ведро лавы осталось лежать рядом: некуда его взять.»: a bucket the plan counted lies within his hand, but
+     * the bag has no room for it, so it stays where it was dropped — named honestly, never «Не нашёл лавы рядом» over it.
+     */
+    static String bagFullLying(boolean lava, boolean water) {
+        String what = lava && water ? "вёдра лавы и воды" : lava ? "ведро лавы" : "ведро воды";
+        return "Сумка забита — " + what + (lava && water ? " остались" : " осталось") + " лежать рядом: некуда "
+                + (lava && water ? "их" : "его") + " взять.";
+    }
+
+    /**
      * The buckets of this kind lying within his hand are taken up before the work starts, as his pickup takes a drop: what the bag
      * cannot hold stays where it lies, so no bucket is lost and none is doubled.
      */
@@ -230,8 +240,10 @@ final class CompanionObsidian {
         if (target != null && !minable(level, target, true)) { target = null; w.breaking.reset(); w.resetApproach(); }
         if (target == null && level.getGameTime() >= nextLook) {
             target = nearest(c, level, DEPTH, state -> state.is(Blocks.OBSIDIAN), pos -> minable(level, pos, false));
-            // Nothing free-standing about: the obsidian the player set down on his own site is minable too, never a portal's frame and
-            // never over lava — the building is protected only while other obsidian exists.
+            // Nothing free-standing within his reach: the obsidian the player set down on his own site is minable too, never a portal's
+            // frame and never over lava — the building is protected only while other obsidian is about. Mid-pour his water ties the
+            // search to its run (minable), so a free-standing block farther off does not keep a site block inside the run standing:
+            // «free first» holds only among what he can take without leaving his water.
             if (target == null) target = nearest(c, level, DEPTH, state -> state.is(Blocks.OBSIDIAN), pos -> minable(level, pos, true));
             if (target == null) nextLook = level.getGameTime() + LOOK;
         }
@@ -256,15 +268,38 @@ final class CompanionObsidian {
             if (drop != fetch) { fetch = drop; stands = Set.of(); path = null; legs = 0; }
             if (c.reachesItem(drop)) {
                 int taken = takeLoose(c, level, drop.getItem().getItem());
-                if (taken <= 0) { end(false, FULL_BAG + short_(got())); return true; }
+                if (taken <= 0) {
+                    // The loose pickup may have taken this very drop in the same tick (his own tick runs before the work's):
+                    // the bucket is in his bag, not left for a full one.
+                    if (slot(drop.getItem().getItem()) >= 0) { reset(); return true; }
+                    end(false, bagFullLying(drop.getItem().is(Items.LAVA_BUCKET), drop.getItem().is(Items.WATER_BUCKET)) + short_(got()));
+                    return true;
+                }
                 event("obsidian_buckets_fetched", "buckets", taken);
                 reset();
                 return true;
             }
-            if (stands.isEmpty()) { stands = standsFor(c, drop); legs = 0; path = null; }
+            if (stands.isEmpty() || path != null && w.route.legOver()) {
+                // The drop may have been pushed aside as he walked up to it: the cells to take it from are looked at again.
+                stands = standsFor(c, drop);
+                path = null;
+            }
+            if (path == null && !c.reachesItem(drop)) {
+                stands = standsFor(c, drop);
+                if (stands.contains(c.blockPosition())) {
+                    // He stands in a cell the drop is taken from, but at its edge: the middle of the cell is where the hand reaches.
+                    BlockPos at = c.blockPosition();
+                    w.route.stop();
+                    c.getMoveControl().setWantedPosition(at.getX() + .5, at.getY(), at.getZ() + .5, .7);
+                    c.workStatus("Иду за ведром.");
+                    return true;
+                }
+            }
             c.workStatus("Иду за ведром.");
             if (walk()) return true;
             // No way to it: given up honestly, the next bucket of a kind he needs is looked for.
+            event("obsidian_bucket_left", "item", drop.getItem().getItem(), "drop", drop.blockPosition().toShortString(), "stands", stands.size(), "legs", legs,
+                    "target", path == null ? "-" : path.getTarget().toShortString(), "here", c.blockPosition().toShortString());
             fetchless.add(drop.getUUID());
             reset();
         }
@@ -300,8 +335,20 @@ final class CompanionObsidian {
         return false;
     }
 
+    /**
+     * Whether a bucket of this kind the plan counted lies within his hand but was not stored: the bag had no room for it, so it
+     * stays lying where it was dropped (takeLoose leaves what does not fit).
+     */
+    private boolean leftInHand(ServerLevel level, Item item) {
+        for (ItemEntity drop : level.getEntitiesOfClass(ItemEntity.class, c.getBoundingBox().inflate(2),
+                found -> found.isAlive() && found.getItem().is(item) && CompanionPickUp.pickable(found, c.getOwnerId())))
+            if (c.reachesItem(drop)) return true;
+        return false;
+    }
+
     /** Why his water is not to be had: the bucket he needs lies there with no way to it, else none at all. */
     private String noWater(ServerLevel level, int got) {
+        if (leftInHand(level, Items.WATER_BUCKET)) return bagFullLying(false, true) + short_(got);
         return leftBehind(level, Items.WATER_BUCKET) ? unreached(false, true) + short_(got) : NO_WATER + short_(got);
     }
 
@@ -455,6 +502,9 @@ final class CompanionObsidian {
                 // The one that is missing is named, never the lava he holds: with his own lava and no water, the water is what he lacks.
                 // The order stops there (the next one plans the water first), as it does when nothing is left to pour.
                 if (lavaOfHis) { end(false, noWater(level, got)); return; }
+                // A bucket the plan counted lies within his hand and the bag had no room for it: named with where it stays, never
+                // «Не нашёл лавы рядом» over it.
+                if (leftInHand(level, Items.LAVA_BUCKET)) { end(false, bagFullLying(true, leftInHand(level, Items.WATER_BUCKET)) + short_(got)); return; }
                 // A bucket he needs lies there with no way to it: named plainly, never «Не нашёл лавы рядом» over it.
                 boolean lavaLeft = leftBehind(level, Items.LAVA_BUCKET), waterLeft = leftBehind(level, Items.WATER_BUCKET);
                 if (lavaLeft || waterLeft) { end(false, unreached(lavaLeft, waterLeft) + short_(got)); return; }
@@ -643,7 +693,7 @@ final class CompanionObsidian {
         return true;
     }
 
-    /** A walk to the cell he pours into: false when there is no way to it (another hole is looked for, this one passed over). */
+    /** A walk to a cell beside the one he pours into: false when there is no way to it (another hole is looked for, this one passed over). */
     private boolean walkTo(ServerLevel level, BlockPos cell) {
         if (stands.isEmpty()) { stands = standsBeside(level, cell); legs = 0; path = null; }
         if (walk()) return true;
