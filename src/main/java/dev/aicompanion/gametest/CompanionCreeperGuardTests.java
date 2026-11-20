@@ -179,6 +179,25 @@ public final class CompanionCreeperGuardTests {
         });
     }
 
+    /**
+     * Run r314159-d3/retreat (and q314159-d3 at the same spot): in an underground lake a creeper came up beside him. The way out goes over
+     * floor, and water has none, so there was no way and no wall; three blows were struck, a fourth was too late, dead at sixteen health.
+     * In water up to the knee, a lit fuse a block off at the dead end: he wades off, and the blast does not reach him.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aLitFuseBesideHimInWaterIsWadedOffFrom(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = CompanionMineFightTests.armed(h);
+        for (int x = 0; x <= DEAD_END_LENGTH; x++) {
+            bore(h, x, 0);
+            h.getLevel().setBlock(cell(h, x, 0), Blocks.WATER.defaultBlockState(), 2 | 16);
+        }
+        place(h, c, cell(h, 1, 0));
+        Creeper creeper = creeper(h, cell(h, 0, 0));
+        creeper.ignite();
+        survivesTheBlast(h, c, creeper, () -> true);
+    }
+
     /** Armed, on a long goal and out of the mine: a creeper that has not lit its fuse is struck, not run from (m15d: twelve flights in a row). */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void anArmedGoalWorkerStrikesAnUnlitCreeperAboveGround(GameTestHelper h) {

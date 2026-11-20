@@ -81,6 +81,8 @@ final class CompanionCreeperGuard {
     /** The way out of a lit fuse: the fuse goes out only beyond 7 blocks (a little more for a margin); the speed of that dash. */
     static final double SAFE_GAP = 7.4;
     private static final double FIGHT_FLEE_SPEED = 1.6;
+    /** How far ahead of him the point lies that he swims for, straight off a lit creeper in water. */
+    private static final double SWIM_OFF = 4;
     /**
      * A fuse burns out in 30 ticks. A creeper that has kept lighting one for this long, never out for more than the gap, without blowing is not burning down: it loses sight of
      * him and gets it back, as when he bobs in water behind a block. Such a fuse is no reason to stand and wait, until it has burned this share of its length.
@@ -433,6 +435,17 @@ final class CompanionCreeperGuard {
         }
         // No wall of cobblestone is left standing in the player's house.
         if (!byTheHouse() && escape.shut(level, creeper)) { mention("wall", creeper, null); return; }
+        // Water has no floor for the way (CompanionExpeditionLedge.stands): he wades or swims straight off the creeper. A few blocks halve the
+        // blast; a blow throws it back by less than one (run r314159-d3/retreat: in a lake, three blows, the fourth too late, dead at sixteen).
+        Vec3 away = owner.position().subtract(creeper.position()).multiply(1, 0, 1);
+        if (owner.isInWater() && away.lengthSqr() > 1.0E-4) {
+            Vec3 off = owner.position().add(away.normalize().scale(SWIM_OFF));
+            mention("swim", creeper, null);
+            owner.getNavigation().stop();
+            faceTowards(owner, off);
+            owner.getMoveControl().setWantedPosition(off.x, off.y, off.z, FIGHT_FLEE_SPEED);
+            return;
+        }
         mention("strike", creeper, null);
         strike(creeper);
     }
