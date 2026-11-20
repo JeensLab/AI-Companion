@@ -2,7 +2,9 @@ package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -25,6 +27,8 @@ final class CompanionExpeditionClimb {
     /** Rescues to try for one climb, and the ticks given to all of them to start: the rescue waits a standstill of three seconds and an answer of the route search. */
     private static final int MAX_CUTS = 3, CUT_PATIENCE = 600;
     static final String CLOSED = " Подняться не вышло: путь наверх закрыт, остался где стою.";
+    /** How far round him the ground is looked at, and how many of the eight columns there must lie open for the ground under the sky to be the surface. */
+    private static final int OPEN_REACH = 4, OPEN_SIDES = 3;
 
     private final CompanionWork w;
     private final CompanionExpeditionDig dig;
@@ -179,12 +183,34 @@ final class CompanionExpeditionClimb {
         };
     }
 
-    /** Out under the open sky at the height of the entrance on the surface: the climb has done its work, whatever cell of the record lies beyond the gap. */
+    /**
+     * Out under the open sky at the height of the entrance on the surface, or on open ground lower down (a slope below the entrance): the climb has done its
+     * work, whatever cell of the record lies beyond the gap. Run water of seed 7 (20.11): out on a slope five blocks below the entrance, the climb went on to a
+     * cell of his old stairs below him, and the self-rescue dug him down into a pit with no tree in reach.
+     */
     private boolean onSurface() {
         ServerLevel level = (ServerLevel) w.owner.level();
         BlockPos top = w.mine.origin() != null ? w.mine.origin() : w.mine.entrance();
         BlockPos here = CompanionExpeditionRecord.standingCell(level, w.owner);
-        return here.getY() >= top.getY() - CompanionExpedition.UNDERGROUND_DEPTH && CompanionExpeditionRecord.underSky(level, here.above());
+        if (!CompanionExpeditionRecord.underSky(level, here.above())) return false;
+        return here.getY() >= top.getY() - CompanionExpedition.UNDERGROUND_DEPTH || openGround(level, here);
+    }
+
+    /**
+     * Ground open to the sides as well as above, not the floor of a ravine or a pit: of the eight columns {@link #OPEN_REACH} blocks round him, at least
+     * {@link #OPEN_SIDES} have nothing solid two above his feet (ground no higher than a step; a tree there is no wall). On a slope the columns down and
+     * across it are open; a trench is open only along itself. Not a heightmap: those count the barriers over a GameTest arena as ground.
+     */
+    // ponytail: eight cells at one reach, no walk checked; a ravine wider than twice the reach reads as open ground. Upgrade: a short route search out to a column of the ring.
+    private static boolean openGround(ServerLevel level, BlockPos here) {
+        int open = 0;
+        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
+            if (dx == 0 && dz == 0) continue;
+            BlockPos cell = here.offset(dx * OPEN_REACH, 2, dz * OPEN_REACH);
+            BlockState state = level.getBlockState(cell);
+            if (state.getCollisionShape(level, cell).isEmpty() || state.is(BlockTags.LEAVES) || state.is(BlockTags.LOGS)) open++;
+        }
+        return open >= OPEN_SIDES;
     }
 
     private Result crossed() {
