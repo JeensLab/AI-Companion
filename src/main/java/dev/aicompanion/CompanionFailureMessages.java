@@ -50,10 +50,10 @@ public final class CompanionFailureMessages {
         if (text.contains("родник") && !mentionsLava(text)) return Kind.WATER;
         // Ahead of the route: the engine puts the lava reason beside «не нашёл безопасного хода», and lava is the one to name.
         if (text.contains("заткнуть нечем") || text.contains("над лавой") || text.contains("лавопад")) return Kind.LAVA;
-        // A space that would not take a thing («Не нашёл безопасное место для …», «… безопасного места для подъёма»): the
+        // A space that would not take a thing («Не нашёл безопасное место для …», «… не хватает свободного места»): the
         // place is the reason, not a way to it. The bench in such a line is what was being set down, not a bench to walk to.
-        if (text.contains("безопасное место") || text.contains("безопасного места")
-                || text.contains("свободное место") || text.contains("свободного места")) return Kind.PLACE;
+        // A «ровное свободное место» of a golem or a portal keeps its own words, as any reason with no kind does.
+        if (text.contains("безопасное место") || text.contains("безопасного места") || text.contains("не хватает свободного места")) return Kind.PLACE;
         // «Помню верстак неподалёку, но пройти к нему сейчас не могу, а дерева на новый не хватает.»: the bench was not
         // walked to, not the materials; its «не хватает» is the wood for a new bench, said before the materials line below.
         if (benchWithoutWoodNormalized(text)) return Kind.ROUTE;
