@@ -57,6 +57,8 @@ final class CompanionObsidian {
     private static final int SPREAD = 8, BELOW = 8;
     /** With none to mine, obsidian is looked for again this often (ticks): set lava shows at once, a search costs. */
     private static final int LOOK = 10;
+    /** Buckets lying about him looked for at once when one is out of his way (each is a walk), and how many are tried. */
+    private static final int FETCH_TRIES = 4;
     /** How far he may be pushed off the place he mines from before he walks to the block again (blocks). */
     private static final double HOLD = .5;
     /** Ticks his water takes to run off once scooped (seven cells, five ticks each) and the drops to come to rest. */
@@ -94,6 +96,9 @@ final class CompanionObsidian {
     private final Set<BlockPos> his = new HashSet<>();
     /** Obsidian and lava he found no way to. */
     private final Set<BlockPos> passed = new HashSet<>();
+    /** The bucket lying about him he walks to and takes up, and the drops no way led to (named honestly, never «нет лавы»). */
+    private ItemEntity fetch;
+    private final Set<java.util.UUID> fetchless = new HashSet<>();
 
     CompanionObsidian(CompanionWork w) { this.w = w; this.c = w.owner; }
 
@@ -109,22 +114,45 @@ final class CompanionObsidian {
 
     /**
      * Buckets of this kind lying on the ground about him, as far as they are his to take: how many his hand reaches from where he
-     * stands, and whether any lie further off in his sight. A bucket dropped beside him is a source for an order as much as one in his
-     * bag, so the plan counts it (CompanionObtain) and the work takes it up when it starts (begin).
+     * stands, how many lie within his sight with a cell he can take them from — he walks to those and takes them up — and whether
+     * any lie in his sight with no such cell at all. A bucket dropped beside him is a source for an order as much as one in his bag,
+     * so the plan counts it (CompanionObtain) and the work walks to it and takes it up (fetchLoose).
      */
-    record Loose(int reach, boolean sight) { static final Loose NONE = new Loose(0, false); }
+    record Loose(int reach, int fetch, boolean sight) { static final Loose NONE = new Loose(0, 0, false); }
 
     static Loose loose(CompanionEntity c, ServerLevel level, Item bucket) {
-        int reach = 0;
+        int reach = 0, fetch = 0;
         boolean sight = false;
         int radius = c.getSearchRadius();
         for (ItemEntity drop : level.getEntitiesOfClass(ItemEntity.class, new AABB(c.blockPosition()).inflate(radius))) {
             if (!drop.isAlive() || !drop.getItem().is(bucket) || !CompanionPickUp.pickable(drop, c.getOwnerId())) continue;
             if (c.reachesItem(drop)) { reach += drop.getItem().getCount(); continue; }
-            // Seen over the ground between: named when nothing else is to be had, never «нечего копать».
-            if (drop.distanceToSqr(c.position()) <= (double) radius * radius && c.hasLineOfSight(drop)) sight = true;
+            if (drop.distanceToSqr(c.position()) > (double) radius * radius) continue;
+            // A cell to take it from is a bucket he walks to; seen with none at all, it is named when nothing else is to be had.
+            if (!standsFor(c, drop).isEmpty()) { fetch += drop.getItem().getCount(); continue; }
+            if (c.hasLineOfSight(drop)) sight = true;
         }
-        return new Loose(reach, sight);
+        return new Loose(reach, fetch, sight);
+    }
+
+    /**
+     * The cells he can take this drop from, as his pickup does (CompanionLoot.tickChase): standing on the floor or swimming, the
+     * drop within the reach of his hand. Empty when no cell near it is one.
+     */
+    private static Set<BlockPos> standsFor(CompanionEntity c, ItemEntity drop) {
+        Set<BlockPos> stands = new HashSet<>();
+        BlockPos center = drop.blockPosition();
+        for (int dy = drop.isInWater() ? 0 : -2; dy <= 1; dy++) for (int ox = -1; ox <= 1; ox++) for (int oz = -1; oz <= 1; oz++) {
+            BlockPos cell = center.offset(ox, dy, oz);
+            if (CompanionMiningNavigation.pickupStand(c, cell) && c.loot.touches(Vec3.atBottomCenterOf(cell), drop)) stands.add(cell.immutable());
+        }
+        return stands;
+    }
+
+    /** «Вижу рядом вёдра лавы и воды, но не дотянуться — подойди ближе, я подберу.»: the buckets are there, his hand is not. */
+    static String unreached(boolean lava, boolean water) {
+        String what = lava && water ? "вёдра лавы и воды" : lava ? "ведро лавы" : "ведро воды";
+        return "Вижу рядом " + what + ", но не дотянуться — подойди ближе, я подберу.";
     }
 
     /**
@@ -172,7 +200,9 @@ final class CompanionObsidian {
         wanted = count; before = w.items.countCarried(Items.OBSIDIAN); mined = pours = 0; water = null; ending = null; nextLook = settleAt = 0; retried = false;
         made = madeWater = madeLava = null; madeStep = fromBuckets = 0; madeAt = 0;
         his.clear(); passed.clear();
+        fetch = null; fetchless.clear();
         // The buckets lying within his hand are his before the first pour: the plan counted them as the source (CompanionObtain).
+        // The ones further off he walks to and takes up as the work goes (fetchLoose).
         if (c.level() instanceof ServerLevel level) {
             int taken = takeLoose(c, level, Items.LAVA_BUCKET) + takeLoose(c, level, Items.WATER_BUCKET);
             if (taken > 0) event("obsidian_buckets_taken", "buckets", taken);
@@ -208,7 +238,71 @@ final class CompanionObsidian {
         if (target != null) { mine(level, got); return; }
         // Nothing more to mine here: his water back in the bucket before the next lava.
         if (water != null) { takeWaterBack(level); return; }
+        // A bucket the plan counted lies on the ground within his sight: he walks to it and takes it up before the make.
+        if (fetchLoose(level)) return;
         pour(level, got);
+    }
+
+    /**
+     * A bucket the plan counted lies on the ground within his sight: he walks to it and takes it up, as his pickup takes a drop —
+     * what the bag cannot hold stays lying, so no bucket is lost and none is doubled. True while that is what he does this tick.
+     * A drop no way leads to is given up honestly, and the next one of a kind he needs is looked for; the pour step then says what
+     * is missing, never «Не нашёл лавы рядом» over a bucket in his sight.
+     */
+    private boolean fetchLoose(ServerLevel level) {
+        for (int tried = 0; tried < FETCH_TRIES; tried++) {
+            ItemEntity drop = fetch != null && fetch.isAlive() && needed(fetch) && !fetchless.contains(fetch.getUUID()) ? fetch : nearestLoose(level);
+            if (drop == null) { fetch = null; return false; }
+            if (drop != fetch) { fetch = drop; stands = Set.of(); path = null; legs = 0; }
+            if (c.reachesItem(drop)) {
+                int taken = takeLoose(c, level, drop.getItem().getItem());
+                if (taken <= 0) { end(false, FULL_BAG + short_(got())); return true; }
+                event("obsidian_buckets_fetched", "buckets", taken);
+                reset();
+                return true;
+            }
+            if (stands.isEmpty()) { stands = standsFor(c, drop); legs = 0; path = null; }
+            c.workStatus("Иду за ведром.");
+            if (walk()) return true;
+            // No way to it: given up honestly, the next bucket of a kind he needs is looked for.
+            fetchless.add(drop.getUUID());
+            reset();
+        }
+        return false;
+    }
+
+    /** Whether this drop is a bucket of a kind he still needs from the ground: lava or water that is not in his bag. */
+    private boolean needed(ItemEntity drop) {
+        if (!drop.isAlive()) return false;
+        Item item = drop.getItem().getItem();
+        return item == Items.LAVA_BUCKET && slot(Items.LAVA_BUCKET) < 0 || item == Items.WATER_BUCKET && slot(Items.WATER_BUCKET) < 0;
+    }
+
+    /** The nearest bucket lying about him that he still needs and has not given up, or null. */
+    private ItemEntity nearestLoose(ServerLevel level) {
+        ItemEntity best = null;
+        double bestFar = Double.MAX_VALUE;
+        int radius = c.getSearchRadius();
+        for (ItemEntity drop : level.getEntitiesOfClass(ItemEntity.class, new AABB(c.blockPosition()).inflate(radius))) {
+            if (!needed(drop) || fetchless.contains(drop.getUUID()) || !CompanionPickUp.pickable(drop, c.getOwnerId())) continue;
+            double far = drop.distanceToSqr(c.position());
+            if (far > (double) radius * radius || far >= bestFar) continue;
+            bestFar = far; best = drop;
+        }
+        return best;
+    }
+
+    /** Whether a bucket of this kind he still needs lies about him and no way led to it: named plainly, never «Не нашёл лавы рядом». */
+    private boolean leftBehind(ServerLevel level, Item item) {
+        for (java.util.UUID id : fetchless) {
+            if (level.getEntity(id) instanceof ItemEntity drop && drop.isAlive() && drop.getItem().is(item) && CompanionPickUp.pickable(drop, c.getOwnerId())) return true;
+        }
+        return false;
+    }
+
+    /** Why his water is not to be had: the bucket he needs lies there with no way to it, else none at all. */
+    private String noWater(ServerLevel level, int got) {
+        return leftBehind(level, Items.WATER_BUCKET) ? unreached(false, true) + short_(got) : NO_WATER + short_(got);
     }
 
     /**
@@ -257,7 +351,7 @@ final class CompanionObsidian {
         reset();
     }
 
-    private void reset() { target = aim = null; stands = Set.of(); path = null; foothold = null; legs = 0; }
+    private void reset() { target = aim = null; stands = Set.of(); path = null; foothold = null; legs = 0; fetch = null; }
 
     /**
      * Obsidian he may mine now: his own or lying about but no portal's, its drop safe from lava, and on a site of the player's only
@@ -360,7 +454,10 @@ final class CompanionObsidian {
                 if (lavaOfHis && slot(Items.WATER_BUCKET) >= 0) { madeStep = MADE_DIG; return; }
                 // The one that is missing is named, never the lava he holds: with his own lava and no water, the water is what he lacks.
                 // The order stops there (the next one plans the water first), as it does when nothing is left to pour.
-                if (lavaOfHis) { end(false, NO_WATER + short_(got)); return; }
+                if (lavaOfHis) { end(false, noWater(level, got)); return; }
+                // A bucket he needs lies there with no way to it: named plainly, never «Не нашёл лавы рядом» over it.
+                boolean lavaLeft = leftBehind(level, Items.LAVA_BUCKET), waterLeft = leftBehind(level, Items.WATER_BUCKET);
+                if (lavaLeft || waterLeft) { end(false, unreached(lavaLeft, waterLeft) + short_(got)); return; }
                 end(false, pours == 0 && got == 0 && fromBuckets == 0 ? NO_LAVA
                         : "Накопал " + got + " из " + wanted + (fromBuckets > 0 ? ": вёдра лавы кончились." : ": лава рядом кончилась."));
                 return;
@@ -369,7 +466,7 @@ final class CompanionObsidian {
         }
         int slot = slot(Items.WATER_BUCKET);
         // Planned again, obtain_item gets water first (his was left, or a fall took it): no BLOCKED here.
-        if (slot < 0) { end(CompanionActionResult.failed(NO_WATER + short_(got))); return; }
+        if (slot < 0) { end(CompanionActionResult.failed(noWater(level, got))); return; }
         if (!inReach(level, aim)) {
             c.workStatus("Иду к лаве.");
             // No cell to pour it from (the middle of a lake): only this lava is passed over; no way there: all of it.

@@ -642,22 +642,94 @@ public final class CompanionObsidianTests {
     }
 
     /**
-     * The same buckets, but out of his hand: eight blocks off, in his sight. The order is refused, and says the buckets are there
-     * and he cannot reach them — not «Рядом нечего копать: ни обсидиана, ни лавы», which sent the player looking for lava he had
-     * already dropped beside him.
+     * The player's own case (20.11, world test3, the live test after #208): two buckets of water and two of lava lying two to four
+     * blocks away on open ground, no lava in the world. «добудь 2 обсидиана» by the phrase is no refusal and no «не дотянуться»:
+     * the buckets lie within his sight and a way leads to them, so he walks to each, takes it up, and makes the two blocks of them.
+     * The buckets come out of the make as they went in — his water back in its bucket, the empty ones of the two lava buckets he
+     * poured out — none lost, none doubled; the second water bucket is not needed (one serves both blocks) and lies where the player
+     * dropped it.
      */
-    @GameTest(template = "tall_tree", timeoutTicks = 400)
-    public static void bucketsOutOfHisReachAreNamedInsteadOfNothingToDig(GameTestHelper h) {
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void bucketsLyingWithinSightAreWalkedToAndTakenUp(GameTestHelper h) {
         ground(h);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        BlockPos start = c.blockPosition();
+        lying(h, h.absolutePos(new BlockPos(12, GROUND + 1, 16)), Items.LAVA_BUCKET, 1);
+        lying(h, h.absolutePos(new BlockPos(12, GROUND + 1, 18)), Items.WATER_BUCKET, 1);
+        lying(h, h.absolutePos(new BlockPos(13, GROUND + 1, 14)), Items.LAVA_BUCKET, 1);
+        lying(h, h.absolutePos(new BlockPos(14, GROUND + 1, 16)), Items.WATER_BUCKET, 1);
+        String route = CompanionLocalCommands.route("Олег, добудь 2 обсидиана", "Олег");
+        var plan = CompanionLocalCommands.actions(route);
+        h.assertTrue(plan != null && plan.size() == 1, "The phrase is not one step: " + route + " -> " + plan);
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-fetch", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 2, "Not two obsidian: " + count(c, Items.OBSIDIAN) + ", " + report);
+            // Both buckets of lava he fetched were poured out: two empty ones are his, none of it is lost or doubled.
+            h.assertTrue(count(c, Items.BUCKET) == 2 && count(c, Items.LAVA_BUCKET) == 0,
+                    "His lava buckets are lost or doubled: " + c.getStoredItemsSummary() + ", " + report);
+            // One bucket of water is enough for both blocks (it is scooped back each time): the other lies where the player dropped it,
+            // so his water is still two buckets, one in the bag and one on the ground — none lost, none doubled.
+            int lyingWater = 0;
+            for (var drop : h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                    new net.minecraft.world.phys.AABB(c.blockPosition()).inflate(16))) {
+                if (drop.getItem().is(Items.WATER_BUCKET)) lyingWater += drop.getItem().getCount();
+                h.assertTrue(!drop.getItem().is(Items.LAVA_BUCKET) && !drop.getItem().is(Items.BUCKET),
+                        "A lava or empty bucket is left on the ground: " + drop.getItem());
+            }
+            h.assertTrue(count(c, Items.WATER_BUCKET) + lyingWater == 2,
+                    "His water is lost or doubled: " + c.getStoredItemsSummary() + ", lying " + lyingWater + ", " + report);
+            h.assertTrue(c.blockPosition().distSqr(start) >= 4, "He did not walk to the buckets: " + c.blockPosition());
+        });
+    }
+
+    /**
+     * The same buckets, but no way to them: two and two lying behind a wall across the arena, within his search radius. No walk
+     * leads there (a climb of three is no step of his, and the bedrock border closes both ends of the wall), so the order says the
+     * buckets are there and he cannot walk to them — «Вижу рядом вёдра лавы и воды, но не дотянуться» — never «Рядом нечего
+     * копать: ни обсидиана, ни лавы», and no bucket is made or spent for nothing.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void bucketsWithNoWayToThemAreNamedInsteadOfNothingToDig(GameTestHelper h) {
+        ground(h);
+        // A wall three high across the whole arena: the bedrock border closes both its ends, so there is no way round.
+        for (int z = 1; z <= 30; z++) for (int y = GROUND + 1; y <= GROUND + 3; y++) h.setBlock(new BlockPos(14, y, z), Blocks.STONE);
         CompanionEntity c = spawn(h);
         c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
         BlockPos far = h.absolutePos(new BlockPos(18, GROUND + 1, 16));
         lying(h, far, Items.LAVA_BUCKET, 2);
         lying(h, far.offset(0, 0, 2), Items.WATER_BUCKET, 2);
         var plan = c.obtainPlan(OBSIDIAN, 2);
-        String refusal = plan.refusal();
-        h.assertTrue(plan.refused() && refusal != null && refusal.contains("не дотянуться") && !refusal.contains("Рядом нечего копать"),
-                "Not the buckets out of his reach: " + plan);
+        h.assertTrue(!plan.refused(), "Refused before he walked up to the wall: " + plan);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":2}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("не дотянуться") && !report.contains("Рядом нечего копать"), "He does not name the buckets: " + report);
+            h.assertTrue(count(c, Items.WATER_BUCKET) == 0 && count(c, Items.LAVA_BUCKET) == 0 && count(c, Items.BUCKET) == 0,
+                    "A bucket was made or spent for nothing: " + c.getStoredItemsSummary() + ", " + report);
+        });
+    }
+
+    /**
+     * The same buckets at the bottom of a pit four blocks deep and one wide: his walk takes a drop of three blocks at most, so no
+     * way leads down to them. The order says «не дотянуться» — the buckets are there, his hand is not — and nothing is spent.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void bucketsAtTheBottomOfAPitAreNamedInsteadOfNothingToDig(GameTestHelper h) {
+        ground(h);
+        for (int y = GROUND; y >= GROUND - 3; y--) {
+            h.setBlock(new BlockPos(18, y, 16), Blocks.AIR);
+            h.setBlock(new BlockPos(18, y, 18), Blocks.AIR);
+        }
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        lying(h, h.absolutePos(new BlockPos(18, GROUND - 3, 16)), Items.LAVA_BUCKET, 2);
+        lying(h, h.absolutePos(new BlockPos(18, GROUND - 3, 18)), Items.WATER_BUCKET, 2);
+        var plan = c.obtainPlan(OBSIDIAN, 2);
+        h.assertTrue(!plan.refused(), "Refused before he walked up to the pit: " + plan);
         var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":2}]");
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());

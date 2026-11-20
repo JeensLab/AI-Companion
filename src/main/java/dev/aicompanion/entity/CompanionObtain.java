@@ -290,17 +290,19 @@ public final class CompanionObtain {
             // it: poured into a hole he digs, his water over it (the player 19.11: two buckets of lava in the bag, no lava in the
             // world, and the order was refused as if there were nothing to dig — the bag was never asked). A bucket dropped on the
             // ground within his hand is a source just the same: he takes it up when the work starts (CompanionObsidian.begin).
+            // One lying further off within his sight and a cell to take it from is walked to and taken up as the work goes
+            // (CompanionObsidian.fetchLoose), so the plan counts it too.
             case "minecraft:obsidian" -> {
                 String refusal = CompanionObsidian.refusal(level, carried);
                 if (refusal != null) return refuse(refusal);
                 if (grows != null && about(Items.OBSIDIAN)) return add("mine_obsidian", key, count);
                 CompanionObsidian.Loose lavaLying = lying(Items.LAVA_BUCKET), waterLying = lying(Items.WATER_BUCKET);
                 boolean lavaAbout = grows != null && about(Items.LAVA_BUCKET);
-                int buckets = bag.getOrDefault("minecraft:lava_bucket", 0) + lavaLying.reach();
+                int buckets = bag.getOrDefault("minecraft:lava_bucket", 0) + lavaLying.reach() + lavaLying.fetch();
                 if (grows != null && !lavaAbout && buckets == 0) {
-                    // The buckets lie there and his hand does not reach them: said plainly, never «нечего копать» (the player 20.11:
+                    // The buckets lie there and no way leads to them: said plainly, never «нечего копать» (the player 20.11:
                     // four buckets at his feet and a line about nothing to dig).
-                    if (lavaLying.sight() || waterLying.sight()) return refuse(unreached(lavaLying.sight(), waterLying.sight()));
+                    if (lavaLying.sight() || waterLying.sight()) return refuse(CompanionObsidian.unreached(lavaLying.sight(), waterLying.sight()));
                     // After the blocks his own buckets made, the old line said there was nothing about to dig over a bag that already
                     // held them (the player 19.11: one of two made, then «Рядом нечего копать: ни обсидиана, ни лавы»).
                     int have = carried(carried, Items.OBSIDIAN);
@@ -311,7 +313,7 @@ public final class CompanionObtain {
                 // With no obsidian lying about and no lava to cool, his own buckets are the only source: one bucket of lava makes one
                 // block, so no more is promised than they can give (the rest is planned again after, the player 19.11).
                 if (grows != null && !lavaAbout) count = Math.min(count, buckets);
-                int water = bag.getOrDefault("minecraft:water_bucket", 0) + waterLying.reach();
+                int water = bag.getOrDefault("minecraft:water_bucket", 0) + waterLying.reach() + waterLying.fetch();
                 if (water == 0 && !need("minecraft:water_bucket", 1, depth + 1)) return false;
                 return add("mine_obsidian", key, count);
             }
@@ -564,12 +566,6 @@ public final class CompanionObtain {
     /** What of the item lies on the ground about him as far as it is his to take; none when the ground is not known. */
     private CompanionObsidian.Loose lying(Item item) {
         return loose == null ? CompanionObsidian.Loose.NONE : loosened.computeIfAbsent(item, loose);
-    }
-
-    /** «Вижу рядом ведро лавы, но не дотянуться — подойди ближе, я подберу.»: the buckets are there, his hand is not. */
-    private static String unreached(boolean lava, boolean water) {
-        String what = lava && water ? "вёдра лавы и воды" : lava ? "ведро лавы" : "ведро воды";
-        return "Вижу рядом " + what + ", но не дотянуться — подойди ближе, я подберу.";
     }
 
     /**
