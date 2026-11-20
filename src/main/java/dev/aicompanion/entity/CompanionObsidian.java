@@ -570,8 +570,12 @@ final class CompanionObsidian {
                 if (dig(level, made, got)) { madeStep = MADE_LAVA; reset(); }
             }
             case MADE_LAVA -> {
-                // No lava of his left: the pour step says how far he got.
-                if (slot(Items.LAVA_BUCKET) < 0) { made = null; madeStep = 0; reset(); return; }
+                // No lava of his left: the pour step says how far he got. The dug hole is filled back: no block is to be made in it.
+                if (slot(Items.LAVA_BUCKET) < 0) {
+                    holeCell = made; holeFloor = madeFloor; holeDrop = madeFloorDrop;
+                    madeFloor = null; madeFloorDrop = null;
+                    made = null; madeStep = 0; reset(); return;
+                }
                 if (!level.getBlockState(made).isAir()) { made = null; madeStep = MADE_DIG; reset(); return; }
                 // The drop of the dig lies in the hole and the pickup walks him down into it: the lava goes in from beside it, never
                 // under his own feet (the player 20.11: he climbed into the lava and lost health). No cell beside it at all: this
@@ -592,8 +596,13 @@ final class CompanionObsidian {
                 if (flammableAround(level, made)) make(level, got);
             }
             case MADE_WATER -> {
-                // The lava ran off or was taken: another hole, or the pour step's own words.
-                if (!level.getFluidState(made).isSourceOfType(net.minecraft.world.level.material.Fluids.LAVA)) { made = null; madeStep = MADE_DIG; reset(); return; }
+                // The lava ran off or was taken: another hole, or the pour step's own words. The dug hole is filled back if the
+                // lava is gone from it: no block is to be made there.
+                if (!level.getFluidState(made).isSourceOfType(net.minecraft.world.level.material.Fluids.LAVA)) {
+                    holeCell = made; holeFloor = madeFloor; holeDrop = madeFloorDrop;
+                    madeFloor = null; madeFloorDrop = null;
+                    made = null; madeStep = MADE_DIG; reset(); return;
+                }
                 // No water left for the lava he has already poured: the lava is his, so it goes back into the empty bucket of the pour (end).
                 if (slot(Items.WATER_BUCKET) < 0) { abandonMade(CompanionActionResult.failed(NO_WATER + short_(got))); return; }
                 if (!inReach(level, made.above()) && !walkTo(level, made.above())) return;
