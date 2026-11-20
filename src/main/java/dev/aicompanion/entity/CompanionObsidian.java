@@ -579,13 +579,31 @@ final class CompanionObsidian {
                 if (!level.getBlockState(made).isAir()) { made = null; madeStep = MADE_DIG; reset(); return; }
                 // The drop of the dig lies in the hole and the pickup walks him down into it: the lava goes in from beside it, never
                 // under his own feet (the player 20.11: he climbed into the lava and lost health). No cell beside it at all: this
-                // hole is passed over and another dug.
-                if (c.blockPosition().equals(made)) { walkTo(level, made); return; }
-                if (!inReach(level, made) && !walkTo(level, made)) return;
+                // hole is passed over and another dug, and the ground it gave goes back.
+                if (c.blockPosition().equals(made)) {
+                    BlockPos hole = made;
+                    if (!walkTo(level, hole)) {
+                        holeCell = hole; holeFloor = madeFloor; holeDrop = madeFloorDrop;
+                        madeFloor = null; madeFloorDrop = null;
+                    }
+                    return;
+                }
+                if (!inReach(level, made)) {
+                    BlockPos hole = made;
+                    if (!walkTo(level, hole)) {
+                        holeCell = hole; holeFloor = madeFloor; holeDrop = madeFloorDrop;
+                        madeFloor = null; madeFloorDrop = null;
+                    }
+                    return;
+                }
                 int slot = slot(Items.LAVA_BUCKET);
                 ItemStack bucket = c.getItem(slot);
                 c.getLookControl().setLookAt(Vec3.atCenterOf(made));
-                if (!((BucketItem) bucket.getItem()).emptyContents(null, level, made, null, bucket)) { made = null; madeStep = MADE_DIG; reset(); return; }
+                if (!((BucketItem) bucket.getItem()).emptyContents(null, level, made, null, bucket)) {
+                    holeCell = made; holeFloor = madeFloor; holeDrop = madeFloorDrop;
+                    madeFloor = null; madeFloorDrop = null;
+                    made = null; madeStep = MADE_DIG; reset(); return;
+                }
                 emptyBucket(slot);
                 c.animateAction(1, made, bucket);
                 his.add(made);
