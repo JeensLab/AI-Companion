@@ -58,6 +58,42 @@ public final class CompanionGateTests {
         });
     }
 
+    /**
+     * He walks straight through the gate he opens: not a hop beside it. The game's movement control hops a mob whose feet are below
+     * the top of the block it stands in (a step, as a player jumps one), and a fence gate's 1.5-high shape is in neither the doors'
+     * nor the fences' tag: shut while he still stood in its cell, the gate was a step to it. His feet stay on the walking level.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void aShutGateIsWalkedThroughWithoutAHop(GameTestHelper h) {
+        ground(h);
+        garden(h, 16, 12, true, false);
+        gate(h, westGate(16, 12), Direction.EAST, false, false);
+        crops(h, 16, 12);
+        CompanionEntity c = spawn(h, 11, 17);
+        BlockPos gate = westGate(16, 12), at = h.absolutePos(gate);
+        double level = at.getY();
+        double[] highest = {level};
+        int[] offGround = {0};
+        String[] where = {"nowhere"};
+        h.onEachTick(() -> {
+            double dx = c.getX() - (at.getX() + .5), dz = c.getZ() - (at.getZ() + .5);
+            if (dx * dx + dz * dz > 4.0) return;
+            if (!c.onGround()) offGround[0]++;
+            if (c.getY() <= highest[0]) return;
+            highest[0] = c.getY();
+            where[0] = "at " + c.blockPosition() + " at time " + h.getLevel().getGameTime() + ", the gate open: " + isOpen(h, gate);
+        });
+        var order = sayModel(h, c, "принеси морковь из-за забора", "[{\"action\":\"obtain_item\",\"item\":\"minecraft:carrot\",\"count\":1}]",
+                "gametest-gate-no-hop");
+        h.succeedWhen(() -> {
+            h.assertTrue(order.isDone() && !order.isCompletedExceptionally(), "The order is still running: " + c.getLastTaskResult());
+            h.assertTrue(count(c, Items.CARROT) >= 1, "No carrot from the garden behind the gate: " + order.join().report());
+            h.assertFalse(isOpen(h, gate), "The gate was left open");
+            h.assertTrue(offGround[0] == 0, "He left the ground " + offGround[0] + " ticks within two blocks of the gate: his feet rose to "
+                    + highest[0] + " over the walking level " + level + " " + where[0]);
+        });
+    }
+
     /** A gate the signal holds open: he walks through it and leaves it as the signal has it, never shutting it behind him. */
     @GameTest(template = "tall_tree", timeoutTicks = 1200)
     public static void aPoweredOpenGateIsWalkedThroughAndLeftOpen(GameTestHelper h) {

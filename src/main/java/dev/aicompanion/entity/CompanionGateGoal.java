@@ -49,7 +49,9 @@ final class CompanionGateGoal extends Goal {
     @Override public void tick() {
         forgetTime--;
         float dx = (float)(gate.getX() + .5 - companion.getX()), dz = (float)(gate.getZ() + .5 - companion.getZ());
-        if (gateDirX * dx + gateDirZ * dz < 0) passed = true;
+        // Past it and clear of its cell: a gate shut while he still stands in it is a step to the game's movement control (a fence
+        // gate's 1.5-high shape is in neither the doors' nor the fences' tag), which hops him there, so he jumped beside the gate.
+        if (gateDirX * dx + gateDirZ * dz < 0 && !companion.blockPosition().equals(gate)) passed = true;
         // Shut by someone else while he is on his way through: open it once more, as he would.
         if (!passed) set(true);
     }
