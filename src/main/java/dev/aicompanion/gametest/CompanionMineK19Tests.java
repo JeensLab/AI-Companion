@@ -5,6 +5,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -30,7 +31,10 @@ import static dev.aicompanion.gametest.CompanionMineFightTests.zombie;
 @PrefixGameTestTemplate(false)
 public final class CompanionMineK19Tests {
     private static final int KILL_TICKS = 1200, FROM_STEP = 10, CLIMB = 8, CLIMB_TICKS = 300;
-    private static final float LOW = 4;
+    private static final float LOW = 4, ARMED_FOE_HEALTH = 12;
+    /** A zombie's blow with nothing in its hand. */
+    private static final double BARE_BLOW = 3;
+    private static final int LEAVE_TICKS = 60;
     /** A zombie on him and five health: the wound that sends him off (CompanionExpeditionFight.wounded). */
     private static final float WOUNDED = 5;
     private static final int PASSAGE_LENGTH = 4, PASSAGE_OFFSET = 2, PASSAGE_HEIGHT = 2, ACT_TICKS = 60;
@@ -107,6 +111,42 @@ public final class CompanionMineK19Tests {
             if (sealing[0] < 0) { h.assertTrue(h.getTick() - begun < KILL_TICKS, "SETUP: the cave was never sealed" + trace); return; }
             if (c.expeditionStage().equals("RETREAT") || foe.getHealth() < foe.getMaxHealth()) h.succeed();
             h.assertTrue(h.getTick() - sealing[0] < ACT_TICKS, "Wounded by the cave, he neither started up nor struck" + trace);
+        });
+    }
+
+    /**
+     * Run s7-d2/mobs: a zombie with a weapon (six and a half a blow) and a skeleton; the climb began at five health, a blow from death, and the
+     * zombie dealt it. At twelve health with a zombie with a stone sword (seven a blow) right below him, the climb begins within three seconds
+     * (the old rule waited for five health). The sword's blow is the zombie's once it has ticked with it.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aZombieWithASwordIsLeftWhileTwoOfItsBlowsAreStillToBeTaken(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        place(c, stairs.get(FROM_STEP));
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_SWORD));
+        c.setHealth(ARMED_FOE_HEALTH);
+        Zombie foe = zombie(h, stairs.get(FROM_STEP + 2));
+        foe.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_SWORD));
+        foe.setNoAi(true);
+        int startY = rel(h, stairs.get(FROM_STEP)).getY();
+        long[] begun = {-1};
+        h.onEachTick(() -> {
+            if (begun[0] < 0) {
+                if (foe.getAttributeValue(Attributes.ATTACK_DAMAGE) <= BARE_BLOW) return;
+                foe.setNoAi(false);
+                begun[0] = h.getTick();
+                start(h, c, 1);
+                return;
+            }
+            int rise = rel(h, c.blockPosition()).getY() - startY;
+            String trace = " | climbed " + rise + " steps, zombie health " + foe.getHealth() + ", he at " + rel(h, c.blockPosition()).toShortString()
+                    + ", health " + c.getHealth() + ", stage " + c.expeditionStage() + " | " + report(c);
+            if (foe.isAlive() && foe.getTarget() == null) foe.setTarget(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            if (c.expeditionStage().equals("RETREAT") || rise >= CLIMB) h.succeed();
+            h.assertTrue(h.getTick() - begun[0] < LEAVE_TICKS, "He did not begin the climb in time" + trace);
         });
     }
 

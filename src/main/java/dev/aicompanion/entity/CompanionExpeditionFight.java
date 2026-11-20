@@ -179,19 +179,25 @@ final class CompanionExpeditionFight {
 
     /**
      * Health at which he leaves a fight. With nothing on him yet it is the very low level (the cave limit); one foe on him is fought lower, down to
-     * {@link #LONE_FOE}; each foe more costs {@link #PER_EXTRA_FOE} health more, up to the wary level: a crowd gives no time to eat.
+     * {@link #LONE_FOE}; each foe more costs {@link #PER_EXTRA_FOE} health more, up to the wary level: a crowd gives no time to eat. A foe that
+     * strikes hard (a zombie with a sword) is left while two of its blows are still to be taken, not one (run s7-d2/mobs: six and a half a blow,
+     * the climb began at five health and the next blow ended it); a bare zombie's three leave the lone-foe level as it is.
      */
     boolean wounded() {
-        int near = onHim();
-        double limit = near == 0 ? CompanionCaveSense.HEALTH_VERY : Math.min(LONE_FOE + PER_EXTRA_FOE * (near - 1), CompanionCaveSense.HEALTH_WARY);
+        List<Monster> on = onHim();
+        double limit = on.isEmpty() ? CompanionCaveSense.HEALTH_VERY : Math.min(LONE_FOE + PER_EXTRA_FOE * (on.size() - 1), CompanionCaveSense.HEALTH_WARY);
+        for (Monster foe : on) {
+            double blow = foe.getAttributes().hasAttribute(Attributes.ATTACK_DAMAGE) ? foe.getAttributeValue(Attributes.ATTACK_DAMAGE) : 0;
+            limit = Math.max(limit, Math.min(2 * blow - 1, CompanionCaveSense.HEALTH_WARY));
+        }
         return owner.getHealth() <= limit;
     }
 
-    /** How many mobs he may fight are within a blow of him. */
-    private int onHim() {
-        if (!(owner.level() instanceof ServerLevel level)) return 0;
+    /** The mobs he may fight within a blow of him. */
+    private List<Monster> onHim() {
+        if (!(owner.level() instanceof ServerLevel level)) return List.of();
         return level.getEntitiesOfClass(Monster.class, owner.getBoundingBox().inflate(Math.sqrt(CONTACT_SQR)), mob -> mob.isAlive() && !mob.isNoAi() && !(mob instanceof Creeper) && !letGo(mob)
-                && owner.hasLineOfSight(mob) && owner.combat.fairTarget(mob, owner.combat.provokes(mob))).size();
+                && owner.hasLineOfSight(mob) && owner.combat.fairTarget(mob, owner.combat.provokes(mob)));
     }
 
     private boolean leavable(LivingEntity foe) { return wounded() && canEscape(foe); }
