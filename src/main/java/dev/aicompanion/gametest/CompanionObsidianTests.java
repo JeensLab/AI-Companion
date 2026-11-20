@@ -21,6 +21,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.common.util.BlockSnapshot;
@@ -29,7 +30,9 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -417,8 +420,8 @@ public final class CompanionObsidianTests {
             for (BlockPos cell : taken) h.assertBlockPresent(Blocks.CHEST, cell);
             // The player's own hole under his feet is not dug either.
             h.assertBlockPresent(Blocks.GRASS_BLOCK, new BlockPos(10, GROUND, 17));
-            // The next free hole was dug, the block made in it and mined out of it.
-            h.assertBlockPresent(Blocks.AIR, new BlockPos(9, GROUND, 15));
+            // The next free hole was dug, the block made in it and mined out, and its grass filled back in.
+            h.assertBlockPresent(Blocks.GRASS_BLOCK, new BlockPos(9, GROUND, 15));
         });
     }
 
@@ -648,9 +651,10 @@ public final class CompanionObsidianTests {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
             String report = future.join().report();
             h.assertTrue(count(c, Items.OBSIDIAN) == 1, "Not one obsidian: " + count(c, Items.OBSIDIAN) + ", " + report);
-            // The hole with no way to it is left as it was; the next one is dug and the block made in it and mined out.
+            // The hole with no way to it is left as it was; the next one is dug, the block made in it and mined out, and its dirt
+            // goes back into the hole so the ground is as it was.
             h.assertBlockPresent(Blocks.DIRT, walled);
-            h.assertBlockPresent(Blocks.AIR, reachable);
+            h.assertBlockPresent(Blocks.DIRT, reachable);
         });
     }
 
@@ -727,6 +731,10 @@ public final class CompanionObsidianTests {
         lying(h, feet, Items.LAVA_BUCKET, 2);
         lying(h, feet.offset(1, 0, 0), Items.WATER_BUCKET, 2);
         float full = c.getHealth();
+        int grassBefore = 0;
+        for (int x = 1; x <= 30; x++) for (int z = 1; z <= 30; z++)
+            if (h.getLevel().getBlockState(h.absolutePos(new BlockPos(x, GROUND, z))).is(Blocks.GRASS_BLOCK)) grassBefore++;
+        final int grassWhole = grassBefore;
         String route = CompanionLocalCommands.route("Олег, добудь 2 обсидиана", "Олег");
         var plan = CompanionLocalCommands.actions(route);
         h.assertTrue(plan != null && plan.size() == 1, "The phrase is not one step: " + route + " -> " + plan);
@@ -745,8 +753,13 @@ public final class CompanionObsidianTests {
                 h.assertTrue(!h.getLevel().getFluidState(pos).is(FluidTags.WATER), "His water is left at " + pos.toShortString() + ": " + report);
                 h.assertTrue(!h.getLevel().getFluidState(pos).is(FluidTags.LAVA), "His lava is left at " + pos.toShortString() + ": " + report);
             }
-            // The drop of the dug hole is in his bag, not burnt in the poured lava, and nothing of it lies about.
-            h.assertTrue(count(c, Items.DIRT) >= 1, "The hole's drop burned in the poured lava: " + c.getStoredItemsSummary() + ", " + report);
+            // The holes he dug are filled back with their grass: the drop of the dig was not burnt in the poured lava, it went back
+            // into the ground, and nothing of it lies about.
+            int grassAfter = 0;
+            for (int x = 1; x <= 30; x++) for (int z = 1; z <= 30; z++)
+                if (h.getLevel().getBlockState(h.absolutePos(new BlockPos(x, GROUND, z))).is(Blocks.GRASS_BLOCK)) grassAfter++;
+            h.assertTrue(grassAfter == grassWhole,
+                    "A hole is left in the ground: " + grassAfter + " grass of " + grassWhole + ", " + c.getStoredItemsSummary() + ", " + report);
             for (var drop : h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
                     new net.minecraft.world.phys.AABB(c.blockPosition()).inflate(30)))
                 h.assertTrue(!drop.getItem().is(Items.DIRT) && !drop.getItem().is(Items.GRASS_BLOCK),
@@ -1015,8 +1028,9 @@ public final class CompanionObsidianTests {
 
     /**
      * The hole the first block was made in is the hole the second one is made in: the arena has one cell of ground he can dig, the
-     * rest bedrock. The block is mined out of the hole first, and the hole is air again — a site for the next pour, never refused
-     * because obsidian stood in it a moment ago. Two buckets of lava make two blocks in that one hole.
+     * rest bedrock. The block is mined out of the hole first, the hole is filled back with its dirt, and the next make digs that
+     * same cell again — never refused because obsidian stood in it a moment ago. Two buckets of lava make two blocks in that one
+     * hole, and the ground is whole again at the end.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 2400)
     public static void theHoleOfTheFirstBlockIsUsedForTheSecond(GameTestHelper h) {
@@ -1034,7 +1048,7 @@ public final class CompanionObsidianTests {
             String report = future.join().report();
             h.assertTrue(count(c, Items.OBSIDIAN) == 2, "Not two obsidian out of the one hole: " + count(c, Items.OBSIDIAN) + ", " + report);
             h.assertTrue(!report.contains("Негде вылить лаву"), "He says there is no hole with the one he used standing empty: " + report);
-            h.assertBlockPresent(Blocks.AIR, hole);
+            h.assertBlockPresent(Blocks.DIRT, hole);
         });
     }
 
@@ -1060,6 +1074,80 @@ public final class CompanionObsidianTests {
             h.assertTrue(report.contains("Накопал обсидиана: 1."), "He does not say the one block is made: " + report);
             h.assertBlockPresent(Blocks.CHEST, new BlockPos(14, GROUND + 1, 20));
         });
+    }
+
+    /**
+     * «Добудь 1 обсидиан» inside the player's own house: a chest makes the yard his site, the floor is planks, and the one block
+     * comes of his own buckets. The hole he digs in that floor is filled back with the very plank the dig gave him once the
+     * obsidian is mined and his water is scooped, so the floor is whole again and no plank is gained or lost. The judge's nit
+     * on #208: a bare floor cell of the player's was fair game for the lava hole, and the pit stayed after the make.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void theHoleInThePlayersFloorIsFilledBackAfterTheMake(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        plankRoom(h, c, new BlockPos(12, GROUND + 1, 12));
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.WATER_BUCKET));
+        c.setItem(2, new ItemStack(Items.LAVA_BUCKET));
+        int planksBefore = count(c, Items.OAK_PLANKS);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1, "Not one obsidian: " + count(c, Items.OBSIDIAN) + ", " + report);
+            for (int x = 4; x <= 16; x++) for (int z = 10; z <= 22; z++)
+                h.assertBlockPresent(Blocks.OAK_PLANKS, new BlockPos(x, GROUND, z));
+            h.assertTrue(count(c, Items.OAK_PLANKS) == planksBefore,
+                    "A plank was gained or lost: " + count(c, Items.OAK_PLANKS) + " of " + planksBefore + ", " + c.getStoredItemsSummary() + ", " + report);
+        });
+    }
+
+    /**
+     * The same house: no plank of the floor ignites or burns while the block is made. Lava in a plank hole can set the planks
+     * around it alight for the tick it stands there; his water must go over it before that tick ends. No fire is allowed anywhere
+     * in the room at any tick, and after the make every floor cell must be the very block it was before.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void noPlankOfTheFloorBurnsWhileTheBlockIsMade(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        plankRoom(h, c, new BlockPos(12, GROUND + 1, 12));
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.WATER_BUCKET));
+        c.setItem(2, new ItemStack(Items.LAVA_BUCKET));
+        Map<BlockPos, BlockState> before = new HashMap<>();
+        for (int x = 4; x <= 16; x++) for (int z = 10; z <= 22; z++) {
+            BlockPos floor = new BlockPos(x, GROUND, z);
+            before.put(floor, h.getLevel().getBlockState(h.absolutePos(floor)));
+        }
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(4, GROUND, 10), new BlockPos(16, GROUND + 4, 22)))
+                h.assertTrue(!h.getLevel().getBlockState(h.absolutePos(pos)).is(Blocks.FIRE),
+                        "A plank is on fire at " + pos.toShortString() + ": " + c.getLastTaskResult());
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1, "Not one obsidian: " + count(c, Items.OBSIDIAN) + ", " + report);
+            for (Map.Entry<BlockPos, BlockState> floor : before.entrySet())
+                h.assertTrue(h.getLevel().getBlockState(h.absolutePos(floor.getKey())).equals(floor.getValue()),
+                        "The floor at " + floor.getKey().toShortString() + " is not what it was: "
+                                + h.getLevel().getBlockState(h.absolutePos(floor.getKey())) + ", was " + floor.getValue());
+        });
+    }
+
+    /**
+     * A room of the player's in the test ground: a plank floor, plank walls three high and a plank roof, with a chest set down by
+     * the player so the yard is his site. The floor is what the companion stands on and what his own lava hole is dug in.
+     */
+    private static void plankRoom(GameTestHelper h, CompanionEntity c, BlockPos chest) {
+        for (int x = 4; x <= 16; x++) for (int z = 10; z <= 22; z++) {
+            h.setBlock(new BlockPos(x, GROUND, z), Blocks.OAK_PLANKS);
+            h.setBlock(new BlockPos(x, GROUND + 4, z), Blocks.OAK_PLANKS);
+            for (int y = GROUND + 1; y <= GROUND + 3; y++)
+                if (x == 4 || x == 16 || z == 10 || z == 22) h.setBlock(new BlockPos(x, y, z), Blocks.OAK_PLANKS);
+        }
+        placedByPlayer(h, c, chest, Blocks.CHEST);
     }
 
     /**

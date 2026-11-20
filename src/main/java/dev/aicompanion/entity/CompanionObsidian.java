@@ -84,6 +84,13 @@ final class CompanionObsidian {
     private BlockPos made, madeWater, madeLava;
     private int madeStep, fromBuckets;
     private long madeAt;
+    /** The ground block dug out for the hole of his own lava and the drop it gave, kept until the hole is filled back. */
+    private BlockState madeFloor;
+    private Item madeFloorDrop;
+    /** The hole whose block is gone, the ground it was dug from and the drop that pays for putting it back. */
+    private BlockPos holeCell;
+    private BlockState holeFloor;
+    private Item holeDrop;
     private Set<BlockPos> stands = Set.of();
     private Path path;
     /** Where he stood when the block came within his reach and sight. */
@@ -209,6 +216,7 @@ final class CompanionObsidian {
         reset();
         wanted = count; before = w.items.countCarried(Items.OBSIDIAN); mined = pours = 0; water = null; ending = null; nextLook = settleAt = 0; retried = false;
         made = madeWater = madeLava = null; madeStep = fromBuckets = 0; madeAt = 0;
+        madeFloor = null; madeFloorDrop = null; holeCell = null; holeFloor = null; holeDrop = null;
         his.clear(); passed.clear();
         fetch = null; fetchless.clear();
         // The buckets lying within his hand are his before the first pour: the plan counted them as the source (CompanionObtain).
@@ -229,6 +237,8 @@ final class CompanionObsidian {
 
     /** One tick of the order: obsidian mined while there is some, else his water back, else on to the next lava and over it, else made of his own buckets. */
     void tick(ServerLevel level) {
+        // The floor of the hole he dug for his own lava is put back once the block is gone and his water is scooped.
+        if (refill(level, true)) return;
         if (ending != null) { if (takeWaterBack(level)) end(ending); return; }
         site = c.getOwnerId() == null ? pos -> false : CompanionPlayerBuilds.get(level.getServer()).sites(c.getOwnerId(), level);
         int got = got();
@@ -384,6 +394,8 @@ final class CompanionObsidian {
             event(back ? "obsidian_lava_scooped" : "obsidian_lava_left", "lava", madeLava.toShortString(), "took", back);
         }
         madeLava = null;
+        // The ground dug for the hole goes back once the lava is out of it: the yard or floor looks as it did.
+        if (c.level() instanceof ServerLevel level) refill(level, false);
         if (mined > got()) c.retryHarvestPickup();
         ending = null;
         reset();
@@ -395,6 +407,8 @@ final class CompanionObsidian {
         if (water != null && c.level() instanceof ServerLevel level && inReach(level, water)) CompanionWaterBucket.scoopInto(c, level, water);
         if (madeWater != null && c.level() instanceof ServerLevel level && inReach(level, madeWater)) CompanionWaterBucket.scoopInto(c, level, madeWater);
         water = madeWater = null; made = madeLava = null; madeStep = 0; ending = null;
+        // The ground of a hole whose block is already gone goes back if his hand reaches it: stop means stop.
+        if (c.level() instanceof ServerLevel level) refill(level, false);
         reset();
     }
 
@@ -550,7 +564,7 @@ final class CompanionObsidian {
                 if (made == null) made = siteFor(level);
                 if (made == null) { end(false, NO_SITE + short_(got)); return; }
                 // His own hole of the block before is air: the lava goes straight in.
-                if (level.getBlockState(made).isAir()) { madeStep = MADE_LAVA; reset(); return; }
+                if (level.getBlockState(made).isAir()) { madeFloor = null; madeFloorDrop = null; madeStep = MADE_LAVA; reset(); return; }
                 // Something else stands there since: another hole is looked for.
                 if (!holeFor(level, made)) { made = null; reset(); return; }
                 if (dig(level, made, got)) { madeStep = MADE_LAVA; reset(); }
@@ -574,6 +588,8 @@ final class CompanionObsidian {
                 madeStep = MADE_WATER;
                 c.workStatus("Лью лаву.");
                 event("obsidian_lava_poured", "lava", made.toShortString());
+                // In a hole ringed by planks the water goes over it in this same tick: the lava never stands a tick to set them alight.
+                if (flammableAround(level, made)) make(level, got);
             }
             case MADE_WATER -> {
                 // The lava ran off or was taken: another hole, or the pour step's own words.
@@ -586,7 +602,15 @@ final class CompanionObsidian {
                 ItemStack bucket = c.getItem(slot);
                 c.getLookControl().setLookAt(Vec3.atCenterOf(made.above()));
                 // The pour found no cell: the lava of it goes back into his bucket and another hole is dug.
-                if (!((BucketItem) bucket.getItem()).emptyContents(null, level, made.above(), null, bucket)) { madeLava = made; made = null; madeStep = MADE_DIG; reset(); return; }
+                if (!((BucketItem) bucket.getItem()).emptyContents(null, level, made.above(), null, bucket)) {
+                    // The lava goes back at once, not left standing in a plank hole until the order ends.
+                    boolean back = takeLavaBack(c, level, made);
+                    event(back ? "obsidian_lava_scooped" : "obsidian_lava_left", "lava", made.toShortString(), "took", back);
+                    madeLava = back ? null : made;
+                    if (back) { holeCell = made; holeFloor = madeFloor; holeDrop = madeFloorDrop; }
+                    madeFloor = null; madeFloorDrop = null;
+                    made = null; madeStep = MADE_DIG; reset(); return;
+                }
                 emptyBucket(slot);
                 c.animateAction(1, made.above(), bucket);
                 madeWater = made.above();
@@ -601,6 +625,8 @@ final class CompanionObsidian {
                     if (CompanionWaterBucket.scoopInto(c, level, madeWater)) event("obsidian_water_scooped", "water", madeWater.toShortString());
                     else water = madeWater;
                     BlockPos block = made;
+                    holeCell = block; holeFloor = madeFloor; holeDrop = madeFloorDrop;
+                    madeFloor = null; madeFloorDrop = null;
                     madeWater = null; made = null; madeStep = 0; fromBuckets++; reset();
                     event("obsidian_made", "block", block.toShortString());
                     return;
@@ -608,7 +634,11 @@ final class CompanionObsidian {
                 // Not set in time: his water comes back first (over the block it would float the drop), the lava he poured with it after
                 // — a source left standing in the hole is no use to him, and the empty bucket of the pour takes it back as his own does.
                 if (level.getGameTime() - madeAt > SET_TICKS) {
-                    water = madeWater; madeWater = null; madeLava = made; made = null; madeStep = 0; reset();
+                    BlockPos block = made;
+                    water = madeWater; madeWater = null; madeLava = block;
+                    holeCell = block; holeFloor = madeFloor; holeDrop = madeFloorDrop;
+                    madeFloor = null; madeFloorDrop = null;
+                    made = null; madeStep = 0; reset();
                     end(false, NOT_SET + short_(got));
                     return;
                 }
@@ -622,7 +652,49 @@ final class CompanionObsidian {
      * The lava of the make is his once poured: with no water to pour over it, it goes back into the empty bucket the pour left him
      * (end) instead of standing in the hole, so no bucket is spent for a block that was not made.
      */
-    private void abandonMade(CompanionActionResult result) { madeLava = made; made = null; madeStep = 0; reset(); end(result); }
+    private void abandonMade(CompanionActionResult result) {
+        holeCell = made; holeFloor = madeFloor; holeDrop = madeFloorDrop;
+        madeFloor = null; madeFloorDrop = null;
+        madeLava = made; made = null; madeStep = 0; reset(); end(result);
+    }
+
+    /**
+     * Fills the hole of his own lava back in once the block made in it is mined out and his water is scooped: the yard or floor
+     * looks as it did, and the drop the dig gave pays for it, so no block is gained or lost. Nothing is put back while the block
+     * is still to be made (the cell holds obsidian or lava), and a drop still lying in the cell is left to his pickup first.
+     * The rule for a block he might have wanted to keep (sand, a plank): it goes back too — the order was for obsidian, the dig
+     * gave exactly this block to restore the ground, and his bag nets zero; if that drop is gone, the hole stays, nothing invented.
+     * False while there is nothing to put back, or while he walks to the hole.
+     */
+    private boolean refill(ServerLevel level, boolean mayWalk) {
+        if (holeCell == null) return false;
+        if (water != null) return false;
+        if (holeFloor == null) { holeCell = null; return false; }
+        BlockState now = level.getBlockState(holeCell);
+        // The block he made is still there: nothing to fill yet.
+        if (now.is(Blocks.OBSIDIAN)) return false;
+        // Something else stands there since (the player's block): the hole is not his to fill.
+        if (!now.isAir()) { holeCell = null; holeFloor = null; holeDrop = null; return false; }
+        // A drop still in the cell would be buried by the block: the pickup takes it first.
+        if (!level.getEntitiesOfClass(ItemEntity.class, new AABB(holeCell)).isEmpty()) return false;
+        if (!inReach(level, holeCell)) {
+            if (!mayWalk) return false;
+            if (stands.isEmpty()) { stands = standsBeside(level, holeCell); legs = 0; path = null; }
+            c.workStatus("Заделываю ямку.");
+            if (walk()) return true;
+            // No way back to it: the hole stays, no block is invented.
+            holeCell = null; holeFloor = null; holeDrop = null;
+            return false;
+        }
+        int slot = holeDrop == null ? -1 : slot(holeDrop);
+        // The drop the dig gave is gone (burnt, spent): the hole stays rather than a block from nothing.
+        if (holeDrop != null && slot < 0) { holeCell = null; holeFloor = null; holeDrop = null; return false; }
+        if (slot >= 0) c.removeItem(slot, 1);
+        level.setBlockAndUpdate(holeCell, holeFloor);
+        event("obsidian_hole_filled", "hole", holeCell.toShortString(), "block", net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(holeFloor.getBlock()));
+        holeCell = null; holeFloor = null; holeDrop = null;
+        return true;
+    }
 
     /**
      * The nearest hole for his own lava beside him: ground he can dig, or the hole his last block left, walled by the ground itself
@@ -634,8 +706,8 @@ final class CompanionObsidian {
      */
     private BlockPos siteFor(ServerLevel level) {
         BlockPos feet = c.blockPosition();
-        BlockPos best = null;
-        double bestFar = Double.MAX_VALUE;
+        BlockPos best = null, dry = null;
+        double bestFar = Double.MAX_VALUE, dryFar = Double.MAX_VALUE;
         for (int dx = -HOLE_NEAR; dx <= HOLE_NEAR; dx++) for (int dz = -HOLE_NEAR; dz <= HOLE_NEAR; dz++) for (int dy = 1; dy >= -2; dy--) {
             BlockPos cell = feet.offset(dx, dy, dz);
             // Never the cell he stands in, nor the block under his feet: the lava there would be under him. Nor one he found no way to.
@@ -643,8 +715,20 @@ final class CompanionObsidian {
             if (!level.hasChunkAt(cell) || !holeFor(level, cell)) continue;
             double far = cell.distSqr(feet);
             if (far < bestFar) { bestFar = far; best = cell.immutable(); }
+            // A hole ringed by planks can take fire from the lava for the tick it stands there: one that is not ringed by
+            // flammables is preferred when it lies within the same reach.
+            if (!flammableAround(level, cell) && far < dryFar) { dryFar = far; dry = cell.immutable(); }
         }
-        return best;
+        return dry != null ? dry : best;
+    }
+
+    /**
+     * Whether the lava in this cell could set its neighbours alight: a flammable block level with it on any side, or the block two
+     * above it (the ceiling over the air cell his water is poured into). A hole not ringed by flammables cannot start a fire.
+     */
+    private static boolean flammableAround(ServerLevel level, BlockPos cell) {
+        for (Direction side : Direction.Plane.HORIZONTAL) if (level.getBlockState(cell.relative(side)).ignitedByLava()) return true;
+        return level.getBlockState(cell.above(2)).ignitedByLava();
     }
 
     /** Whether this cell is a hole his lava stays in: air or ground he can dig, the ground walling it on every side, a firm floor, air over it and dry about. */
@@ -691,6 +775,9 @@ final class CompanionObsidian {
         if (!level.destroyBlock(cell, false, c, 512)) { c.putToolAway(); made = null; return false; }
         CompanionTools.wearOnBreak(tool, level, state, cell, c);
         c.dropHarvest(cell, drops);
+        // The ground it was and the drop it gave are kept: the hole is filled back with that drop once the block is gone.
+        madeFloor = state;
+        madeFloorDrop = drops.stream().filter(stack -> !stack.isEmpty()).map(ItemStack::getItem).findFirst().orElse(null);
         c.putToolAway();
         event("obsidian_hole_dug", "hole", cell.toShortString(), "block", net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()));
         return true;
