@@ -181,8 +181,14 @@ final class CompanionWorkCrafting {
         }
         if (w.craftingStation == null) {
             if (w.owner.hasKnownCraftingTableWithin(CompanionWork.BENCH_TRIP)) {
-                if (canMakeBench()) return useOwnBench("к известному верстаку сейчас нет пути");
-                w.finish(false, "Помню верстак неподалёку, но пройти к нему сейчас не могу, а дерева на новый у меня нет."); return true;
+                boolean atHand = w.owner.hasKnownCraftingTableWithin(BENCH_AT_HAND);
+                // A bench a couple of steps away is never replaced: the player sees it right there, and a second one beside it is
+                // the duplication of game log 22.10. Farther off with no way to it, the bag's own wood makes one here, as a player
+                // would, rather than refusing a craft the bag can do (the owner, 20.11: «сделай лопату мне» over a bench
+                // remembered across a wall and two logs in the bag).
+                if (!atHand && hasWoodForABench()) return useOwnBench("к известному верстаку сейчас нет пути");
+                if (atHand) { w.finish(false, "Помню верстак в двух шагах, но пройти к нему сейчас не могу. Вещи сохранил."); return true; }
+                w.finish(false, "Помню верстак неподалёку, но пройти к нему сейчас не могу, а дерева на новый не хватает."); return true;
             }
             return ashore(level, Blocks.CRAFTING_TABLE, "верстак");
         }
@@ -202,10 +208,21 @@ final class CompanionWorkCrafting {
         return true;
     }
 
+    /**
+     * A bench this close is never replaced, even when no way leads to it right now: the player sees it two steps off, and a second
+     * one beside it was the duplication of game log 22.10. Farther off, another is worth setting down.
+     */
+    private static final int BENCH_AT_HAND = 3;
+
     /** Like a player far down a slope from his bench: one log buys a new bench here instead of giving up the order. */
     boolean canMakeBench() {
         // A bench a few steps away is never replaced: it is walked to, or the order honestly stops.
         if (w.owner.hasKnownCraftingTableWithin(CompanionWork.NEAR_BENCH)) return false;
+        return hasWoodForABench();
+    }
+
+    /** Four planks, or the log that makes them: what a bench of his own costs. */
+    private boolean hasWoodForABench() {
         return CompanionTools.count(w.owner, ItemTags.LOGS) * 4 + CompanionTools.count(w.owner, ItemTags.PLANKS) >= 4;
     }
 
