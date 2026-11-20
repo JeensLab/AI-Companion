@@ -325,7 +325,9 @@ public final class CompanionMineStopsTests {
      */
     @GameTest(template = "marathon_cave", timeoutTicks = GOAL_TIMEOUT)
     public static void letsADropLieWhenACreeperWillNotLeaveItAndTheGoalGoesOn(GameTestHelper h) {
-        ItemStack[] bag = {new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.BREAD, 8), new ItemStack(Items.TORCH, 32), new ItemStack(Items.COBBLESTONE, 32),
+        // Held at ten health he eats loaf after loaf (CompanionEating.needsMealNow): eight were gone in some 260 ticks, and with none left the
+        // goal went hunting in an arena with no animals. A stack lasts some 2000 ticks, well past the drop let lie.
+        ItemStack[] bag = {new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.BREAD, 64), new ItemStack(Items.TORCH, 32), new ItemStack(Items.COBBLESTONE, 32),
                 new ItemStack(Items.STICK, 8), new ItemStack(Items.CRAFTING_TABLE), new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.STONE_PICKAXE)};
         CompanionDiamondGoalTests.Rig r = CompanionDiamondGoalTests.rig(h, false, bag);
         r.c().setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);

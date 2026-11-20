@@ -36,7 +36,8 @@ public final class CompanionMineK19Tests {
     /**
      * On his own stairs at four health with two zombies right below him on the same stairs and the way up free, the mine record real and the sword
      * in his hand: he climbs away at least {@link #CLIMB} steps and lands no blow while his health is that low (the old rule refused to leave a
-     * foe within three blocks, so he stood and fought). A property of what he does, not a count of who lives.
+     * foe within three blocks, so he stood and fought). A property of what he does, not a count of who lives. The bread in his bag may mend him
+     * on the way up before the eighth step; past {@link #LOW} he may strike, and the zombies dead end the climb as well.
      */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void atFourHealthWithZombiesRightBelowHimOnTheStairsHeClimbsAwayAndStrikesNoBlow(GameTestHelper h) {
@@ -63,7 +64,7 @@ public final class CompanionMineK19Tests {
                 seen[i] = foe.isAlive() ? foe.getHealth() : seen[i];
             }
             h.assertTrue(c.isAlive(), "Died" + trace);
-            if (rise >= CLIMB) h.succeed();
+            if (rise >= CLIMB || foes.stream().noneMatch(Zombie::isAlive)) h.succeed();
             h.assertTrue(h.getTick() - begun < CLIMB_TICKS, "He did not climb away in time" + trace);
         });
     }
