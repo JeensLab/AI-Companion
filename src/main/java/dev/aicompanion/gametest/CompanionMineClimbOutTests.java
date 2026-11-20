@@ -43,6 +43,8 @@ public final class CompanionMineClimbOutTests {
     private static final int DEEP_EAST = 6, DEEP_FEET = 3, OLD_STAND_EAST = 8, LAKE = 1;
     /** The ground taken down east of the entrance: five layers, below the entrance's two of margin; the terrace from four blocks east, the trench round twelve east. */
     private static final int TERRACE_DEPTH = 5, TERRACE_FROM = 4, TRENCH_EAST = 12;
+    /** The cave with a hole in its roof: his feet eight under the turf, the cave nine across, three high. */
+    private static final int CAVE_BELOW = 8, CAVE_HALF = 4;
 
     private CompanionMineClimbOutTests() { }
 
@@ -115,6 +117,21 @@ public final class CompanionMineClimbOutTests {
     @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
     public static void goesOnOutOfATrenchUnderTheSky(GameTestHelper h) {
         BlockPos stand = lowered(h, CENTER + TRENCH_EAST - 1, CENTER + TRENCH_EAST + 1);
+        CompanionEntity c = lost(h, stand);
+        int surface = h.absolutePos(new BlockPos(0, GROUND + 1 - SURFACE_MARGIN, 0)).getY();
+        climb(h, c, h.absolutePos(stand), true, result -> h.assertTrue(result.success() && c.getBlockY() >= surface, "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c)));
+    }
+
+    /**
+     * Review of 21.11: a cave under the rock with one hole in its roof right over him. He is under the sky, and the air of the cave round him is no
+     * ground under it: no surface to fetch wood on, so the climb goes on out.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void goesOnOutOfACaveUnderAHoleInItsRoof(GameTestHelper h) {
+        mountain(h, false);
+        BlockPos stand = new BlockPos(CENTER + TRENCH_EAST, GROUND - CAVE_BELOW, CENTER);
+        for (int x = -CAVE_HALF; x <= CAVE_HALF; x++) for (int z = -CAVE_HALF; z <= CAVE_HALF; z++) for (int y = 0; y <= 2; y++) h.setBlock(stand.offset(x, y, z), Blocks.AIR);
+        for (int y = 3; stand.getY() + y <= GROUND; y++) h.setBlock(stand.above(y), Blocks.AIR);
         CompanionEntity c = lost(h, stand);
         int surface = h.absolutePos(new BlockPos(0, GROUND + 1 - SURFACE_MARGIN, 0)).getY();
         climb(h, c, h.absolutePos(stand), true, result -> h.assertTrue(result.success() && c.getBlockY() >= surface, "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c)));

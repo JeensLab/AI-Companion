@@ -536,7 +536,9 @@ final class CompanionExpedition {
     private boolean startOnSurface(ServerLevel level) {
         CompanionMineSite mine = w.mine;
         BlockPos here = owner.blockPosition();
-        if (fresh >= MAX_FRESH || mine.origin() == null || here.getY() < mine.origin().getY() - UNDERGROUND_DEPTH) return false;
+        // Open ground below the entrance is the surface too, as the climb that brought him there counts it.
+        if (fresh >= MAX_FRESH || mine.origin() == null || here.getY() < mine.origin().getY() - UNDERGROUND_DEPTH
+                && !CompanionExpeditionClimb.surface(level, mine, CompanionExpeditionRecord.standingCell(level, owner))) return false;
         CompanionShaftPlan.Entrance entrance = CompanionShaftPlan.chooseEntrance(level, here, NEAR_RADIUS);
         if (entrance == null) return false;
         Direction side = entrance.direction();

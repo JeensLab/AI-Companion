@@ -179,12 +179,13 @@ final class CompanionWorkCrafting {
                 if (reach.busy()) return true;
                 // The walk to it is at most twice the straight trip; a longer one costs more than a new bench.
                 if (reach.found() && reach.length() <= 2 * CompanionWork.BENCH_TRIP) { w.craftingStation = pos; break; }
-                if (above == null && pos.getY() > w.owner.getY() + 1.5) above = pos;
+                // The self-rescue starts only for a way that is missing and a bench out of arm's reach: its stall counts nothing else.
+                if (above == null && !reach.found() && pos.getY() > w.owner.getY() + 1.5 && w.owner.getEyePosition().distanceToSqr(pos.getCenter()) > 4.5 * 4.5) above = pos;
             }
             // No walk to a bench up over him (down in a cut under a cliff) and no wood for one here: he climbs out to it below, the
             // way a player cuts steps up (series w, seed 7: «пройти к нему сейчас не могу» five times over with the bench on the cliff).
             w.benchCutRescues = -1;
-            if (w.craftingStation == null && above != null && !canMakeBench()) { w.craftingStation = above; w.benchCutRescues = w.owner.recovery.begun(); w.benchCutWait = 0; }
+            if (w.craftingStation == null && above != null && !canMakeBench() && w.allowsRouteRecovery()) { w.craftingStation = above; w.benchCutRescues = w.owner.recovery.begun(); w.benchCutWait = 0; }
             w.resetApproach();
         }
         if (w.craftingStation == null) {
@@ -200,7 +201,7 @@ final class CompanionWorkCrafting {
         // approach kept it from ever starting), then walks to the bench as to any other.
         if (w.benchCutRescues >= 0) {
             if (w.owner.isSelfRescuing()) { w.owner.workStatus("Выбираюсь наверх, к верстаку."); return true; }
-            if (w.owner.recovery.begun() == w.benchCutRescues && w.benchCutWait++ < CUT_PATIENCE) {
+            if (w.owner.recovery.begun() == w.benchCutRescues && w.owner.canRecoverRoute() && w.benchCutWait++ < CUT_PATIENCE) {
                 w.owner.getNavigation().stop(); w.owner.workStatus("Выбираюсь наверх, к верстаку."); return true;
             }
             w.benchCutRescues = -1;

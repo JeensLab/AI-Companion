@@ -2,9 +2,7 @@ package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.tags.BlockTags;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -193,27 +191,40 @@ final class CompanionExpeditionClimb {
      */
     private boolean onSurface() {
         ServerLevel level = (ServerLevel) w.owner.level();
-        BlockPos top = w.mine.origin() != null ? w.mine.origin() : w.mine.entrance();
-        BlockPos here = CompanionExpeditionRecord.standingCell(level, w.owner);
-        if (!CompanionExpeditionRecord.underSky(level, here.above())) return false;
+        return surface(level, w.mine, CompanionExpeditionRecord.standingCell(level, w.owner));
+    }
+
+    /** The rule of {@link #onSurface} for any cell he stands in: the expedition starts a mine on the surface by it too. */
+    static boolean surface(ServerLevel level, CompanionMineSite mine, BlockPos here) {
+        BlockPos top = mine.origin() != null ? mine.origin() : mine.entrance();
+        if (top == null || !CompanionExpeditionRecord.underSky(level, here.above())) return false;
         return here.getY() >= top.getY() - CompanionExpedition.UNDERGROUND_DEPTH || openGround(level, here);
     }
 
     /**
-     * Ground open to the sides as well as above, not the floor of a ravine or a pit: of the eight columns {@link #OPEN_REACH} blocks round him, at least
-     * {@link #OPEN_SIDES} have nothing solid two above his feet (ground no higher than a step; a tree there is no wall). On a slope the columns down and
-     * across it are open; a trench is open only along itself. Not a heightmap: those count the barriers over a GameTest arena as ground.
+     * Ground open to the sides as well as above, not the floor of a ravine, a pit or a cave under a hole in its roof: of the eight columns
+     * {@link #OPEN_REACH} blocks round him, at least {@link #OPEN_SIDES} have ground to stand on under the sky within a step of his feet. On a slope
+     * the columns down and across it are open; a trench is open only along itself; air over a drop, water and a cave floor are not ground.
+     * Not a heightmap: those count the barriers over a GameTest arena as ground.
      */
-    // ponytail: eight cells at one reach, no walk checked; a ravine wider than twice the reach reads as open ground. Upgrade: a short route search out to a column of the ring.
+    // ponytail: eight columns at one reach, no walk checked; a ravine wider than twice the reach reads as open ground. Upgrade: a short route search out to a column of the ring.
     private static boolean openGround(ServerLevel level, BlockPos here) {
         int open = 0;
         for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
             if (dx == 0 && dz == 0) continue;
-            BlockPos cell = here.offset(dx * OPEN_REACH, 2, dz * OPEN_REACH);
-            BlockState state = level.getBlockState(cell);
-            if (state.getCollisionShape(level, cell).isEmpty() || state.is(BlockTags.LEAVES) || state.is(BlockTags.LOGS)) open++;
+            for (int dy = -1; dy <= 1; dy++) {
+                BlockPos cell = here.offset(dx * OPEN_REACH, dy, dz * OPEN_REACH);
+                if (!room(level, cell) || !room(level, cell.above()) || level.getBlockState(cell.below()).getCollisionShape(level, cell.below()).isEmpty()) continue;
+                if (CompanionExpeditionRecord.underSky(level, cell.above())) open++;
+                break;
+            }
         }
         return open >= OPEN_SIDES;
+    }
+
+    /** Room for a body: nothing to bump into and no water or lava. */
+    private static boolean room(ServerLevel level, BlockPos cell) {
+        return level.getBlockState(cell).getCollisionShape(level, cell).isEmpty() && level.getFluidState(cell).isEmpty();
     }
 
     private Result crossed() {
