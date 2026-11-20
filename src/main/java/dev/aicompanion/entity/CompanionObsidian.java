@@ -3,14 +3,19 @@ package dev.aicompanion.entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.FluidTags;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.BucketItem;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.pathfinder.Path;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayDeque;
@@ -25,9 +30,12 @@ import java.util.function.Predicate;
  * so the lava under the water sets, the obsidian mined with a pickaxe that takes it and picked up, his water scooped back before
  * the next lava and at the end. With no lava about he makes it of his own bucket of lava (the player 19.11): a hole dug beside him
  * in the ground, his lava poured into it, his water over it, the block waited for, his water scooped back before the dig. Obsidian
- * already lying about is mined too, but never a portal's or one on a site where the player builds; the obsidian his own water set is
- * his wherever it lies. Under the obsidian there is often more lava: a block with his water over it is mined, as the water runs into
- * the hole and sets the lava under it before the drop falls; a dry one over lava or beside it is left (its drop would burn).
+ * already lying about is mined too, but never a portal's; one on a site where the player builds only when nothing free-standing is
+ * about — his building is protected while other obsidian exists, and the blocks he set down himself are still minable when he asks
+ * for them. A bucket of lava or water dropped within his hand is a source as much as one in his bag: it is taken up before the first
+ * pour. The obsidian his own water set is his wherever it lies. Under the obsidian there is often more lava: a block with his water
+ * over it is mined, as the water runs into the hole and sets the lava under it before the drop falls; a dry one over lava or beside it
+ * is left (its drop would burn).
  */
 final class CompanionObsidian {
     static final String NO_PICKAXE = "Обсидиан берёт только алмазная кирка — дай мне её.";
@@ -100,14 +108,60 @@ final class CompanionObsidian {
     static boolean takesObsidian(ItemStack stack) { return !stack.isEmpty() && stack.isCorrectToolForDrops(Blocks.OBSIDIAN.defaultBlockState()); }
 
     /**
+     * Buckets of this kind lying on the ground about him, as far as they are his to take: how many his hand reaches from where he
+     * stands, and whether any lie further off in his sight. A bucket dropped beside him is a source for an order as much as one in his
+     * bag, so the plan counts it (CompanionObtain) and the work takes it up when it starts (begin).
+     */
+    record Loose(int reach, boolean sight) { static final Loose NONE = new Loose(0, false); }
+
+    static Loose loose(CompanionEntity c, ServerLevel level, Item bucket) {
+        int reach = 0;
+        boolean sight = false;
+        int radius = c.getSearchRadius();
+        for (ItemEntity drop : level.getEntitiesOfClass(ItemEntity.class, new AABB(c.blockPosition()).inflate(radius))) {
+            if (!drop.isAlive() || !drop.getItem().is(bucket) || !CompanionPickUp.pickable(drop, c.getOwnerId())) continue;
+            if (c.reachesItem(drop)) { reach += drop.getItem().getCount(); continue; }
+            // Seen over the ground between: named when nothing else is to be had, never «нечего копать».
+            if (drop.distanceToSqr(c.position()) <= (double) radius * radius && c.hasLineOfSight(drop)) sight = true;
+        }
+        return new Loose(reach, sight);
+    }
+
+    /**
+     * The buckets of this kind lying within his hand are taken up before the work starts, as his pickup takes a drop: what the bag
+     * cannot hold stays where it lies, so no bucket is lost and none is doubled.
+     */
+    static int takeLoose(CompanionEntity c, ServerLevel level, Item bucket) {
+        int taken = 0;
+        for (ItemEntity drop : level.getEntitiesOfClass(ItemEntity.class, c.getBoundingBox().inflate(2), found -> found.isAlive() && found.getItem().is(bucket))) {
+            if (!c.reachesItem(drop) || !CompanionPickUp.pickable(drop, c.getOwnerId())) continue;
+            ItemStack offered = drop.getItem().copy();
+            int before = offered.getCount();
+            c.storeLoot(offered);
+            int moved = before - offered.getCount();
+            if (moved <= 0) continue;
+            // As his pickup does it: the packet, then what is left of the stack (the game's take only tells the clients).
+            c.take(drop, moved);
+            if (offered.isEmpty()) drop.discard(); else drop.setItem(offered);
+            taken += moved;
+            level.playSound(null, c.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.NEUTRAL, .2F, 1.1F);
+        }
+        return taken;
+    }
+
+    /**
      * Whether obsidian he may mine lies within his reach now: it is mined where it lies, so no lava is cooled and no bucket of
-     * water is needed for it. What a portal's frame is, what stands on a site of the player's and what lies beside lava is not.
+     * water is needed for it. What a portal's frame is and what lies beside lava is not, and what stands on a site of the player's
+     * only when nothing free-standing is about — his building is protected while other obsidian exists, and the blocks he set down
+     * himself are still minable when he asks for them.
      */
     static boolean liesAbout(CompanionEntity c, ServerLevel level, Predicate<BlockPos> laid) {
         Predicate<BlockPos> site = CompanionPicking.sites(c, level);
         // The block under his feet is one a player mines too: its drop comes to rest in the hole it leaves and he steps down to it.
         return nearest(c, level, DEPTH, state -> state.is(Blocks.OBSIDIAN),
-                pos -> !laid.test(pos) && free(level, pos, site)) != null;
+                pos -> !laid.test(pos) && free(level, pos, site, false)) != null
+                || nearest(c, level, DEPTH, state -> state.is(Blocks.OBSIDIAN),
+                pos -> !laid.test(pos) && free(level, pos, site, true)) != null;
     }
 
     /** mine_obsidian: {@code count} more obsidian in his bag. Null when the work may start, else why not. */
@@ -118,6 +172,11 @@ final class CompanionObsidian {
         wanted = count; before = w.items.countCarried(Items.OBSIDIAN); mined = pours = 0; water = null; ending = null; nextLook = settleAt = 0; retried = false;
         made = madeWater = madeLava = null; madeStep = fromBuckets = 0; madeAt = 0;
         his.clear(); passed.clear();
+        // The buckets lying within his hand are his before the first pour: the plan counted them as the source (CompanionObtain).
+        if (c.level() instanceof ServerLevel level) {
+            int taken = takeLoose(c, level, Items.LAVA_BUCKET) + takeLoose(c, level, Items.WATER_BUCKET);
+            if (taken > 0) event("obsidian_buckets_taken", "buckets", taken);
+        }
         return null;
     }
 
@@ -138,9 +197,12 @@ final class CompanionObsidian {
         // A block of his own buckets is being made: the hole, his lava, his water, the block waited for.
         if (madeStep != 0) { make(level, got); return; }
         if (mined >= wanted) { collect(level, got); return; }
-        if (target != null && !minable(level, target)) { target = null; w.breaking.reset(); w.resetApproach(); }
+        if (target != null && !minable(level, target, true)) { target = null; w.breaking.reset(); w.resetApproach(); }
         if (target == null && level.getGameTime() >= nextLook) {
-            target = nearest(c, level, DEPTH, state -> state.is(Blocks.OBSIDIAN), pos -> minable(level, pos));
+            target = nearest(c, level, DEPTH, state -> state.is(Blocks.OBSIDIAN), pos -> minable(level, pos, false));
+            // Nothing free-standing about: the obsidian the player set down on his own site is minable too, never a portal's frame and
+            // never over lava — the building is protected only while other obsidian exists.
+            if (target == null) target = nearest(c, level, DEPTH, state -> state.is(Blocks.OBSIDIAN), pos -> minable(level, pos, true));
             if (target == null) nextLook = level.getGameTime() + LOOK;
         }
         if (target != null) { mine(level, got); return; }
@@ -197,21 +259,25 @@ final class CompanionObsidian {
 
     private void reset() { target = aim = null; stands = Set.of(); path = null; foothold = null; legs = 0; }
 
-    /** Obsidian he may mine now: his own or lying about but no portal's nor on a site of the player's, and its drop safe from lava. */
-    private boolean minable(ServerLevel level, BlockPos pos) {
+    /**
+     * Obsidian he may mine now: his own or lying about but no portal's, its drop safe from lava, and on a site of the player's only
+     * when {@code onSite} — nothing free-standing was found, so the blocks the player set down himself are his to take.
+     */
+    private boolean minable(ServerLevel level, BlockPos pos, boolean onSite) {
         // The block under his feet is mined too, as a player mines it: its drop rests in the hole and he steps down into it.
         if (passed.contains(pos)) return false;
         // While his water is out, only what it sets: a walk to obsidian far off would leave the water behind him.
         if (water != null && !pos.closerThan(water, SPREAD + 1)) return false;
-        if (site.test(pos) || w.portal.laid(pos)) return false;
+        if (site.test(pos) && !onSite) return false;
+        if (w.portal.laid(pos)) return false;
         if (!level.hasChunkAt(pos) || !level.getBlockState(pos).is(Blocks.OBSIDIAN)) return false;
         if (!his.contains(pos) && (portal(level, pos) || frame(level, pos))) return false;
         return safe(level, pos);
     }
 
-    /** Whether the block at this cell is his to mine at all: no portal's frame, no site of the player's, its drop safe from lava. */
-    private static boolean free(ServerLevel level, BlockPos pos, Predicate<BlockPos> site) {
-        return level.hasChunkAt(pos) && level.getBlockState(pos).is(Blocks.OBSIDIAN) && !site.test(pos)
+    /** Whether the block at this cell is his to mine at all: no portal's frame, its drop safe from lava, and on a site only when {@code onSite}. */
+    private static boolean free(ServerLevel level, BlockPos pos, Predicate<BlockPos> site, boolean onSite) {
+        return level.hasChunkAt(pos) && level.getBlockState(pos).is(Blocks.OBSIDIAN) && (onSite || !site.test(pos))
                 && !portal(level, pos) && !frame(level, pos) && safe(level, pos);
     }
 

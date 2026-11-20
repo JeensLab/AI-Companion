@@ -332,7 +332,7 @@ public final class CompanionPickUp {
     }
 
     /** A drop the order may take: alive, not empty, not a gift, not junk he let go and not aimed at somebody else. */
-    private static boolean pickable(ItemEntity drop, java.util.UUID playerId) {
+    static boolean pickable(ItemEntity drop, java.util.UUID playerId) {
         if (!drop.isAlive() || drop.getItem().isEmpty()) return false;
         if (drop.getPersistentData().getBoolean("aicompanion:gift")) return false;
         // Junk he let go to free a slot: the loose pickup leaves it, so the order must leave it too.
