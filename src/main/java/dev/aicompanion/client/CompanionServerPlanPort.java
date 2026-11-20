@@ -254,7 +254,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             boolean leafOrder = family || dev.aicompanion.entity.CompanionLeaves.isLeaf(action.item());
             String item = leafOrder ? dev.aicompanion.entity.CompanionLeaves.inBag(companion, action.count()) : action.item();
             boolean byTheBag = item != null;
-            if (item == null) item = leafOrder ? dev.aicompanion.entity.CompanionLeaves.leafTarget(companion, level, action.item())
+            if (item == null) item = leafOrder ? dev.aicompanion.entity.CompanionLeaves.leafTarget(companion, level, action.item(), Math.max(1, action.count() - dev.aicompanion.entity.CompanionLeaves.carried(companion)))
                     : dev.aicompanion.entity.CompanionLeaves.resolve(companion, level, action.item());
             // A species the order named that no other tree or hedge about answers is left to the chain: it says what it sees
             // («Рядом не вижу …»), as it did before the leaves of any kind were tried.
