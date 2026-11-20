@@ -95,11 +95,11 @@ public enum CompanionGround {
         if (level.getBlockEntity(pos) != null || !level.getFluidState(pos).isEmpty()) return false;
         for (Direction direction : Direction.values()) {
             BlockPos nearby = pos.relative(direction);
-            // A bench over the block is no build: it stands on its own and is packed up after the work, so the block under it is
-            // dug as a player digs it, the bench left hanging over the hole until he takes it (the owner, 20.11: the bench made
-            // for a shovel stood on the last of six sand blocks and kept it standing).
-            if (!level.hasChunkAt(nearby) || !level.getFluidState(nearby).isEmpty() || level.getBlockEntity(nearby) != null
-                    || direction != Direction.UP && level.getBlockState(nearby).is(Blocks.CRAFTING_TABLE)) return false;
+            // A bench is no build of the column's: it stands on its own and is packed up after the work, and it neither falls
+            // nor breaks when a neighbour goes, so it is no reason to leave the block — over the hole it hangs until he takes
+            // it, beside or under it stays put (the owner, 20.11: the bench made for a shovel stood on the last of six sand
+            // blocks and kept it standing; one beside the row vetoed a block that could not fall on anyone).
+            if (!level.hasChunkAt(nearby) || !level.getFluidState(nearby).isEmpty() || level.getBlockEntity(nearby) != null) return false;
         }
         return nothingBuiltOnTop(level, pos) && nothingHangsBeside(level, pos);
     }

@@ -128,6 +128,115 @@ public final class CompanionReachRefusalTests {
         });
     }
 
+    /**
+     * «Сделай лопату мне» in a pocket too tight for the bench: the refusal is about the place, not about a way. The
+     * player's own answer and the line autonomy would say («Компаньон, у меня загвоздка») both name the space.
+     */
+    @GameTest(template = "empty", timeoutTicks = 2400)
+    public static void benchPlacementRefusalIsSaidAsSpaceNotAsPath(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        companion.setItem(0, new ItemStack(Items.OAK_LOG, 2));
+        // A bench needs a free cell with solid ground under it. He stands on a lone block in the air and the floor about is
+        // opened, so every cell near him has air below and the bench has nowhere to go.
+        BlockPos perch = new BlockPos(16, 3, 16);
+        h.setBlock(perch.below(), Blocks.BEDROCK);
+        for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) h.setBlock(new BlockPos(16 + dx, 0, 16 + dz), Blocks.AIR);
+        BlockPos at = h.absolutePos(perch);
+        companion.teleportTo(at.getX() + .5, at.getY(), at.getZ() + .5);
+        var player = owner(h, companion);
+        player.teleportTo(companion.getX() + 3, companion.getY(), companion.getZ() + 1);
+        var said = new MarathonChat(h, companion).say("сделай лопату мне", woodenShovel());
+        h.succeedWhen(() -> {
+            h.assertTrue(said.done(), "The order is still running");
+            String report = said.report();
+            h.assertTrue(report.contains("безопасное место"), "The craft did not refuse on the bench's place: " + report);
+            String spoken = CompanionDialogue.summarize(said.plan(), report);
+            h.assertTrue(spoken.contains("место") && !spoken.contains("пути"),
+                    "A bench with no room to stand was said as a lost path: " + spoken + " || " + report);
+            String explained = dev.aicompanion.CompanionFailureMessages.explain("craft_item", report);
+            h.assertTrue(explained.contains("место") && !explained.contains("пути") && !explained.contains("верстака"),
+                    "The autonomy line read the bench's place as a walk or a path: " + explained);
+            // The same for a block with no free cell near him: «Не нашёл безопасное место для …» is a place reason too.
+            String placed = dev.aicompanion.CompanionFailureMessages.explain("place_block",
+                    "План остановлен: Не нашёл безопасное место для minecraft:stone рядом со мной.");
+            h.assertTrue(placed.contains("место") && !placed.contains("пути"),
+                    "A block with no room beside him was said as a lost path: " + placed);
+        });
+    }
+
+    /**
+     * A bench remembered six blocks off, shut in bedrock, and not one log in the bag for a new one: the refusal is the
+     * bench's, not «не хватает материалов» — the wood is short, not the materials for the order.
+     */
+    @GameTest(template = "empty", timeoutTicks = 2400)
+    public static void benchOutOfReachWithNoWoodIsSaidAsTheBench(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        // A furnace takes eight cobblestone and no wood at all: the bag can do it, but only at a bench.
+        companion.setItem(0, new ItemStack(Items.COBBLESTONE, 8));
+        BlockPos bench = new BlockPos(22, 1, 16);
+        h.setBlock(bench, Blocks.CRAFTING_TABLE);
+        for (net.minecraft.core.Direction side : net.minecraft.core.Direction.values()) h.setBlock(bench.relative(side), Blocks.BEDROCK);
+        var player = owner(h, companion);
+        player.teleportTo(companion.getX() + 3, companion.getY(), companion.getZ() + 1);
+        var said = new MarathonChat(h, companion).say("сделай печь мне",
+                "[{'action':'craft_item','item':'minecraft:furnace','count':1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(said.done(), "The order is still running");
+            String report = said.report();
+            h.assertTrue(report.contains("верстак") && report.contains("не хватает"),
+                    "The refusal is not the bench one with no wood for a new bench: " + report);
+            String spoken = CompanionDialogue.summarize(said.plan(), report);
+            h.assertTrue(spoken.contains("верстак") && !spoken.contains("материал"),
+                    "The bench with no wood for a new one was said as materials: " + spoken + " || " + report);
+            String explained = dev.aicompanion.CompanionFailureMessages.explain("craft_item", report);
+            h.assertTrue(explained.contains("верстак") && !explained.contains("материал"),
+                    "The autonomy line said materials, not the bench: " + explained);
+        });
+    }
+
+    /** A bench beside the first sand block at the same level cannot fall: it is no reason to leave that block, all six go. */
+    @GameTest(template = "empty", timeoutTicks = 2400)
+    public static void sixSandBlocksWithABenchBesideAreAllDug(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        companion.setItem(0, new ItemStack(Items.OAK_LOG, 2));
+        BlockPos[] row = sandRow(h);
+        h.setBlock(row[0].south(), Blocks.CRAFTING_TABLE);
+        var player = owner(h, companion);
+        player.teleportTo(companion.getX() - 4, companion.getY(), companion.getZ() + 4);
+        var said = new MarathonChat(h, companion).say("накопай песок");
+        h.succeedWhen(() -> assertAllSixDug(h, said, companion, row, "a bench stood beside the first block"));
+    }
+
+    /** A bench set down exactly on the last sand block is cover, not a build: the block under it is dug too. */
+    @GameTest(template = "empty", timeoutTicks = 2400)
+    public static void sixSandBlocksWithABenchOnTheLastAreAllDug(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        companion.setItem(0, new ItemStack(Items.OAK_LOG, 2));
+        BlockPos[] row = sandRow(h);
+        h.setBlock(row[5].above(), Blocks.CRAFTING_TABLE);
+        var player = owner(h, companion);
+        player.teleportTo(companion.getX() - 4, companion.getY(), companion.getZ() + 4);
+        var said = new MarathonChat(h, companion).say("накопай песок");
+        h.succeedWhen(() -> assertAllSixDug(h, said, companion, row, "a bench stood on the last block"));
+    }
+
+    /** «Накопай песок» is eight, and six lie about: the short order is said as the six of eight dug, not as all of them. */
+    @GameTest(template = "empty", timeoutTicks = 2400)
+    public static void sandOrderForMoreThanExistsSaysThePartialLine(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        companion.setItem(0, new ItemStack(Items.OAK_LOG, 2));
+        sandRow(h);
+        var player = owner(h, companion);
+        player.teleportTo(companion.getX() - 4, companion.getY(), companion.getZ() + 4);
+        var said = new MarathonChat(h, companion).say("накопай песок");
+        h.succeedWhen(() -> {
+            h.assertTrue(said.done(), "The sand order is still running");
+            String spoken = CompanionDialogue.summarize(said.plan(), said.report());
+            h.assertTrue(spoken.contains("6 из 8") && spoken.toLowerCase(java.util.Locale.ROOT).contains("песк"),
+                    "The order for eight sand with six about is not said as six of eight: " + spoken + " || " + said.report());
+        });
+    }
+
     private static String woodenShovel() {
         return "[{'action':'craft_item','item':'minecraft:wooden_shovel','count':1}]";
     }
