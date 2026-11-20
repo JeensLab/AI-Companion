@@ -50,6 +50,9 @@ final class CompanionGuardWatch extends Goal {
         return c.distanceToSqr(owner) > self * self && target.distanceToSqr(owner) > enemy * enemy;
     }
 
+    /** The target is the guard order's own pick (the monster nearest to the player), not one met for another reason. */
+    boolean holds(LivingEntity target) { return chosen != null && chosen == target; }
+
     /** The guard order picks his target: the monster nearest to the player. */
     static boolean watching(CompanionEntity c) { return c.guardByPlayer() && c.protecting && !c.work.isHunting(); }
 

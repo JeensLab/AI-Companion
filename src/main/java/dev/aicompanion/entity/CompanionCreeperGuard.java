@@ -438,7 +438,7 @@ final class CompanionCreeperGuard {
         // Water has no floor for the way (CompanionExpeditionLedge.stands): he wades or swims straight off the creeper. A few blocks halve the
         // blast; a blow throws it back by less than one (run r314159-d3/retreat: in a lake, three blows, the fourth too late, dead at sixteen).
         Vec3 away = owner.position().subtract(creeper.position()).multiply(1, 0, 1);
-        if (owner.isInWater() && away.lengthSqr() > 1.0E-4) {
+        if (owner.isInWater() && away.lengthSqr() > 1.0E-4 && openAhead(level, away.normalize())) {
             Vec3 off = owner.position().add(away.normalize().scale(SWIM_OFF));
             mention("swim", creeper, null);
             owner.getNavigation().stop();
@@ -448,6 +448,12 @@ final class CompanionCreeperGuard {
         }
         mention("strike", creeper, null);
         strike(creeper);
+    }
+
+    /** The block ahead of him that way is open at his feet and head and holds no lava: a push into rock or lava is worse than a blow. */
+    private boolean openAhead(ServerLevel level, Vec3 way) {
+        BlockPos ahead = BlockPos.containing(owner.position().add(way));
+        return level.noCollision(owner, owner.getBoundingBox().move(way)) && !CompanionLava.at(level, ahead) && !CompanionLava.at(level, ahead.above());
     }
 
     /**

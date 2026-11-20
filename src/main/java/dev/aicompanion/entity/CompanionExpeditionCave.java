@@ -93,6 +93,9 @@ final class CompanionExpeditionCave {
     /** The cell of the advance under way a plug went into (once), or null; if the advance needs the cell, the expedition gives it up. */
     BlockPos takePlugged() { BlockPos now = plugged; plugged = null; return now; }
 
+    /** Left before it was dealt with (a wound sends him up): its air is shunned as a very dangerous cave's is, so no way leads back into it. */
+    void abandon() { if (busy() && cave != null) w.mine.shun(cave.air()); }
+
     /** He goes up now: the cave episode stops, nothing is explored during the retreat. */
     void close() {
         if (!busy()) return;

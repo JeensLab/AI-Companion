@@ -41,12 +41,12 @@ final class CompanionCombat {
         /** The best weapon before the first swing, not after the ten-tick check: otherwise the first blow goes with the digging pickaxe. */
         @Override public void start() { c.work.expedition.fight.fightBegan(); c.combat.footwork.begin(); super.start(); c.selectWeaponForCombat(); }
         /**
-         * What is on him is struck before what is not, save on the guard order: there the monster nearest to the player stays the target (#129).
+         * What is on him is struck before what is not, save the guard order's own pick: the monster nearest to the player stays the target (#129).
          * Between two swings he steps out of the foe's reach (CompanionFootwork).
          */
         @Override public void tick() {
             if (c.level() instanceof ServerLevel level) {
-                LivingEntity nearer = CompanionGuardWatch.watching(c) ? null : c.combat.footwork.nearer(level, c.getTarget());
+                LivingEntity nearer = c.guardWatch.holds(c.getTarget()) ? null : c.combat.footwork.nearer(level, c.getTarget());
                 if (nearer != null) c.setTarget(nearer);
                 LivingEntity target = c.getTarget();
                 if (target != null && c.combat.footwork.keepOut(level, c.combat.swingReady())) {

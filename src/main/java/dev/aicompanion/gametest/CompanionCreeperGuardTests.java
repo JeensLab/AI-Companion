@@ -198,6 +198,21 @@ public final class CompanionCreeperGuardTests {
         survivesTheBlast(h, c, creeper, () -> true);
     }
 
+    /** The same water with his back to the dead end and the creeper on the way out: no swim into the rock (the old blow, or a wall, saves him). */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aLitFuseInWaterWithHisBackToRockIsNotSwumInto(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = CompanionMineFightTests.armed(h);
+        for (int x = 0; x <= DEAD_END_LENGTH; x++) {
+            bore(h, x, 0);
+            h.getLevel().setBlock(cell(h, x, 0), Blocks.WATER.defaultBlockState(), 2 | 16);
+        }
+        place(h, c, cell(h, 0, 0));
+        Creeper creeper = creeper(h, cell(h, 1, 0));
+        creeper.ignite();
+        survivesTheBlast(h, c, creeper, () -> true);
+    }
+
     /** Armed, on a long goal and out of the mine: a creeper that has not lit its fuse is struck, not run from (m15d: twelve flights in a row). */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void anArmedGoalWorkerStrikesAnUnlitCreeperAboveGround(GameTestHelper h) {
