@@ -158,6 +158,65 @@ public final class CompanionGateTests {
         });
     }
 
+    /**
+     * Held in the gate's cell longer than the goal waits for him to walk through it, then pushed back out of the cell, he still
+     * finds the gate open and walks through: it is shut only once he is out, never under him. A gate shut under his feet is a step
+     * to the game's movement control, which hops him, so a shut gate in the cell he stands in is the hop this keeps away.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void aGateHeIsHeldInStaysOpenUntilHeWalksThrough(GameTestHelper h) {
+        ground(h);
+        garden(h, 16, 12, true, false);
+        gate(h, westGate(16, 12), Direction.EAST, false, false);
+        crops(h, 16, 12);
+        CompanionEntity c = spawn(h, 11, 17);
+        BlockPos gate = westGate(16, 12), at = h.absolutePos(gate);
+        double level = at.getY();
+        int[] held = {0}, offGround = {0};
+        boolean[] opened = {false}, stalled = {false}, pushedBack = {false}, crossed = {false}, shutSeen = {false};
+        boolean[] shutInCell = {false}, shutBeforeCrossing = {false};
+        String[] first = {"nowhere"};
+        h.onEachTick(() -> {
+            boolean open = isOpen(h, gate);
+            if (open) { opened[0] = true; shutSeen[0] = false; }
+            else if (opened[0] && !shutSeen[0]) {
+                // The tick the gate goes shut: where he is, and whether he had already walked through it.
+                shutSeen[0] = true;
+                if (!crossed[0]) {
+                    if (c.blockPosition().equals(at)) shutInCell[0] = true;
+                    else shutBeforeCrossing[0] = true;
+                }
+            }
+            // Sixty ticks in the gate's cell: three times the goal's own waiting time, so it runs out while he stands there.
+            if (!stalled[0] && opened[0] && c.blockPosition().equals(at)) {
+                c.teleportTo(at.getX() + .5, level, at.getZ() + .5);
+                if (++held[0] >= 60) stalled[0] = true;
+            } else if (stalled[0] && !pushedBack[0]) {
+                // Pushed back out of the cell before he had walked through the gate, into the cell in front of it.
+                pushedBack[0] = true;
+                c.teleportTo(at.getX() - .5, level, at.getZ() + .5);
+            }
+            if (!crossed[0] && c.getX() > at.getX() + .5) crossed[0] = true;
+            double dx = c.getX() - (at.getX() + .5), dz = c.getZ() - (at.getZ() + .5);
+            if (dx * dx + dz * dz > 16.0 || c.onGround() || c.getY() <= level + 1.0E-3) return;
+            offGround[0]++;
+            if (first[0].equals("nowhere")) first[0] = "at " + c.blockPosition() + " at time " + h.getLevel().getGameTime()
+                    + ", his feet at " + String.format("%.3f", c.getY()) + ", the gate open: " + isOpen(h, gate)
+                    + ", his rise " + String.format("%.3f", c.getDeltaMovement().y);
+        });
+        var order = say(h, c, "собери урожай", "gametest-gate-held-in-it");
+        h.succeedWhen(() -> {
+            h.assertTrue(order.isDone() && !order.isCompletedExceptionally(), "The harvest is still running: " + c.getLastTaskResult());
+            h.assertTrue(stalled[0] && pushedBack[0], "He never stood in the gate's cell long enough and was not pushed back out");
+            h.assertTrue(count(c, Items.CARROT) >= 1, "No carrot from the garden behind the gate: " + order.join().report());
+            h.assertFalse(shutInCell[0], "The gate was shut under him while he stood in its cell");
+            h.assertFalse(shutBeforeCrossing[0], "The gate was shut before he had walked through it");
+            h.assertFalse(isOpen(h, gate), "The gate was left open");
+            h.assertTrue(c.getX() < at.getX() - 2.0, "He did not come back out of the garden: " + c.blockPosition());
+            h.assertTrue(offGround[0] == 0, "He left the ground " + offGround[0] + " ticks within four blocks of the gate: " + first[0]);
+        });
+    }
+
     /** A free way in in front of him, the shut gate in another wall: he takes the free way and never touches the gate. */
     @GameTest(template = "tall_tree", timeoutTicks = 1200)
     public static void aFreeWayInIsTakenAndTheGateIsNotTouched(GameTestHelper h) {

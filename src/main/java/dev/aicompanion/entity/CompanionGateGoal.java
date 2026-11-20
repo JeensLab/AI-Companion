@@ -2,6 +2,7 @@ package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.level.block.FenceGateBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -15,6 +16,8 @@ import net.minecraft.world.level.pathfinder.Path;
  * in the middle of it: a gate another hand opens in front of him is not his to shut.
  */
 final class CompanionGateGoal extends Goal {
+    /** The time he is given to walk through a gate he opened, before it is shut behind him; topped up while he stands in it. */
+    private static final int FORGET_TICKS = 20;
     private final CompanionEntity companion;
     /** The gate he is walking through, and whether he opened it and has walked past it. */
     private BlockPos gate = BlockPos.ZERO;
@@ -49,7 +52,7 @@ final class CompanionGateGoal extends Goal {
     @Override public boolean canContinueToUse() { return !passed && (forgetTime > 0 || companion.blockPosition().equals(gate)); }
 
     @Override public void start() {
-        forgetTime = 20; passed = false;
+        forgetTime = FORGET_TICKS; passed = false;
         gateDirX = (float)(gate.getX() + .5 - companion.getX());
         gateDirZ = (float)(gate.getZ() + .5 - companion.getZ());
         set(true);
@@ -68,14 +71,17 @@ final class CompanionGateGoal extends Goal {
             gateDirX = (float)(gate.getX() + .5 - companion.getX());
             gateDirZ = (float)(gate.getZ() + .5 - companion.getZ());
             passed = false;
-            forgetTime = Math.max(forgetTime, 20);
+            forgetTime = Math.max(forgetTime, FORGET_TICKS);
         }
         set(true);
         return true;
     }
 
     @Override public void tick() {
-        forgetTime--;
+        // Standing in the gate's cell he has not cleared it: the time he is given to walk through is topped up there, so the gate
+        // he stands in is never shut under him — a shut gate there is a step to the game's movement control, which hops him — and
+        // after he is pushed back out of the cell he still has that time to come back into it.
+        if (companion.blockPosition().equals(gate)) forgetTime = FORGET_TICKS; else forgetTime--;
         float dx = (float)(gate.getX() + .5 - companion.getX()), dz = (float)(gate.getZ() + .5 - companion.getZ());
         // Past it and clear of its cell: a gate shut while he still stands in it is a step to the game's movement control (a fence
         // gate's 1.5-high shape is in neither the doors' nor the fences' tag), which hops him there, so he jumped beside the gate.
@@ -116,6 +122,8 @@ final class CompanionGateGoal extends Goal {
         // through the opened gate is walked rather than judged against the shut gate he was stopped at.
         level.setBlock(gate, state.setValue(FenceGateBlock.OPEN, open), 10);
         level.playSound(null, gate, open ? block.openSound : block.closeSound, SoundSource.BLOCKS, 1F, 1F);
+        // He opens and shuts it with his own hand, as a player does: the arm swings with the block change.
+        companion.swing(InteractionHand.MAIN_HAND);
         if (open) opened = true;
     }
 }
