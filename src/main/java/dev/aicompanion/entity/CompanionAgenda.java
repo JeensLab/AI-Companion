@@ -499,8 +499,10 @@ public final class CompanionAgenda {
         counter[0]++;
         data.setDirty();
         List<PlannedAction> plan = new ArrayList<>();
-        // From the pit the way to the player is his own stairs, not a dig toward him: the give starts on the surface.
-        if (CompanionFacts.of(c).belowMine()) plan.add(new PlannedAction("dig_for_diamonds", 0, 1, CompanionExpedition.SURFACE));
+        // From the pit the way to the player is his own stairs, not a dig toward him: the give starts on the surface. After a try that failed the
+        // next goes by the give's own way to him, and so on in turn (run s7-n1/void-2: under a ledge by a lake, «путь наверх закрыт» three
+        // times over, and the give that might have walked there was never tried).
+        if (CompanionFacts.of(c).belowMine() && counter[1] % 2 == 0) plan.add(new PlannedAction("dig_for_diamonds", 0, 1, CompanionExpedition.SURFACE));
         plan.add(new PlannedAction("give_items", 0, diamonds, "minecraft:diamond", "auto"));
         start(server, owner, goal, c, HAND_OVER, null, plan);
     }
