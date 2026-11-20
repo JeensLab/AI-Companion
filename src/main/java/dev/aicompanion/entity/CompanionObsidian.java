@@ -509,6 +509,10 @@ final class CompanionObsidian {
                 // No lava of his left: the pour step says how far he got.
                 if (slot(Items.LAVA_BUCKET) < 0) { made = null; madeStep = 0; reset(); return; }
                 if (!level.getBlockState(made).isAir()) { made = null; madeStep = MADE_DIG; reset(); return; }
+                // The drop of the dig lies in the hole and the pickup walks him down into it: the lava goes in from beside it, never
+                // under his own feet (the player 20.11: he climbed into the lava and lost health). No cell beside it at all: this
+                // hole is passed over and another dug.
+                if (c.blockPosition().equals(made)) { walkTo(level, made); return; }
                 if (!inReach(level, made) && !walkTo(level, made)) return;
                 int slot = slot(Items.LAVA_BUCKET);
                 ItemStack bucket = c.getItem(slot);
@@ -641,10 +645,20 @@ final class CompanionObsidian {
 
     /** A walk to the cell he pours into: false when there is no way to it (another hole is looked for, this one passed over). */
     private boolean walkTo(ServerLevel level, BlockPos cell) {
-        if (stands.isEmpty()) { stands = CompanionWaterFill.standsFor(c, level, List.of(cell)); legs = 0; path = null; }
+        if (stands.isEmpty()) { stands = standsBeside(level, cell); legs = 0; path = null; }
         if (walk()) return true;
         passed.add(cell); made = null; madeStep = MADE_DIG; reset();
         return false;
+    }
+
+    /**
+     * The cells he pours the make from: beside the cell he pours into, never in it. The empty hole is a cell he can stand in, and a
+     * walk that ends there would put the lava under his own feet.
+     */
+    private Set<BlockPos> standsBeside(ServerLevel level, BlockPos cell) {
+        Set<BlockPos> stands = CompanionWaterFill.standsFor(c, level, List.of(cell));
+        stands.remove(cell);
+        return stands;
     }
 
     /** One bucket of this slot emptied, as the game's own: the empty one takes its place in his bag and the rest of the stack stays his (one that finds no cell lies at his feet, never lost). */

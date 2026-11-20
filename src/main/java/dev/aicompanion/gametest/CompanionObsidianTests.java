@@ -642,6 +642,42 @@ public final class CompanionObsidianTests {
     }
 
     /**
+     * The player's own case (20.11, world test3): «добудь 2 обсидиана» with two buckets of water and two of lava lying at his feet and
+     * no lava about. The hole is dug beside him, his lava goes into it while he stands beside it and his water is poured from beside
+     * it too: he never steps into the lava cell, so his health stays full for the whole make («зачем то туда сам залезает в неё
+     * теряя здоровье, когда нужно просто рядом воду разлить не заходя в лаву»).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void heNeverStepsIntoHisLavaHoleAndTakesNoDamage(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        BlockPos feet = h.absolutePos(new BlockPos(10, GROUND + 1, 16));
+        lying(h, feet, Items.LAVA_BUCKET, 2);
+        lying(h, feet.offset(1, 0, 0), Items.WATER_BUCKET, 2);
+        float full = c.getHealth();
+        String route = CompanionLocalCommands.route("Олег, добудь 2 обсидиана", "Олег");
+        var plan = CompanionLocalCommands.actions(route);
+        h.assertTrue(plan != null && plan.size() == 1, "The phrase is not one step: " + route + " -> " + plan);
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-beside", () -> false));
+        h.succeedWhen(() -> {
+            BlockPos at = c.blockPosition();
+            h.assertTrue(!h.getLevel().getFluidState(at).is(FluidTags.LAVA),
+                    "He stands in the lava at " + at.toShortString() + ", health " + c.getHealth() + " of " + full + ": " + c.getLastTaskResult());
+            h.assertTrue(c.getHealth() == full, "He lost health in the make: " + c.getHealth() + " of " + full + " at " + at.toShortString());
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 2, "Not two obsidian: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertTrue(count(c, Items.WATER_BUCKET) == 2 && count(c, Items.BUCKET) == 2 && count(c, Items.LAVA_BUCKET) == 0,
+                    "His buckets are lost or doubled: " + c.getStoredItemsSummary() + ", " + report);
+            for (BlockPos pos : BlockPos.betweenClosed(h.absolutePos(new BlockPos(1, GROUND - 3, 1)), h.absolutePos(new BlockPos(30, GROUND + 4, 30)))) {
+                h.assertTrue(!h.getLevel().getFluidState(pos).is(FluidTags.WATER), "His water is left at " + pos.toShortString() + ": " + report);
+                h.assertTrue(!h.getLevel().getFluidState(pos).is(FluidTags.LAVA), "His lava is left at " + pos.toShortString() + ": " + report);
+            }
+        });
+    }
+
+    /**
      * The player's own case (20.11, world test3, the live test after #208): two buckets of water and two of lava lying two to four
      * blocks away on open ground, no lava in the world. «добудь 2 обсидиана» by the phrase is no refusal and no «не дотянуться»:
      * the buckets lie within his sight and a way leads to them, so he walks to each, takes it up, and makes the two blocks of them.
