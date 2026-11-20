@@ -99,6 +99,25 @@ public final class CompanionMineK14Tests {
         });
     }
 
+    /**
+     * Run s7-d1/retreat (seed 7, a lava fall spreading over a ledge by a lake): out of the lava he went for the nearest bank, across the sheet,
+     * and burned to death on the way. In lava, a bank three blocks east past two more cells of lava and one five blocks west past none: west.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void theWayOutOfLavaDoesNotCrossMoreLava(GameTestHelper h) {
+        int y = GROUND + 8;
+        // Air all round the row, so that the only banks are on it.
+        for (int x = 0; x <= 12; x++) for (int up = -3; up <= 3; up++) for (int dz = -7; dz <= 7; dz++) h.setBlock(new BlockPos(x, y + up, CENTER + dz), Blocks.AIR);
+        for (int x = 0; x <= 12; x++) h.setBlock(new BlockPos(x, y, CENTER), Blocks.STONE);
+        for (int x = 2; x <= 5; x++) h.setBlock(new BlockPos(x, y, CENTER), Blocks.AIR);
+        for (int x = 6; x <= 8; x++) h.setBlock(new BlockPos(x, y + 1, CENTER), Blocks.LAVA);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 6, y + 1, CENTER);
+        c.setNoAi(true);
+        BlockPos out = new CompanionLavaExit(c).nearestOut();
+        h.assertTrue(out != null && out.getX() < c.getBlockX(), "The way out of the lava goes to " + rel(h, out) + ", across the lava east");
+        h.succeed();
+    }
+
     /** Hurt, with nothing to eat: the goal waits for food and tries again instead of spending the stops of the mine on the retreats it ends in. */
     @GameTest(template = "marathon_cave", batch = "k14_agenda", timeoutTicks = TIMEOUT)
     public static void aHurtGoalWithNoFoodWaitsInsteadOfBurningItsStops(GameTestHelper h) {

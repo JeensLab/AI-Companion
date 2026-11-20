@@ -19,6 +19,9 @@ import java.util.function.ToDoubleFunction;
  */
 final class CompanionLavaExit extends Goal {
     private static final int STEP_DOWN = 2, REPLAN_EVERY = 5, OUT_TICKS = 30, EDGE_PENALTY = 9;
+    /** What a cell of lava on the straight way to a bank costs, against the squared distance: half a second in it is a burn and more fire. */
+    private static final int CROSS_PENALTY = 25;
+    private static final double CROSS_STEP = .25;
     static final int RADIUS = 6, STEP_UP = 1, JUMP_EVERY = 10;
     private static final double SPEED = 1.3, REACHED = .36;
 
@@ -72,10 +75,28 @@ final class CompanionLavaExit extends Goal {
         return Math.hypot(c.getX() - (target.getX() + .5), c.getZ() - (target.getZ() + .5)) < REACHED && Math.abs(c.getY() - target.getY()) < 1;
     }
 
-    /** The nearest cell with a floor and no fluid that a straight line reaches; one beside lava counts as farther than one clear of it. */
-    private BlockPos nearestOut() {
+    /**
+     * The nearest cell with a floor and no fluid that a straight line reaches; one beside lava counts as farther than one clear of it, and one
+     * past more lava farther still (run s7-d1/retreat: the nearest bank lay across a spreading sheet, and he burned to death on the way).
+     */
+    BlockPos nearestOut() {
         ServerLevel level = (ServerLevel) c.level();
-        return nearest(c, STEP_DOWN, pos -> beside(level, pos) ? EDGE_PENALTY : 0);
+        BlockPos from = c.blockPosition();
+        return nearest(c, STEP_DOWN, pos -> (beside(level, pos) ? EDGE_PENALTY : 0) + CROSS_PENALTY * crossed(level, from, pos));
+    }
+
+    /** The cells of lava a straight wade from {@code from} to {@code to} goes through at his feet, his own cell apart. */
+    private static int crossed(ServerLevel level, BlockPos from, BlockPos to) {
+        Vec3 start = Vec3.atBottomCenterOf(from), end = Vec3.atBottomCenterOf(to);
+        int steps = (int) Math.ceil(start.distanceTo(end) / CROSS_STEP), count = 0;
+        BlockPos last = from;
+        for (int i = 1; i <= steps; i++) {
+            BlockPos cell = BlockPos.containing(start.lerp(end, (double) i / steps).add(0, .1, 0));
+            if (cell.equals(last)) continue;
+            last = cell;
+            if (level.getFluidState(cell).is(FluidTags.LAVA)) count++;
+        }
+        return count;
     }
 
     /** The nearest standable cell in a straight line from him, by squared distance plus the penalty of the cell. */
