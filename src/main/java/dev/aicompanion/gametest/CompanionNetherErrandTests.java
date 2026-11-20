@@ -751,6 +751,20 @@ public final class CompanionNetherErrandTests {
             if (x == cx - 1 || x == cx + 2 || y == floor + 1 || y == floor + 5) nether.setBlockAndUpdate(new BlockPos(x, y, cz), Blocks.OBSIDIAN.defaultBlockState());
         for (int x = cx; x <= cx + 1; x++) for (int y = floor + 2; y <= floor + 4; y++)
             nether.setBlockAndUpdate(new BlockPos(x, y, cz), Blocks.NETHER_PORTAL.defaultBlockState().setValue(NetherPortalBlock.AXIS, Direction.Axis.X));
+        // The game finds the way out of a portal by its point of interest (PortalForcer). On the CI runner the arena's was not found
+        // (20.11): he came out of a portal the game built 14 blocks off, at y 36, and dug that one's quartz. Checked here, set if
+        // missing, and said in the log, so a run shows whether this was it.
+        var poi = nether.getPoiManager();
+        for (int x = cx; x <= cx + 1; x++) for (int y = floor + 2; y <= floor + 4; y++) {
+            BlockPos cell = new BlockPos(x, y, cz);
+            boolean block = nether.getBlockState(cell).is(Blocks.NETHER_PORTAL);
+            if (!block) System.out.println("[nether-arena] portal block missing at " + cell);
+            if (block && !poi.existsAtPosition(net.minecraft.world.entity.ai.village.poi.PoiTypes.NETHER_PORTAL, cell)) {
+                System.out.println("[nether-arena] portal point of interest missing at " + cell + ", set");
+                poi.add(cell, nether.registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.POINT_OF_INTEREST_TYPE)
+                        .getHolderOrThrow(net.minecraft.world.entity.ai.village.poi.PoiTypes.NETHER_PORTAL));
+            }
+        }
         List<BlockPos> ores = new ArrayList<>();
         for (int i = 0; i < 3; i++) { ores.add(new BlockPos(cx - 4 + i, floor + 1, cz - 5)); ores.add(new BlockPos(cx + 3 + i, floor + 1, cz + 5)); }
         for (BlockPos ore : ores) nether.setBlockAndUpdate(ore, Blocks.NETHER_QUARTZ_ORE.defaultBlockState());

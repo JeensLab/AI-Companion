@@ -156,6 +156,12 @@ public final class OpenRouterConfig {
             .translation("config.aicompanion.right_tool_for_block")
             .define("rightToolForBlock", true);
 
+    /** Whether a shut wooden fence gate on his route is opened, walked through and shut behind him, as a door. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue FENCE_GATES = BUILDER
+            .comment("A shut wooden fence gate on his route is opened, walked through and shut behind him, as a door; a gate a redstone signal decides is left alone. Off: a shut gate is a fence to him, as it was, and he goes round it.")
+            .translation("config.aicompanion.fence_gates")
+            .define("fenceGates", true);
+
     public static final ModConfigSpec.BooleanValue LONG_TERM_MEMORY = BUILDER
             .comment("Let the companion remember facts, promises and recent talk between sessions, adapt his character and raise topics of his own. Stored in the world save.")
             .translation("config.aicompanion.long_term_memory")
