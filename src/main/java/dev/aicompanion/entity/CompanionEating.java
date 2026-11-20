@@ -26,12 +26,43 @@ final class CompanionEating {
         float missing = c.getMaxHealth() - c.getHealth();
         // Fed, out of a fight for ten seconds: slowly better, as a player with a full stomach.
         if (missing >= 1 && c.satiety > 0 && c.tickCount - c.lastHurtTick > 200 && c.tickCount % 80 == 0) { c.heal(1); c.satiety--; }
-        if (c.tickCount % 20 != 0 || missing < 4 && c.getHealth() > c.getMaxHealth() / 2) return;
-        if (c.getTarget() != null && c.getTarget().isAlive() && c.distanceToSqr(c.getTarget()) < 16 && c.getHealth() > 6) return;
+        boolean expedition = c.work.expedition.active();
+        // An empty stomach does not heal the wound by itself: the retreat's rest eats up to the fit health, however small the wound.
+        boolean mends = c.work.expedition.retreating() && c.satiety <= 0 && c.getHealth() < CompanionExpeditionRetreat.FIT;
+        boolean urgent = needsMealNow(serverLevel, expedition);
+        if (!urgent && (c.tickCount % 20 != 0 || missing < 4 && c.getHealth() > c.getMaxHealth() / 2 && !(expedition && c.getHealth() <= EXPEDITION_EATS_BELOW) && !mends)) return;
+        if (!urgent && c.getTarget() != null && c.getTarget().isAlive() && inReach(c.distanceToSqr(c.getTarget()), expedition)) return;
         ItemStack food = bestFood(missing);
         if (food.isEmpty()) return;
         c.eating = food.copyWithCount(1); c.eatTicks = CompanionEntity.EAT_TICKS;
         c.animateAction(4, c.blockPosition(), c.eating);
+    }
+
+    /** Below this he eats in an expedition between two foes: the next fight starts from more than the last one left. */
+    private static final float EXPEDITION_EATS_BELOW = 14;
+    private static final float DESPERATE = 6;
+    /** A long order away from the player: he eats at this health whoever is near. */
+    private static final float ORDER_EATS_BELOW = 10;
+    private static final double ARMS_REACH_SQR = 4;
+
+    /**
+     * The meal that does not wait: a loaf is five health in 32 ticks, as much as a zombie takes from him in that time, and the sword hand
+     * is free while he eats, so a foe at his side is no reason to starve (the mine probe: dead from 19 health in 100 ticks with sixteen loaves in the bag).
+     * Neither the foe's distance nor the twenty-tick beat holds it, and the next meal starts the tick this one ends, while the wound is below the line.
+     */
+    private boolean needsMealNow(ServerLevel level, boolean expedition) {
+        if (expedition) return c.getHealth() <= EXPEDITION_EATS_BELOW;
+        return c.getHealth() <= ORDER_EATS_BELOW && (c.work.isActive() || CompanionAgenda.goal(level.getServer(), c.ownerId) != null);
+    }
+
+    /**
+     * A foe so near that a meal is a loss. Underground a meal costs no swing (the sword hand is free while he eats), so only a foe within
+     * a zombie's arm stops it: a zombie walks about 7 blocks in the time of one meal, and waiting for the blows would never leave a
+     * free moment, while the arrows of a skeleton across the cave go on whether he eats or not.
+     */
+    private boolean inReach(double distanceSqr, boolean expedition) {
+        if (expedition) return distanceSqr < ARMS_REACH_SQR;
+        return distanceSqr < 16 && c.getHealth() > DESPERATE;
     }
 
     private void finishEating() {

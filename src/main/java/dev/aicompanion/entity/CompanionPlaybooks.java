@@ -13,7 +13,9 @@ import java.util.List;
  * are listed too, so he says honestly how far he gets now; each new skill turns one of them on without touching the engine.
  */
 public final class CompanionPlaybooks {
-    public static final List<String> IDS = List.of("gear_up", "prepare_nether", "defeat_ender_dragon");
+    public static final List<String> IDS = List.of("gear_up", "prepare_nether", "defeat_ender_dragon", "find_diamonds");
+    /** Diamonds a find_diamonds goal asks for when none are named, and the most it takes (the count rides in the tier slot of the goal). */
+    public static final int DIAMONDS_DEFAULT = 3, DIAMONDS_MAX = 16;
 
     public record Playbook(String id, int tier, String title, List<Milestone> milestones) {
         /** What he says when he takes the goal: what he will do and, past the first milestone he cannot do, what he cannot. */
@@ -37,15 +39,27 @@ public final class CompanionPlaybooks {
 
     private CompanionPlaybooks() { }
 
-    /** The goal by its catalog id; {@code tier} 2 asks gear_up for diamond, anything else for iron. Null for an unknown id. */
+    /**
+     * The goal by its catalog id; {@code tier} 2 asks gear_up for diamond, anything else for iron, and for find_diamonds it is the count
+     * (a count out of range comes back as the nearest one in range, so a saved record with another count is not loaded). Null for an unknown id.
+     */
     public static Playbook of(String id, int tier) {
         return switch (id == null ? "" : id) {
             case "gear_up" -> tier >= 2 ? new Playbook("gear_up", 2, "алмазное снаряжение", gear(Tier.DIAMOND))
                     : new Playbook("gear_up", 1, "железное снаряжение", gear(Tier.IRON));
             case "prepare_nether" -> new Playbook("prepare_nether", 0, "подготовка к Незеру", nether());
             case "defeat_ender_dragon" -> new Playbook("defeat_ender_dragon", 0, "победа над драконом Края", dragon());
+            case "find_diamonds" -> {
+                int count = tier < 1 ? DIAMONDS_DEFAULT : Math.min(tier, DIAMONDS_MAX);
+                yield new Playbook("find_diamonds", count, "добыча алмазов: " + count, diamonds(count));
+            }
             default -> null;
         };
+    }
+
+    /** The pickaxe is not used up by the mine, so it is a milestone; torches and food are not, the mine step tops them up itself. */
+    private static List<Milestone> diamonds(int count) {
+        return new ArrayList<>(List.of(CompanionMilestones.piece(Piece.PICKAXE, Tier.IRON), CompanionMilestones.expedition(count)));
     }
 
     /** Diamonds want an iron pickaxe first; then the material for every piece at once, so the ore is mined and smelted in one go. */

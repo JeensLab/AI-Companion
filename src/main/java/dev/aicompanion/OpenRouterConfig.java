@@ -177,6 +177,12 @@ public final class OpenRouterConfig {
             .translation("config.aicompanion.pick_up_radius")
             .defineInRange("pickUpRadius", 16, 4, 32);
 
+    /** Whether he takes the long goal of a diamond mine («добудь алмазы»). On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue DIAMOND_MINE = BUILDER
+            .comment("Take the long goal of a diamond mine: dig down, search the tunnels and bring the diamonds back. Off: he says the mine is switched off.")
+            .translation("config.aicompanion.diamond_mine")
+            .define("diamondMine", true);
+
     /** Named map markers: remembering places by name, walking to them and the settings list. On unless the player turns it off. */
     public static final ModConfigSpec.BooleanValue MARKERS = BUILDER
             .comment("Named map markers: «запомни это место, дача» saves a place, «иди к даче» walks to it. Off: no recognition, no walks, the settings list stays readable.")
