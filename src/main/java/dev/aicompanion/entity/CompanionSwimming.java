@@ -209,6 +209,8 @@ final class CompanionSwimming {
         @Override public void tick() {
             if (operation == Operation.JUMPING && (c.isInWater() || c.isInLava()) && !c.onGround()) operation = c.getNavigation().isDone() ? Operation.WAIT : Operation.MOVE_TO;
             if (c.onClimbable() && operation != Operation.WAIT) { climb(); return; }
+            // A shut gate in his cell is a step to the game's control (its 1.5-high shape is no door and no fence): open it first.
+            c.openGateUnder();
             super.tick();
         }
     }
