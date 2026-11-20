@@ -137,6 +137,10 @@ final class CompanionExpeditionClimb {
 
     Result tick() {
         if (!outcome.isEmpty()) return Result.DONE;
+        // Across a gap he may come out on the surface any way at all (a route over the ground, the walk of a pickup, the rescue's wait):
+        // there the climb is over. Run water of seed 7 (20.11): waiting for the rescue on a slope, the rescue dug him down a pit
+        // toward the cell beyond the gap below him, and from the pit no tree was in reach.
+        if ((phase == Phase.TRAVEL || phase == Phase.UNPLUG || phase == Phase.CUT_OUT) && onSurface()) return finish(" Копать нечем, поднялся за припасами.");
         return switch (phase) {
             case WALK -> walked();
             case TRAVEL -> travel();
@@ -165,7 +169,6 @@ final class CompanionExpeditionClimb {
 
     /** Across a gap of the record: his own steps once near the cell beyond it, a route search until then, and a plug of his that shuts it, near or far, out of the way. */
     private Result travel() {
-        if (onSurface()) return finish(" Копать нечем, поднялся за припасами.");
         BlockPos beyond = cells.get(stretchEnd);
         // A straight push goes up his stairs or a step down; two down or more is rock he has no way through, the route search finds the way round.
         if (w.owner.blockPosition().distManhattan(beyond) <= OWN_STEPS && w.owner.blockPosition().getY() - beyond.getY() <= 1) {
