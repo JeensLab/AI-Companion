@@ -3,8 +3,6 @@ package dev.aicompanion.entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -12,7 +10,6 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.AABB;
 
 /** What the digging goal gathers: natural soil, or one of the loose blocks that fall when nothing holds them. */
 public enum CompanionGround {
@@ -87,24 +84,31 @@ public enum CompanionGround {
 
     /**
      * The soil check rejects any falling block nearby; digging one asks other things instead: no water to flood the hole, nothing
-     * built on top, and nothing hanging over a hollow that the dig would bring down.
+     * built on top, and nothing hanging over a hollow that the dig would bring down. A body standing on the block is no reason to
+     * leave it: the block is what holds it up, so it comes down one step, as a player takes the block from under his own feet
+     * (the owner, 20.11: the sixth of six sand blocks put down was left standing because he stood on it). What could fall ON
+     * somebody is caught by the two checks below, not by this one.
      */
     static boolean safeLooseCell(ServerLevel level, BlockPos pos) {
         if (!level.hasChunkAt(pos) || !level.getWorldBorder().isWithinBounds(pos) || level.isOutsideBuildHeight(pos)) return false;
-        if (CompanionLighting.supportsLight(level, pos) || carriesSomeone(level, pos)) return false;
+        if (CompanionLighting.supportsLight(level, pos)) return false;
         if (level.getBlockEntity(pos) != null || !level.getFluidState(pos).isEmpty()) return false;
         for (Direction direction : Direction.values()) {
             BlockPos nearby = pos.relative(direction);
+            // A bench over the block is no build: it stands on its own and is packed up after the work, so the block under it is
+            // dug as a player digs it, the bench left hanging over the hole until he takes it (the owner, 20.11: the bench made
+            // for a shovel stood on the last of six sand blocks and kept it standing).
             if (!level.hasChunkAt(nearby) || !level.getFluidState(nearby).isEmpty() || level.getBlockEntity(nearby) != null
-                    || level.getBlockState(nearby).is(Blocks.CRAFTING_TABLE)) return false;
+                    || direction != Direction.UP && level.getBlockState(nearby).is(Blocks.CRAFTING_TABLE)) return false;
         }
         return nothingBuiltOnTop(level, pos) && nothingHangsBeside(level, pos);
     }
 
     /**
      * Walks up through the loose blocks of the column; what sits on its top (a cactus, sugar cane, a torch, a build) comes down or
-     * breaks with it, so the first other block there must be air or something replaceable. A canopy or a cave roof with a gap
-     * under it is no cover; one resting right on the column is.
+     * breaks with it, so the first other block there must be air or something replaceable. A bench is no such thing: it does not
+     * fall and does not break when the column goes, so it counts as cover. A canopy or a cave roof with a gap under it is no cover;
+     * one resting right on the column is.
      */
     private static boolean nothingBuiltOnTop(ServerLevel level, BlockPos pos) {
         for (int up = 1; up <= COLUMN_DEPTH; up++) {
@@ -112,19 +116,9 @@ public enum CompanionGround {
             if (level.isOutsideBuildHeight(above) || !level.hasChunkAt(above) || !level.getFluidState(above).isEmpty()) return false;
             BlockState cover = level.getBlockState(above);
             if (isLooseBlock(cover)) continue;
-            return cover.isAir() || cover.canBeReplaced();
+            return cover.isAir() || cover.canBeReplaced() || cover.is(Blocks.CRAFTING_TABLE);
         }
         return false;
-    }
-
-    /**
-     * Whoever stands on the block comes down with it. The common check takes any body in the cell over the block, and a body
-     * pressed against its side reaches into that cell too: Oleg hugging the foot of a column kept the last block undiggable.
-     * On the block means the feet at its top face or over it.
-     */
-    private static boolean carriesSomeone(ServerLevel level, BlockPos pos) {
-        return !level.getEntities((Entity)null, new AABB(pos.above()).inflate(.05, .1, .05),
-                entity -> entity instanceof LivingEntity living && living.isAlive() && living.getY() >= pos.getY() + 1 - .05).isEmpty();
     }
 
     /**

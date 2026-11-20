@@ -38,6 +38,9 @@ public final class CompanionFailureMessages {
         if (text.contains("к тебе подойти") || text.contains("отдать не могу") || text.contains("несу тебе вещи") || text.contains("к тебе пройти, вещи")) return Kind.HANDOVER;
         if (text.contains("доступного дерева") || text.contains("доступное дерево") || text.contains("доступных деревьев") || text.contains("бревна не удалось")
                 || text.contains("не хватает дерева") || text.contains("не хватает бревен")) return Kind.WOOD;
+        // The stone dig's own line names the faces it checked («Проверил доступные выходы камня … безопасного подхода … не
+        // нашёл»): the stone was short, not the way to it (the owner, 20.11: a shovel's stone said as «не нашёл безопасного пути»).
+        if (text.contains("выходы камня")) return Kind.STONE;
         // Not yet up from his own tunnel: said before any ore reason, the player should know he is still down there.
         if (text.contains("выбрался")) return Kind.ROUTE;
         // A walk that proved there is no way at all («нет пути»): said as no way, short, not as a lost one.
@@ -70,6 +73,8 @@ public final class CompanionFailureMessages {
             // No way at all to the player, as the wide search proved it: said as such, not as a lost way.
             case ROUTE -> primary(report).contains("выбрался") ? "Я пока внизу, ищу безопасный выход."
                     : primary(report).contains("к тебе пройти") ? "Не могу к тебе пройти."
+                    // The bench was not walked to: said as the bench, not as a path the world has none of.
+                    : primary(report).contains("верстак") ? "Не смог дойти до верстака, вещи сохранил."
                     : action.equals("mine_ore") ? "До оставшейся руды безопасно не добраться."
                     : "Здесь не нашёл безопасного пути.";
             case ORE -> "Больше доступной руды поблизости не нашёл.";

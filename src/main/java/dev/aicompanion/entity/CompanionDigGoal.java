@@ -97,7 +97,9 @@ final class CompanionDigGoal extends Goal {
         if (retryDelay > 0) { retryDelay--; return; }
 
         if (target != null && !ground().safeCell((ServerLevel)c.level(), target, c)) {
-            unreachable.add(target); c.dirtBreaking.reset(); target = null;
+            // Unsafe right now (water beside it, a body on it) is no verdict for the rest of the order: the scan checks every
+            // cell again, and the world changes under it as the blocks around go.
+            c.dirtBreaking.reset(); target = null;
         }
         if (target == null || !c.level().hasChunkAt(target) || !ground().matches(c.level().getBlockState(target))) {
             c.dirtBreaking.reset();
