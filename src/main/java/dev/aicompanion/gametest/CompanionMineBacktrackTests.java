@@ -589,7 +589,7 @@ public final class CompanionMineBacktrackTests {
 
     static CompanionEntity rig(GameTestHelper h) { return rig(h, CENTER, GROUND + 1, CENTER); }
 
-    private static CompanionEntity rig(GameTestHelper h, int x, int y, int z) {
+    static CompanionEntity rig(GameTestHelper h, int x, int y, int z) {
         CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), x, y, z);
         var owner = h.makeMockServerPlayerInLevel();
         owner.teleportTo(companion.getX() - 3, companion.getY(), companion.getZ() - 3);

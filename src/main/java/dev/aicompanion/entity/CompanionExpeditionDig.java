@@ -31,7 +31,11 @@ final class CompanionExpeditionDig {
 
     /** Sealing blocks worth keeping in the bag; every other rock and the sealing blocks beyond them are left lying, untagged, so the work never waits for them. */
     static final int SEAL_RESERVE = 64;
-    private static final int CELL_PATIENCE = 400, UNSEEN_PATIENCE = 40, WALK_PATIENCE = 100, SETTLED = 40, PATH_AFTER = 20, SPARE_DURABILITY = 60;
+    private static final int CELL_PATIENCE = 400, UNSEEN_PATIENCE = 40, WALK_PATIENCE = 100, SETTLED = 40, PATH_AFTER = 20;
+    /** Wear of the iron pickaxe kept for ore while it digs rock. */
+    static final int SPARE_DURABILITY = 60;
+    /** {@link #ironReserve} when nothing set it: the wear kept for ore and the way out, see {@link #reserve}. */
+    private static final int KEPT = -1;
     private static final double CENTRED = .35, RESTING = .1;
     /** A creeper this close to a block of his own is waited out before the block comes out: opened, it would be at his side before the block could be set again. */
     private static final double CREEPER_CLEAR = 3;
@@ -60,7 +64,7 @@ final class CompanionExpeditionDig {
     boolean ironForRock;
     /** The last NO_TOOL was the stone pickaxe kept for the way up (see {@link #pickaxesLeft}), not a missing tool. */
     boolean reserved;
-    private int ironReserve = SPARE_DURABILITY;
+    private int ironReserve = KEPT;
 
     CompanionExpeditionDig(CompanionWork w) {
         this.w = w;
@@ -233,8 +237,15 @@ final class CompanionExpeditionDig {
         if (w.items.countCarried(Items.STONE_PICKAXE) > 0) return Items.STONE_PICKAXE;
         Item hard = hardPickaxe();
         if (hard != null) return hard;
-        return ironForRock && ironLeft(ironReserve) ? Items.IRON_PICKAXE : null;
+        return ironForRock && ironLeft(reserve()) ? Items.IRON_PICKAXE : null;
     }
+
+    /**
+     * The wear the iron pickaxe keeps from the rock: what the climb or a diamond in sight set, else {@link #SPARE_DURABILITY} for ore and, out of a pit whose
+     * way up begins across a gap, the staircase the climb cuts up from it. Run mobs of seed 20261031 (21.11): the tunnel took the iron pickaxe down to the wear
+     * for ore, and the staircase up from the pit, 55 blocks under the surface, wore it out at height 38 with no wood to make another.
+     */
+    private int reserve() { return ironReserve == KEPT ? SPARE_DURABILITY + CompanionExpeditionClimb.cutWear(w.mine) : ironReserve; }
 
     /** A diamond or netherite pickaxe with wear left: it digs rock when there is no stone pickaxe, and no iron is kept for ore that it can take instead. */
     Item hardPickaxe() {
@@ -244,7 +255,7 @@ final class CompanionExpeditionDig {
         return null;
     }
 
-    boolean spareIron() { return ironLeft(ironReserve); }
+    boolean spareIron() { return ironLeft(reserve()); }
 
     /** Pickaxes he can still dig with: those in the bag (stone, iron with any wear, diamond, netherite) and the stone ones the bag's materials make. */
     int pickaxesLeft() {
@@ -287,10 +298,10 @@ final class CompanionExpeditionDig {
         ironReserve = reserve;
     }
 
-    /** Back to keeping {@link #SPARE_DURABILITY} wear of the iron pickaxe for ore. */
+    /** Back to keeping the wear of the iron pickaxe for ore and the way out ({@link #reserve}). */
     void keepIron() {
         ironForRock = false;
-        ironReserve = SPARE_DURABILITY;
+        ironReserve = KEPT;
     }
 
     /** Steps towards the cell with the move control (neighbouring cells of his own mine); true once he stands in it. */

@@ -11,6 +11,7 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.gametest.GameTestHolder;
@@ -19,7 +20,10 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import java.util.List;
 
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.CENTER;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.DEEPSLATE_TOP;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.DIAMOND_FEET;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.GROUND;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.SIZE;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.TIMEOUT;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.carveMine;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.count;
@@ -44,6 +48,11 @@ public final class CompanionMineWayUpTests {
     private static final int RESCUE_REACH = 4, MAX_FORBIDDEN = 256;
     /** What the new staircase of a lost way is said with; the way up of his own never says it. */
     private static final String NEW_STAIRS = "прокапываю новую";
+    /**
+     * The pit under the ground of a tall mountain (the template is 36 high): the feet in it, the corner the entrance on the surface lies in, the tunnel off
+     * the foot of its stairs, and the wear left on the iron pickaxe, more than the staircase out of the pit takes on top of the wear kept for ore.
+     */
+    private static final int TALL_GROUND = 33, PIT_FEET = 8, CORNER = 2, PIT_TUNNEL = 2, IRON_LEFT = 150;
 
     private CompanionMineWayUpTests() { }
 
@@ -157,6 +166,58 @@ public final class CompanionMineWayUpTests {
             h.assertTrue(result.success() && c.getBlockY() >= surface, "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c));
             h.assertTrue(count(c, Items.DIAMOND) == 1, "The diamond is not in the bag | " + report(c));
         });
+    }
+
+    /**
+     * Run mobs of seed 20261031 (21.11): a mine started again in a pit under the ground, the old stairs far off across the rock. With no stone pickaxe and no wood
+     * the tunnel at the foot was dug with the iron one down to the wear kept for ore; the staircase cut up out of the pit wore it out at height 38, and he stood
+     * there with no pickaxe: «путь наверх закрыт». The iron pickaxe keeps the wear of that staircase as well, so he turns back while it can still cut him out.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void keepsTheWearForTheStairsOutOfAPit(GameTestHelper h) {
+        tallMountain(h);
+        // Corner to corner: the entrance on the surface is too far for the walk back to it (FAR_ENTRANCE), so the climb is the way up, as in the run.
+        BlockPos origin = h.absolutePos(new BlockPos(CORNER, TALL_GROUND + 1, CORNER)), pit = h.absolutePos(new BlockPos(SIZE - 1 - CORNER, PIT_FEET, SIZE - 1 - CORNER));
+        List<BlockPos> stairs = CompanionShaftPlan.stands(pit, Direction.NORTH, PIT_FEET - DIAMOND_FEET);
+        for (BlockPos stand : stairs) for (BlockPos cell : CompanionShaftPlan.column(stand)) h.getLevel().setBlock(cell, Blocks.AIR.defaultBlockState(), 2 | 16);
+        CompanionEntity c = rig(h, CORNER, TALL_GROUND + 1, CORNER);
+        c.setFollowing(false);
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        c.setItem(0, ItemStack.EMPTY);
+        ItemStack iron = new ItemStack(Items.IRON_PICKAXE);
+        iron.setDamageValue(iron.getMaxDamage() - IRON_LEFT);
+        c.setItem(1, iron);
+        CompanionMineSite site = c.mineSite();
+        site.start(origin, Direction.NORTH);
+        site.restart(pit, Direction.NORTH);
+        site.buried(true);
+        for (BlockPos stand : stairs.subList(1, stairs.size())) site.reached(stand);
+        site.openTunnel(Direction.WEST);
+        BlockPos end = site.foot().relative(Direction.WEST, PIT_TUNNEL);
+        for (int k = 1; k <= PIT_TUNNEL; k++) {
+            BlockPos cell = site.foot().relative(Direction.WEST, k);
+            h.getLevel().setBlock(cell, Blocks.AIR.defaultBlockState(), 2 | 16);
+            h.getLevel().setBlock(cell.above(), Blocks.AIR.defaultBlockState(), 2 | 16);
+            site.extendTunnel();
+        }
+        c.teleportTo(end.getX() + .5, end.getY(), end.getZ() + .5);
+        long id = start(h, c, 1);
+        int surface = origin.getY() - SURFACE_MARGIN;
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(!result.message().contains("путь наверх закрыт") && c.getBlockY() >= surface,
+                    "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c));
+            h.assertTrue(count(c, Items.IRON_PICKAXE) == 1, "The iron pickaxe was worn out on the way | " + report(c));
+        });
+    }
+
+    /** The ground of {@link CompanionMineBacktrackTests#mountain} up to {@link #TALL_GROUND}, no ore: a pit low in it lies deeper under the surface than the wear kept for ore cuts. */
+    private static void tallMountain(GameTestHelper h) {
+        for (int x = 0; x < SIZE; x++) for (int z = 0; z < SIZE; z++) for (int y = 0; y <= TALL_GROUND; y++) {
+            boolean edge = x == 0 || z == 0 || x == SIZE - 1 || z == SIZE - 1;
+            Block block = y == 0 || edge ? Blocks.BEDROCK : y <= DEEPSLATE_TOP ? Blocks.DEEPSLATE : y < TALL_GROUND - 2 ? Blocks.STONE : y < TALL_GROUND ? Blocks.DIRT : Blocks.GRASS_BLOCK;
+            h.getLevel().setBlock(h.absolutePos(new BlockPos(x, y, z)), block.defaultBlockState(), 2 | 16);
+        }
     }
 
     /** Ten stands down from the entrance on the surface and a tunnel west off the foot, cut in the rock and recorded as the expedition records them; he stands at the entrance. */
