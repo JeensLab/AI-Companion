@@ -294,14 +294,14 @@ final class CompanionExpeditionClimb {
     }
 
     /**
-     * The gap he stands at is the one out of a pit under the ground ({@link #pitTop}): the cell beyond it is far off across the rock, no rescue of a few blocks
-     * reaches it, and the wear the rescues spend is the staircase's ({@link #cutWear}). Run void-4 of seed 314159 (21.11): three rescues spent some 170 wear
-     * of the iron pickaxe, the climb walked back down from the steps they cut toward the old way below, and its staircase ran out of wear ten blocks under
-     * the surface.
+     * The gap he stands at is the one out of a pit under the ground ({@link #pitTop}), or the whole way of a lost one: the cell beyond lies across the rock,
+     * and the wear the rescues spend is the staircase's ({@link #cutWear}). Run void-4 of seed 314159 (21.11): three rescues toward the old way 35 blocks off
+     * spent some 170 wear of the iron pickaxe, the climb walked back down from the steps they cut, and its staircase ran out of wear ten blocks under the
+     * surface. Nor does a rescue reach a near cell beyond: with the old way five blocks over the pit (review 21.11) the rescues ended in a staircase all the same.
      */
     private boolean pitGap() {
         BlockPos top = pitTop(w.mine);
-        return top != null && (stretchEnd == 0 || cells.get(stretchEnd - 1).distSqr(top) <= CompanionMineSite.NEAR_STAND);
+        return top != null && (lost || stretchEnd > 0 && cells.get(stretchEnd - 1).distSqr(top) <= CompanionMineSite.NEAR_STAND);
     }
 
     /** Stands still with the cell beyond the gap as his destination until the rescue takes over; it stops the work while it runs, and this goes on when it is over. */

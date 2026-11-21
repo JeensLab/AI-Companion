@@ -48,13 +48,13 @@ public final class CompanionMineWayUpTests {
     private static final int RESCUE_REACH = 4, MAX_FORBIDDEN = 256;
     /** What the new staircase of a lost way is said with; the way up of his own never says it. */
     private static final String NEW_STAIRS = "прокапываю новую";
+    /** The end of a climb out of the pit by the staircase cut up from it: the far gap of a pit is no gap for the rescues to chase the cell beyond across. */
+    private static final String CUT_OUT = "прокопал новую к поверхности";
     /**
      * The pit under the ground of a tall mountain (the template is 36 high): the feet in it, the corner the entrance on the surface lies in, the tunnel off
      * the foot of its stairs, and the wear left on the iron pickaxe: more than the staircase out of the pit takes on top of the wear kept for ore, or worn
      * below what the staircase takes (78).
      */
-    /** The end of a climb out of the pit by the staircase cut up from it: the gap of a pit is no gap for the rescues to chase the far cell across. */
-    private static final String CUT_OUT = "прокопал новую к поверхности";
     private static final int TALL_GROUND = 33, PIT_FEET = 8, CORNER = 2, PIT_TUNNEL = 2, IRON_LEFT = 150, IRON_WORN = 40, BESIDE = 3;
 
     private CompanionMineWayUpTests() { }
