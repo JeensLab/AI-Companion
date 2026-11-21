@@ -193,6 +193,32 @@ public final class CompanionMineK14Tests {
     }
 
     /**
+     * Run retreat of seed 7 (series d, 21.11): a mine started again in a pit four blocks under the foot of his old stairs kept the wear of a staircase up to
+     * the surface, a hundred blocks. The way out of it is a short staircase up to that foot: four steps up toward it, its wear the reserve. Old stairs far off,
+     * or lower than the pit (the staircase only climbs), leave the staircase to the surface. Twelve stands down from forty: the foot at 28.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 100)
+    public static void aPitJustUnderHisOldStairsKeepsTheWearOfAShortStaircaseUpToThem(GameTestHelper h) {
+        BlockPos origin = h.absolutePos(new BlockPos(CENTER, 40, CENTER));
+        int near = pitWear(origin, foot -> foot.below(4).north(4)), far = pitWear(origin, foot -> foot.below(4).north(25)), under = pitWear(origin, foot -> foot.above(4).north(4));
+        h.assertTrue(near == 3 * 4, "The wear kept for a pit four under the foot of his old stairs and four across: " + near + ", not four steps up (12)");
+        h.assertTrue(far == 3 * (40 - 24), "The wear kept for a pit far from his old stairs: " + far + ", not the staircase to the surface (48)");
+        h.assertTrue(under == 3 * (40 - 32), "The wear kept for a pit over the foot of his old stairs: " + under + ", not the staircase to the surface (24)");
+        h.succeed();
+    }
+
+    /** The wear kept for the way out of a pit {@code pit} of the foot of twelve stands down north from {@code origin}, the mine started again there. */
+    private static int pitWear(BlockPos origin, java.util.function.UnaryOperator<BlockPos> pit) {
+        CompanionMineSite mine = new CompanionMineSite();
+        mine.start(origin, Direction.NORTH);
+        List<BlockPos> stands = CompanionShaftPlan.stands(origin, Direction.NORTH, 12);
+        for (BlockPos stand : stands.subList(1, stands.size())) mine.reached(stand);
+        mine.restart(pit.apply(mine.foot()), Direction.NORTH);
+        mine.buried(true);
+        return CompanionExpeditionClimb.cutWear(mine);
+    }
+
+    /**
      * Review of the climb out of a pit to a lower player: beside a wall three high on flat ground he is in no pit and cuts no stairs (it would
      * be a stair up the wall, away from the player shut in below); at the bottom of a hole three deep he does, the player as low as before.
      */

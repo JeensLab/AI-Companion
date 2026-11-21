@@ -44,6 +44,8 @@ public final class CompanionMineWayUpTests {
     private static final int STEPS = 10, TUNNEL = 6, PLUG_AT = 3, SURFACE_MARGIN = 2;
     /** The chamber deep in the deepslate: its feet over the bottom of the arena, east of the surface entrance. */
     private static final int DEEP_EAST = 6, DEEP_FEET = 3;
+    /** The pit under the foot of the old stairs: this many blocks lower and as many across, to the north (away from the stairs, whose floors stay whole). */
+    private static final int UNDER_FOOT = 4;
     /** How far the self-rescue digs from where he stands, and how many cells of rock the record forbids. */
     private static final int RESCUE_REACH = 4, MAX_FORBIDDEN = 256;
     /** What the new staircase of a lost way is said with; the way up of his own never says it. */
@@ -151,7 +153,44 @@ public final class CompanionMineWayUpTests {
         site.restart(stand, Direction.NORTH);
         site.buried(true);
         h.assertTrue(site.above().size() == 1, "The record of the way up is not the entrance alone: " + site.above().size() + " cells");
-        // The self-rescue digs no cell his mine forbids, so within its reach (4 blocks) it finds no rock to cut; the staircase of the climb takes them in a second pass.
+        shutForRescue(h, site, stand);
+        c.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
+        int surface = h.absolutePos(new BlockPos(0, GROUND + 1 - SURFACE_MARGIN, 0)).getY();
+        CompanionMineClimbOutTests.climb(h, c, stand, result -> {
+            h.assertTrue(!result.message().contains("Своя лестница перекрыта") && !result.message().contains("путь наверх закрыт"),
+                    "He ended the climb as shut: " + result.message() + " | " + report(c));
+            h.assertTrue(result.success() && c.getBlockY() >= surface, "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c));
+            h.assertTrue(count(c, Items.DIAMOND) == 1, "The diamond is not in the bag | " + report(c));
+        });
+    }
+
+    /**
+     * Run retreat of seed 7 (series d, 21.11): a mine started again in a pit four blocks under the foot of his old stairs, rock between. The climb took the
+     * near gap for the far one out of a pit, cut a staircase from a hundred blocks down, and the pickaxes ran out at height 36. A few steps up to the foot
+     * are the way: he cuts them and walks his old stairs to the surface, no staircase to the surface cut. No rescue crosses the gap here, its rock forbidden.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void cutsAShortStaircaseUpToHisOldStairsJustOverThePit(GameTestHelper h) {
+        CompanionEntity c = mine(h, 0);
+        CompanionMineSite site = c.mineSite();
+        BlockPos foot = site.foot(), pit = foot.below(UNDER_FOOT).relative(Direction.NORTH, UNDER_FOOT);
+        for (int y = 0; y <= 1; y++) h.getLevel().setBlock(pit.above(y), Blocks.AIR.defaultBlockState(), 2 | 16);
+        c.teleportTo(pit.getX() + .5, pit.getY(), pit.getZ() + .5);
+        site.restart(pit, Direction.NORTH);
+        site.buried(true);
+        h.assertTrue(site.above().get(0).equals(foot), "The way up of the mine started again does not begin at the foot of the old stairs: " + site.above().get(0));
+        shutForRescue(h, site, pit);
+        StringBuilder said = new StringBuilder();
+        h.onEachTick(() -> said.append(c.getLastTaskResult()).append('\n'));
+        int surface = h.absolutePos(new BlockPos(0, GROUND + 1 - SURFACE_MARGIN, 0)).getY();
+        CompanionMineClimbOutTests.climb(h, c, pit, result -> {
+            h.assertTrue(result.success() && c.getBlockY() >= surface, "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c));
+            h.assertTrue(!said.toString().contains(NEW_STAIRS), "He cut a staircase to the surface though his old stairs were four blocks over the pit | " + report(c));
+        });
+    }
+
+    /** The self-rescue digs no cell his mine forbids, so within its reach (4 blocks) of {@code stand} it finds no rock to cut; the staircases of the climb take them in a second pass. */
+    private static void shutForRescue(GameTestHelper h, CompanionMineSite site, BlockPos stand) {
         Vec3 feet = new Vec3(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
         int shut = 0;
         for (int x = -RESCUE_REACH; x <= RESCUE_REACH; x++) for (int y = -RESCUE_REACH; y <= RESCUE_REACH + 2; y++) for (int z = -RESCUE_REACH; z <= RESCUE_REACH; z++) {
@@ -161,14 +200,6 @@ public final class CompanionMineWayUpTests {
             shut++;
         }
         h.assertTrue(shut <= MAX_FORBIDDEN, "The rock round the chamber does not fit the forbidden cells of the record: " + shut);
-        c.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
-        int surface = h.absolutePos(new BlockPos(0, GROUND + 1 - SURFACE_MARGIN, 0)).getY();
-        CompanionMineClimbOutTests.climb(h, c, stand, result -> {
-            h.assertTrue(!result.message().contains("Своя лестница перекрыта") && !result.message().contains("путь наверх закрыт"),
-                    "He ended the climb as shut: " + result.message() + " | " + report(c));
-            h.assertTrue(result.success() && c.getBlockY() >= surface, "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c));
-            h.assertTrue(count(c, Items.DIAMOND) == 1, "The diamond is not in the bag | " + report(c));
-        });
     }
 
     /**
@@ -298,8 +329,10 @@ public final class CompanionMineWayUpTests {
         }
     }
 
-    /** Ten stands down from the entrance on the surface and a tunnel west off the foot, cut in the rock and recorded as the expedition records them; he stands at the entrance. */
-    private static CompanionEntity mine(GameTestHelper h) {
+    private static CompanionEntity mine(GameTestHelper h) { return mine(h, TUNNEL); }
+
+    /** Ten stands down from the entrance on the surface and a tunnel west off the foot ({@code tunnel} cells, none for 0), cut in the rock and recorded as the expedition records them; he stands at the entrance. */
+    private static CompanionEntity mine(GameTestHelper h, int tunnel) {
         mountain(h, false);
         BlockPos entrance = h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER));
         List<BlockPos> stands = CompanionShaftPlan.stands(entrance, Direction.NORTH, STEPS);
@@ -310,8 +343,9 @@ public final class CompanionMineWayUpTests {
         site.start(entrance, Direction.NORTH);
         for (BlockPos stand : stands.subList(1, stands.size())) site.reached(stand);
         BlockPos foot = site.foot();
+        if (tunnel == 0) return c;
         site.openTunnel(Direction.WEST);
-        for (int k = 1; k <= TUNNEL; k++) {
+        for (int k = 1; k <= tunnel; k++) {
             BlockPos cell = foot.relative(Direction.WEST, k);
             h.getLevel().setBlock(cell, Blocks.AIR.defaultBlockState(), 2 | 16);
             h.getLevel().setBlock(cell.above(), Blocks.AIR.defaultBlockState(), 2 | 16);

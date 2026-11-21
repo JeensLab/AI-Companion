@@ -11,12 +11,13 @@ import java.util.List;
  * The way up when the supplies are gone: back along the last tunnel and the stairs he dug to the entrance, one cell at a time.
  * Where the record has a gap (the stairs below a restart are forgotten, the cells above it begin far off) the gap is walked by a
  * route search, and a plug of his own that shuts it comes out with the pickaxe he has. Rock that shuts it is cut through by the
- * self-rescue, which is let work for that alone; a step that cannot be done ends the climb where he stands, said as it is.
+ * self-rescue, which is let work for that alone; a step that cannot be done ends the climb where he stands, said as it is. Out of a pit with his old
+ * stairs a few blocks over it, a short staircase of his own is cut up to them, and the climb walks on along them.
  */
 final class CompanionExpeditionClimb {
     enum Result { WORKING, DONE }
 
-    private enum Phase { WALK, TRAVEL, UNPLUG, CUT_OUT, STAIRS_UP }
+    private enum Phase { WALK, TRAVEL, UNPLUG, CUT_OUT, STAIRS_TO_WAY, STAIRS_UP }
 
     /** Two cells of the way further apart than this (squared) are not neighbours: the record has a gap between them. */
     private static final double GAP = 9;
@@ -38,6 +39,11 @@ final class CompanionExpeditionClimb {
     private final CompanionExpeditionSupply supply;
     /** The staircase cut up to the surface once the rescues are spent: the way up whatever it takes. */
     private final CompanionExpeditionStairsUp stairs;
+    /** The short staircase up to a near cell of his old way across the gap out of a pit ({@link #shortGap}): the walk goes on from that cell. */
+    // ponytail: its steps are no record of the way up: a later climb crosses them by the route search, and cutWear still keeps their wear (never more than the staircase to the surface's). Upgrade: the steps into the record in place of the gap.
+    private final CompanionExpeditionStairsUp toWay;
+    /** The short staircase was begun in this climb: the same gap is not cut to again. */
+    private boolean cutToWay;
     private int stairSteps;
     private String why = "", outcome = "";
     private List<BlockPos> cells = List.of();
@@ -57,6 +63,7 @@ final class CompanionExpeditionClimb {
         this.dig = dig;
         this.supply = supply;
         this.stairs = new CompanionExpeditionStairsUp(w, dig);
+        this.toWay = new CompanionExpeditionStairsUp(w, dig, false, TO_WAY);
         this.walk = new CompanionExpeditionWalk(dig);
         this.toPlug = new CompanionExpeditionWalk(dig);
         this.stone = new CompanionExpeditionStock(w, dig);
@@ -64,6 +71,7 @@ final class CompanionExpeditionClimb {
 
     static final String LAST_PICKAXE = "Кирки на исходе: поднимаюсь, пока есть чем.";
     static final String NO_TORCHES = "Факелы кончились, а сделать их не из чего: копать в темноте не буду.";
+    static final String TO_WAY = "До своей лестницы не дойти, прокапываю к ней ступени.";
 
     /** What ran out, for the report. */
     static String shortage(boolean lackedOre, boolean hadStone) {
@@ -115,32 +123,54 @@ final class CompanionExpeditionClimb {
 
     /** Blocks a step of {@link CompanionExpeditionStairsUp} takes out of the rock: the cell over his head, the step and the cell over it. */
     private static final int STEP_WEAR = 3;
-    /** How far a climbing rescue gets through the rock: it digs at most 60 blocks ({@link CompanionRecovery}), a staircase of some 20 steps. */
+    /** How far a climbing rescue gets through the rock: it digs at most 60 blocks ({@link CompanionRecovery}), a staircase of some 20 steps; the bound of a short staircase too. */
     private static final int RESCUE_REACH = 20;
 
     /**
-     * The wear of the staircase the climb cuts up out of a pit under the ground: from {@link #pitTop} a step for each block of height up to the entrance on
-     * the surface. None for a mine whose way up is walked to the surface.
+     * The wear of the staircase the climb cuts up out of a pit under the ground ({@link #gapOutOfPit}): the short one up to the cell beyond the gap where
+     * it is near ({@link #shortWay}), else a step for each block of height from the top of the pit up to the entrance on the surface. None for a mine whose
+     * way up is walked to the surface.
      */
     static int cutWear(CompanionMineSite mine) {
-        BlockPos top = pitTop(mine);
-        return top == null ? 0 : STEP_WEAR * Math.max(0, mine.origin().getY() - top.getY());
+        PitGap gap = gapOutOfPit(mine);
+        if (gap == null) return 0;
+        return shortWay(gap.top(), gap.beyond(), mine) ? shortWear(gap.top(), gap.beyond()) : surfaceWear(gap.top(), mine);
     }
 
+    /** The gap out of a pit under the ground: the last cell of the way up walked to from its entrance, and the first one across the gap from it. */
+    private record PitGap(BlockPos top, BlockPos beyond) { }
+
     /**
-     * The last cell of the way up out of a pit under the ground that is walked to from its entrance, before the first gap of the way (the entrance, or the
-     * stairs of an earlier pit when the mine was started again inside it); cells as near as a restart takes its way up from ({@link CompanionMineSite#NEAR_STAND})
-     * are walked to. Null for a mine whose way up is walked to the surface.
+     * The first gap of the way up out of a pit under the ground, past the cells walked to from its entrance (the entrance, or the stairs of an earlier pit
+     * when the mine was started again inside it); cells as near as a restart takes its way up from ({@link CompanionMineSite#NEAR_STAND}) are walked to. A way
+     * that ends short of the entrance on the surface has its gap to it. Null for a mine whose way up is walked to the surface.
      */
-    private static BlockPos pitTop(CompanionMineSite mine) {
+    private static PitGap gapOutOfPit(CompanionMineSite mine) {
         if (!mine.buried() || mine.origin() == null) return null;
         BlockPos last = mine.entrance();
         for (BlockPos cell : mine.above()) {
-            if (cell.distSqr(last) > CompanionMineSite.NEAR_STAND) break;
+            if (cell.distSqr(last) > CompanionMineSite.NEAR_STAND) return new PitGap(last, cell);
             last = cell;
         }
-        return last.equals(mine.origin()) ? null : last;
+        return last.equals(mine.origin()) ? null : new PitGap(last, mine.origin());
     }
+
+    /**
+     * A cell of his old way under the ground ({@code to}) that a short staircase from {@code from} gets to for less wear than the staircase to the surface:
+     * as near as a rescue digs and no lower, as the staircase only climbs or goes level. The entrance on the surface is the staircase to the surface's.
+     */
+    private static boolean shortWay(BlockPos from, BlockPos to, CompanionMineSite mine) {
+        return !to.equals(mine.origin()) && to.getY() >= from.getY() && to.distSqr(from) <= RESCUE_REACH * RESCUE_REACH && shortWear(from, to) < surfaceWear(from, mine);
+    }
+
+    /** A step up for each block of height, and a level step for each block across left over (or back, where the steps up overshoot it), each a step's wear at most. */
+    private static int shortWear(BlockPos from, BlockPos to) {
+        int up = to.getY() - from.getY(), across = Math.abs(to.getX() - from.getX()) + Math.abs(to.getZ() - from.getZ());
+        return STEP_WEAR * (up + Math.abs(across - up));
+    }
+
+    /** A step for each block of height up to the entrance on the surface: the staircase ends where he comes out under the sky. */
+    private static int surfaceWear(BlockPos from, CompanionMineSite mine) { return STEP_WEAR * Math.max(0, mine.origin().getY() - from.getY()); }
 
     /** The last tunnel's cells from its end, then the stands from the foot up, then the entrance. */
     static List<BlockPos> wayUp(CompanionMineSite mine) {
@@ -167,12 +197,13 @@ final class CompanionExpeditionClimb {
         // Across a gap he may come out on the surface any way at all (a route over the ground, the walk of a pickup, the rescue's wait):
         // there the climb is over. Run water of seed 7 (20.11): waiting for the rescue on a slope, the rescue dug him down a pit
         // toward the cell beyond the gap below him, and from the pit no tree was in reach.
-        if ((phase == Phase.TRAVEL || phase == Phase.UNPLUG || phase == Phase.CUT_OUT) && onSurface()) return finish(" Копать нечем, поднялся за припасами.");
+        if ((phase == Phase.TRAVEL || phase == Phase.UNPLUG || phase == Phase.CUT_OUT || phase == Phase.STAIRS_TO_WAY) && onSurface()) return finish(" Копать нечем, поднялся за припасами.");
         return switch (phase) {
             case WALK -> walked();
             case TRAVEL -> travel();
             case UNPLUG -> unplug();
             case CUT_OUT -> cutting();
+            case STAIRS_TO_WAY -> climbingToWay();
             case STAIRS_UP -> climbingStairs();
         };
     }
@@ -284,8 +315,13 @@ final class CompanionExpeditionClimb {
         return Result.WORKING;
     }
 
-    /** No walk and no block of his own joins the two ends. Any pickaxe he has cuts the way up, the wear kept for ore too (out is worth more than ore); the rescues spent (or none across the gap out of a pit, {@link #pitGap}), a staircase of his own to the surface where the record has none. */
+    /**
+     * No walk and no block of his own joins the two ends. A near cell of his old way over a pit is cut up to ({@link #shortGap}); elsewhere any pickaxe he has
+     * cuts the way up, the wear kept for ore too (out is worth more than ore); the rescues spent (or none across the far gap out of a pit, {@link #pitGap}),
+     * a staircase of his own to the surface where the record has none.
+     */
     private Result cutOut() {
+        if (!cutToWay && shortGap()) return stairsToWay(cells.get(stretchEnd));
         if (cuts >= MAX_CUTS || !rockTool() || pitGap()) return noWay();
         cuts++;
         rescuesBefore = w.owner.recovery.begun();
@@ -295,18 +331,53 @@ final class CompanionExpeditionClimb {
         return Result.WORKING;
     }
 
+    /** The gap he stands at is the one out of a pit under the ground ({@link #gapOutOfPit}), or the whole way of a lost one. */
+    private boolean atPitGap() {
+        PitGap gap = gapOutOfPit(w.mine);
+        return gap != null && (lost || stretchEnd > 0 && cells.get(stretchEnd - 1).distSqr(gap.top()) <= CompanionMineSite.NEAR_STAND);
+    }
+
     /**
-     * The gap he stands at is the one out of a pit under the ground ({@link #pitTop}), or the whole way of a lost one, and the cell beyond lies farther than
-     * a rescue digs ({@link #RESCUE_REACH}): the rescues would spend the staircase's wear ({@link #cutWear}) and not get there. Run void-4 of seed 314159
-     * (21.11): three rescues toward the old way 35 blocks off spent some 170 wear of the iron pickaxe, the climb walked back down from the steps they cut,
-     * and its staircase ran out of wear ten blocks under the surface. A near cell beyond is left to the walk and the rescues as before: run retreat of seed 7
-     * (series d) stood by the old way four blocks over the pit when the staircase from a hundred blocks down was begun instead.
+     * At the gap out of a pit, a cell beyond that lies farther than a rescue digs ({@link #RESCUE_REACH}): the rescues would spend the staircase's wear
+     * ({@link #cutWear}) and not get there. Run void-4 of seed 314159 (21.11): three rescues toward the old way 35 blocks off spent some 170 wear of the iron
+     * pickaxe, the climb walked back down from the steps they cut, and its staircase ran out of wear ten blocks under the surface.
      */
-    // ponytail: a near gap is still crossed by the rescues or the staircase to the surface. Upgrade: a short staircase toward the cell beyond, then the walk on.
-    private boolean pitGap() {
-        BlockPos top = pitTop(w.mine);
-        if (top == null || !lost && (stretchEnd == 0 || cells.get(stretchEnd - 1).distSqr(top) > CompanionMineSite.NEAR_STAND)) return false;
-        return cells.get(stretchEnd).distSqr(w.owner.blockPosition()) > RESCUE_REACH * RESCUE_REACH;
+    private boolean pitGap() { return atPitGap() && cells.get(stretchEnd).distSqr(w.owner.blockPosition()) > RESCUE_REACH * RESCUE_REACH; }
+
+    /**
+     * At the gap out of a pit, a cell beyond that a short staircase gets to ({@link #shortWay}): run retreat of seed 7 (series d, 21.11) stood by his old stairs
+     * four blocks over the pit when a staircase to the surface was begun from a hundred blocks down, and the pickaxes ran out at height 36. One lower than him
+     * is left to the rescues as before.
+     */
+    private boolean shortGap() { return atPitGap() && shortWay(w.owner.blockPosition(), cells.get(stretchEnd), w.mine); }
+
+    /** A short staircase of his own up to {@code beyond}, once a climb: as a player digs up to the stairs he knows are just over him. */
+    private Result stairsToWay(BlockPos beyond) {
+        if (!rockTool() && !makeTool()) return finish(CLOSED);
+        cutToWay = true;
+        toWay.begin(beyond);
+        stairSteps = 0;
+        w.owner.getNavigation().stop();
+        w.expedition.climbTime();
+        phase = Phase.STAIRS_TO_WAY;
+        w.owner.workStatus(TO_WAY);
+        return Result.WORKING;
+    }
+
+    /** At the cell of his old way the walk goes on along it; a staircase that cannot get there leaves the gap to {@link #noWay}. */
+    private Result climbingToWay() {
+        return switch (toWay.tick((ServerLevel) w.owner.level())) {
+            case WORKING -> {
+                if (toWay.steps() != stairSteps) {
+                    stairSteps = toWay.steps();
+                    w.expedition.climbTime();
+                }
+                yield Result.WORKING;
+            }
+            case ARRIVED -> crossed();
+            case NO_TOOL -> makeTool() ? Result.WORKING : finish(" " + shortage(false, w.items.countCarried(Items.STONE_PICKAXE) > 0) + CLOSED);
+            case STUCK -> noWay();
+        };
     }
 
     /** Stands still with the cell beyond the gap as his destination until the rescue takes over; it stops the work while it runs, and this goes on when it is over. */
@@ -427,11 +498,12 @@ final class CompanionExpeditionClimb {
         toPlug.clear();
         stone.reset();
         stairs.reset();
+        toWay.reset();
         stairSteps = 0;
         why = outcome = "";
         cells = List.of();
         stretchEnd = plugs = cuts = cutWait = rescuesBefore = 0;
-        lost = false;
+        lost = cutToWay = false;
         newStairsWhy = "";
         phase = Phase.WALK;
         plug = null;
