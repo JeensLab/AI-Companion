@@ -66,7 +66,7 @@ final class CompanionExpeditionClimb {
         this.dig = dig;
         this.supply = supply;
         this.stairs = new CompanionExpeditionStairsUp(w, dig);
-        this.toWay = new CompanionExpeditionStairsUp(w, dig, false, TO_WAY);
+        this.toWay = new CompanionExpeditionStairsUp(w, dig, false, TO_WAY, true);
         this.walk = new CompanionExpeditionWalk(dig);
         this.toPlug = new CompanionExpeditionWalk(dig);
         this.stone = new CompanionExpeditionStock(w, dig);
@@ -398,23 +398,34 @@ final class CompanionExpeditionClimb {
 
     /**
      * At the cell of his old way the walk goes on along it from there. A staircase that cannot get there, or takes more steps than the way there does (at
-     * its height a blocked cell turned it back, and every step after led away), leaves the gap to the rescues and the staircase to the surface.
+     * its height a blocked cell turned it back, and every step after led away), leaves the gap to be crossed as any: the walk or the route search to the
+     * first cell across (the steps cut may have opened it), then the rescues and the staircase to the surface. Not the rescues at once: beside his old
+     * stairs none begins, and the wait for one ended in the staircase to the surface.
      */
     private Result climbingToWay() {
         return switch (toWay.tick((ServerLevel) w.owner.level())) {
             case WORKING -> {
-                if (toWay.steps() == stairSteps) yield Result.WORKING;
-                stairSteps = toWay.steps();
-                w.expedition.climbTime();
-                yield stairSteps > toWaySteps ? cutOut() : Result.WORKING;
+                if (toWay.steps() != stairSteps) {
+                    stairSteps = toWay.steps();
+                    w.expedition.climbTime();
+                    yield Result.WORKING;
+                }
+                // Counted a tick after the step: that tick tells an arrival first.
+                yield stairSteps > toWaySteps ? crossAnyway() : Result.WORKING;
             }
             case ARRIVED -> {
                 stretchEnd = toWayCell;
                 yield crossed();
             }
             case NO_TOOL -> makeTool() ? Result.WORKING : finish(" " + shortage(false, w.items.countCarried(Items.STONE_PICKAXE) > 0) + CLOSED);
-            case STUCK -> cutOut();
+            case STUCK -> crossAnyway();
         };
+    }
+
+    private Result crossAnyway() {
+        w.owner.getNavigation().stop();
+        phase = Phase.TRAVEL;
+        return Result.WORKING;
     }
 
     /** Stands still with the cell beyond the gap as his destination until the rescue takes over; it stops the work while it runs, and this goes on when it is over. */

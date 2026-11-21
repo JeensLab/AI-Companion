@@ -198,16 +198,20 @@ public final class CompanionMineWayUpTests {
         shutForRescue(h, site, pit);
         List<BlockPos> old = List.copyOf(site.above());
         StringBuilder said = new StringBuilder();
-        java.util.Set<BlockPos> holed = new java.util.HashSet<>();
+        java.util.Set<BlockPos> holed = new java.util.HashSet<>(), filled = new java.util.HashSet<>();
         h.onEachTick(() -> {
             said.append(c.getLastTaskResult()).append('\n');
-            for (BlockPos stand : old) if (h.getLevel().getBlockState(stand.below()).isAir()) holed.add(stand);
+            for (BlockPos stand : old) {
+                if (h.getLevel().getBlockState(stand.below()).isAir()) holed.add(stand);
+                if (!h.getLevel().getBlockState(stand).getCollisionShape(h.getLevel(), stand).isEmpty()) filled.add(stand);
+            }
         });
         int surface = h.absolutePos(new BlockPos(0, GROUND + 1 - SURFACE_MARGIN, 0)).getY();
         CompanionMineClimbOutTests.climb(h, c, pit, result -> {
             h.assertTrue(result.success() && c.getBlockY() >= surface, "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c));
             h.assertTrue(!said.toString().contains(NEW_STAIRS) && said.toString().contains(TO_WAY), "He did not cut his way up to his old stairs four blocks over the pit | " + report(c));
             h.assertTrue(holed.isEmpty(), "The floor under steps of his old stairs was cut: " + holed + " | " + report(c));
+            h.assertTrue(filled.isEmpty(), "A block was laid into steps of his old stairs: " + filled + " | " + report(c));
         });
     }
 

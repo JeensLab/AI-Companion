@@ -30,6 +30,12 @@ final class CompanionExpeditionStairsUp {
     /** The mine's steps go into its record of the way up; a climb for another goal (to the player) leaves the record alone and says its own line. */
     private final boolean recordsWay;
     private final String status;
+    /**
+     * The stairs of his ways are walked on after it (a short staircase up to his old stairs over a pit): no step cuts the floor of one of their steps or lays
+     * a floor into one, not even in the second pass. A staircase to the surface leaves them behind, and its way out from under a lake may run under the
+     * entrance of the pit.
+     */
+    private final boolean keepsStairs;
     private final Set<Long> refused = new HashSet<>();
     /** The stands this climb has stood on: a level step back onto one goes round a chamber with no way out, not up (a pit in bedrock). */
     private final Set<BlockPos> stood = new HashSet<>();
@@ -43,12 +49,15 @@ final class CompanionExpeditionStairsUp {
 
     CompanionExpeditionStairsUp(CompanionWork w, CompanionExpeditionDig dig) { this(w, dig, true, null); }
 
-    CompanionExpeditionStairsUp(CompanionWork w, CompanionExpeditionDig dig, boolean recordsWay, String status) {
+    CompanionExpeditionStairsUp(CompanionWork w, CompanionExpeditionDig dig, boolean recordsWay, String status) { this(w, dig, recordsWay, status, false); }
+
+    CompanionExpeditionStairsUp(CompanionWork w, CompanionExpeditionDig dig, boolean recordsWay, String status, boolean keepsStairs) {
         this.w = w;
         this.owner = w.owner;
         this.dig = dig;
         this.recordsWay = recordsWay;
         this.status = status;
+        this.keepsStairs = keepsStairs;
     }
 
     void begin(BlockPos goal) {
@@ -115,8 +124,8 @@ final class CompanionExpeditionStairsUp {
                 BlockPos step = up ? here.relative(d).above() : here.relative(d);
                 if (!up && stood.contains(step)) continue;
                 List<BlockPos> column = up ? List.of(here.above(2), step, step.above()) : List.of(step, step.above());
-                // Not even in the second pass: the floor of a step of his stairs, the old ones over a pit too, is the way the climb walks on (a short staircase climbs right up to them).
-                if (column.stream().anyMatch(w.mine::carriesStand)) continue;
+                // The floor of a step of his stairs, or a step over one of them (its floor would be laid into it): see keepsStairs.
+                if (keepsStairs && (column.stream().anyMatch(w.mine::carriesStand) || w.mine.carriesStand(step.below(2)))) continue;
                 CompanionShaftPlan.Hazard hazard = CompanionShaftPlan.assess(level, here, column, List.of(step.below()), w.mine.seals(), avoid, true);
                 switch (hazard.kind()) {
                     case BLOCKED -> { continue; }
