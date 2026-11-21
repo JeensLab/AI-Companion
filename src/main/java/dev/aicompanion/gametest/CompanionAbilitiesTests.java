@@ -42,6 +42,25 @@ public final class CompanionAbilitiesTests {
     }
 
     @GameTest(template = "empty")
+    public static void theAnswerIsNotAlwaysTheSameFive(GameTestHelper h) {
+        // The player's phrase twice, as the screen answers it: a fixed first five reads back the same list on every ask.
+        String phrase = "что ты умеешь";
+        String command = CompanionLocalCommands.route(phrase, "Олег");
+        h.assertTrue("companion abilities 5".equals(command), "«" + phrase + "» -> " + command);
+        Set<List<String>> answers = new HashSet<>();
+        for (int draw = 0; draw < 20; draw++) {
+            String answer = CompanionLocalAnswers.answer(command, phrase, CompanionDiagnostics.newTrace());
+            h.assertTrue(answer != null, "the local answer path skipped «" + phrase + "»");
+            List<String> items = items(answer);
+            h.assertTrue(items.size() == 5, "the answer names " + items.size() + " abilities: " + answer);
+            h.assertTrue(new HashSet<>(items).size() == items.size(), "the answer repeats an ability: " + answer);
+            answers.add(List.copyOf(items));
+        }
+        h.assertTrue(answers.size() >= 2, "20 asks all gave the same five: " + answers.iterator().next());
+        h.succeed();
+    }
+
+    @GameTest(template = "empty")
     public static void tenAbilitiesOnRequest(GameTestHelper h) {
         String command = CompanionLocalCommands.route("расскажи 10 умений", "Олег");
         h.assertTrue("companion abilities 10".equals(command), "«расскажи 10 умений» -> " + command);
