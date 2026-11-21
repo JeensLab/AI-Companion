@@ -44,9 +44,10 @@ import java.util.function.Predicate;
  * {@link #SITE} blocks of the player, its two bottom blocks set into the ground in place of what was there (he picks that up), so the
  * way in has no step; lit at once with his flint and steel, which wears as a player's does. A lit portal within {@link #NEAR} blocks of
  * the player is his way to the Nether already: none is built; one he knows farther off he leads the player to (decided 09.11), unless
- * the player asked for a new one. A portal is known by its own block: one he built or saw, wherever the player has gone since. Short of obsidian the order is refused at once as a shortage, and the plan gets it first
- * (CompanionPlanRunner); so is a frame with neither a flint and steel nor a fire charge, the charge taken from his bag or from a chest
- * near him (a ruined portal's chest often has one) and used on the bottom of the way in as a player uses it.
+ * the player asked for a new one. A portal is known by its own block: one he built or saw, wherever the player has gone since. Short of
+ * obsidian the order is refused at once as a shortage, and the plan gets it first (CompanionPlanRunner); so is a frame with neither a
+ * flint and steel nor a fire charge, the charge taken from his bag or from a chest near him (a ruined portal's chest often has one) and
+ * used on the bottom of the way in as a player uses it.
  * What stands of the frame is read from the world, so an order stopped half way goes on with the same frame; the obsidian he set is
  * not mined again for it (CompanionObsidian). He digs only natural ground and sets the frame in air: the player's blocks stay. The top
  * of a frame without corners hangs in the air: as a player does, he props it with a block of his under it and takes it away after.
@@ -212,7 +213,7 @@ final class CompanionPortalBuild {
         return "постройку портала (" + frame.obsidian().stream().filter(cell -> level.getBlockState(cell).is(Blocks.OBSIDIAN)).count() + " из " + OBSIDIAN + ")";
     }
 
-    void cancel() { reset(); }
+    void cancel() { if (fetchOpen != null) w.closeChest(); reset(); }
 
     private void reset() { frame = null; leadTo = null; leadWait = 0; stands = walkingTo = Set.of(); path = null; legs = 0; waitingSince = pickingSince = 0; retried = false; fetchOpen = null; triedCharges.clear(); }
 
@@ -232,12 +233,12 @@ final class CompanionPortalBuild {
         Step step = next(level);
         if (step == null) return;
         // The steps he walks to himself, not to a cell of the frame: what lies in it, and the chest with a charge.
-        boolean own = step.kind() == Kind.PICK || step.kind() == Kind.FETCH;
-        if (!own) { pickingSince = 0; retried = false; }
+        boolean selfWalk = step.kind() == Kind.PICK || step.kind() == Kind.FETCH;
+        if (!selfWalk) { pickingSince = 0; retried = false; }
         // Out of the frame, with the cell in his reach and sight: from inside it the fire would take him to the Nether. What lies in
         // the frame he steps in for, the frame not lit yet.
         Vec3 eyes = c.getEyePosition();
-        if (!own && (!c.onGround() || frame.box().intersects(c.getBoundingBox())
+        if (!selfWalk && (!c.onGround() || frame.box().intersects(c.getBoundingBox())
                 || new AABB(step.cell()).distanceToSqr(eyes) > REACH * REACH || !visible(level, eyes, step.cell()))) {
             c.workStatus("Иду строить портал.");
             // Come to a place it is still not seen from (a column set since hides it): that place is no good any more.
@@ -245,7 +246,7 @@ final class CompanionPortalBuild {
             if (!walk(stands)) { event("portal_no_way", "step", step); w.finish(false, NO_WAY); }
             return;
         }
-        if (!own) w.route.stop();
+        if (!selfWalk) w.route.stop();
         switch (step.kind()) {
             case DIG, CLEAR -> dig(level, step.cell());
             case PROP -> prop(level, step.cell());
