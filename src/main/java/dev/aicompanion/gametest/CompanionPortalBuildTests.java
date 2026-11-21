@@ -315,6 +315,24 @@ public final class CompanionPortalBuildTests {
         });
     }
 
+    /** A flint and steel and a fire charge both in his bag: the flint and steel lights the frame, the charge stays whole. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200, batch = PORTALS)
+    public static void aFlintAndSteelIsUsedBeforeAFireCharge(GameTestHelper h) {
+        ground(h);
+        standingFrame(h, 14, 20);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.FLINT_AND_STEEL));
+        c.setItem(1, new ItemStack(Items.FIRE_CHARGE, 2));
+        var future = run(h, c, "[{\"action\":\"build_portal\"}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Портал готов.") && blocks(h, Blocks.NETHER_PORTAL).size() == 6, "Not lit: " + report);
+            h.assertTrue(steel(c) == 1 && count(c, Items.FIRE_CHARGE) == 2, "Not the flint and steel or the charge was spent: " + c.getStoredItemsSummary());
+            putOut(h);
+        });
+    }
+
     /**
      * The charge is only in a chest near the frame (as a ruined portal's chest has one): he walks to it, takes one charge, and lights
      * the frame with it — one charge spent, the rest left in the chest.
