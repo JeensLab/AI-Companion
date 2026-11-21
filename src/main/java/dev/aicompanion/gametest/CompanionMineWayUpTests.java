@@ -50,6 +50,8 @@ public final class CompanionMineWayUpTests {
     private static final int RESCUE_REACH = 4, MAX_FORBIDDEN = 256;
     /** What the new staircase of a lost way is said with; the way up of his own never says it. */
     private static final String NEW_STAIRS = "прокапываю новую";
+    /** What the short staircase up to his old stairs over a pit is said with. */
+    private static final String TO_WAY = "прокапываю к ней ступени";
     /** The end of a climb out of the pit by the staircase cut up from it: the far gap of a pit is no gap for the rescues to chase the cell beyond across. */
     private static final String CUT_OUT = "прокопал новую к поверхности";
     /**
@@ -171,21 +173,41 @@ public final class CompanionMineWayUpTests {
      */
     @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
     public static void cutsAShortStaircaseUpToHisOldStairsJustOverThePit(GameTestHelper h) {
+        shortStairsOutOfThePit(h, foot -> foot.below(UNDER_FOOT).relative(Direction.NORTH, UNDER_FOOT));
+    }
+
+    /**
+     * As above, the pit straight under the foot (review of the short staircase: its steps up toward the foot cut the floor of the foot and of the step over
+     * it, and the walk up the old stairs found a hole): the steps go round the floors of his stairs.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void cutsAShortStaircaseUpToHisOldStairsStraightOverThePit(GameTestHelper h) {
+        shortStairsOutOfThePit(h, foot -> foot.below(UNDER_FOOT));
+    }
+
+    /** The old stairs with no tunnel, the mine started again at {@code under} of their foot, and the climb out: by a short staircase and the old stairs, whole. */
+    private static void shortStairsOutOfThePit(GameTestHelper h, java.util.function.UnaryOperator<BlockPos> under) {
         CompanionEntity c = mine(h, 0);
         CompanionMineSite site = c.mineSite();
-        BlockPos foot = site.foot(), pit = foot.below(UNDER_FOOT).relative(Direction.NORTH, UNDER_FOOT);
+        BlockPos foot = site.foot(), pit = under.apply(foot);
         for (int y = 0; y <= 1; y++) h.getLevel().setBlock(pit.above(y), Blocks.AIR.defaultBlockState(), 2 | 16);
         c.teleportTo(pit.getX() + .5, pit.getY(), pit.getZ() + .5);
         site.restart(pit, Direction.NORTH);
         site.buried(true);
         h.assertTrue(site.above().get(0).equals(foot), "The way up of the mine started again does not begin at the foot of the old stairs: " + site.above().get(0));
         shutForRescue(h, site, pit);
+        List<BlockPos> old = List.copyOf(site.above());
         StringBuilder said = new StringBuilder();
-        h.onEachTick(() -> said.append(c.getLastTaskResult()).append('\n'));
+        java.util.Set<BlockPos> holed = new java.util.HashSet<>();
+        h.onEachTick(() -> {
+            said.append(c.getLastTaskResult()).append('\n');
+            for (BlockPos stand : old) if (h.getLevel().getBlockState(stand.below()).isAir()) holed.add(stand);
+        });
         int surface = h.absolutePos(new BlockPos(0, GROUND + 1 - SURFACE_MARGIN, 0)).getY();
         CompanionMineClimbOutTests.climb(h, c, pit, result -> {
             h.assertTrue(result.success() && c.getBlockY() >= surface, "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c));
-            h.assertTrue(!said.toString().contains(NEW_STAIRS), "He cut a staircase to the surface though his old stairs were four blocks over the pit | " + report(c));
+            h.assertTrue(!said.toString().contains(NEW_STAIRS) && said.toString().contains(TO_WAY), "He did not cut his way up to his old stairs four blocks over the pit | " + report(c));
+            h.assertTrue(holed.isEmpty(), "The floor under steps of his old stairs was cut: " + holed + " | " + report(c));
         });
     }
 

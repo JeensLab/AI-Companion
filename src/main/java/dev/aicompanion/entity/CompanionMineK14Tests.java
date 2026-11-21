@@ -195,24 +195,47 @@ public final class CompanionMineK14Tests {
     /**
      * Run retreat of seed 7 (series d, 21.11): a mine started again in a pit four blocks under the foot of his old stairs kept the wear of a staircase up to
      * the surface, a hundred blocks. The way out of it is a short staircase up to that foot: four steps up toward it, its wear the reserve. Old stairs far off,
-     * or lower than the pit (the staircase only climbs), leave the staircase to the surface. Twelve stands down from forty: the foot at 28.
+     * or lower than the pit (the staircase only climbs), leave the staircase to the surface. Twelve stands down from forty: the foot at 28. A tunnel off the
+     * foot is the first of the old way kept by the restart, from its end twenty blocks off: the foot is still the cell cut up to. A pit started again under
+     * the stairs of a pit has the gap of the first pit past the foot it is near: that gap is crossed as before, so the reserve is the staircase to the surface.
      */
     @GameTest(template = "marathon_cave", timeoutTicks = 100)
     public static void aPitJustUnderHisOldStairsKeepsTheWearOfAShortStaircaseUpToThem(GameTestHelper h) {
         BlockPos origin = h.absolutePos(new BlockPos(CENTER, 40, CENTER));
-        int near = pitWear(origin, foot -> foot.below(4).north(4)), far = pitWear(origin, foot -> foot.below(4).north(25)), under = pitWear(origin, foot -> foot.above(4).north(4));
+        java.util.function.UnaryOperator<BlockPos> under = foot -> foot.below(4).north(4);
+        int near = pitWear(oldStairs(origin, 0), under), far = pitWear(oldStairs(origin, 0), foot -> foot.below(4).north(25));
+        int higher = pitWear(oldStairs(origin, 0), foot -> foot.above(4).north(4)), tunnel = pitWear(oldStairs(origin, 20), under);
+        CompanionMineSite pits = oldStairs(origin, 0);
+        pits.restart(under.apply(pits.foot()), Direction.NORTH);
+        pits.buried(true);
+        descend(pits, pits.entrance(), 8);
+        int nested = pitWear(pits, under);
         h.assertTrue(near == 3 * 4, "The wear kept for a pit four under the foot of his old stairs and four across: " + near + ", not four steps up (12)");
         h.assertTrue(far == 3 * (40 - 24), "The wear kept for a pit far from his old stairs: " + far + ", not the staircase to the surface (48)");
-        h.assertTrue(under == 3 * (40 - 32), "The wear kept for a pit over the foot of his old stairs: " + under + ", not the staircase to the surface (24)");
+        h.assertTrue(higher == 3 * (40 - 32), "The wear kept for a pit over the foot of his old stairs: " + higher + ", not the staircase to the surface (24)");
+        h.assertTrue(tunnel == 3 * 4, "The wear kept for a pit under the foot of old stairs with a tunnel off it: " + tunnel + ", not four steps up to the foot (12)");
+        h.assertTrue(nested == 3 * (40 - 12), "The wear kept for a pit under the stairs of another pit: " + nested + ", not the staircase to the surface (84)");
         h.succeed();
     }
 
-    /** The wear kept for the way out of a pit {@code pit} of the foot of twelve stands down north from {@code origin}, the mine started again there. */
-    private static int pitWear(BlockPos origin, java.util.function.UnaryOperator<BlockPos> pit) {
+    /** A mine of twelve stands down north from {@code origin}, and a tunnel of {@code tunnel} cells west off its foot. */
+    private static CompanionMineSite oldStairs(BlockPos origin, int tunnel) {
         CompanionMineSite mine = new CompanionMineSite();
         mine.start(origin, Direction.NORTH);
-        List<BlockPos> stands = CompanionShaftPlan.stands(origin, Direction.NORTH, 12);
+        descend(mine, origin, 12);
+        if (tunnel == 0) return mine;
+        mine.openTunnel(Direction.WEST);
+        for (int k = 0; k < tunnel; k++) mine.extendTunnel();
+        return mine;
+    }
+
+    private static void descend(CompanionMineSite mine, BlockPos from, int steps) {
+        List<BlockPos> stands = CompanionShaftPlan.stands(from, Direction.NORTH, steps);
         for (BlockPos stand : stands.subList(1, stands.size())) mine.reached(stand);
+    }
+
+    /** The wear kept for the way out of the mine started again at {@code pit} of its foot. */
+    private static int pitWear(CompanionMineSite mine, java.util.function.UnaryOperator<BlockPos> pit) {
         mine.restart(pit.apply(mine.foot()), Direction.NORTH);
         mine.buried(true);
         return CompanionExpeditionClimb.cutWear(mine);

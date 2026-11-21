@@ -115,6 +115,8 @@ final class CompanionExpeditionStairsUp {
                 BlockPos step = up ? here.relative(d).above() : here.relative(d);
                 if (!up && stood.contains(step)) continue;
                 List<BlockPos> column = up ? List.of(here.above(2), step, step.above()) : List.of(step, step.above());
+                // Not even in the second pass: the floor of a step of his stairs, the old ones over a pit too, is the way the climb walks on (a short staircase climbs right up to them).
+                if (column.stream().anyMatch(w.mine::carriesStand)) continue;
                 CompanionShaftPlan.Hazard hazard = CompanionShaftPlan.assess(level, here, column, List.of(step.below()), w.mine.seals(), avoid, true);
                 switch (hazard.kind()) {
                     case BLOCKED -> { continue; }
