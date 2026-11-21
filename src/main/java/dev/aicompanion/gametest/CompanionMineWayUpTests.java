@@ -53,6 +53,8 @@ public final class CompanionMineWayUpTests {
      * the foot of its stairs, and the wear left on the iron pickaxe: more than the staircase out of the pit takes on top of the wear kept for ore, or worn
      * below what the staircase takes (78).
      */
+    /** The end of a climb out of the pit by the staircase cut up from it: the gap of a pit is no gap for the rescues to chase the far cell across. */
+    private static final String CUT_OUT = "прокопал новую к поверхности";
     private static final int TALL_GROUND = 33, PIT_FEET = 8, CORNER = 2, PIT_TUNNEL = 2, IRON_LEFT = 150, IRON_WORN = 40, BESIDE = 3;
 
     private CompanionMineWayUpTests() { }
@@ -230,7 +232,8 @@ public final class CompanionMineWayUpTests {
             CompanionActionResult result = ended(h, c, id);
             h.assertTrue(!result.message().contains("путь наверх закрыт") && c.getBlockY() >= surface,
                     "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c));
-            h.assertTrue(result.message().contains("Кирки на исходе"), "He did not turn back while the stone pickaxe was left: " + result.message() + " | " + report(c));
+            h.assertTrue(result.message().contains("Кирки на исходе") && result.message().contains(CUT_OUT),
+                    "He did not turn back while the stone pickaxe was left, or not out by the staircase he cut: " + result.message() + " | " + report(c));
         });
     }
 
@@ -245,6 +248,7 @@ public final class CompanionMineWayUpTests {
             CompanionActionResult result = ended(h, c, id);
             h.assertTrue(!result.message().contains("путь наверх закрыт") && c.getBlockY() >= surface,
                     "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c));
+            h.assertTrue(result.message().contains(CUT_OUT), "He did not come out by the staircase he cut: " + result.message() + " | " + report(c));
             h.assertTrue(count(c, Items.IRON_PICKAXE) == 1, "The iron pickaxe was worn out on the way | " + report(c));
             int dug = c.mineSite().tunnels().stream().mapToInt(CompanionMineSite.Tunnel::length).sum();
             h.assertTrue(dug > tunnel, "The iron pickaxe dug no tunnel: " + dug + " cells | " + report(c));

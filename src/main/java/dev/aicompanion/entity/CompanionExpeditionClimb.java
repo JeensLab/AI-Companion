@@ -117,18 +117,27 @@ final class CompanionExpeditionClimb {
     private static final int STEP_WEAR = 3;
 
     /**
-     * The wear of the staircase the climb cuts up out of a pit under the ground: from the last cell of the way up before its first gap (the entrance, or
-     * the stairs of an earlier pit when the mine was started again inside it) a step for each block of height up to the entrance on the surface. None for a
-     * mine whose way up is walked to the surface. Cells as near as a restart takes its way up from ({@link CompanionMineSite#NEAR_STAND}) are walked to.
+     * The wear of the staircase the climb cuts up out of a pit under the ground: from {@link #pitTop} a step for each block of height up to the entrance on
+     * the surface. None for a mine whose way up is walked to the surface.
      */
     static int cutWear(CompanionMineSite mine) {
-        if (!mine.buried() || mine.origin() == null) return 0;
+        BlockPos top = pitTop(mine);
+        return top == null ? 0 : STEP_WEAR * Math.max(0, mine.origin().getY() - top.getY());
+    }
+
+    /**
+     * The last cell of the way up out of a pit under the ground that is walked to from its entrance, before the first gap of the way (the entrance, or the
+     * stairs of an earlier pit when the mine was started again inside it); cells as near as a restart takes its way up from ({@link CompanionMineSite#NEAR_STAND})
+     * are walked to. Null for a mine whose way up is walked to the surface.
+     */
+    private static BlockPos pitTop(CompanionMineSite mine) {
+        if (!mine.buried() || mine.origin() == null) return null;
         BlockPos last = mine.entrance();
         for (BlockPos cell : mine.above()) {
             if (cell.distSqr(last) > CompanionMineSite.NEAR_STAND) break;
             last = cell;
         }
-        return last.equals(mine.origin()) ? 0 : STEP_WEAR * Math.max(0, mine.origin().getY() - last.getY());
+        return last.equals(mine.origin()) ? null : last;
     }
 
     /** The last tunnel's cells from its end, then the stands from the foot up, then the entrance. */
@@ -273,15 +282,26 @@ final class CompanionExpeditionClimb {
         return Result.WORKING;
     }
 
-    /** No walk and no block of his own joins the two ends. Any pickaxe he has cuts the way up, the wear kept for ore too (out is worth more than ore); the rescues spent, a staircase of his own to the surface where the record has none. */
+    /** No walk and no block of his own joins the two ends. Any pickaxe he has cuts the way up, the wear kept for ore too (out is worth more than ore); the rescues spent (or none across the gap out of a pit, {@link #pitGap}), a staircase of his own to the surface where the record has none. */
     private Result cutOut() {
-        if (cuts >= MAX_CUTS || !rockTool()) return noWay();
+        if (cuts >= MAX_CUTS || !rockTool() || pitGap()) return noWay();
         cuts++;
         rescuesBefore = w.owner.recovery.begun();
         w.owner.getNavigation().stop();
         w.expedition.climbTime();
         phase = Phase.CUT_OUT;
         return Result.WORKING;
+    }
+
+    /**
+     * The gap he stands at is the one out of a pit under the ground ({@link #pitTop}): the cell beyond it is far off across the rock, no rescue of a few blocks
+     * reaches it, and the wear the rescues spend is the staircase's ({@link #cutWear}). Run void-4 of seed 314159 (21.11): three rescues spent some 170 wear
+     * of the iron pickaxe, the climb walked back down from the steps they cut toward the old way below, and its staircase ran out of wear ten blocks under
+     * the surface.
+     */
+    private boolean pitGap() {
+        BlockPos top = pitTop(w.mine);
+        return top != null && (stretchEnd == 0 || cells.get(stretchEnd - 1).distSqr(top) <= CompanionMineSite.NEAR_STAND);
     }
 
     /** Stands still with the cell beyond the gap as his destination until the rescue takes over; it stops the work while it runs, and this goes on when it is over. */
