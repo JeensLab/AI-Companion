@@ -3,8 +3,10 @@ package dev.aicompanion.client;
 import dev.aicompanion.entity.CompanionAutonomy;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Random;
 import java.util.Set;
 
 /**
@@ -12,8 +14,8 @@ import java.util.Set;
  * plan actions the codec accepts or deeds the autonomy can take up, and every accepted action and every deed belongs to
  * an ability. A new plan action or deed without a phrase fails this class at load and the abilities GameTest, naming the
  * constant; a phrase about something the code has no action or deed for fails the same way, so the list cannot drift
- * from the code. «Что ты умеешь» and «расскажи 10 умений» are answered from it without a model request (idea 4NTZD,
- * issue #105).
+ * from the code. «Что ты умеешь» and «расскажи 10 умений» are answered from it without a model request, as a random
+ * selection drawn without repeats, so two asks do not read back the same five (idea 4NTZD, issue #105).
  *
  * Scope: everything the player can ASK him to do — the plan codec's actions and the autonomy deeds
  * ({@link CompanionAutonomy.Deed}). The direct commands only reword those same actions, switch the deeds on and off, or
@@ -63,9 +65,12 @@ public final class CompanionAbilities {
 
     private static final List<Ability> ALL = verify(DECLARED);
 
+    /** The source of an answer the player did not seed: the same ask twice must not read back the same five. */
+    private static final Random RANDOM = new Random();
+
     private CompanionAbilities() { }
 
-    /** The registry, in the order the answer names it. */
+    /** The registry, in its declared order; the answer draws from it in any order. */
     public static List<Ability> all() { return ALL; }
 
     /** The phrases alone, in that order: what the answer may say. */
@@ -80,13 +85,28 @@ public final class CompanionAbilities {
 
     /** The answer to the local command «companion abilities <count>»: that many abilities, one short phrase each. */
     public static String answer(String command) {
-        List<Ability> shown = ALL.subList(0, count(command));
+        return answer(command, RANDOM);
+    }
+
+    /**
+     * The same answer from a given source, so a test can hold the draw still. Two asks must not read back the same
+     * five: the registry is drawn at random and a phrase never appears twice in one answer.
+     */
+    public static String answer(String command, Random random) {
+        List<Ability> shown = selection(count(command), random);
         StringBuilder text = new StringBuilder("Умею вот что: ");
         for (int i = 0; i < shown.size(); i++) {
             if (i > 0) text.append("; ");
             text.append(i + 1).append(") ").append(shown.get(i).phrase());
         }
         return text.append('.').toString();
+    }
+
+    /** That many abilities drawn from the registry without repeats: a shuffle of the whole list, cut to the count. */
+    public static List<Ability> selection(int count, Random random) {
+        List<Ability> pool = new ArrayList<>(ALL);
+        Collections.shuffle(pool, random);
+        return List.copyOf(pool.subList(0, Math.max(1, Math.min(ALL.size(), count))));
     }
 
     /**

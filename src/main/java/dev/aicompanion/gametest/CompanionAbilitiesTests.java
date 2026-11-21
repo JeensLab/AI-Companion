@@ -36,7 +36,6 @@ public final class CompanionAbilitiesTests {
         // Every line of the answer is one of the registry's phrases, so no line promises what the code has no action for.
         for (String item : items)
             h.assertTrue(CompanionAbilities.phrases().contains(item), "not a registered ability: «" + item + "» in " + answer);
-        h.assertTrue(answer.contains("добываю"), "the answer lost the gathering: " + answer);
         h.assertTrue(!answer.contains("лета"), "the answer promises flying: " + answer);
         h.succeed();
     }
@@ -61,13 +60,49 @@ public final class CompanionAbilitiesTests {
     }
 
     @GameTest(template = "empty")
+    public static void differentSeedsDrawDifferentAbilities(GameTestHelper h) {
+        // The draw is seeded, so this proof does not depend on luck: the same ask with different sources gives
+        // different subsets, and no subset ever names an ability twice.
+        Set<Set<String>> subsets = new HashSet<>();
+        for (int seed = 0; seed < 20; seed++) {
+            String answer = CompanionAbilities.answer("companion abilities 5", new java.util.Random(seed));
+            List<String> items = items(answer);
+            h.assertTrue(items.size() == 5, "seed " + seed + " names " + items.size() + " abilities: " + answer);
+            Set<String> subset = new HashSet<>(items);
+            h.assertTrue(subset.size() == items.size(), "seed " + seed + " repeats an ability: " + answer);
+            subsets.add(subset);
+        }
+        h.assertTrue(subsets.size() >= 2, "20 seeded asks all gave the same five");
+        h.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void aSelectionNeverRepeatsAnAbility(GameTestHelper h) {
+        for (int seed = 0; seed < 50; seed++) {
+            for (int count : new int[]{1, 5, 10, CompanionAbilities.size()}) {
+                List<CompanionAbilities.Ability> picked = CompanionAbilities.selection(count, new java.util.Random(seed));
+                h.assertTrue(picked.size() == count, "seed " + seed + " asked " + count + " and got " + picked.size());
+                Set<String> phrases = new HashSet<>();
+                for (CompanionAbilities.Ability ability : picked) phrases.add(ability.phrase());
+                h.assertTrue(phrases.size() == picked.size(), "seed " + seed + " repeated an ability at count " + count);
+            }
+        }
+        // A count past the list is still the whole list, drawn once each.
+        h.assertTrue(CompanionAbilities.selection(999, new java.util.Random(0)).size() == CompanionAbilities.size(),
+                "a count beyond the list was not clamped");
+        h.succeed();
+    }
+
+    @GameTest(template = "empty")
     public static void tenAbilitiesOnRequest(GameTestHelper h) {
         String command = CompanionLocalCommands.route("расскажи 10 умений", "Олег");
         h.assertTrue("companion abilities 10".equals(command), "«расскажи 10 умений» -> " + command);
-        String answer = CompanionAbilities.answer(command);
+        String answer = CompanionAbilities.answer(command, new java.util.Random(10));
         List<String> items = items(answer);
         h.assertTrue(items.size() == 10, "the answer names " + items.size() + " abilities: " + answer);
-        h.assertTrue(items.get(9).equals(CompanionAbilities.phrases().get(9)), "the tenth ability is not the tenth of the registry: " + items.get(9));
+        h.assertTrue(new HashSet<>(items).size() == 10, "the answer repeats an ability: " + answer);
+        for (String item : items)
+            h.assertTrue(CompanionAbilities.phrases().contains(item), "not a registered ability: «" + item + "» in " + answer);
         h.succeed();
     }
 
@@ -119,9 +154,9 @@ public final class CompanionAbilitiesTests {
         String phrase = "расскажи 3 умения";
         String action = CompanionLocalCommands.route(phrase, "Олег");
         h.assertTrue(action != null, "«" + phrase + "» was not routed locally");
-        String answer = CompanionLocalAnswers.answer(action, phrase, CompanionDiagnostics.newTrace());
+        String answer = CompanionLocalAnswers.answer(action, phrase, CompanionDiagnostics.newTrace(), new java.util.Random(7));
         h.assertTrue(answer != null, "the local answer path skipped «" + phrase + "»");
-        h.assertTrue(answer.equals(CompanionAbilities.answer(action)), "the chat path answers «" + answer + "», not the registry");
+        h.assertTrue(answer.equals(CompanionAbilities.answer(action, new java.util.Random(7))), "the chat path answers «" + answer + "», not the registry");
         List<com.google.gson.JsonObject> history = OpenRouterClient.historySnapshot();
         h.assertTrue(history.size() >= 2, "the exchange was not recorded for the model: " + history.size() + " entries");
         var recorded = history.subList(history.size() - 2, history.size());
