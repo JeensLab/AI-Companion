@@ -175,6 +175,46 @@ public final class CompanionMineWayUpTests {
      */
     @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
     public static void keepsTheWearForTheStairsOutOfAPit(GameTestHelper h) {
+        outOfThePit(h, pitMine(h), PIT_TUNNEL);
+    }
+
+    /**
+     * As above, the mine started again once more at the end of the pit's tunnel (a change of way, lost stairs by a tunnel cell): the way up of the new record
+     * begins with the tunnel and the stairs of the pit beside him, and the gap to the surface lies beyond the pit's entrance.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void keepsTheWearForTheStairsOutOfAPitStartedAgainInside(GameTestHelper h) {
+        CompanionEntity c = pitMine(h);
+        CompanionMineSite site = c.mineSite();
+        BlockPos end = c.blockPosition();
+        site.restart(end, Direction.WEST);
+        site.buried(true);
+        h.assertTrue(site.above().get(0).distSqr(end) <= 1, "The way up of the mine started again does not begin beside him: " + site.above().get(0));
+        outOfThePit(h, c, 0);
+    }
+
+    /**
+     * Orders the mine where he stands and waits for it to end: out on the surface with the iron pickaxe whole, after a tunnel longer than {@code tunnel}
+     * cells in all was dug with the iron pickaxe (a reserve too large would keep it from the rock).
+     */
+    private static void outOfThePit(GameTestHelper h, CompanionEntity c, int tunnel) {
+        long id = start(h, c, 1);
+        int surface = c.mineSite().origin().getY() - SURFACE_MARGIN;
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(!result.message().contains("путь наверх закрыт") && c.getBlockY() >= surface,
+                    "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c));
+            h.assertTrue(count(c, Items.IRON_PICKAXE) == 1, "The iron pickaxe was worn out on the way | " + report(c));
+            int dug = c.mineSite().tunnels().stream().mapToInt(CompanionMineSite.Tunnel::length).sum();
+            h.assertTrue(dug > tunnel, "The iron pickaxe dug no tunnel: " + dug + " cells | " + report(c));
+        });
+    }
+
+    /**
+     * A pit low in a tall mountain, the mine started again in it, its record of the way up the entrance on the surface alone, far off in the opposite corner:
+     * its stairs down to the depth of diamonds and a tunnel off the foot. He stands at the end of the tunnel with an iron pickaxe and no stone one, no wood.
+     */
+    private static CompanionEntity pitMine(GameTestHelper h) {
         tallMountain(h);
         // Corner to corner: the entrance on the surface is too far for the walk back to it (FAR_ENTRANCE), so the climb is the way up, as in the run.
         BlockPos origin = h.absolutePos(new BlockPos(CORNER, TALL_GROUND + 1, CORNER)), pit = h.absolutePos(new BlockPos(SIZE - 1 - CORNER, PIT_FEET, SIZE - 1 - CORNER));
@@ -201,14 +241,7 @@ public final class CompanionMineWayUpTests {
             site.extendTunnel();
         }
         c.teleportTo(end.getX() + .5, end.getY(), end.getZ() + .5);
-        long id = start(h, c, 1);
-        int surface = origin.getY() - SURFACE_MARGIN;
-        h.succeedWhen(() -> {
-            CompanionActionResult result = ended(h, c, id);
-            h.assertTrue(!result.message().contains("путь наверх закрыт") && c.getBlockY() >= surface,
-                    "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c));
-            h.assertTrue(count(c, Items.IRON_PICKAXE) == 1, "The iron pickaxe was worn out on the way | " + report(c));
-        });
+        return c;
     }
 
     /** The ground of {@link CompanionMineBacktrackTests#mountain} up to {@link #TALL_GROUND}, no ore: a pit low in it lies deeper under the surface than the wear kept for ore cuts. */
