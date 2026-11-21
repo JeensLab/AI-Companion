@@ -282,6 +282,13 @@ public final class CompanionMineSite {
         return false;
     }
 
+    /** Within {@code distSqr} of a cell of a tunnel off the stairs' foot: a tunnel step enters its cell before the record grows, so one stopped mid-way leaves him a cell past it. */
+    boolean nearTunnel(BlockPos pos, int distSqr) {
+        BlockPos foot = foot();
+        for (Tunnel tunnel : tunnels) for (int k = 0; k <= tunnel.length(); k++) if (foot.relative(tunnel.direction(), k).distSqr(pos) <= distSqr) return true;
+        return false;
+    }
+
     public void openTunnel(Direction direction) {
         if (entrance != null && tunnels.size() < MAX_TUNNELS) tunnels.add(new Tunnel(direction, 0));
     }

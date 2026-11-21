@@ -58,7 +58,7 @@ public final class CompanionFacts {
         BlockPos here = c.blockPosition();
         var site = c.mineSite();
         boolean onOwnWay = belowMine && (site.buried() || site.stands().isEmpty() || site.stands().stream().anyMatch(stand -> stand.distSqr(here) <= OWN_WAY_SQR)
-                || site.above().stream().anyMatch(cell -> cell.distSqr(here) <= OWN_WAY_SQR) || site.inTunnel(here));
+                || site.above().stream().anyMatch(cell -> cell.distSqr(here) <= OWN_WAY_SQR) || site.nearTunnel(here, OWN_WAY_SQR));
         return new CompanionFacts(carried, worn, dragonDead, site.openedTotal(), belowMine, onOwnWay, inSight(c, CompanionOre.Kind.IRON), coalSearch(c), false, c);
     }
 

@@ -150,6 +150,32 @@ public final class CompanionGoalResumeAndPitTests {
     }
 
     /**
+     * A tunnel step enters its cell before the record grows, so a sortie that runs out mid-step leaves him one cell past the tunnel's length.
+     * That face is his mine: no surface top-up (a hunt at the bottom) is asked for from it (seed 20261031, a hunt at Y -58 and «Принеси еды»).
+     */
+    @GameTest(template = "marathon_cave", batch = "kit_gate", timeoutTicks = 200)
+    public static void theFaceOfHisTunnelIsTheMine(GameTestHelper h) {
+        mountain(h, false);
+        int length = 6;
+        BlockPos foot = h.absolutePos(new BlockPos(CENTER, GROUND - 8, CENTER));
+        for (int k = 0; k <= length + 1; k++) for (int up = 0; up < 2; up++) h.getLevel().setBlock(foot.relative(Direction.EAST, k).above(up), Blocks.AIR.defaultBlockState(), 2 | 16);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), CENTER, GROUND + 1, CENTER);
+        c.mineSite().start(h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER)), Direction.NORTH);
+        c.mineSite().reached(foot);
+        c.mineSite().openTunnel(Direction.EAST);
+        for (int k = 0; k < length; k++) c.mineSite().extendTunnel();
+        BlockPos face = foot.relative(Direction.EAST, length + 1);
+        c.setPos(face.getX() + .5, face.getY(), face.getZ() + .5);
+        h.succeedWhen(() -> {
+            var facts = CompanionFacts.of(c);
+            h.assertTrue(facts.inMine(), "The face one cell past his tunnel is not his mine: below " + facts.belowMine() + ", at " + c.blockPosition().toShortString());
+            var book = CompanionPlaybooks.of(GOAL, 1);
+            var steps = book.milestones().getLast().method(facts, false, book.milestones());
+            h.assertTrue(steps.stream().noneMatch(step -> step.type().equals("hunt_animals")), "A hunt asked for at the face of his tunnel: " + steps);
+        });
+    }
+
+    /**
      * The coal lies on the wall of a pit three deep: he drops into it, mines it, and cannot walk out. The order must not end with him
      * in the pit: he digs a stair up and reports from the surface.
      */
