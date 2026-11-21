@@ -18,7 +18,13 @@ import net.minecraft.world.level.levelgen.Heightmap;
  * honest text. It is kept by the hand-over and used by «иди ко мне» too, and writes nothing into the mine's record.
  */
 final class CompanionClimbToPlayer {
-    private static final int MAX_STEPS = 48, RECHECK_TICKS = 40, ABOVE = 3, RIM = 6, DROP = 3;
+    private static final int MAX_STEPS = 48, RECHECK_TICKS = 40, ABOVE = 3, DROP = 3;
+    /**
+     * The most cells a pit may hold: more is ground that leads on. Counted, not a reach round him: the ravines of seed 7 (21.11) held some sixty
+     * cells, six wide and fifteen long, and a reach of six took them for open ground. An arena of the GameTests holds some two thousand.
+     */
+    // ponytail: a closed basin larger than this (a ravine six wide and longer than some eighty blocks) reads as open ground. Upgrade: the route search's own proof of a closed region.
+    private static final int BASIN = 512;
     private static final String STATUS = "Пути к тебе нет, прорубаю ступени наверх.";
 
     private final CompanionWork w;
@@ -72,7 +78,11 @@ final class CompanionClimbToPlayer {
         return true;
     }
 
-    /** The player's cell, raised to the lip of the hole he stands in: the highest top block over the cells round his feet. */
+    /**
+     * The player's cell, raised to the lip of the hole he stands in: the highest top block over the cells round his feet, taken again at every step.
+     * In a pit wider than three the cells round him are its floor until he stands at its wall; taken once there, the lip was the floor and the stairs
+     * went level into the wall (a GameTest under its barrier roof hid it: the roof stands in the heightmap).
+     */
     private BlockPos goal(Player player) {
         var level = w.owner.level();
         BlockPos at = w.owner.blockPosition();
@@ -86,9 +96,9 @@ final class CompanionClimbToPlayer {
     private boolean inPit() { return walledIn((ServerLevel) w.owner.level(), w.owner.blockPosition(), Integer.MIN_VALUE); }
 
     /**
-     * No walk under the sky leads more than {@link #RIM} cells away from {@code at}: a pit, not a spot beside a trunk, a wall or a cliff, where the
-     * ground goes on round them. A walk steps a block up or drops down to {@link #DROP}, never with its feet below {@code lowest}; a cell under a
-     * roof (a tunnel, an overhang) is no way out.
+     * The walk under the sky from {@code at} ends within {@link #BASIN} cells: a pit or a ravine, not a spot beside a trunk, a wall or a cliff,
+     * where the ground goes on round them. A walk steps a block up or drops down to {@link #DROP}, never with its feet below {@code lowest}; a cell
+     * under a roof (a tunnel, an overhang) is no way out.
      */
     static boolean walledIn(ServerLevel level, BlockPos at, int lowest) {
         if (!CompanionExpeditionRecord.underSky(level, at)) return false;
@@ -99,7 +109,7 @@ final class CompanionClimbToPlayer {
             for (Direction d : Direction.Plane.HORIZONTAL) {
                 BlockPos feet = feetIn(level, cell.relative(d));
                 if (feet == null || feet.getY() < lowest || !seen.add(feet) || !CompanionExpeditionRecord.underSky(level, feet)) continue;
-                if (Math.abs(feet.getX() - at.getX()) > RIM || Math.abs(feet.getZ() - at.getZ()) > RIM) return false;
+                if (seen.size() > BASIN) return false;
                 next.add(feet);
             }
         }
@@ -123,7 +133,12 @@ final class CompanionClimbToPlayer {
             var reach = w.route.cells(Set.of(player.blockPosition()), 1);
             if (reach.found()) return over();
         }
-        if (pitOnly && w.owner.onGround() && !w.owner.blockPosition().equals(lastCheck) && !walledIn(level, lastCheck = w.owner.blockPosition(), Integer.MIN_VALUE)) return over();
+        // Out is under the sky where the walk leads on: a step of his stairs under the rock of the pit's wall is still in it (run water of seed 7, 21.11).
+        if (pitOnly && w.owner.onGround() && !w.owner.blockPosition().equals(lastCheck)) {
+            lastCheck = w.owner.blockPosition();
+            if (CompanionExpeditionRecord.underSky(level, lastCheck) && !walledIn(level, lastCheck, Integer.MIN_VALUE)) return over();
+        }
+        stairs.aim(goal(player));
         if (stairs.tick(level) != CompanionExpeditionStairsUp.Result.WORKING || stairs.steps() >= MAX_STEPS) return over();
         return true;
     }

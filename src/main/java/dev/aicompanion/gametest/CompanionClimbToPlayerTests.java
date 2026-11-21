@@ -29,12 +29,13 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.rig;
 @GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionClimbToPlayerTests {
-    private static final int PIT_DEPTH = 9, ROOF_HEIGHT = 5, PLAYER_EAST = 11, SHALLOW = 2, DEEP = 3, FOLLOW_RANGE_SHORT = 8, FOLLOW_RANGE_PIT = 6;
+    private static final int PIT_DEPTH = 9, ROOF_HEIGHT = 5, PLAYER_EAST = 11, SHALLOW = 2, DEEP = 3, FOLLOW_RANGE_SHORT = 8, FOLLOW_RANGE_PIT = 6,
+            RAVINE_WEST = 12, RAVINE_EAST = 4, RAVINE_DEPTH = 5, PLAYER_FAR = 20, FOLLOW_RANGE_RAVINE = 10;
 
     private CompanionClimbToPlayerTests() { }
 
     /** The diamond is thrown at the player's feet, on the surface, after the stairs out of the pit. */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
     public static void cutsStairsUpToThePlayerWhenNoWayLeadsOutOfTheCanyon(GameTestHelper h) {
         CompanionEntity c = pit(h);
         c.setItem(6, new ItemStack(Items.DIAMOND));
@@ -51,7 +52,7 @@ public final class CompanionClimbToPlayerTests {
      * The same hand-over with the player out of the range where «no way» can be told (seed 7, lava: ninety-seven blocks off the pit): the search
      * does not see him, so the failed walk is «застрял», not «no way», and the stairs must be cut all the same, the climb not ended by a «walk is possible» that is only the distance.
      */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
     public static void cutsStairsUpToThePlayerFromAPitWhenTheWalkFails(GameTestHelper h) {
         CompanionEntity c = pit(h);
         c.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE).setBaseValue(FOLLOW_RANGE_SHORT);
@@ -66,7 +67,7 @@ public final class CompanionClimbToPlayerTests {
     }
 
     /** «Ко мне» from the same pit ends beside the player. */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
     public static void comesToThePlayerOutOfAPitWhenNoWayLeads(GameTestHelper h) {
         CompanionEntity c = pit(h);
         h.assertTrue(c.startWork("come", "", 1).success(), "«Ко мне» not accepted: " + c.getLastTaskResult());
@@ -83,7 +84,7 @@ public final class CompanionClimbToPlayerTests {
      * as the floor, in a dip of his own beyond the lip with a step down to it. The self-rescue has nothing to climb to (the player is not higher)
      * and cannot cut the andesite; the stairs go up onto the lip, and the walk goes on from there.
      */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
     public static void climbsOutOfAPitToAPlayerAtHisOwnHeight(GameTestHelper h) {
         mountain(h, false);
         for (int x = CENTER - 3; x <= CENTER + 3; x++) for (int z = CENTER - 3; z <= CENTER + 3; z++) for (int y = GROUND - SHALLOW; y <= GROUND; y++) {
@@ -112,10 +113,10 @@ public final class CompanionClimbToPlayerTests {
      * Run restart of seed 7 (16.11): with the diamond he came up his stairs into a narrow hole five deep under the sky, and the player stood
      * sixty blocks off at the entrance, a block lower than his feet. The stairs were cut only for a player no lower, so the hand-over ended
      * «Не смог к тебе подойти» five times and the goal «не получилось отдать алмазы». A hole three deep in andesite, the player in a dip of his
-     * own a block lower beyond its lip, with a step down to it, out of the range where «no way» can be told: the stairs go up out of the hole,
-     * and the walk goes on from there.
+     * own a block lower beyond its lip, with steps down to it (two drops of two in a row are one fall of four, more than he takes), out of the
+     * range where «no way» can be told: the stairs go up out of the hole, and the walk goes on from there.
      */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
     public static void climbsOutOfAPitToAPlayerLowerThanHim(GameTestHelper h) {
         mountain(h, false);
         for (int x = CENTER - 3; x <= CENTER + 3; x++) for (int z = CENTER - 3; z <= CENTER + 3; z++) for (int y = GROUND - DEEP; y <= GROUND; y++) {
@@ -126,6 +127,7 @@ public final class CompanionClimbToPlayerTests {
         int dip = CENTER + PLAYER_EAST;
         for (int x = dip - 1; x <= dip + 1; x++) for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = GROUND - DEEP; y <= GROUND; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
         for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = GROUND - 1; y <= GROUND; y++) h.setBlock(new BlockPos(dip - 2, y, z), Blocks.AIR);
+        for (int z = CENTER - 1; z <= CENTER + 1; z++) h.setBlock(new BlockPos(dip - 3, GROUND, z), Blocks.AIR);
         CompanionEntity c = rig(h);
         c.setFollowing(false);
         c.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE).setBaseValue(FOLLOW_RANGE_PIT);
@@ -138,6 +140,38 @@ public final class CompanionClimbToPlayerTests {
         h.succeedWhen(() -> {
             CompanionActionResult result = ended(h, c, id);
             h.assertTrue(result.success() && count(c, Items.DIAMOND) == 0, "He said «" + result.message() + "» in the hole | " + report(c));
+        });
+    }
+
+    /**
+     * Run water of seed 7 (21.11): with the diamond he stood on the floor of a ravine six wide and fifteen long, walled on every side, the player
+     * seventy-seven blocks off and a block lower. No climb began (the pit was looked for only six cells round him), and the hand-over ended
+     * «Не смог к тебе подойти» five times. The same ravine in andesite, he a cell off its east end, the player in a valley a block lower beyond a
+     * ramp, out of the range where «no way» can be told.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    public static void climbsOutOfARavineToAFarPlayerLowerThanHim(GameTestHelper h) {
+        mountain(h, false);
+        for (int x = CENTER - RAVINE_WEST - 3; x <= CENTER + RAVINE_EAST + 3; x++) for (int z = CENTER - 5; z <= CENTER + 6; z++) for (int y = GROUND - RAVINE_DEPTH - 1; y <= GROUND; y++) {
+            BlockPos wall = new BlockPos(x, y, z);
+            if (h.getBlockState(wall).is(Blocks.STONE) || h.getBlockState(wall).is(Blocks.DIRT) || h.getBlockState(wall).is(Blocks.GRASS_BLOCK)) h.setBlock(wall, Blocks.ANDESITE);
+        }
+        for (int x = CENTER - RAVINE_WEST; x <= CENTER + RAVINE_EAST; x++) for (int z = CENTER - 2; z <= CENTER + 3; z++) for (int y = GROUND - RAVINE_DEPTH + 1; y <= GROUND; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        int ramp = CENTER + RAVINE_EAST + 4, valley = ramp + RAVINE_DEPTH + 1;
+        for (int i = 0; i <= RAVINE_DEPTH; i++) for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = GROUND - i; y <= GROUND; y++) h.setBlock(new BlockPos(ramp + i, y, z), Blocks.AIR);
+        for (int x = valley; x < CENTER * 2 - 1; x++) for (int z = 1; z < CENTER * 2 - 1; z++) for (int y = GROUND - RAVINE_DEPTH; y <= GROUND; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        c.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE).setBaseValue(FOLLOW_RANGE_RAVINE);
+        BlockPos floor = h.absolutePos(new BlockPos(CENTER + RAVINE_EAST - 1, GROUND - RAVINE_DEPTH + 1, CENTER)), owner = h.absolutePos(new BlockPos(CENTER + PLAYER_FAR, GROUND - RAVINE_DEPTH, CENTER));
+        c.teleportTo(floor.getX() + .5, floor.getY(), floor.getZ() + .5);
+        h.getLevel().getPlayerByUUID(c.getOwnerId()).teleportTo(owner.getX() + .5, owner.getY(), owner.getZ() + .5);
+        c.setItem(6, new ItemStack(Items.DIAMOND));
+        h.assertTrue(c.startWork("give_items", "minecraft:diamond", 1).success(), "Hand-over not accepted: " + c.getLastTaskResult());
+        long id = c.activeWorkId();
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) == 0, "He said «" + result.message() + "» in the ravine | " + report(c));
         });
     }
 

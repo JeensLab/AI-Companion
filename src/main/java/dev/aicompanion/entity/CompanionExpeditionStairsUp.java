@@ -56,6 +56,9 @@ final class CompanionExpeditionStairsUp {
         this.goal = goal;
     }
 
+    /** A goal that moves with him (the lip of the pit he stands in now): the stairs keep what they have done. */
+    void aim(BlockPos goal) { this.goal = goal; }
+
     int steps() { return steps; }
 
     String why() { return why; }
