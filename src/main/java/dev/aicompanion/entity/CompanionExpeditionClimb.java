@@ -134,7 +134,7 @@ final class CompanionExpeditionClimb {
     /**
      * The wear of the staircase the climb cuts up out of a pit under the ground ({@link #gapOutOfPit}): the short one up to his old way where it is near
      * ({@link #shortTarget}), else a step for each block of height from the top of the pit up to the entrance on the surface. None for a mine whose way up
-     * is walked to the surface. A short staircase that fails leaves the rescues and the staircase to the surface with only its wear kept.
+     * is walked to the surface. A short staircase that fails leaves the staircase to the surface with only its wear kept.
      */
     static int cutWear(CompanionMineSite mine) {
         PitGap gap = gapOutOfPit(mine);
@@ -340,9 +340,9 @@ final class CompanionExpeditionClimb {
     }
 
     /**
-     * No walk and no block of his own joins the two ends. A near cell of his old way over a pit is cut up to ({@link #shortTo}); elsewhere, or when that
-     * staircase does not get there, any pickaxe he has cuts the way up, the wear kept for ore too (out is worth more than ore); the rescues spent (or none
-     * across the far gap out of a pit, {@link #pitGap}), a staircase of his own to the surface where the record has none.
+     * No walk and no block of his own joins the two ends. A near cell of his old way over a pit is cut up to ({@link #shortTo}); elsewhere any pickaxe he
+     * has cuts the way up, the wear kept for ore too (out is worth more than ore); the rescues spent (or none across the far gap out of a pit, {@link #pitGap}),
+     * a staircase of his own to the surface where the record has none.
      */
     private Result cutOut() {
         int to = cutToWay ? -1 : shortTo();
@@ -398,9 +398,8 @@ final class CompanionExpeditionClimb {
 
     /**
      * At the cell of his old way the walk goes on along it from there. A staircase that cannot get there, or takes more steps than the way there does (at
-     * its height a blocked cell turned it back, and every step after led away), leaves the gap to be crossed as any: the walk or the route search to the
-     * first cell across (the steps cut may have opened it), then the rescues and the staircase to the surface. Not the rescues at once: beside his old
-     * stairs none begins, and the wait for one ended in the staircase to the surface.
+     * its height a blocked cell turned it back, and every step after led away), leaves the staircase to the surface, at once: the walk back to the gap, the
+     * route search and the rescues after it were waits that ended there (beside his old stairs no rescue begins), and lower down (Oleg, 21.11).
      */
     private Result climbingToWay() {
         return switch (toWay.tick((ServerLevel) w.owner.level())) {
@@ -411,21 +410,15 @@ final class CompanionExpeditionClimb {
                     yield Result.WORKING;
                 }
                 // Counted a tick after the step: that tick tells an arrival first.
-                yield stairSteps > toWaySteps ? crossAnyway() : Result.WORKING;
+                yield stairSteps > toWaySteps ? noWay() : Result.WORKING;
             }
             case ARRIVED -> {
                 stretchEnd = toWayCell;
                 yield crossed();
             }
             case NO_TOOL -> makeTool() ? Result.WORKING : finish(" " + shortage(false, w.items.countCarried(Items.STONE_PICKAXE) > 0) + CLOSED);
-            case STUCK -> crossAnyway();
+            case STUCK -> noWay();
         };
-    }
-
-    private Result crossAnyway() {
-        w.owner.getNavigation().stop();
-        phase = Phase.TRAVEL;
-        return Result.WORKING;
     }
 
     /** Stands still with the cell beyond the gap as his destination until the rescue takes over; it stops the work while it runs, and this goes on when it is over. */
