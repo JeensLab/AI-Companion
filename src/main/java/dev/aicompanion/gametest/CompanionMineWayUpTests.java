@@ -50,9 +50,10 @@ public final class CompanionMineWayUpTests {
     private static final String NEW_STAIRS = "прокапываю новую";
     /**
      * The pit under the ground of a tall mountain (the template is 36 high): the feet in it, the corner the entrance on the surface lies in, the tunnel off
-     * the foot of its stairs, and the wear left on the iron pickaxe, more than the staircase out of the pit takes on top of the wear kept for ore.
+     * the foot of its stairs, and the wear left on the iron pickaxe: more than the staircase out of the pit takes on top of the wear kept for ore, or worn
+     * below what the staircase takes (78).
      */
-    private static final int TALL_GROUND = 33, PIT_FEET = 8, CORNER = 2, PIT_TUNNEL = 2, IRON_LEFT = 150;
+    private static final int TALL_GROUND = 33, PIT_FEET = 8, CORNER = 2, PIT_TUNNEL = 2, IRON_LEFT = 150, IRON_WORN = 40;
 
     private CompanionMineWayUpTests() { }
 
@@ -191,6 +192,25 @@ public final class CompanionMineWayUpTests {
         site.buried(true);
         h.assertTrue(site.above().get(0).distSqr(end) <= 1, "The way up of the mine started again does not begin beside him: " + site.above().get(0));
         outOfThePit(h, c, 0);
+    }
+
+    /**
+     * The same pit with one stone pickaxe and an iron one too worn to cut the staircase up from it: the iron pickaxe is no way up from here, so the stone one
+     * is the last and the tunnel is not dug with it. Counted as a way up, the iron pickaxe let the stone one go on the tunnel, and its wear could not cut the stairs.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void aWornIronPickaxeIsNoWayUpFromAPit(GameTestHelper h) {
+        CompanionEntity c = pitMine(h);
+        c.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        c.getItem(1).setDamageValue(c.getItem(1).getMaxDamage() - IRON_WORN);
+        long id = start(h, c, 1);
+        int surface = c.mineSite().origin().getY() - SURFACE_MARGIN;
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(!result.message().contains("путь наверх закрыт") && c.getBlockY() >= surface,
+                    "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c));
+            h.assertTrue(result.message().contains("Кирки на исходе"), "He did not turn back while the stone pickaxe was left: " + result.message() + " | " + report(c));
+        });
     }
 
     /**

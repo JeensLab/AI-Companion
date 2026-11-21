@@ -257,10 +257,13 @@ final class CompanionExpeditionDig {
 
     boolean spareIron() { return ironLeft(reserve()); }
 
-    /** Pickaxes he can still dig with: those in the bag (stone, iron with any wear, diamond, netherite) and the stone ones the bag's materials make. */
+    /**
+     * Pickaxes he can still dig his way up with: those in the bag (stone, diamond, netherite, iron with any wear, or out of a pit only with the wear of
+     * the staircase cut up from it) and the stone ones the bag's materials make.
+     */
     int pickaxesLeft() {
         int left = w.items.countCarried(Items.STONE_PICKAXE) + CompanionExpeditionSupply.craftable(w);
-        if (ironLeft(0)) left++;
+        if (ironLeft(CompanionExpeditionClimb.cutWear(w.mine))) left++;
         if (hardPickaxe() != null) left++;
         return left;
     }

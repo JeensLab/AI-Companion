@@ -62,6 +62,12 @@ final class CompanionExpeditionWade {
         return true;
     }
 
+    /** The wade is over, however it ended: the iron pickaxe it let go to its last wear for the way out of the water keeps its wear again. */
+    private void over() {
+        wading = false;
+        dig.keepIron();
+    }
+
     /** The stairs of an arrival are forgotten. */
     void resetStairs() { stairs.reset(); }
 
@@ -91,8 +97,8 @@ final class CompanionExpeditionWade {
             if (!level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) {
                 CompanionSeal.Result placed = CompanionSeal.place(owner, floor);
                 if (placed.placed()) { w.mine.sealed(floor); ticks = 0; }
-                else if (placed == CompanionSeal.Result.NO_BLOCK) { wading = false; end.accept(Ending.BLOCKED, "Я в воде, берега рядом нет, а блоков, чтобы выбраться из неё, в сумке нет."); }
-                else if (++ticks > WADE_PATIENCE) { wading = false; return Result.RETRY; }
+                else if (placed == CompanionSeal.Result.NO_BLOCK) { over(); end.accept(Ending.BLOCKED, "Я в воде, берега рядом нет, а блоков, чтобы выбраться из неё, в сумке нет."); }
+                else if (++ticks > WADE_PATIENCE) { over(); return Result.RETRY; }
                 return Result.WORKING;
             }
         }
@@ -100,16 +106,16 @@ final class CompanionExpeditionWade {
             case WORKING -> {
                 if (stairs.steps() == steps) return Result.WORKING;
                 steps = stairs.steps();
-                if (w.route.legs(goal, CompanionExpedition.ENTRANCE_NEAR) != CompanionTravel.Step.FAILED) { wading = false; return Result.DONE; }
+                if (w.route.legs(goal, CompanionExpedition.ENTRANCE_NEAR) != CompanionTravel.Step.FAILED) { over(); return Result.DONE; }
             }
-            case ARRIVED -> { wading = false; return Result.DONE; }
+            case ARRIVED -> { over(); return Result.DONE; }
             case NO_TOOL -> {
                 if (supply.craftStonePickaxe()) return Result.WORKING;
                 if (dig.ironLeft(0) || dig.hardPickaxe() != null) { dig.ironForRock(0); return Result.WORKING; }
-                wading = false;
+                over();
                 end.accept(Ending.SUPPLIES, CompanionExpeditionClimb.shortage(false, w.items.countCarried(Items.STONE_PICKAXE) > 0) + " Из воды наверх не выбраться.");
             }
-            case STUCK -> { wading = false; restart.accept("Из воды наверх не выбрался: " + stairs.why() + "."); }
+            case STUCK -> { over(); restart.accept("Из воды наверх не выбрался: " + stairs.why() + "."); }
         }
         return Result.WORKING;
     }
