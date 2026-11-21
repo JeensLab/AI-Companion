@@ -167,6 +167,31 @@ public final class CompanionPortalBuildTests {
     }
 
     /**
+     * A lit portal near the player, the ten obsidian in the bag and nothing to light a frame with — no flint and steel, no fire charge:
+     * he says the portal is already there, and the shortage of a lighter is never named. The lit portal is looked for before what the
+     * bag lacks is counted: an order refused for want of fire would send him after a flint and steel a lit portal does not need.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 400, batch = PORTALS)
+    public static void aLitPortalNearIsSaidBeforeAnyShortageIsCounted(GameTestHelper h) {
+        ground(h);
+        litPortal(h, 20, GROUND + 1, 14);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.OBSIDIAN, 10));
+        var future = run(h, c, "[{\"action\":\"build_portal\"}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Рядом уже есть портал."), "Not said: " + report);
+            h.assertTrue(!report.contains("Нет ни огнива, ни огненного шара.") && !report.contains("Нечем зажечь портал"),
+                    "He complained of the fire he has not: " + report);
+            h.assertTrue(!report.contains("План остановлен"), "The plan was stopped: " + report);
+            h.assertTrue(blocks(h, Blocks.NETHER_PORTAL).size() == 6 && count(c, Items.OBSIDIAN) == 10 && steel(c) == -1,
+                    "He built or set something: " + report);
+            putOut(h);
+        });
+    }
+
+    /**
      * A portal he built a while ago, farther than sixteen blocks from the player now: nothing built, he leads the player to it and stops
      * before it, out of it (decided 09.11).
      */
@@ -335,7 +360,8 @@ public final class CompanionPortalBuildTests {
 
     /**
      * The charge is only in a chest near the frame (as a ruined portal's chest has one): he walks to it, takes one charge, and lights
-     * the frame with it — one charge spent, the rest left in the chest.
+     * the frame with it — one charge spent, the rest left in the chest. The lid is opened while he takes and shut after: the game keeps
+     * the lid of a chest in its own controller, which only a client ticks, so the test ticks it here and reads what he told it.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 2400, batch = PORTALS)
     public static void aFireChargeInAChestNearbyIsFetchedToLightTheFrame(GameTestHelper h) {
@@ -345,6 +371,14 @@ public final class CompanionPortalBuildTests {
         BlockPos chest = new BlockPos(11, GROUND + 1, 12);
         placedByPlayer(h, c, chest, Blocks.CHEST);
         ((net.minecraft.world.Container) h.getLevel().getBlockEntity(h.absolutePos(chest))).setItem(0, new ItemStack(Items.FIRE_CHARGE, 3));
+        // The lid of that chest, ticked as a client ticks it: opened while he takes the charge, shut once he is done.
+        boolean[] lidWasOpen = {false};
+        h.onEachTick(() -> {
+            var be = h.getLevel().getBlockEntity(h.absolutePos(chest));
+            if (!(be instanceof net.minecraft.world.level.block.entity.ChestBlockEntity lid)) return;
+            net.minecraft.world.level.block.entity.ChestBlockEntity.lidAnimateTick(h.getLevel(), h.absolutePos(chest), h.getBlockState(chest), lid);
+            if (lid.getOpenNess(1F) > 0F) lidWasOpen[0] = true;
+        });
         var future = run(h, c, "[{\"action\":\"build_portal\"}]");
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
@@ -353,6 +387,27 @@ public final class CompanionPortalBuildTests {
             h.assertTrue(blocks(h, Blocks.NETHER_PORTAL).size() == 6 && blocks(h, Blocks.OBSIDIAN).size() == 10, "Not a lit frame: " + report);
             h.assertTrue(count(c, Items.FIRE_CHARGE) == 0, "The charge is not spent: " + c.getStoredItemsSummary());
             h.assertTrue(chestCount(h, chest, Items.FIRE_CHARGE) == 2, "Not one charge taken from the chest: " + chestCount(h, chest, Items.FIRE_CHARGE));
+            h.assertTrue(lidWasOpen[0], "The lid was never opened while he took the charge");
+            h.assertTrue(lidOpen(h, chest) == 0F, "The lid is left open: " + lidOpen(h, chest));
+            putOut(h);
+        });
+    }
+
+    /** Two fire charges in his bag and no flint and steel: one lights the frame, the other stays whole in the bag. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200, batch = PORTALS)
+    public static void aStackOfTwoFireChargesLeavesOneInTheBag(GameTestHelper h) {
+        ground(h);
+        standingFrame(h, 14, 20);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.FIRE_CHARGE, 2));
+        var future = run(h, c, "[{\"action\":\"build_portal\"}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Портал готов."), "Not lit: " + report);
+            h.assertTrue(blocks(h, Blocks.NETHER_PORTAL).size() == 6 && blocks(h, Blocks.OBSIDIAN).size() == 10, "Not a lit frame: " + report);
+            h.assertTrue(count(c, Items.FIRE_CHARGE) == 1, "Not one charge spent of two: " + c.getStoredItemsSummary());
+            h.assertTrue(steel(c) == -1, "A flint and steel appeared: " + c.getStoredItemsSummary());
             putOut(h);
         });
     }
@@ -384,6 +439,12 @@ public final class CompanionPortalBuildTests {
         int count = 0;
         for (int slot = 0; slot < container.getContainerSize(); slot++) if (container.getItem(slot).is(item)) count += container.getItem(slot).getCount();
         return count;
+    }
+
+    /** How far the lid of the chest at {@code rel} is open, as its own controller holds it; 0 when there is no chest there. */
+    private static float lidOpen(GameTestHelper h, BlockPos rel) {
+        return h.getLevel().getBlockEntity(h.absolutePos(rel)) instanceof net.minecraft.world.level.block.entity.LidBlockEntity lid
+                ? lid.getOpenNess(1F) : 0F;
     }
 
     /**
