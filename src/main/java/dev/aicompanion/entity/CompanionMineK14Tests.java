@@ -118,6 +118,25 @@ public final class CompanionMineK14Tests {
         h.succeed();
     }
 
+    /**
+     * Runs void and restart of seed 7 (series h, 21.11): afloat in a lake under a lava sheet, the only floor in reach lay across the sheet, and he waded
+     * into it to that bank. In lava, deep water two blocks west (no floor under it in reach; a hole between, so that the two do not meet) and a bank
+     * three blocks east past two more cells of lava: the water.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void theWayOutOfLavaTakesWaterBeforeABankAcrossIt(GameTestHelper h) {
+        int y = GROUND + 8;
+        for (int x = 0; x <= 12; x++) for (int up = -3; up <= 3; up++) for (int dz = -7; dz <= 7; dz++) h.setBlock(new BlockPos(x, y + up, CENTER + dz), Blocks.AIR);
+        for (int x = 6; x <= 12; x++) h.setBlock(new BlockPos(x, y, CENTER), Blocks.STONE);
+        for (int x = 3; x <= 4; x++) for (int up = -2; up <= 1; up++) h.setBlock(new BlockPos(x, y + up, CENTER), Blocks.WATER);
+        for (int x = 6; x <= 8; x++) h.setBlock(new BlockPos(x, y + 1, CENTER), Blocks.LAVA);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 6, y + 1, CENTER);
+        c.setNoAi(true);
+        BlockPos out = new CompanionLavaExit(c).nearestOut();
+        h.assertTrue(out != null && out.getX() < c.getBlockX(), "The way out of the lava goes to " + rel(h, out) + ", across the lava east");
+        h.succeed();
+    }
+
     /** Hurt, with nothing to eat: the goal waits for food and tries again instead of spending the stops of the mine on the retreats it ends in. */
     @GameTest(template = "marathon_cave", batch = "k14_agenda", timeoutTicks = TIMEOUT)
     public static void aHurtGoalWithNoFoodWaitsInsteadOfBurningItsStops(GameTestHelper h) {

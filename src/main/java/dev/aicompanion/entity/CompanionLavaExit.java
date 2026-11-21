@@ -76,13 +76,15 @@ final class CompanionLavaExit extends Goal {
     }
 
     /**
-     * The nearest cell with a floor and no fluid that a straight line reaches; one beside lava counts as farther than one clear of it, and one
-     * past more lava farther still (run s7-d1/retreat: the nearest bank lay across a spreading sheet, and he burned to death on the way).
+     * The nearest cell with a floor and no fluid, or of water with no lava in it or over it, that a straight line reaches; one beside lava counts as
+     * farther than one clear of it, and one past more lava farther still (run s7-d1/retreat: the nearest bank lay across a spreading sheet, and he
+     * burned to death on the way). Out of lava into water is out: runs void and restart of seed 7 (series h, 21.11), afloat in a lake under a lava
+     * sheet, the only floor in reach lay across the sheet, the bank he came from two blocks up, and he waded into the lava to it.
      */
     BlockPos nearestOut() {
         ServerLevel level = (ServerLevel) c.level();
         BlockPos from = c.blockPosition();
-        return nearest(c, STEP_DOWN, pos -> (beside(level, pos) ? EDGE_PENALTY : 0) + CROSS_PENALTY * crossed(level, from, pos));
+        return nearest(c, STEP_DOWN, true, pos -> (beside(level, pos) ? EDGE_PENALTY : 0) + CROSS_PENALTY * crossed(level, from, pos));
     }
 
     /** The cells of lava a straight wade from {@code from} to {@code to} goes through at his feet, his own cell apart. */
@@ -100,14 +102,17 @@ final class CompanionLavaExit extends Goal {
     }
 
     /** The nearest standable cell in a straight line from him, by squared distance plus the penalty of the cell. */
-    static BlockPos nearest(CompanionEntity c, int stepDown, ToDoubleFunction<BlockPos> penalty) {
+    static BlockPos nearest(CompanionEntity c, int stepDown, ToDoubleFunction<BlockPos> penalty) { return nearest(c, stepDown, false, penalty); }
+
+    /** As above; {@code swim}: a swimmer's cell of water ({@link CompanionMiningNavigation#pickupStand}) is one too. */
+    static BlockPos nearest(CompanionEntity c, int stepDown, boolean swim, ToDoubleFunction<BlockPos> penalty) {
         BlockPos from = c.blockPosition();
         BlockPos best = null;
         double bestScore = Double.MAX_VALUE;
         for (int dx = -RADIUS; dx <= RADIUS; dx++) for (int dz = -RADIUS; dz <= RADIUS; dz++) for (int dy = -stepDown; dy <= STEP_UP; dy++) {
             BlockPos pos = from.offset(dx, dy, dz);
             double score = pos.distSqr(from);
-            if (score >= bestScore || !CompanionMiningNavigation.standable(c, pos)) continue;
+            if (score >= bestScore || !(swim ? CompanionMiningNavigation.pickupStand(c, pos) : CompanionMiningNavigation.standable(c, pos))) continue;
             score += penalty.applyAsDouble(pos);
             if (score >= bestScore || !open(c, from, pos)) continue;
             best = pos;
