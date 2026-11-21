@@ -1,9 +1,12 @@
 package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.CompanionDiagnostics;
 import dev.aicompanion.client.CompanionAbilities;
+import dev.aicompanion.client.CompanionLocalAnswers;
 import dev.aicompanion.client.CompanionLocalCommands;
 import dev.aicompanion.client.CompanionPlanCodec;
+import dev.aicompanion.client.OpenRouterClient;
 import dev.aicompanion.entity.CompanionAutonomy;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -86,6 +89,29 @@ public final class CompanionAbilitiesTests {
         CompanionAbilities.Ability home = abilityWithAction("set_home");
         h.assertTrue(home.phrase().contains("запоминаю"), "the home is not named as a memory: «" + home.phrase() + "»");
         h.assertTrue(!home.phrase().contains("ставлю"), "the home reads as building a house: «" + home.phrase() + "»");
+        h.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void theChatPathAnswersTheAbilitiesQuestion(GameTestHelper h) {
+        // The phrase as a player says it, routed as the chat screen routes it, then answered through the local path the
+        // screen uses: the line it shows and the exchange it records for the model. Deleting the abilities branch of
+        // that path leaves the phrase to the model, and this test goes red.
+        String phrase = "расскажи 3 умения";
+        String action = CompanionLocalCommands.route(phrase, "Олег");
+        h.assertTrue(action != null, "«" + phrase + "» was not routed locally");
+        String answer = CompanionLocalAnswers.answer(action, phrase, CompanionDiagnostics.newTrace());
+        h.assertTrue(answer != null, "the local answer path skipped «" + phrase + "»");
+        h.assertTrue(answer.equals(CompanionAbilities.answer(action)), "the chat path answers «" + answer + "», not the registry");
+        List<com.google.gson.JsonObject> history = OpenRouterClient.historySnapshot();
+        h.assertTrue(history.size() >= 2, "the exchange was not recorded for the model: " + history.size() + " entries");
+        var recorded = history.subList(history.size() - 2, history.size());
+        h.assertTrue("user".equals(recorded.get(0).get("role").getAsString())
+                        && phrase.equals(recorded.get(0).get("content").getAsString()),
+                "the player's phrase is not the user turn: " + recorded.get(0));
+        h.assertTrue("assistant".equals(recorded.get(1).get("role").getAsString())
+                        && answer.equals(recorded.get(1).get("content").getAsString()),
+                "his answer is not the assistant turn: " + recorded.get(1));
         h.succeed();
     }
 

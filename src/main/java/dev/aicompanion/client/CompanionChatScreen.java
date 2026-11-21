@@ -494,10 +494,8 @@ public final class CompanionChatScreen extends Screen {
 
     /** «Что ты умеешь», «расскажи 10 умений»: his real abilities from the code's registry, answered without the model. */
     private static boolean answerAbilities(String action, String text, String trace) {
-        if (action == null || !action.startsWith("companion abilities")) return false;
-        String answer = CompanionAbilities.answer(action);
-        CompanionDiagnostics.event(trace, "message_route", "route", "local_abilities");
-        OpenRouterClient.recordLocalExchange(text, answer);
+        String answer = CompanionLocalAnswers.answer(action, text, trace);
+        if (answer == null) return false;
         addVoiceReply(answer, trace, "local_abilities");
         return true;
     }
