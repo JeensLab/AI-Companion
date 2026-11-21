@@ -167,16 +167,16 @@ public final class CompanionPortalBuildTests {
     }
 
     /**
-     * A lit portal near the player, the ten obsidian in the bag and nothing to light a frame with — no flint and steel, no fire charge:
-     * he says the portal is already there, and the shortage of a lighter is never named. The lit portal is looked for before what the
-     * bag lacks is counted: an order refused for want of fire would send him after a flint and steel a lit portal does not need.
+     * A lit portal near the player and an empty bag — no obsidian, no flint and steel, no fire charge: he says the portal is already
+     * there and names no shortage at all. The lit portal is looked for before what the bag lacks is counted: an order refused for want
+     * of obsidian or of fire would send him off for either while a lit portal stands beside him.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 400, batch = PORTALS)
     public static void aLitPortalNearIsSaidBeforeAnyShortageIsCounted(GameTestHelper h) {
         ground(h);
         litPortal(h, 20, GROUND + 1, 14);
+        int frame = blocks(h, Blocks.OBSIDIAN).size();
         CompanionEntity c = spawn(h);
-        c.setItem(0, new ItemStack(Items.OBSIDIAN, 10));
         var future = run(h, c, "[{\"action\":\"build_portal\"}]");
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
@@ -184,8 +184,9 @@ public final class CompanionPortalBuildTests {
             h.assertTrue(report.contains("Рядом уже есть портал."), "Not said: " + report);
             h.assertTrue(!report.contains("Нет ни огнива, ни огненного шара.") && !report.contains("Нечем зажечь портал"),
                     "He complained of the fire he has not: " + report);
+            h.assertTrue(!report.contains("Для портала нужно"), "He complained of the obsidian he has not: " + report);
             h.assertTrue(!report.contains("План остановлен"), "The plan was stopped: " + report);
-            h.assertTrue(blocks(h, Blocks.NETHER_PORTAL).size() == 6 && count(c, Items.OBSIDIAN) == 10 && steel(c) == -1,
+            h.assertTrue(blocks(h, Blocks.NETHER_PORTAL).size() == 6 && blocks(h, Blocks.OBSIDIAN).size() == frame && steel(c) == -1,
                     "He built or set something: " + report);
             putOut(h);
         });
