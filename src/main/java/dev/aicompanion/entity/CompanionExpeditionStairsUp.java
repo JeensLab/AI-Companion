@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /**
  * A staircase cut up through the rock towards the entrance on the surface when the record's way up is gone (a restart under the ground
@@ -27,8 +28,8 @@ final class CompanionExpeditionStairsUp {
     private final CompanionWork w;
     private final CompanionEntity owner;
     private final CompanionExpeditionDig dig;
-    /** The mine's steps go into its record of the way up; a climb for another goal (to the player) leaves the record alone and says its own line. */
-    private final boolean recordsWay;
+    /** Where each step goes into the mine's record of the way up; none for a climb for another goal (to the player), which leaves the record alone and says its own line. */
+    private final Consumer<BlockPos> record;
     private final String status;
     /**
      * The stairs of his ways are walked on after it (a short staircase up to his old stairs over a pit): no step cuts the floor of one of their steps or lays
@@ -49,13 +50,15 @@ final class CompanionExpeditionStairsUp {
 
     CompanionExpeditionStairsUp(CompanionWork w, CompanionExpeditionDig dig) { this(w, dig, true, null); }
 
-    CompanionExpeditionStairsUp(CompanionWork w, CompanionExpeditionDig dig, boolean recordsWay, String status) { this(w, dig, recordsWay, status, false); }
+    CompanionExpeditionStairsUp(CompanionWork w, CompanionExpeditionDig dig, boolean recordsWay, String status) {
+        this(w, dig, recordsWay ? cell -> w.mine.wayCut(cell) : null, status, false);
+    }
 
-    CompanionExpeditionStairsUp(CompanionWork w, CompanionExpeditionDig dig, boolean recordsWay, String status, boolean keepsStairs) {
+    CompanionExpeditionStairsUp(CompanionWork w, CompanionExpeditionDig dig, Consumer<BlockPos> record, String status, boolean keepsStairs) {
         this.w = w;
         this.owner = w.owner;
         this.dig = dig;
-        this.recordsWay = recordsWay;
+        this.record = record;
         this.status = status;
         this.keepsStairs = keepsStairs;
     }
@@ -95,7 +98,7 @@ final class CompanionExpeditionStairsUp {
             moved = true;
         }
         dig.flush();
-        if (recordsWay) w.mine.wayCut(to);
+        if (record != null) record.accept(to);
         stood.add(from);
         stood.add(to);
         steps++;

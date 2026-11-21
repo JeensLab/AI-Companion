@@ -12,7 +12,8 @@ import java.util.List;
  * Where the record has a gap (the stairs below a restart are forgotten, the cells above it begin far off) the gap is walked by a
  * route search, and a plug of his own that shuts it comes out with the pickaxe he has. Rock that shuts it is cut through by the
  * self-rescue, which is let work for that alone; a step that cannot be done ends the climb where he stands, said as it is. Out of a pit with his old
- * stairs a few blocks over it, a short staircase of his own is cut up to them, and the climb walks on along them.
+ * stairs a few blocks over it, a short staircase of his own is cut up to them, and the climb walks on along them. The steps of a staircase he cuts at a
+ * gap of the way above go into the record in place of it, and the cells of the way they lead past are dropped from it: the next climb, and the way down, walk them.
  */
 final class CompanionExpeditionClimb {
     enum Result { WORKING, DONE }
@@ -40,9 +41,9 @@ final class CompanionExpeditionClimb {
     /** The staircase cut up to the surface once the rescues are spent: the way up whatever it takes. */
     private final CompanionExpeditionStairsUp stairs;
     /** The short staircase up to a near cell of his old way across the gap out of a pit ({@link #shortTo}): the walk goes on from that cell. */
-    // ponytail: its steps are no record of the way up: a later climb crosses them by the route search, and cutWear still keeps their wear (never more than the
-    // staircase to the surface's); a climb begun on the steps themselves finds no cell of his near and is lost. Upgrade: the steps into the record in place of the gap.
     private final CompanionExpeditionStairsUp toWay;
+    /** Where in {@link CompanionMineSite#above} the next step of a staircase of this climb goes ({@link #recordFrom}); below 0, before the entrance on the surface. */
+    private int recordAt;
     /** The short staircase was begun in this climb: the same gap is not cut to again. */
     private boolean cutToWay;
     /** The index in {@link #cells} of the cell the short staircase goes to, and the steps it may take: past them it goes round, not there. */
@@ -65,8 +66,8 @@ final class CompanionExpeditionClimb {
         this.w = w;
         this.dig = dig;
         this.supply = supply;
-        this.stairs = new CompanionExpeditionStairsUp(w, dig);
-        this.toWay = new CompanionExpeditionStairsUp(w, dig, false, TO_WAY, true);
+        this.stairs = new CompanionExpeditionStairsUp(w, dig, this::record, null, false);
+        this.toWay = new CompanionExpeditionStairsUp(w, dig, this::record, TO_WAY, true);
         this.walk = new CompanionExpeditionWalk(dig);
         this.toPlug = new CompanionExpeditionWalk(dig);
         this.stone = new CompanionExpeditionStock(w, dig);
@@ -221,7 +222,11 @@ final class CompanionExpeditionClimb {
         // Across a gap he may come out on the surface any way at all (a route over the ground, the walk of a pickup, the rescue's wait):
         // there the climb is over. Run water of seed 7 (20.11): waiting for the rescue on a slope, the rescue dug him down a pit
         // toward the cell beyond the gap below him, and from the pit no tree was in reach.
-        if ((phase == Phase.TRAVEL || phase == Phase.UNPLUG || phase == Phase.CUT_OUT || phase == Phase.STAIRS_TO_WAY) && onSurface()) return finish(" Копать нечем, поднялся за припасами.");
+        if ((phase == Phase.TRAVEL || phase == Phase.UNPLUG || phase == Phase.CUT_OUT || phase == Phase.STAIRS_TO_WAY) && onSurface()) {
+            // A short staircase out under the sky short of his old stairs (a slope) is his way up to the surface, as a staircase cut up to it.
+            if (phase == Phase.STAIRS_TO_WAY) cutPast(top());
+            return finish(" Копать нечем, поднялся за припасами.");
+        }
         return switch (phase) {
             case WALK -> walked();
             case TRAVEL -> travel();
@@ -387,6 +392,7 @@ final class CompanionExpeditionClimb {
         cutToWay = true;
         toWayCell = to;
         toWaySteps = shortWear(w.owner.blockPosition(), cell) / STEP_WEAR + DETOUR;
+        recordFrom();
         toWay.begin(cell);
         stairSteps = 0;
         w.owner.getNavigation().stop();
@@ -413,6 +419,7 @@ final class CompanionExpeditionClimb {
                 yield stairSteps > toWaySteps ? noWay() : Result.WORKING;
             }
             case ARRIVED -> {
+                cutPast(cells.get(toWayCell));
                 stretchEnd = toWayCell;
                 yield crossed();
             }
@@ -461,8 +468,9 @@ final class CompanionExpeditionClimb {
     /** The record's way up is cut and no rescue opens it: a staircase of his own up to the entrance on the surface, as a player digs out of a lost mine. */
     private Result stairsUp() {
         if (!rockTool() && !makeTool()) return finish(CLOSED);
-        BlockPos top = w.mine.origin() != null ? w.mine.origin() : w.mine.entrance();
-        stairs.begin(top);
+        // After a short staircase that failed, the steps go on from where it stopped: the cell across the gap may be one of them by now.
+        if (phase != Phase.STAIRS_TO_WAY) recordFrom();
+        stairs.begin(top());
         stairSteps = 0;
         w.owner.getNavigation().stop();
         w.expedition.climbTime();
@@ -478,13 +486,38 @@ final class CompanionExpeditionClimb {
                 if (stairs.steps() == stairSteps) yield Result.WORKING;
                 stairSteps = stairs.steps();
                 w.expedition.climbTime();
-                yield onSurface() ? finish(" " + newStairsWhy + ", прокопал новую к поверхности.") : Result.WORKING;
+                yield onSurface() ? cutOutOnStairs() : Result.WORKING;
             }
-            case ARRIVED -> finish(" " + newStairsWhy + ", прокопал новую к поверхности.");
+            case ARRIVED -> cutOutOnStairs();
             case NO_TOOL -> makeTool() ? Result.WORKING : finish(" " + shortage(false, w.items.countCarried(Items.STONE_PICKAXE) > 0) + CLOSED);
             case STUCK -> finish(stairs.why().equals("путь наверх закрыт") ? CLOSED : " Подняться не вышло: " + stairs.why() + ", остался где стою.");
         };
     }
+
+    /** Out by the staircase he cut: in the record it is the way up from where it was begun to the entrance on the surface, the cells across the gap left out. */
+    private Result cutOutOnStairs() {
+        cutPast(top());
+        return finish(" " + newStairsWhy + ", прокопал новую к поверхности.");
+    }
+
+    private BlockPos top() { return w.mine.origin() != null ? w.mine.origin() : w.mine.entrance(); }
+
+    /**
+     * The steps of the staircase begun now go into the record before the cell he could not get to (the entrance on the surface for a lost one). A cell off
+     * the way above (a stand of the pit's own stairs, which the walk meets again before any step) keeps that way whole: the steps go in before the entrance
+     * on the surface and nothing is left out, as when the record is full.
+     */
+    // ponytail: the cell is found by its first place in the record; a way that passes one cell twice (the ways of two restarts that cross) takes the steps there. Upgrade: the index of the cell in the way above kept with cells.
+    private void recordFrom() { recordAt = w.mine.above().indexOf(cells.get(stretchEnd)); }
+
+    private void record(BlockPos step) {
+        if (recordAt < 0) w.mine.wayCut(step);
+        else if (w.mine.wayCut(recordAt, step)) recordAt++;
+        else recordAt = -1;
+    }
+
+    /** The staircase came out at {@code to}: the cells of the way it led past are left out of the record, if its steps went in in their place. */
+    private void cutPast(BlockPos to) { if (recordAt >= 0) w.mine.wayCutPast(recordAt, to); }
 
     /** The one time the expedition lets the self-rescue work: its walls are the plan at any other. */
     boolean cuttingOut() { return phase == Phase.CUT_OUT && outcome.isEmpty(); }
@@ -543,7 +576,7 @@ final class CompanionExpeditionClimb {
         stairSteps = 0;
         why = outcome = "";
         cells = List.of();
-        stretchEnd = plugs = cuts = cutWait = rescuesBefore = toWayCell = toWaySteps = 0;
+        stretchEnd = plugs = cuts = cutWait = rescuesBefore = toWayCell = toWaySteps = recordAt = 0;
         lost = cutToWay = false;
         newStairsWhy = "";
         phase = Phase.WALK;

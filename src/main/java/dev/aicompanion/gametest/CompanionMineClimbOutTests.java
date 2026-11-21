@@ -73,10 +73,10 @@ public final class CompanionMineClimbOutTests {
         CompanionEntity c = deepPit(h);
         BlockPos stand = c.mineSite().stands().get(0);
         int surface = h.absolutePos(new BlockPos(0, GROUND, 0)).getY();
-        int recorded = c.mineSite().above().size();
+        List<BlockPos> recorded = List.copyOf(c.mineSite().above());
         climb(h, c, stand, result -> {
             h.assertTrue(result.success() && c.getBlockY() == surface, "He said «" + result.message() + "» at height " + c.getBlockY() + ", not on the step out of his stairs at " + surface + " | " + report(c));
-            h.assertTrue(c.mineSite().above().size() > recorded, "The staircase he cut is not in the record of the way up | " + report(c));
+            h.assertTrue(!recorded.containsAll(c.mineSite().above()), "The staircase he cut is not in the record of the way up | " + report(c));
         });
     }
 

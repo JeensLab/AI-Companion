@@ -204,6 +204,25 @@ public final class CompanionMineSite {
         above.add(at, cell.immutable());
     }
 
+    /** As above, at {@code at} of the way up: the steps of a staircase begun at a gap go in before the cell across it, as the way there. False when the record is full. */
+    public boolean wayCut(int at, BlockPos cell) {
+        if (above.size() >= MAX_ABOVE) return false;
+        above.add(Math.min(at, above.size()), cell.immutable());
+        return true;
+    }
+
+    /**
+     * The staircase whose steps went in before {@code from} came out at {@code to} (a cell of the way, or the entrance on the surface): the cells of the
+     * way it led past are no way up any more. A last step on {@code to} itself is kept once.
+     */
+    public void wayCutPast(int from, BlockPos to) {
+        if (from > above.size()) return;
+        int past = above.subList(from, above.size()).indexOf(to);
+        if (past < 0) return;
+        above.subList(from, from + past).clear();
+        if (from > 0 && from < above.size() && above.get(from - 1).equals(above.get(from))) above.remove(from);
+    }
+
     /** The air of the records the restarts replaced; empty in a save from before it was kept. */
     public Set<BlockPos> dug() { return Collections.unmodifiableSet(dug); }
 
