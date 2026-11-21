@@ -735,7 +735,7 @@ final class CompanionObsidian {
     }
 
     /**
-     * The nearest hole for his own lava beside him: ground he can dig, or the hole his last block left, walled by the ground itself
+     * A hole for his own lava beside him: ground he can dig, or the hole his last block left, walled by the ground itself
      * on every side, with a firm dry floor, air over it and over that, dry about it, and no one standing in it but him. Null when
      * there is none. A site of the player's is no reason to say there is none (the player 20.11, world test3): the site is the whole
      * yard round his home, so every cell beside him lies on it, and the ground there is the ground a player digs a hole in for the
