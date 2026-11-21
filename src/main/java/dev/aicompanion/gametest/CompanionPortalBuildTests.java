@@ -295,6 +295,80 @@ public final class CompanionPortalBuildTests {
     }
 
     /**
+     * No flint and steel, but a fire charge in his bag: the frame he finishes is lit with it on the bottom block of the way in, as a
+     * player uses a charge, and the charge is spent — nothing else is got for it.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200, batch = PORTALS)
+    public static void aFireChargeInTheBagLightsTheFrameWithoutAFlintAndSteel(GameTestHelper h) {
+        ground(h);
+        standingFrame(h, 14, 20);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.FIRE_CHARGE));
+        var future = run(h, c, "[{\"action\":\"build_portal\"}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Портал готов."), "Not lit: " + report);
+            h.assertTrue(blocks(h, Blocks.NETHER_PORTAL).size() == 6 && blocks(h, Blocks.OBSIDIAN).size() == 10, "Not a lit frame: " + report);
+            h.assertTrue(count(c, Items.FIRE_CHARGE) == 0 && steel(c) == -1, "The charge is not spent or a flint and steel appeared: " + c.getStoredItemsSummary());
+            putOut(h);
+        });
+    }
+
+    /**
+     * The charge is only in a chest near the frame (as a ruined portal's chest has one): he walks to it, takes one charge, and lights
+     * the frame with it — one charge spent, the rest left in the chest.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400, batch = PORTALS)
+    public static void aFireChargeInAChestNearbyIsFetchedToLightTheFrame(GameTestHelper h) {
+        ground(h);
+        standingFrame(h, 14, 20);
+        CompanionEntity c = spawn(h);
+        BlockPos chest = new BlockPos(11, GROUND + 1, 12);
+        placedByPlayer(h, c, chest, Blocks.CHEST);
+        ((net.minecraft.world.Container) h.getLevel().getBlockEntity(h.absolutePos(chest))).setItem(0, new ItemStack(Items.FIRE_CHARGE, 3));
+        var future = run(h, c, "[{\"action\":\"build_portal\"}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Портал готов."), "Not lit: " + report);
+            h.assertTrue(blocks(h, Blocks.NETHER_PORTAL).size() == 6 && blocks(h, Blocks.OBSIDIAN).size() == 10, "Not a lit frame: " + report);
+            h.assertTrue(count(c, Items.FIRE_CHARGE) == 0, "The charge is not spent: " + c.getStoredItemsSummary());
+            h.assertTrue(chestCount(h, chest, Items.FIRE_CHARGE) == 2, "Not one charge taken from the chest: " + chestCount(h, chest, Items.FIRE_CHARGE));
+            putOut(h);
+        });
+    }
+
+    /** Neither a flint and steel nor a fire charge: he says both are missing and lights nothing. */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void withoutAFlintAndSteelOrAFireChargeHeSaysBothAreMissing(GameTestHelper h) {
+        ground(h);
+        standingFrame(h, 14, 20);
+        CompanionEntity c = spawn(h);
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        var answer = CompanionEvents.executeAction(owner, "build_portal", "", 1);
+        h.assertTrue(!answer.success() && answer.message().contains("Нет ни огнива, ни огненного шара."), "Not both named: " + answer.message());
+        h.assertTrue(blocks(h, Blocks.NETHER_PORTAL).isEmpty() && blocks(h, Blocks.OBSIDIAN).size() == 10, "He lit or set something: " + answer.message());
+        h.succeed();
+    }
+
+    /** A frame of ten obsidian standing whole, as a player leaves it unlit, across x from {@code x}, at {@code z} (relative). */
+    private static void standingFrame(GameTestHelper h, int x, int z) {
+        for (BlockPos cell : List.of(new BlockPos(x + 1, GROUND, z), new BlockPos(x + 2, GROUND, z),
+                new BlockPos(x + 1, GROUND + 4, z), new BlockPos(x + 2, GROUND + 4, z)))
+            h.setBlock(cell, Blocks.OBSIDIAN);
+        for (int y = GROUND + 1; y <= GROUND + 3; y++) { h.setBlock(new BlockPos(x, y, z), Blocks.OBSIDIAN); h.setBlock(new BlockPos(x + 3, y, z), Blocks.OBSIDIAN); }
+    }
+
+    /** How many of this item a container at {@code rel} holds; -1 when there is no container there. */
+    private static int chestCount(GameTestHelper h, BlockPos rel, Item item) {
+        if (!(h.getLevel().getBlockEntity(h.absolutePos(rel)) instanceof net.minecraft.world.Container container)) return -1;
+        int count = 0;
+        for (int slot = 0; slot < container.getContainerSize(); slot++) if (container.getItem(slot).is(item)) count += container.getItem(slot).getCount();
+        return count;
+    }
+
+    /**
      * A lit portal as a player leaves it, across x from {@code x}, its frame from {@code y}, at {@code z} (relative): the fire makes the
      * portal blocks and the game's record of them.
      */

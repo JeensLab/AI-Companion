@@ -44,8 +44,9 @@ import java.util.function.Predicate;
  * {@link #SITE} blocks of the player, its two bottom blocks set into the ground in place of what was there (he picks that up), so the
  * way in has no step; lit at once with his flint and steel, which wears as a player's does. A lit portal within {@link #NEAR} blocks of
  * the player is his way to the Nether already: none is built; one he knows farther off he leads the player to (decided 09.11), unless
- * the player asked for a new one. A portal is known by its own block: one he built or saw, wherever the player has gone since. Short
- * of obsidian or of a flint and steel the order is refused at once as a shortage, and the plan gets them first (CompanionPlanRunner).
+ * the player asked for a new one. A portal is known by its own block: one he built or saw, wherever the player has gone since. Short of obsidian the order is refused at once as a shortage, and the plan gets it first
+ * (CompanionPlanRunner); so is a frame with neither a flint and steel nor a fire charge, the charge taken from his bag or from a chest
+ * near him (a ruined portal's chest often has one) and used on the bottom of the way in as a player uses it.
  * What stands of the frame is read from the world, so an order stopped half way goes on with the same frame; the obsidian he set is
  * not mined again for it (CompanionObsidian). He digs only natural ground and sets the frame in air: the player's blocks stay. The top
  * of a frame without corners hangs in the air: as a player does, he props it with a block of his under it and takes it away after.
@@ -61,6 +62,8 @@ final class CompanionPortalBuild {
     static final String NO_WAY = "Не могу подойти туда, где строю портал.";
     static final String TAKEN = "Место под портал заняли — дострою по новой просьбе.";
     static final String NO_FLINT = "Нечем зажечь портал — нужно огниво.";
+    static final String NO_LIGHT = "Нет ни огнива, ни огненного шара.";
+    static final String NO_CHARGE_ROOM = "В сумке нет места для огненного шара.";
     static final String NO_PROP = "Нечем подпереть верх рамки — нужен блок земли, булыжника или досок.";
     static final String NOT_LIT = "Рамка не зажглась.";
     static final String LYING = "Не могу забрать то, что лежит в рамке, — убери, и я зажгу портал.";
@@ -79,6 +82,10 @@ final class CompanionPortalBuild {
     private static final float HARDEST = 3;
     /** No chest this near the frame: the portal would stand in the way to it (blocks). */
     private static final int CHESTS = 2;
+    /** A chest with a fire charge is looked for this near the frame (blocks). */
+    private static final int CHARGE_FIND = 16;
+    /** The fire charge of the bag or of a chest: it lights the frame where a flint and steel would. */
+    private static final String CHARGE = "minecraft:fire_charge";
     /** A player's reach for a block; walks to the place before he gives it up; ticks a block he set takes; how long he waits for someone in the way. */
     private static final double REACH = 4.5;
     private static final int LEGS = 8, PLACE_TICKS = 4, WAIT_TICKS = 100;
@@ -87,7 +94,7 @@ final class CompanionPortalBuild {
     /** What he props the top with besides planks and logs: blocks that come back as they were when broken (glass would not, review 09.11). */
     private static final Set<Item> PROPS = Set.of(Items.DIRT, Items.COARSE_DIRT, Items.COBBLESTONE, Items.COBBLED_DEEPSLATE, Items.NETHERRACK);
 
-    private enum Kind { DIG, PROP, OBSIDIAN, CLEAR, PICK, LIGHT }
+    private enum Kind { DIG, PROP, OBSIDIAN, CLEAR, PICK, FETCH, LIGHT }
     private record Step(Kind kind, BlockPos cell) { }
 
     /** The frame: its column 0 stands on {@code base}, it runs {@code along}, the way in is on the {@code front} side. */
@@ -116,6 +123,9 @@ final class CompanionPortalBuild {
     private int legs;
     private long waitingSince, pickingSince;
     private boolean retried;
+    /** The chest he has just opened for a charge (shut on the next tick), and the chests already tried for one. */
+    private BlockPos fetchOpen;
+    private final Set<BlockPos> triedCharges = new HashSet<>();
 
     CompanionPortalBuild(CompanionWork w) { this.w = w; this.c = w.owner; }
 
@@ -182,7 +192,8 @@ final class CompanionPortalBuild {
         int need = (int) frame.obsidian().stream().filter(cell -> !level.getBlockState(cell).is(Blocks.OBSIDIAN)).count();
         int have = w.items.countCarried(Items.OBSIDIAN);
         if (have < need) return shortage("Для портала нужно " + need + " обсидиана, у меня " + have + ".", "minecraft:obsidian", need);
-        if (!lighter()) return shortage(NO_FLINT, "minecraft:flint_and_steel", 1);
+        if (!lighter() && w.items.countCarried(Items.FIRE_CHARGE) == 0 && chargeChest(level, center) == null)
+            return shortage(NO_LIGHT, "minecraft:flint_and_steel", 1);
         // In sand there is no block to prop the top with: said now, not with eight obsidian set.
         if (!propped(level)) return CompanionActionResult.failed(NO_PROP);
         stands = standsFor(level, frame);
@@ -203,7 +214,7 @@ final class CompanionPortalBuild {
 
     void cancel() { reset(); }
 
-    private void reset() { frame = null; leadTo = null; leadWait = 0; stands = walkingTo = Set.of(); path = null; legs = 0; waitingSince = pickingSince = 0; retried = false; }
+    private void reset() { frame = null; leadTo = null; leadWait = 0; stands = walkingTo = Set.of(); path = null; legs = 0; waitingSince = pickingSince = 0; retried = false; fetchOpen = null; triedCharges.clear(); }
 
     /** «На север», «на юго-запад»: where the cell lies from the other, as he says it (north is −z). */
     private static String where(BlockPos from, BlockPos to) {
@@ -215,10 +226,12 @@ final class CompanionPortalBuild {
     /** One tick: to the portal he knows, or the next thing the frame lacks from where he can reach it; lit once whole. */
     void tick(ServerLevel level) {
         if (leadTo != null) { lead(level); return; }
+        if (fetchOpen != null) { w.closeChest(); fetchOpen = null; return; }
         if (frame == null) { w.finish(false, NO_PLACE); return; }
         if (level.getBlockState(frame.fire()).is(Blocks.NETHER_PORTAL)) { done(level); return; }
         Step step = next(level);
         if (step == null) return;
+        if (step.kind() == Kind.FETCH) { fetch(level, step.cell()); return; }
         if (step.kind() != Kind.PICK) { pickingSince = 0; retried = false; }
         // Out of the frame, with the cell in his reach and sight: from inside it the fire would take him to the Nether. What lies in
         // the frame he steps in for, the frame not lit yet.
@@ -310,7 +323,74 @@ final class CompanionPortalBuild {
         }
         List<ItemEntity> lying = lying(level);
         if (!lying.isEmpty()) return new Step(Kind.PICK, lying.getFirst().blockPosition());
+        // No flint and steel he can strike: a charge of his bag lights it, one in a chest near is walked for first.
+        if (!lighter() && w.items.countCarried(Items.FIRE_CHARGE) == 0) {
+            BlockPos chest = chargeChest(level, frame.fire());
+            if (chest == null) { w.finish(false, NO_LIGHT); return null; }
+            return new Step(Kind.FETCH, chest);
+        }
         return new Step(Kind.LIGHT, frame.fire());
+    }
+
+    /** The nearest chest near {@code near} holding a fire charge he has not tried yet, null when there is none. */
+    private BlockPos chargeChest(ServerLevel level, BlockPos near) {
+        return w.chests.blockEntitiesNear(level, near, CHARGE_FIND).stream()
+                .filter(pos -> !triedCharges.contains(pos))
+                .filter(pos -> chargeSlot(CompanionContainers.chestAt(level, pos)) >= 0)
+                .min(Comparator.comparingDouble(pos -> pos.distSqr(near))).orElse(null);
+    }
+
+    /** The slot of a chest with a fire charge a player could take, -1 when there is none. */
+    private static int chargeSlot(net.minecraft.world.Container chest) {
+        if (chest == null) return -1;
+        for (int slot = 0; slot < chest.getContainerSize(); slot++)
+            if (chest.getItem(slot).is(Items.FIRE_CHARGE) && CompanionContainers.takeable(chest, slot)) return slot;
+        return -1;
+    }
+
+    /**
+     * The charge of a chest near the frame: walked to as the frame is, opened, one charge taken into his bag; the lid is shut on the
+     * next tick and the charge used then, as his flint and steel would be.
+     */
+    private void fetch(ServerLevel level, BlockPos cell) {
+        net.minecraft.world.Container chest = CompanionContainers.chestAt(level, cell);
+        int slot = chargeSlot(chest);
+        if (slot < 0) { triedCharges.add(cell); return; }
+        boolean reach = c.distanceToSqr(cell.getCenter()) <= 3.2 * 3.2 && w.items.visibleFrom(level, c.getEyePosition(), cell);
+        if (!reach) {
+            c.workStatus("Иду за огненным шаром.");
+            if (!walk(chestStands(level, cell))) { event("portal_chest_no_way", "chest", cell.toShortString()); triedCharges.add(cell); }
+            return;
+        }
+        w.route.stop();
+        c.getNavigation().stop();
+        c.getLookControl().setLookAt(cell.getX() + .5, cell.getY() + .5, cell.getZ() + .5);
+        w.openedChest = cell.immutable();
+        fetchOpen = cell.immutable();
+        w.animateChest(level, cell, 1);
+        CompanionContainers.playOpen(level, cell);
+        c.animateAction(3, cell, chest.getItem(slot).copyWithCount(1));
+        int moved = w.items.takeFromSlot(chest, slot, 1);
+        chest.setChanged();
+        w.rememberedChest = cell.immutable();
+        c.rememberObserved(cell);
+        if (moved == 0) { triedCharges.add(cell); w.closeChest(); fetchOpen = null; w.finish(false, NO_CHARGE_ROOM); return; }
+        event("portal_charge_taken", "chest", cell.toShortString());
+        c.workStatus("Взял огненный шар из сундука.");
+        w.cooldown = 10;
+    }
+
+    /** Cells from which his hand reaches the chest and sees it, out of it. */
+    private Set<BlockPos> chestStands(ServerLevel level, BlockPos chest) {
+        Set<BlockPos> cells = new HashSet<>();
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = -1; dy <= 1; dy++) {
+            BlockPos stand = chest.offset(dx, dy, dz);
+            if (stand.equals(chest) || !CompanionMiningNavigation.standable(c, stand)) continue;
+            Vec3 eyes = Vec3.atBottomCenterOf(stand).add(0, c.getEyeHeight(), 0);
+            if (eyes.distanceToSqr(Vec3.atCenterOf(chest)) > 3.2 * 3.2 || !w.items.visibleFrom(level, eyes, chest)) continue;
+            cells.add(stand.immutable());
+        }
+        return cells;
     }
 
     /** The ground under the bottom, a prop or a plant inside the frame: broken as he breaks blocks, what it drops picked up. */
@@ -404,10 +484,14 @@ final class CompanionPortalBuild {
         c.workStatus("Строю портал: " + frame.obsidian().stream().filter(at -> level.getBlockState(at).is(Blocks.OBSIDIAN)).count() + " из " + OBSIDIAN + ".");
     }
 
-    /** His flint and steel on the bottom of the frame, as a player strikes it: the fire there lights the frame, the steel wears by one. */
+    /**
+     * His flint and steel on the bottom of the frame, as a player strikes it: the fire there lights the frame, the steel wears by one.
+     * With no flint and steel he can strike, a fire charge of his bag is used on that same bottom block: the fire it makes is in the
+     * frame, and the charge is spent.
+     */
     private void light(ServerLevel level) {
-        if (!lighter() || !c.getMainHandItem().is(Items.FLINT_AND_STEEL) && !c.equipForWork("minecraft:flint_and_steel").success()
-                || !CompanionFacts.usable(c.getMainHandItem())) { w.finish(false, NO_FLINT); return; }
+        boolean steel = lighter();
+        if (!steel && w.items.countCarried(Items.FIRE_CHARGE) == 0) { w.finish(false, NO_LIGHT); return; }
         // Somebody in the frame would go to the Nether with the fire: waited for, as for a block (set).
         if (!level.getEntitiesOfClass(LivingEntity.class, frame.opening(), LivingEntity::isAlive).isEmpty()) {
             if (waitingSince == 0) waitingSince = level.getGameTime();
@@ -416,15 +500,33 @@ final class CompanionPortalBuild {
             return;
         }
         waitingSince = 0;
-        ItemStack steel = c.getMainHandItem();
         BlockPos fire = frame.fire();
         if (!BaseFireBlock.canBePlacedAt(level, fire, frame.front().getOpposite())) { w.finish(false, NOT_LIT); return; }
-        level.playSound(null, fire, SoundEvents.FLINTANDSTEEL_USE, SoundSource.BLOCKS, 1F, level.getRandom().nextFloat() * .4F + .8F);
-        level.setBlock(fire, BaseFireBlock.getState(level, fire), 11);
-        level.gameEvent(c, GameEvent.BLOCK_PLACE, fire.below());
-        c.animateAction(1, fire, steel);
-        c.swing(InteractionHand.MAIN_HAND);
-        steel.hurtAndBreak(1, c, EquipmentSlot.MAINHAND);
+        if (steel) {
+            if (!c.getMainHandItem().is(Items.FLINT_AND_STEEL) && !c.equipForWork("minecraft:flint_and_steel").success()
+                    || !CompanionFacts.usable(c.getMainHandItem())) { w.finish(false, NO_FLINT); return; }
+            ItemStack held = c.getMainHandItem();
+            level.playSound(null, fire, SoundEvents.FLINTANDSTEEL_USE, SoundSource.BLOCKS, 1F, level.getRandom().nextFloat() * .4F + .8F);
+            level.setBlock(fire, BaseFireBlock.getState(level, fire), 11);
+            level.gameEvent(c, GameEvent.BLOCK_PLACE, fire.below());
+            c.animateAction(1, fire, held);
+            c.swing(InteractionHand.MAIN_HAND);
+            held.hurtAndBreak(1, c, EquipmentSlot.MAINHAND);
+        } else {
+            // One charge into his hand, as a player takes it, and used on the bottom block of the frame: the fire lands in the frame.
+            if (!c.getMainHandItem().is(Items.FIRE_CHARGE) && !c.equipForWork(CHARGE).success()) {
+                w.finish(false, "Не могу взять в руку «" + CompanionWork.itemName(Items.FIRE_CHARGE) + "»."); return;
+            }
+            ItemStack held = c.getMainHandItem();
+            if (!held.is(Items.FIRE_CHARGE)) { w.finish(false, "Не могу взять в руку «" + CompanionWork.itemName(Items.FIRE_CHARGE) + "»."); return; }
+            level.playSound(null, fire, SoundEvents.FIRECHARGE_USE, SoundSource.BLOCKS, 1F, level.getRandom().nextFloat() * .4F + .8F);
+            level.setBlock(fire, BaseFireBlock.getState(level, fire), 11);
+            level.gameEvent(c, GameEvent.BLOCK_PLACE, fire.below());
+            c.animateAction(1, fire, held);
+            c.swing(InteractionHand.MAIN_HAND);
+            held.shrink(1);
+            c.setChanged();
+        }
         if (!level.getBlockState(fire).is(Blocks.NETHER_PORTAL)) { event("portal_not_lit", "fire", fire.toShortString()); w.finish(false, NOT_LIT); return; }
         done(level);
     }

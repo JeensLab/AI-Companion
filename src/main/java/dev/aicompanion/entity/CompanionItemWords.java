@@ -88,6 +88,7 @@ final class CompanionItemWords {
         put(Items.ARROW, "стрела", "стрелу", "стрелы");
         put(Items.SHIELD, "щит", "щит", "щита");
         put(Items.FLINT_AND_STEEL, "огниво", "огниво", "огнива");
+        put(Items.FIRE_CHARGE, "огненный шар", "огненный шар", "огненного шара");
         put(Items.SHEARS, "ножницы", "ножницы", "ножниц");
         put(Items.FISHING_ROD, "удочка", "удочку", "удочки");
         // Armour.
