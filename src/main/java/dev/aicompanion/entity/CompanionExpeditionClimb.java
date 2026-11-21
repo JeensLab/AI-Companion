@@ -115,6 +115,8 @@ final class CompanionExpeditionClimb {
 
     /** Blocks a step of {@link CompanionExpeditionStairsUp} takes out of the rock: the cell over his head, the step and the cell over it. */
     private static final int STEP_WEAR = 3;
+    /** How far a climbing rescue gets through the rock: it digs at most 60 blocks ({@link CompanionRecovery}), a staircase of some 20 steps. */
+    private static final int RESCUE_REACH = 20;
 
     /**
      * The wear of the staircase the climb cuts up out of a pit under the ground: from {@link #pitTop} a step for each block of height up to the entrance on
@@ -294,14 +296,17 @@ final class CompanionExpeditionClimb {
     }
 
     /**
-     * The gap he stands at is the one out of a pit under the ground ({@link #pitTop}), or the whole way of a lost one: the cell beyond lies across the rock,
-     * and the wear the rescues spend is the staircase's ({@link #cutWear}). Run void-4 of seed 314159 (21.11): three rescues toward the old way 35 blocks off
-     * spent some 170 wear of the iron pickaxe, the climb walked back down from the steps they cut, and its staircase ran out of wear ten blocks under the
-     * surface. Nor does a rescue reach a near cell beyond: with the old way five blocks over the pit (review 21.11) the rescues ended in a staircase all the same.
+     * The gap he stands at is the one out of a pit under the ground ({@link #pitTop}), or the whole way of a lost one, and the cell beyond lies farther than
+     * a rescue digs ({@link #RESCUE_REACH}): the rescues would spend the staircase's wear ({@link #cutWear}) and not get there. Run void-4 of seed 314159
+     * (21.11): three rescues toward the old way 35 blocks off spent some 170 wear of the iron pickaxe, the climb walked back down from the steps they cut,
+     * and its staircase ran out of wear ten blocks under the surface. A near cell beyond is left to the walk and the rescues as before: run retreat of seed 7
+     * (series d) stood by the old way four blocks over the pit when the staircase from a hundred blocks down was begun instead.
      */
+    // ponytail: a near gap is still crossed by the rescues or the staircase to the surface. Upgrade: a short staircase toward the cell beyond, then the walk on.
     private boolean pitGap() {
         BlockPos top = pitTop(w.mine);
-        return top != null && (lost || stretchEnd > 0 && cells.get(stretchEnd - 1).distSqr(top) <= CompanionMineSite.NEAR_STAND);
+        if (top == null || !lost && (stretchEnd == 0 || cells.get(stretchEnd - 1).distSqr(top) > CompanionMineSite.NEAR_STAND)) return false;
+        return cells.get(stretchEnd).distSqr(w.owner.blockPosition()) > RESCUE_REACH * RESCUE_REACH;
     }
 
     /** Stands still with the cell beyond the gap as his destination until the rescue takes over; it stops the work while it runs, and this goes on when it is over. */
