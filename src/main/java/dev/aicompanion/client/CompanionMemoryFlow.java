@@ -34,7 +34,7 @@ public final class CompanionMemoryFlow {
     private static final Set<String> MEMORY_COMMANDS = Set.of("companion memory forget", "companion memory show");
     // Only answers to the player and his own topics, which the player answers, are talk; remarks about events, action summaries
     // and acknowledgements would crowd the memory out.
-    private static final Set<String> ANSWER_SOURCES = Set.of("model", "clarification", "local_identity", "topic");
+    private static final Set<String> ANSWER_SOURCES = Set.of("model", "clarification", "local_identity", "local_abilities", "topic");
 
     private static final Object LOCK = new Object();
     private static int playerLines;

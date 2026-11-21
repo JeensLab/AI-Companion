@@ -50,6 +50,9 @@ public final class CompanionLocalCommands {
         String normalized = text.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е');
         String memory = memoryCommand(normalized, companionName);
         if (memory != null) return memory;
+        // «Что ты умеешь», «расскажи 10 умений»: the list of his real abilities is answered from the code, without the model.
+        String abilities = abilitiesCommand(normalized, companionName);
+        if (abilities != null) return abilities;
         // «Порядок и запас» on and off (CompanionAutonomy). Before «стоп»: «хватит, просто будь рядом» is not a stop of an order.
         if (normalized.contains("просто будь рядом") || normalized.contains("просто держись рядом") || normalized.matches("(?sU).*\\bне будь самостоятельн.*")
                 || normalized.matches("(?sU).*\\b(хватит|перестань|прекрати|выключи|отключи)\\b.{0,12}самостоятельн.*")) return "companion autonomy off";
@@ -293,12 +296,46 @@ public final class CompanionLocalCommands {
                 : new PlannedAction("go_to_place", 0, 1, name);
     }
 
-    /** «Забудь всё» and «что ты обо мне помнишь»: only the whole message counts, so «забудь всё и добудь дерево» stays an order. */
-    private static String memoryCommand(String normalized, String companionName) {
+    /** The message without the companion's name and a leading «а»/«ну»: what is left is the ask itself. */
+    private static String withoutAddress(String normalized, String companionName) {
         String rest = normalized.strip();
         String name = companionName == null ? "" : companionName.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е').strip();
         if (!name.isEmpty() && rest.startsWith(name)) rest = rest.substring(name.length()).replaceFirst("(?sU)^[\\s\\p{Punct}—]+", "");
-        rest = rest.replaceFirst("(?sU)^(а|ну)\\s+", "");
+        return rest.replaceFirst("(?sU)^(а|ну)\\s+", "");
+    }
+
+    /**
+     * «Что ты умеешь», «расскажи, что умеешь», «расскажи 10 умений», «назови свои умения»: a question about himself alone, so the
+     * count is the only thing that varies. A question about a thing («что ты умеешь делать с медью») is still the model's.
+     */
+    private static String abilitiesCommand(String normalized, String companionName) {
+        String rest = withoutTrailingAddress(withoutAddress(normalized, companionName), companionName);
+        String question = "(?sU)(?:что\\s+(?:ты\\s+)?(?:вообще\\s+|сейчас\\s+|такого\\s+)*умеешь(?:\\s+делать)?"
+                + "|(?:расскажи|рассказывай|перечисли|назови|скажи|озвучь)\\s*,?\\s*(?:мне\\s+|нам\\s+)?"
+                + "(?:что\\s+(?:ты\\s+)?(?:вообще\\s+|сейчас\\s+|такого\\s+)*умеешь(?:\\s+делать)?"
+                + "|(?:\\d+\\s+|про\\s+|о\\s+|свои\\s+|своих\\s+|все\\s+|всё\\s+){0,3}умени[а-я]*))"
+                + "(?:\\s*,?\\s*пожалуйста)?\\W*";
+        if (!rest.matches(question)) return null;
+        int count = CompanionAbilities.DEFAULT_COUNT;
+        if (rest.matches("(?sU).*\\b(все|всё)\\b.*")) count = CompanionAbilities.size();
+        else {
+            var digits = java.util.regex.Pattern.compile("\\d+").matcher(rest);
+            // «Расскажи 1000000000000 умений» is more than the list, not an arithmetic overflow.
+            if (digits.find()) count = CompanionAbilities.clampCount(digits.group());
+        }
+        return "companion abilities " + count;
+    }
+
+    /** «Что ты умеешь, Олег»: the name after the ask is the address, not part of the ask. */
+    private static String withoutTrailingAddress(String text, String companionName) {
+        String name = companionName == null ? "" : companionName.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е').strip();
+        if (name.isEmpty()) return text;
+        return text.replaceFirst("(?sU)[\\s,]+" + java.util.regex.Pattern.quote(name) + "\\W*$", "");
+    }
+
+    /** «Забудь всё» and «что ты обо мне помнишь»: only the whole message counts, so «забудь всё и добудь дерево» stays an order. */
+    private static String memoryCommand(String normalized, String companionName) {
+        String rest = withoutAddress(normalized, companionName);
         if (rest.matches("(?sU)(забудь|забывай)\\s+(все|всю память|все обо мне|обо мне все)\\W*")
                 || rest.matches("(?sU)(очисти|сотри|стери)\\s+(свою\\s+)?память\\W*")) return "companion memory forget";
         if (rest.matches("(?sU)что ты (обо мне|про меня) (помнишь|знаешь)\\W*")
