@@ -50,6 +50,9 @@ public final class CompanionLocalCommands {
         String normalized = text.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е');
         String memory = memoryCommand(normalized, companionName);
         if (memory != null) return memory;
+        // «Что ты умеешь», «расскажи 10 умений»: the list of his real abilities is answered from the code, without the model.
+        String abilities = abilitiesCommand(normalized, companionName);
+        if (abilities != null) return abilities;
         // «Порядок и запас» on and off (CompanionAutonomy). Before «стоп»: «хватит, просто будь рядом» is not a stop of an order.
         if (normalized.contains("просто будь рядом") || normalized.contains("просто держись рядом") || normalized.matches("(?sU).*\\bне будь самостоятельн.*")
                 || normalized.matches("(?sU).*\\b(хватит|перестань|прекрати|выключи|отключи)\\b.{0,12}самостоятельн.*")) return "companion autonomy off";
@@ -293,12 +296,40 @@ public final class CompanionLocalCommands {
                 : new PlannedAction("go_to_place", 0, 1, name);
     }
 
-    /** «Забудь всё» and «что ты обо мне помнишь»: only the whole message counts, so «забудь всё и добудь дерево» stays an order. */
-    private static String memoryCommand(String normalized, String companionName) {
+    /** The message without the companion's name and a leading «а»/«ну»: what is left is the ask itself. */
+    private static String withoutAddress(String normalized, String companionName) {
         String rest = normalized.strip();
         String name = companionName == null ? "" : companionName.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е').strip();
         if (!name.isEmpty() && rest.startsWith(name)) rest = rest.substring(name.length()).replaceFirst("(?sU)^[\\s\\p{Punct}—]+", "");
-        rest = rest.replaceFirst("(?sU)^(а|ну)\\s+", "");
+        return rest.replaceFirst("(?sU)^(а|ну)\\s+", "");
+    }
+
+    /**
+     * «Что ты умеешь», «расскажи, что умеешь», «расскажи 10 умений», «назови свои умения»: a question about himself alone, so the
+     * count is the only thing that varies. A question about a thing («что ты умеешь делать с медью») is still the model's.
+     */
+    private static String abilitiesCommand(String normalized, String companionName) {
+        String rest = withoutAddress(normalized, companionName);
+        String question = "(?sU)(?:что\\s+(?:ты\\s+)?(?:вообще\\s+|сейчас\\s+|такого\\s+)*умеешь(?:\\s+делать)?"
+                + "|(?:расскажи|рассказывай|перечисли|назови|скажи|озвучь)\\s*,?\\s*(?:мне\\s+|нам\\s+)?"
+                + "(?:что\\s+(?:ты\\s+)?(?:вообще\\s+|сейчас\\s+|такого\\s+)*умеешь(?:\\s+делать)?"
+                + "|(?:\\d+\\s+|про\\s+|свои\\s+|своих\\s+|все\\s+|всё\\s+){0,3}умени[йяе]))"
+                + "(?:\\s*,?\\s*пожалуйста)?\\W*";
+        if (!rest.matches(question)) return null;
+        int count = CompanionAbilities.DEFAULT_COUNT;
+        if (rest.matches("(?sU).*\\b(все|всё)\\b.*")) count = CompanionAbilities.size();
+        else {
+            var digits = java.util.regex.Pattern.compile("\\d+").matcher(rest);
+            if (digits.find()) count = Integer.parseInt(digits.group());
+        }
+        // «Расскажи 100 умений» shows all of them, and «0 умений» is still one line rather than none.
+        count = Math.max(1, Math.min(count, CompanionAbilities.size()));
+        return "companion abilities " + count;
+    }
+
+    /** «Забудь всё» and «что ты обо мне помнишь»: only the whole message counts, so «забудь всё и добудь дерево» stays an order. */
+    private static String memoryCommand(String normalized, String companionName) {
+        String rest = withoutAddress(normalized, companionName);
         if (rest.matches("(?sU)(забудь|забывай)\\s+(все|всю память|все обо мне|обо мне все)\\W*")
                 || rest.matches("(?sU)(очисти|сотри|стери)\\s+(свою\\s+)?память\\W*")) return "companion memory forget";
         if (rest.matches("(?sU)что ты (обо мне|про меня) (помнишь|знаешь)\\W*")

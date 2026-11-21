@@ -64,6 +64,7 @@ public final class CompanionChatScreen extends Screen {
         if (clarifyResources(text, trace)) return;
         if (CompanionIdentity.isNameQuestion(text)) { replyWithName(text, trace); return; }
         if (answerMemoryCommand(action, trace)) return;
+        if (answerAbilities(action, text, trace)) return;
         if (clarifyPlace(text, trace)) return;
         if (answerPlaceForget(action, text, trace)) return;
         if (action != null && Minecraft.getInstance().getConnection() != null) {
@@ -259,6 +260,7 @@ public final class CompanionChatScreen extends Screen {
         if (clarifyResources(text, trace)) return;
         if (CompanionIdentity.isNameQuestion(text)) { replyWithName(text, trace); return; }
         if (answerMemoryCommand(action, trace)) return;
+        if (answerAbilities(action, text, trace)) return;
         if (clarifyPlace(text, trace)) return;
         if (answerPlaceForget(action, text, trace)) return;
         if (action != null && minecraft.getConnection() != null) {
@@ -488,6 +490,16 @@ public final class CompanionChatScreen extends Screen {
         String answer = "Я " + companionName() + ".";
         OpenRouterClient.recordLocalExchange(userText, answer);
         addVoiceReply(answer, trace, "local_identity");
+    }
+
+    /** «Что ты умеешь», «расскажи 10 умений»: his real abilities from the code's registry, answered without the model. */
+    private static boolean answerAbilities(String action, String text, String trace) {
+        if (action == null || !action.startsWith("companion abilities")) return false;
+        String answer = CompanionAbilities.answer(action);
+        CompanionDiagnostics.event(trace, "message_route", "route", "local_abilities");
+        OpenRouterClient.recordLocalExchange(text, answer);
+        addVoiceReply(answer, trace, "local_abilities");
+        return true;
     }
 
     /**
