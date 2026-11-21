@@ -119,13 +119,13 @@ final class CompanionExpeditionClimb {
     /**
      * The wear of the staircase the climb cuts up out of a pit under the ground: from the last cell of the way up before its first gap (the entrance, or
      * the stairs of an earlier pit when the mine was started again inside it) a step for each block of height up to the entrance on the surface. None for a
-     * mine whose way up is walked to the surface.
+     * mine whose way up is walked to the surface. Cells as near as a restart takes its way up from ({@link CompanionMineSite#NEAR_STAND}) are walked to.
      */
     static int cutWear(CompanionMineSite mine) {
         if (!mine.buried() || mine.origin() == null) return 0;
         BlockPos last = mine.entrance();
         for (BlockPos cell : mine.above()) {
-            if (cell.distSqr(last) > GAP) break;
+            if (cell.distSqr(last) > CompanionMineSite.NEAR_STAND) break;
             last = cell;
         }
         return last.equals(mine.origin()) ? 0 : STEP_WEAR * Math.max(0, mine.origin().getY() - last.getY());

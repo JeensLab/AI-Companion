@@ -53,7 +53,7 @@ public final class CompanionMineWayUpTests {
      * the foot of its stairs, and the wear left on the iron pickaxe: more than the staircase out of the pit takes on top of the wear kept for ore, or worn
      * below what the staircase takes (78).
      */
-    private static final int TALL_GROUND = 33, PIT_FEET = 8, CORNER = 2, PIT_TUNNEL = 2, IRON_LEFT = 150, IRON_WORN = 40;
+    private static final int TALL_GROUND = 33, PIT_FEET = 8, CORNER = 2, PIT_TUNNEL = 2, IRON_LEFT = 150, IRON_WORN = 40, BESIDE = 3;
 
     private CompanionMineWayUpTests() { }
 
@@ -191,6 +191,27 @@ public final class CompanionMineWayUpTests {
         site.restart(end, Direction.WEST);
         site.buried(true);
         h.assertTrue(site.above().get(0).distSqr(end) <= 1, "The way up of the mine started again does not begin beside him: " + site.above().get(0));
+        outOfThePit(h, c, 0);
+    }
+
+    /**
+     * As above, started again three blocks off the end of the tunnel, by a passage to it: a restart takes its way up from a cell that near, and the climb
+     * walks there; it is no gap to reserve a staircase for, or the iron pickaxe would never dig the rock.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void keepsTheWearForTheStairsOutOfAPitStartedAgainBesideIt(GameTestHelper h) {
+        CompanionEntity c = pitMine(h);
+        CompanionMineSite site = c.mineSite();
+        BlockPos end = c.blockPosition(), here = end.relative(Direction.WEST, BESIDE).relative(Direction.NORTH);
+        for (BlockPos cell : List.of(end.relative(Direction.WEST), end.relative(Direction.WEST, 2), end.relative(Direction.WEST, BESIDE), here)) {
+            h.getLevel().setBlock(cell, Blocks.AIR.defaultBlockState(), 2 | 16);
+            h.getLevel().setBlock(cell.above(), Blocks.AIR.defaultBlockState(), 2 | 16);
+        }
+        c.teleportTo(here.getX() + .5, here.getY(), here.getZ() + .5);
+        site.restart(here, Direction.WEST);
+        site.buried(true);
+        double off = site.above().get(0).distSqr(here);
+        h.assertTrue(off > 9 && off <= 12, "The way up of the mine started again does not begin three blocks off: " + site.above().get(0) + ", " + off);
         outOfThePit(h, c, 0);
     }
 
