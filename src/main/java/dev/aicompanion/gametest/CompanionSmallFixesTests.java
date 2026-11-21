@@ -128,8 +128,9 @@ public final class CompanionSmallFixesTests {
             h.assertTrue(back.isAlive() && back.distanceToSqr(owner) <= 8.5 * 8.5, "Not by the player: " + back.blockPosition().toShortString());
             h.assertTrue(arrived[0] != null && !BlockPos.containing(arrived[0]).equals(pit) && Math.abs(arrived[0].y - owner.getY()) < .01
                     && arrived[0].distanceToSqr(owner.position()) < 2.5, "Put over the pit beside the player: " + arrived[0]);
-            h.assertTrue(carried(back, Items.DIAMOND) == 5 && nether.getEntitiesOfClass(ItemEntity.class, new net.minecraft.world.phys.AABB(room).inflate(4)).isEmpty(),
-                    "The bag was not kept: " + back.getStoredItemsSummary());
+            var strewn = nether.getEntitiesOfClass(ItemEntity.class, new net.minecraft.world.phys.AABB(room).inflate(4));
+            h.assertTrue(carried(back, Items.DIAMOND) == 5 && strewn.isEmpty(),
+                    "The bag was not kept: " + back.getStoredItemsSummary() + " | left in the Nether: " + strewn.stream().map(item -> item.getItem() + "@" + item.blockPosition().toShortString()).toList());
             h.assertTrue(!back.isGatheringTask() && !back.isWorking() && !back.getLastTaskResult().contains("выходом из мира"), "Still on the old work: " + back.getLastTaskResult());
             CompoundTag kept = back.saveWithoutId(new CompoundTag());
             h.assertTrue(kept.getCompound("SmallHouse").getLong("Base") == house.asLong() && kept.getLong("StorageChest") == chest.asLong(),

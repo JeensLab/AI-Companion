@@ -8,6 +8,11 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
+import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.level.material.Fluids;
+import net.minecraft.world.ticks.LevelTicks;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -278,5 +283,67 @@ public final class CompanionSwimTests {
             h.assertTrue(oleg.distanceToSqr(player(h, oleg)) < 5 * 5, "Not by the player: " + oleg.blockPosition());
             h.assertTrue(fast[0] == 0, "Swam fast in knee-deep water for " + fast[0] + " ticks");
         });
+    }
+
+    /**
+     * A column of falling water in a shaft, a plateau beside its top (an opening three blocks high in the wall), and an order that
+     * cannot start while he swims: the game's float holds the jump flag against the order, and nothing else takes him sideways (the
+     * mine world, a drowning at a waterfall with air one step away). The water is placed with its ticks cleared, so that it stands
+     * as a fall does and spreads nowhere.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void inAColumnOfFallingWaterWithAirOneStepAwayHeGetsOutAndDoesNotDrown(GameTestHelper h) {
+        for (int x = 8; x <= 24; x++) for (int z = 12; z <= 20; z++) for (int y = 0; y <= 16; y++) {
+            boolean shaft = x == 12 && z == 16, wall = Math.abs(x - 12) + Math.abs(z - 16) == 1;
+            boolean opening = x == 13 && z == 16 && y >= 12 && y <= 14;
+            BlockState block = y <= 11 && !(shaft && y >= 1) ? Blocks.STONE.defaultBlockState()
+                    : shaft && y >= 1 && y <= 14 ? Fluids.FLOWING_WATER.getFlowing(8, true).createLegacyBlock()
+                    : wall && !opening ? Blocks.STONE.defaultBlockState() : Blocks.AIR.defaultBlockState();
+            h.setBlock(new BlockPos(x, y, z), block);
+        }
+        var low = h.absolutePos(new BlockPos(8, 0, 12));
+        var high = h.absolutePos(new BlockPos(24, 16, 20));
+        ((LevelTicks<Fluid>) h.getLevel().getFluidTicks()).clearArea(BoundingBox.fromCorners(low, high));
+        CompanionEntity oleg = spawn(h, 12, 7, 16);
+        var at = h.absoluteVec(new Vec3(20.5, 12, 16.5));
+        player(h, oleg).teleportTo(at.x, at.y, at.z);
+        h.assertTrue(CompanionEvents.executeAction(player(h, oleg), "come", "", 1).success(), "The order was not accepted");
+        float[] lowestHealth = {oleg.getMaxHealth()};
+        int[] lowestAir = {oleg.getAirSupply()};
+        h.onEachTick(() -> {
+            lowestHealth[0] = Math.min(lowestHealth[0], oleg.getHealth());
+            lowestAir[0] = Math.min(lowestAir[0], oleg.getAirSupply());
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(!oleg.isInWater() && oleg.onGround(), "Still in the water at " + oleg.blockPosition().subtract(h.absolutePos(BlockPos.ZERO)).toShortString());
+            h.assertTrue(lowestHealth[0] >= oleg.getMaxHealth() && lowestAir[0] > 0, "Drowned: health " + lowestHealth[0] + ", air " + lowestAir[0]);
+        });
+    }
+
+    /**
+     * The same column, the opening in the wall a block high: the dry cell beyond it is in sight and out of reach, and the walls bedrock. The
+     * pocket of an aquifer under a ceiling (runs descent and void of seed 7): the push at the bank went on with the work shut out of its turn
+     * until the order timed out. The push is given up after a while, and the order gets its turn and its answer.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void aDryCellInSightButOutOfReachDoesNotHoldTheOrderForGood(GameTestHelper h) {
+        for (int x = 8; x <= 24; x++) for (int z = 12; z <= 20; z++) for (int y = 0; y <= 16; y++) {
+            boolean shaft = x == 12 && z == 16, wall = Math.abs(x - 12) + Math.abs(z - 16) == 1;
+            boolean opening = x == 13 && z == 16 && y == 13;
+            BlockState block = y <= 11 && !(shaft && y >= 1) ? Blocks.STONE.defaultBlockState()
+                    : shaft && y >= 1 && y <= 14 ? Fluids.FLOWING_WATER.getFlowing(8, true).createLegacyBlock()
+                    : wall && !opening ? Blocks.BEDROCK.defaultBlockState() : Blocks.AIR.defaultBlockState();
+            h.setBlock(new BlockPos(x, y, z), block);
+        }
+        var low = h.absolutePos(new BlockPos(8, 0, 12));
+        var high = h.absolutePos(new BlockPos(24, 16, 20));
+        ((LevelTicks<Fluid>) h.getLevel().getFluidTicks()).clearArea(BoundingBox.fromCorners(low, high));
+        CompanionEntity oleg = spawn(h, 12, 7, 16);
+        var at = h.absoluteVec(new Vec3(20.5, 12, 16.5));
+        player(h, oleg).teleportTo(at.x, at.y, at.z);
+        h.assertTrue(CompanionEvents.executeAction(player(h, oleg), "come", "", 1).success(), "The order was not accepted");
+        long id = oleg.activeWorkId();
+        h.succeedWhen(() -> h.assertTrue(!oleg.isWorking() && oleg.workResult(id) != null, "The order has no answer yet, he is at "
+                + oleg.blockPosition().subtract(h.absolutePos(BlockPos.ZERO)).toShortString() + ": " + oleg.getLastTaskResult()));
     }
 }

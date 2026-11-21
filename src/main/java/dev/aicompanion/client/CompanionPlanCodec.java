@@ -176,6 +176,7 @@ public final class CompanionPlanCodec {
                         : "gather_loose".equals(type) && FLINT.equals(step.has("item") ? step.get("item").getAsString().trim() : "") ? FLINT_DEFAULT
                         : ("gather_stone".equals(type) || "gather_loose".equals(type)) ? 8
                         : "hunt_animals".equals(type) ? CompanionPlanRequirements.DEFAULT_GAME
+                        : "pursue_goal".equals(type) && "find_diamonds".equals(step.has("item") ? step.get("item").getAsString().trim() : "") ? dev.aicompanion.entity.CompanionPlaybooks.DIAMONDS_DEFAULT
                         : "farm_crops".equals(type) ? dev.aicompanion.entity.CompanionCrops.DEFAULT_TILES
                         : "harvest_crops".equals(type) || "use_bone_meal".equals(type) ? dev.aicompanion.entity.CompanionCrops.MAX_HARVEST
                         : "build_pen".equals(type) ? 4
@@ -228,8 +229,9 @@ public final class CompanionPlanCodec {
                 if ("build_golem".equals(type) && !dev.aicompanion.entity.CompanionGolem.KINDS.contains(item)) throw invalid();
                 // A new portal («построй новый»), one here («построй здесь»), or none named: then a portal near or known is enough or led to.
                 if ("build_portal".equals(type) && !item.isEmpty() && !"new".equals(item) && !"here".equals(item)) throw invalid();
-                // A long goal is a catalog id with a level of 1 or 2 (iron, diamond); the model cannot make one up.
-                if ("pursue_goal".equals(type) && (count > 2 || !dev.aicompanion.entity.CompanionPlaybooks.IDS.contains(item))) throw invalid();
+                // A long goal is a catalog id with a level of 1 or 2 (iron, diamond), for find_diamonds a count; the model cannot make one up.
+                if ("pursue_goal".equals(type) && (!dev.aicompanion.entity.CompanionPlaybooks.IDS.contains(item)
+                        || count > ("find_diamonds".equals(item) ? dev.aicompanion.entity.CompanionPlaybooks.DIAMONDS_MAX : 2))) throw invalid();
                 if ("walk_heading".equals(type) && !dev.aicompanion.entity.CompanionCourse.valid(item)) throw invalid();
                 // A species of wood or nothing: whatever else the model wrote there («logs», a stone) names no species and is any log, as before.
                 if ("gather_wood".equals(type) && dev.aicompanion.entity.CompanionWoodKind.of(item) == null) item = "";

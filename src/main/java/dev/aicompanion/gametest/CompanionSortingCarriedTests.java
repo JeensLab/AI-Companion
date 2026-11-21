@@ -2,6 +2,7 @@ package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.entity.CompanionEntity;
+import dev.aicompanion.entity.CompanionSeal;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -166,6 +167,35 @@ public final class CompanionSortingCarriedTests {
             helper.assertTrue(at[0] >= 0 && helper.getTick() > at[0] + 400, "Waiting: he never carried logs, or the climb is not over");
             helper.assertTrue(count(companion, Items.OAK_LOG) == 0 && count(companion, Items.OAK_PLANKS) == 0 && totals(companion, chests).get(Items.OAK_LOG) == 62,
                     "The player's logs are not back in the chests or went into supports: bag logs " + count(companion, Items.OAK_LOG) + " (carried " + logs[0] + "), planks " + count(companion, Items.OAK_PLANKS) + ", all " + totals(companion, chests));
+        });
+    }
+
+    /** The cobblestone he carries for the player is not a seal: his own stone is used, the cobblestone stays in the bag. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void sealSkipsTheCobblestoneCarriedForThePlayer(GameTestHelper helper) {
+        sealWhileCarrying(helper, true);
+    }
+
+    /** With only the player's cobblestone in the bag there is nothing to seal with (as for lava plugs): NO_BLOCK, the cobblestone stays. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void sealWithOnlyCarriedBlocksHasNoBlock(GameTestHelper helper) {
+        sealWhileCarrying(helper, false);
+    }
+
+    private static void sealWhileCarrying(GameTestHelper helper, boolean ownStone) {
+        CompanionEntity companion = setup(helper); Container[] chests = mixedThree(helper); bagOf(companion);
+        if (ownStone) companion.setItem(2, new ItemStack(Items.STONE, 2));
+        CompanionSeal.Result[] result = {null}; int[] cobble = {-1};
+        helper.onEachTick(() -> {
+            if (result[0] != null || !companion.hasActiveWorkOrder() || count(companion, Items.COBBLESTONE) == 0) return;
+            cobble[0] = count(companion, Items.COBBLESTONE);
+            result[0] = CompanionSeal.place(companion, companion.blockPosition().east(2));
+        });
+        companion.startWork("sort_chests", "", 1);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(result[0] != null, "Waiting: he never carried cobblestone");
+            helper.assertTrue(count(companion, Items.COBBLESTONE) == cobble[0], "The player's cobblestone was used: " + cobble[0] + " -> " + count(companion, Items.COBBLESTONE));
+            helper.assertTrue(ownStone ? result[0].placed() && count(companion, Items.STONE) == 1 : result[0] == CompanionSeal.Result.NO_BLOCK, "Seal result " + result[0] + ", stone " + count(companion, Items.STONE));
         });
     }
 }

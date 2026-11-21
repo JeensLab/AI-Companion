@@ -62,6 +62,7 @@ public final class CompanionPreferences {
                 companion.setMarkersEnabled(OpenRouterConfig.MARKERS.get());
                 companion.setUrgentOrder(OpenRouterConfig.URGENT_ORDER.get());
                 companion.setBoatClutch(OpenRouterConfig.BOAT_CLUTCH.get());
+                companion.setDiamondMine(OpenRouterConfig.DIAMOND_MINE.get());
                 companion.setPlaysByTheFire(OpenRouterConfig.PLAYS_BY_THE_FIRE.get());
                 companion.setReplantSaplings(OpenRouterConfig.REPLANT_SAPLINGS.get());
                 companion.setRightToolForBlock(OpenRouterConfig.RIGHT_TOOL_FOR_BLOCK.get());

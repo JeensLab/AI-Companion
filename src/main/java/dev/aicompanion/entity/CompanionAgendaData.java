@@ -54,6 +54,19 @@ public final class CompanionAgendaData extends SavedData {
         /** Time the goal has waited without a step, and whether the player was already told: a goal that waits in silence looks dead. */
         long idleTicks;
         boolean idleSaid;
+        /** The top-up of supplies for the mine failed (no game to hunt): the next mine step goes down with what he has, once. */
+        boolean mineAsIs;
+        /** The top-up for food found no game while diamonds are already in the bag: they go to the player and the goal ends with them. Not saved: a reload hunts once more. */
+        boolean handOverShort;
+        /** The iron is out of the ore search's reach (too far down, or none seen): the next step digs down, then the search looks again. Not saved: a reload finds out again. */
+        boolean descendForOre;
+        /** The goal has gone out once for the iron of a shield, finished or not: it does not go again, and a reload does not give it back. */
+        boolean shieldTrek;
+        /** The step wanted wood and he is under the ground, where there is none: the next step is the way up his stairs, then the step again. Not saved: a reload finds out again. */
+        boolean ascendForWood;
+        /** Waits for food that a hurt goal has made, and the game time they last to. Not saved: a reload tries the step again. */
+        int hungryWaits;
+        long waitUntil;
 
         Goal(UUID id, String playbook, int tier) { this.id = id; this.playbook = playbook; this.tier = tier; }
 
@@ -63,12 +76,15 @@ public final class CompanionAgendaData extends SavedData {
         public State state() { return state; }
         public String reason() { return reason; }
         public boolean fallback() { return fallback; }
+        public boolean shieldTrek() { return shieldTrek; }
         public int deaths() { return deaths; }
         public BlockPos deathPlace() { return deathPlace; }
         public int resultCount() { return results.size(); }
         /** {attempts, failures in a row} of the milestone. */
         public int[] counter(String key) { return counters.computeIfAbsent(key, unused -> new int[2]); }
         public CompanionPlaybooks.Playbook book() { return CompanionPlaybooks.of(playbook, tier); }
+
+        boolean handedOver() { return results.stream().anyMatch(result -> CompanionAgenda.HAND_OVER.equals(result.getString("Milestone"))); }
 
         void record(String milestone, long workId, long tick, UUID companion) {
             CompoundTag result = new CompoundTag();
@@ -94,6 +110,7 @@ public final class CompanionAgendaData extends SavedData {
                 counterList.add(counter);
             });
             tag.put("Counters", counterList);
+            if (shieldTrek) tag.putBoolean("ShieldTrek", true);
             ListTag resultList = new ListTag();
             results.forEach(result -> resultList.add(result.copy()));
             tag.put("Results", resultList);
@@ -115,6 +132,7 @@ public final class CompanionAgendaData extends SavedData {
             goal.companion = tag.hasUUID("Companion") ? tag.getUUID("Companion") : null;
             goal.announced = tag.getString("Announced"); goal.done = Math.max(0, tag.getInt("Done"));
             goal.workTicks = Math.max(0, tag.getLong("WorkTicks"));
+            goal.shieldTrek = tag.getBoolean("ShieldTrek");
             ResourceLocation deathDimension = tag.contains("DeathPos", Tag.TAG_LONG) && tag.contains("DeathDim", Tag.TAG_STRING) ? ResourceLocation.tryParse(tag.getString("DeathDim")) : null;
             if (deathDimension != null) {
                 goal.deathPlace = BlockPos.of(tag.getLong("DeathPos")); goal.deathDimension = ResourceKey.create(Registries.DIMENSION, deathDimension);
@@ -122,7 +140,7 @@ public final class CompanionAgendaData extends SavedData {
             ListTag counterList = tag.getList("Counters", Tag.TAG_COMPOUND);
             for (int i = 0; i < counterList.size(); i++) {
                 CompoundTag counter = counterList.getCompound(i);
-                if (book.milestone(counter.getString("Key")) == null) continue;
+                if (book.milestone(counter.getString("Key")) == null && !CompanionAgenda.HAND_OVER.equals(counter.getString("Key"))) continue;
                 goal.counters.put(counter.getString("Key"), new int[]{Math.max(0, Math.min(CompanionAgenda.MAX_ATTEMPTS, counter.getInt("Attempts"))),
                         Math.max(0, Math.min(CompanionAgenda.MAX_FAILURES, counter.getInt("Failures")))});
             }

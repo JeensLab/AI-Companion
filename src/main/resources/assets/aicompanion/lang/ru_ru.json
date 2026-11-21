@@ -37,5 +37,6 @@
   "config.aicompanion.temperature": "Температура",
   "config.aicompanion.top_p": "top_p",
   "config.aicompanion.replant_saplings": "Саженцы на месте срубленных деревьев",
+  "config.aicompanion.diamond_mine": "Шахта за алмазами",
   "config.aicompanion.right_tool_for_block": "Инструмент под блок при ломании"
 }

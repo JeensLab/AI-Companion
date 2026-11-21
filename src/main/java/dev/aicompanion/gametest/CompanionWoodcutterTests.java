@@ -228,6 +228,34 @@ public final class CompanionWoodcutterTests {
         });
     }
 
+    /**
+     * Series w, restart and void-3 of seed 7 (21.11): down in a cut under a cliff, his bench on top of it, no walk up and no wood for a new one.
+     * The way out of a cut to a bench above (cutting steps up, as a player does) was only tried for a bench already chosen, and a bench with
+     * no walk to it was never chosen: «Помню верстак неподалёку, но пройти к нему сейчас не могу» five times over. He climbs out to it.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void aBenchAboveHisCutIsClimbedOutTo(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        for (int x = 12; x <= 20; x++) for (int y = 1; y <= 8; y++) for (int z = 12; z <= 20; z++) {
+            boolean shaft = Math.abs(x - 16) <= 1 && Math.abs(z - 16) <= 1;
+            h.setBlock(new BlockPos(x, y, z), shaft ? Blocks.AIR : Blocks.STONE);
+        }
+        BlockPos bench = new BlockPos(19, 9, 16);
+        h.setBlock(bench, Blocks.CRAFTING_TABLE);
+        companion.rememberPlaced(h.absolutePos(bench));
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        companion.setItem(0, new ItemStack(Items.IRON_INGOT, 3)); companion.setItem(1, new ItemStack(Items.STICK, 2));
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        h.assertTrue(CompanionEvents.executeAction(owner, "craft_item", "minecraft:iron_pickaxe", 1).success(), "Craft order not accepted");
+        java.util.Set<String> said = new java.util.LinkedHashSet<>();
+        h.onEachTick(() -> said.add(companion.getLastTaskResult()));
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(count(companion, Items.IRON_PICKAXE) == 1, "No iron pickaxe; he said " + said);
+            h.assertTrue(h.getBlockState(bench).is(Blocks.CRAFTING_TABLE) && blocks(h, Blocks.CRAFTING_TABLE) == 0, "Not his bench on the cliff used: " + companion.getStoredItemsSummary());
+        });
+    }
+
     private static CompanionEntity setup(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
         CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), 16, 1, 16);
