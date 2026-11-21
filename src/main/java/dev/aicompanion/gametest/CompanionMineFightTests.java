@@ -357,6 +357,43 @@ public final class CompanionMineFightTests {
         });
     }
 
+    /** A skeleton with a bow two blocks off is a mob the footwork does not count (it is the bow's, not the blade's): the pickup of his own drop still waits while it is that near. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aBowSkeletonWithinReachHoldsThePickupOfADrop(GameTestHelper h) throws Exception {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        BlockPos foot = chamber(h, carveMine(h, c, 0));
+        place(c, foot.offset(1, 0, 0));
+        Skeleton skeleton = skeleton(h, foot.offset(3, 0, 0));
+        skeleton.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        BlockPos at = foot.offset(DROP_REACH, 0, 0);
+        ItemEntity drop = new ItemEntity(h.getLevel(), at.getX() + .5, at.getY(), at.getZ() + .5, new ItemStack(Items.COBBLESTONE));
+        drop.setDeltaMovement(Vec3.ZERO);
+        drop.setNoPickUpDelay();
+        h.getLevel().addFreshEntity(drop);
+        c.claimDrops(List.of(drop));
+        Object loot = CompanionSingleRouteTests.field(c, "loot");
+        var canChase = loot.getClass().getDeclaredMethod("canChase");
+        canChase.setAccessible(true);
+        long begun = h.getTick();
+        h.onEachTick(() -> {
+            if (h.getTick() < begun + 2) return;
+            try {
+                String trace = " | skeleton at " + String.format("%.1f", Math.sqrt(c.distanceToSqr(skeleton))) + ", " + report(c);
+                if (skeleton.isAlive()) {
+                    h.assertTrue(c.distanceToSqr(skeleton) < 3 * 3, "The skeleton is not within three blocks" + trace);
+                    h.assertTrue(!(boolean) canChase.invoke(loot), "The pickup would run with the bow skeleton within reach" + trace);
+                    skeleton.discard();
+                    return;
+                }
+                h.assertTrue((boolean) canChase.invoke(loot), "The pickup does not run with no foe near" + trace);
+                h.succeed();
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException(e);
+            }
+        });
+    }
+
     /**
      * He is after a skeleton far across the chamber (no bow, no legs) and a lone zombie stands on him: the zombie has the cooldown of his
      * sword against its own, so it may land one blow on him while it is killed, not the string of them that comes of standing in its reach.

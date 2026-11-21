@@ -27,7 +27,7 @@ import java.util.UUID;
 final class CompanionLoot {
     private static final String HARVESTER = "aicompanion:harvester";
     /** How near a hostile he is fighting must be for the pickup to wait. */
-    private static final double FOE_NEAR = 7;
+    private static final double FOE_NEAR = 7, CONTACT = 3;
     /** How near a creeper in sight must be for the pickup to wait, whether or not he fights it: the drop may lie beside it. */
     static final double CREEPER_NEAR = 7;
     private final CompanionEntity owner;
@@ -273,7 +273,12 @@ final class CompanionLoot {
     private boolean foeOnHim() {
         LivingEntity foe = owner.getTarget();
         if (foe instanceof Monster && foe.isAlive() && owner.distanceToSqr(foe) < FOE_NEAR * FOE_NEAR && !owner.work.expedition.shuns(foe)) return true;
-        return owner.level() instanceof ServerLevel level && owner.combat.footwork.onHim(level);
+        if (!(owner.level() instanceof ServerLevel level)) return false;
+        if (owner.combat.footwork.onHim(level)) return true;
+        // Series h, 21.11: zombies on him struck while he walked off after a drop. The fight may have let such a mob go (shuns) or it may keep a bow
+        // (not counted by the footwork), yet within three blocks any awake hostile in sight is on him, and the pickup starves the retreat.
+        return !level.getEntitiesOfClass(Monster.class, owner.getBoundingBox().inflate(CONTACT), mob -> mob.isAlive() && !mob.isNoAi()
+                && owner.distanceToSqr(mob) < CONTACT * CONTACT && owner.hasLineOfSight(mob)).isEmpty();
     }
     void tickChase() {
         if (!(owner.level() instanceof ServerLevel level)) return;
