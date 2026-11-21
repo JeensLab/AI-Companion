@@ -610,7 +610,10 @@ final class CompanionObsidian {
                 madeStep = MADE_WATER;
                 c.workStatus("Лью лаву.");
                 event("obsidian_lava_poured", "lava", made.toShortString());
-                // In a hole ringed by planks the water goes over it in this same tick: the lava never stands a tick to set them alight.
+                // In a hole ringed by planks the water is poured over it in this same tick, so the lava stands no whole tick with
+                // the planks about it — that is what keeps a wooden floor from catching. The water still has to flow down to the
+                // lava, so a plank the game lights in between is not ruled out by the pour alone; a hole not ringed by
+                // flammables (siteFor prefers one) cannot catch at all.
                 if (flammableAround(level, made)) make(level, got);
             }
             case MADE_WATER -> {
@@ -713,13 +716,21 @@ final class CompanionObsidian {
             holeCell = null; holeFloor = null; holeDrop = null;
             return false;
         }
+        // He stands in the cell the block would go into: he steps aside first (a block never closes over his feet). No stand
+        // beside it to step to, and the block goes in anyway — the game lifts him out of the cell.
+        if (c.blockPosition().equals(holeCell)) {
+            if (stands.isEmpty()) { stands = standsBeside(level, holeCell); legs = 0; path = null; }
+            c.workStatus("Отхожу от ямки.");
+            if (walk()) return true;
+        }
         int slot = holeDrop == null ? -1 : slot(holeDrop);
         // The drop the dig gave is gone (burnt, spent): the hole stays rather than a block from nothing.
-        if (holeDrop != null && slot < 0) { holeCell = null; holeFloor = null; holeDrop = null; return false; }
+        if (holeDrop != null && slot < 0) { holeCell = null; holeFloor = null; holeDrop = null; reset(); return false; }
         if (slot >= 0) c.removeItem(slot, 1);
         level.setBlockAndUpdate(holeCell, holeFloor);
         event("obsidian_hole_filled", "hole", holeCell.toShortString(), "block", net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(holeFloor.getBlock()));
         holeCell = null; holeFloor = null; holeDrop = null;
+        reset();
         return true;
     }
 
@@ -742,8 +753,8 @@ final class CompanionObsidian {
             if (!level.hasChunkAt(cell) || !holeFor(level, cell)) continue;
             double far = cell.distSqr(feet);
             if (far < bestFar) { bestFar = far; best = cell.immutable(); }
-            // A hole ringed by planks can take fire from the lava for the tick it stands there: one that is not ringed by
-            // flammables is preferred when it lies within the same reach.
+            // A hole ringed by planks can take fire from the lava for the tick it stands there: a hole not ringed by flammables is
+            // preferred wherever it lies about him, even one he has to walk to — the dry cell wins over the nearest one.
             if (!flammableAround(level, cell) && far < dryFar) { dryFar = far; dry = cell.immutable(); }
         }
         return dry != null ? dry : best;
