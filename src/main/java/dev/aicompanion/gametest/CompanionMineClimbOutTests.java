@@ -64,15 +64,18 @@ public final class CompanionMineClimbOutTests {
      * Runs void-5 (seed 20261031), void-2 (seed 7), restart (seed 314159) of 06.11: the record of a mine started again at the bottom holds a pit, and
      * above it a cell of the old record eight blocks off through solid rock and the entrance on the surface far up; no walk, no plug and no rescue
      * opens that, and the diamonds stayed down there with «путь наверх закрыт». He cuts a staircase of his own up to the surface instead.
+     * Run descent of seed 7 (21.11): the step two under the entrance takes the turf off over it, and the climb ended there under the sky, at the
+     * bottom of the slot of his own stairs, with no walk out of it; the stairs end at the first step he walks out of onto the land, a block
+     * under it, not in the slot and not on at the entrance.
      */
     @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
     public static void cutsAStaircaseToTheSurfaceWhenTheWayAboveIsShutByRock(GameTestHelper h) {
         CompanionEntity c = deepPit(h);
         BlockPos stand = c.mineSite().stands().get(0);
-        int surface = h.absolutePos(new BlockPos(0, GROUND + 1 - SURFACE_MARGIN, 0)).getY();
+        int surface = h.absolutePos(new BlockPos(0, GROUND, 0)).getY();
         int recorded = c.mineSite().above().size();
         climb(h, c, stand, result -> {
-            h.assertTrue(result.success() && c.getBlockY() >= surface, "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c));
+            h.assertTrue(result.success() && c.getBlockY() == surface, "He said «" + result.message() + "» at height " + c.getBlockY() + ", not on the step out of his stairs at " + surface + " | " + report(c));
             h.assertTrue(c.mineSite().above().size() > recorded, "The staircase he cut is not in the record of the way up | " + report(c));
         });
     }

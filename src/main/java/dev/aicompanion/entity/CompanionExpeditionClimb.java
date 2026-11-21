@@ -194,11 +194,16 @@ final class CompanionExpeditionClimb {
         return surface(level, w.mine, CompanionExpeditionRecord.standingCell(level, w.owner));
     }
 
-    /** The rule of {@link #onSurface} for any cell he stands in: the expedition starts a mine on the surface by it too. */
+    /**
+     * The rule of {@link #onSurface} for any cell he stands in: the expedition starts a mine on the surface by it too. At the height of the entrance
+     * the ground must lead on at that height. Run descent of seed 7 (21.11): the step of his new stairs two under the entrance had its turf taken off
+     * over it, and the climb ended under the sky at the bottom of the slot of his own stairs, with no walk out of it to the player.
+     */
     static boolean surface(ServerLevel level, CompanionMineSite mine, BlockPos here) {
         BlockPos top = mine.origin() != null ? mine.origin() : mine.entrance();
         if (top == null || !CompanionExpeditionRecord.underSky(level, here.above())) return false;
-        return here.getY() >= top.getY() - CompanionExpedition.UNDERGROUND_DEPTH || openGround(level, here);
+        int lowest = top.getY() - CompanionExpedition.UNDERGROUND_DEPTH;
+        return here.getY() >= lowest && !CompanionClimbToPlayer.walledIn(level, here, lowest) || openGround(level, here);
     }
 
     /**

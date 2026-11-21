@@ -83,14 +83,14 @@ final class CompanionClimbToPlayer {
     }
 
     /** At the bottom of a pit under the sky. */
-    private boolean inPit() { return walledIn(w.owner.blockPosition()); }
+    private boolean inPit() { return walledIn((ServerLevel) w.owner.level(), w.owner.blockPosition(), Integer.MIN_VALUE); }
 
     /**
      * No walk under the sky leads more than {@link #RIM} cells away from {@code at}: a pit, not a spot beside a trunk, a wall or a cliff, where the
-     * ground goes on round them. A walk steps a block up or drops down to {@link #DROP}; a cell under a roof (a tunnel, an overhang) is no way out.
+     * ground goes on round them. A walk steps a block up or drops down to {@link #DROP}, never with its feet below {@code lowest}; a cell under a
+     * roof (a tunnel, an overhang) is no way out.
      */
-    private boolean walledIn(BlockPos at) {
-        var level = (ServerLevel) w.owner.level();
+    static boolean walledIn(ServerLevel level, BlockPos at, int lowest) {
         if (!CompanionExpeditionRecord.underSky(level, at)) return false;
         ArrayDeque<BlockPos> next = new ArrayDeque<>(Set.of(at));
         Set<BlockPos> seen = new HashSet<>(next);
@@ -98,7 +98,7 @@ final class CompanionClimbToPlayer {
             BlockPos cell = next.poll();
             for (Direction d : Direction.Plane.HORIZONTAL) {
                 BlockPos feet = feetIn(level, cell.relative(d));
-                if (feet == null || !seen.add(feet) || !CompanionExpeditionRecord.underSky(level, feet)) continue;
+                if (feet == null || feet.getY() < lowest || !seen.add(feet) || !CompanionExpeditionRecord.underSky(level, feet)) continue;
                 if (Math.abs(feet.getX() - at.getX()) > RIM || Math.abs(feet.getZ() - at.getZ()) > RIM) return false;
                 next.add(feet);
             }
@@ -123,7 +123,7 @@ final class CompanionClimbToPlayer {
             var reach = w.route.cells(Set.of(player.blockPosition()), 1);
             if (reach.found()) return over();
         }
-        if (pitOnly && w.owner.onGround() && !w.owner.blockPosition().equals(lastCheck) && !walledIn(lastCheck = w.owner.blockPosition())) return over();
+        if (pitOnly && w.owner.onGround() && !w.owner.blockPosition().equals(lastCheck) && !walledIn(level, lastCheck = w.owner.blockPosition(), Integer.MIN_VALUE)) return over();
         if (stairs.tick(level) != CompanionExpeditionStairsUp.Result.WORKING || stairs.steps() >= MAX_STEPS) return over();
         return true;
     }
