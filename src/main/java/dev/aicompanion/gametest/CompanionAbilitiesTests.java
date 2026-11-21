@@ -4,6 +4,7 @@ import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.client.CompanionAbilities;
 import dev.aicompanion.client.CompanionLocalCommands;
 import dev.aicompanion.client.CompanionPlanCodec;
+import dev.aicompanion.entity.CompanionAutonomy;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.neoforged.neoforge.gametest.GameTestHolder;
@@ -15,9 +16,9 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * «Что ты умеешь»: the answer is a short list of the abilities the code really has, built from the plan codec's own set of
- * actions, and it never waits for the model. The registry cannot drift: an action the codec accepts without a phrase, or a
- * phrase without an action, fails here.
+ * «Что ты умеешь»: the answer is a short list of the abilities the code really has, built from the code's own closed lists —
+ * the plan codec's actions and the autonomy deeds — and it never waits for the model. The registry cannot drift: an action
+ * or a deed without a phrase, or a phrase without an action or deed, fails at class load and here, naming the constant.
  */
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
@@ -61,21 +62,90 @@ public final class CompanionAbilitiesTests {
     }
 
     @GameTest(template = "empty")
-    public static void theRegistryMatchesTheActionsTheCodecAccepts(GameTestHelper h) {
-        Set<String> claimed = new HashSet<>();
+    public static void theRegistryMatchesTheActionsAndDeedsOfTheCode(GameTestHelper h) {
+        // The same check the class runs at load: the shipped registry passes it in both directions.
+        CompanionAbilities.verify(CompanionAbilities.all());
+        Set<String> claimedActions = new HashSet<>();
+        Set<String> claimedDeeds = new HashSet<>();
         for (CompanionAbilities.Ability ability : CompanionAbilities.all()) {
             h.assertTrue(!ability.phrase().isBlank() && ability.phrase().length() <= CompanionAbilities.MAX_PHRASE,
                     "not a short phrase: «" + ability.phrase() + "»");
-            h.assertTrue(!ability.actions().isEmpty(), "no action behind «" + ability.phrase() + "»");
+            h.assertTrue(!ability.actions().isEmpty() || !ability.deeds().isEmpty(), "no action or deed behind «" + ability.phrase() + "»");
             for (String action : ability.actions()) {
                 h.assertTrue(CompanionPlanCodec.ACTIONS.contains(action),
                         "«" + ability.phrase() + "» names an action the codec refuses: " + action);
-                claimed.add(action);
+                claimedActions.add(action);
+            }
+            for (String deed : ability.deeds()) {
+                h.assertTrue(CompanionAutonomy.deedNames().contains(deed),
+                        "«" + ability.phrase() + "» names a deed the autonomy does not have: " + deed);
+                claimedDeeds.add(deed);
             }
         }
         for (String action : CompanionPlanCodec.ACTIONS)
-            h.assertTrue(claimed.contains(action), "the codec accepts " + action + ", but no ability names it");
+            h.assertTrue(claimedActions.contains(action), "the codec accepts " + action + ", but no ability names it");
+        for (String deed : CompanionAutonomy.deedNames())
+            h.assertTrue(claimedDeeds.contains(deed), "the autonomy has the deed " + deed + ", but no ability names it");
         h.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void aDeedWithoutAPhraseFailsNamingIt(GameTestHelper h) {
+        List<CompanionAbilities.Ability> probe = withoutDeed(CompanionAbilities.all(), "COLLECT");
+        try {
+            CompanionAbilities.verify(probe);
+            h.fail("A deed without a phrase was accepted: COLLECT");
+        } catch (IllegalStateException refused) {
+            h.assertTrue(refused.getMessage().contains("COLLECT"), "the refusal does not name the deed: " + refused.getMessage());
+        }
+        h.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void aPhraseAboutADeedThatDoesNotExistFailsNamingIt(GameTestHelper h) {
+        List<CompanionAbilities.Ability> probe = new ArrayList<>(CompanionAbilities.all());
+        probe.add(new CompanionAbilities.Ability("ловлю рыбу", List.of("obtain_item"), List.of("FISH")));
+        try {
+            CompanionAbilities.verify(probe);
+            h.fail("A phrase about the deed FISH was accepted");
+        } catch (IllegalStateException refused) {
+            h.assertTrue(refused.getMessage().contains("FISH"), "the refusal does not name the deed: " + refused.getMessage());
+        }
+        h.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void aPlanActionWithoutAPhraseFailsNamingIt(GameTestHelper h) {
+        List<CompanionAbilities.Ability> probe = withoutAction(CompanionAbilities.all(), "store_items");
+        try {
+            CompanionAbilities.verify(probe);
+            h.fail("A plan action without a phrase was accepted: store_items");
+        } catch (IllegalStateException refused) {
+            h.assertTrue(refused.getMessage().contains("store_items"), "the refusal does not name the action: " + refused.getMessage());
+        }
+        h.succeed();
+    }
+
+    /** The registry with one deed taken out of every ability that names it, as a new deed without a phrase would look. */
+    private static List<CompanionAbilities.Ability> withoutDeed(List<CompanionAbilities.Ability> abilities, String deed) {
+        List<CompanionAbilities.Ability> probe = new ArrayList<>();
+        for (CompanionAbilities.Ability ability : abilities) {
+            List<String> deeds = new ArrayList<>(ability.deeds());
+            deeds.remove(deed);
+            probe.add(new CompanionAbilities.Ability(ability.phrase(), ability.actions(), deeds));
+        }
+        return probe;
+    }
+
+    /** The registry with one plan action taken out of every ability that names it, as a new action without a phrase would look. */
+    private static List<CompanionAbilities.Ability> withoutAction(List<CompanionAbilities.Ability> abilities, String action) {
+        List<CompanionAbilities.Ability> probe = new ArrayList<>();
+        for (CompanionAbilities.Ability ability : abilities) {
+            List<String> actions = new ArrayList<>(ability.actions());
+            actions.remove(action);
+            probe.add(new CompanionAbilities.Ability(ability.phrase(), actions, ability.deeds()));
+        }
+        return probe;
     }
 
     /** The abilities the answer names, as the player reads them: a numbered line each. */
