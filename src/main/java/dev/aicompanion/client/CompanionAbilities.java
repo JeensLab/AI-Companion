@@ -46,7 +46,7 @@ public final class CompanionAbilities {
                     List.of("PICK", "COOK", "SMELT_IRON", "IRON_PICK", "COLLECT")),
             new Ability("строю дом и загон для животных", List.of("build_house", "build_pen"), List.of()),
             new Ability("делаю грядки, собираю урожай и компост", List.of("farm_crops", "harvest_crops", "use_bone_meal", "compost_items"), List.of()),
-            new Ability("раскладываю вещи по сундукам и ношу их в дом", List.of("store_items", "take_items", "sort_chests"),
+            new Ability("раскладываю вещи по сундукам и забираю их оттуда", List.of("store_items", "take_items", "sort_chests"),
                     List.of("STORE", "TAKE_WOOD", "TAKE_STONE")),
             new Ability("развожу животных и охочусь на них", List.of("breed_animals", "hunt_animals"), List.of("HUNT")),
             new Ability("стригу овец, дою коров, собираю яйца и мёд", List.of("obtain_item"), List.of()),
