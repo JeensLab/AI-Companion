@@ -30,7 +30,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.rig;
 @PrefixGameTestTemplate(false)
 public final class CompanionClimbToPlayerTests {
     private static final int PIT_DEPTH = 9, ROOF_HEIGHT = 5, PLAYER_EAST = 11, SHALLOW = 2, DEEP = 3, FOLLOW_RANGE_SHORT = 8, FOLLOW_RANGE_PIT = 6,
-            RAVINE_WEST = 12, RAVINE_EAST = 4, RAVINE_DEPTH = 5, PLAYER_FAR = 20, FOLLOW_RANGE_RAVINE = 10;
+            RAVINE_WEST = 12, RAVINE_EAST = 4, RAVINE_DEPTH = 5, PLAYER_FAR = 20, FOLLOW_RANGE_RAVINE = 10, PLATEAU = 4, PLATEAU_HEIGHT = 6, PLAYER_BELOW_EAST = 14;
 
     private CompanionClimbToPlayerTests() { }
 
@@ -172,6 +172,29 @@ public final class CompanionClimbToPlayerTests {
         h.succeedWhen(() -> {
             CompanionActionResult result = ended(h, c, id);
             h.assertTrue(result.success() && count(c, Items.DIAMOND) == 0, "He said «" + result.message() + "» in the ravine | " + report(c));
+        });
+    }
+
+    /**
+     * Review of the ravine: a place he cannot walk off is no pit when a drop leads off it. On a plateau of andesite nine by nine and six high, the
+     * player on the ground east of it, a climb «out of the pit» stepped level towards him and laid a bridge of cobblestone into the air.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    public static void laysNoBridgeOffAPlateauToAPlayerBelow(GameTestHelper h) {
+        mountain(h, false);
+        for (int x = CENTER - PLATEAU; x <= CENTER + PLATEAU; x++) for (int z = CENTER - PLATEAU; z <= CENTER + PLATEAU; z++) for (int y = GROUND + 1; y <= GROUND + PLATEAU_HEIGHT; y++) h.setBlock(new BlockPos(x, y, z), Blocks.ANDESITE);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        BlockPos top = h.absolutePos(new BlockPos(CENTER, GROUND + PLATEAU_HEIGHT + 1, CENTER)), owner = h.absolutePos(new BlockPos(CENTER + PLAYER_BELOW_EAST, GROUND + 1, CENTER));
+        c.teleportTo(top.getX() + .5, top.getY(), top.getZ() + .5);
+        h.getLevel().getPlayerByUUID(c.getOwnerId()).teleportTo(owner.getX() + .5, owner.getY(), owner.getZ() + .5);
+        c.setItem(6, new ItemStack(Items.DIAMOND));
+        h.assertTrue(c.startWork("give_items", "minecraft:diamond", 1).success(), "Hand-over not accepted: " + c.getLastTaskResult());
+        long id = c.activeWorkId();
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            for (int x = CENTER + PLATEAU + 1; x < CENTER + PLAYER_BELOW_EAST; x++) for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = GROUND + 2; y <= GROUND + PLATEAU_HEIGHT + 2; y++)
+                h.assertTrue(h.getBlockState(new BlockPos(x, y, z)).isAir(), "A block laid in the air at " + x + "," + y + "," + z + " off the plateau; he said «" + result.message() + "» | " + report(c));
         });
     }
 
