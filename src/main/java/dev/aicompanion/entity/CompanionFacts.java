@@ -101,7 +101,7 @@ public final class CompanionFacts {
     /** He stands down in his mine, say after a reload: what is made on the surface waits for the next time he is up. */
     public boolean belowMine() { return belowMine; }
 
-    /** Below the entrance and on his own stairs or tunnels (not in a pit he fell into beside them): the surface kit really waits for the next time he is up. */
+    /** Below the entrance and within a few blocks of his own stairs, way up or tunnels (not in a pit he fell into farther off): the surface kit really waits for the next time he is up. */
     public boolean inMine() { return onOwnWay; }
 
     /** Iron ore in the open within a short walk of where he stands; ore inside the rock does not count, he does not see through stone. */
