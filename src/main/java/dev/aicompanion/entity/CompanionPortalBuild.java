@@ -231,12 +231,13 @@ final class CompanionPortalBuild {
         if (level.getBlockState(frame.fire()).is(Blocks.NETHER_PORTAL)) { done(level); return; }
         Step step = next(level);
         if (step == null) return;
-        if (step.kind() == Kind.FETCH) { fetch(level, step.cell()); return; }
-        if (step.kind() != Kind.PICK) { pickingSince = 0; retried = false; }
+        // The steps he walks to himself, not to a cell of the frame: what lies in it, and the chest with a charge.
+        boolean own = step.kind() == Kind.PICK || step.kind() == Kind.FETCH;
+        if (!own) { pickingSince = 0; retried = false; }
         // Out of the frame, with the cell in his reach and sight: from inside it the fire would take him to the Nether. What lies in
         // the frame he steps in for, the frame not lit yet.
         Vec3 eyes = c.getEyePosition();
-        if (step.kind() != Kind.PICK && (!c.onGround() || frame.box().intersects(c.getBoundingBox())
+        if (!own && (!c.onGround() || frame.box().intersects(c.getBoundingBox())
                 || new AABB(step.cell()).distanceToSqr(eyes) > REACH * REACH || !visible(level, eyes, step.cell()))) {
             c.workStatus("Иду строить портал.");
             // Come to a place it is still not seen from (a column set since hides it): that place is no good any more.
@@ -244,12 +245,13 @@ final class CompanionPortalBuild {
             if (!walk(stands)) { event("portal_no_way", "step", step); w.finish(false, NO_WAY); }
             return;
         }
-        if (step.kind() != Kind.PICK) w.route.stop();
+        if (!own) w.route.stop();
         switch (step.kind()) {
             case DIG, CLEAR -> dig(level, step.cell());
             case PROP -> prop(level, step.cell());
             case OBSIDIAN -> set(level, step.cell(), Items.OBSIDIAN);
             case PICK -> pick(level, step.cell());
+            case FETCH -> fetch(level, step.cell());
             case LIGHT -> light(level);
         }
     }
