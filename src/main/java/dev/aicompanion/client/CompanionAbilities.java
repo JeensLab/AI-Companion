@@ -52,13 +52,13 @@ public final class CompanionAbilities {
             new Ability("стригу овец, дою коров, собираю яйца и мёд", List.of("obtain_item"), List.of()),
             new Ability("бьюсь с монстрами и охраняю тебя", List.of("hunt_mobs", "protect", "stop_protect"), List.of()),
             new Ability("хожу за тобой, жду на месте и прихожу на зов", List.of("follow", "wait", "come", "wander", "stop"), List.of()),
-            new Ability("запоминаю места, вожу тебя к ним и ставлю дом", List.of("remember_place", "go_to_place", "set_home"), List.of()),
+            new Ability("запоминаю места и твой дом, вожу тебя туда", List.of("remember_place", "go_to_place", "set_home"), List.of()),
             new Ability("строю портал, генератор булыжника и голема", List.of("build_portal", "build_cobble_gen", "build_golem"), List.of()),
             new Ability("иду в нужную сторону и захожу в портал", List.of("walk_heading", "enter_portal"), List.of()),
             new Ability("надеваю снаряжение, чиню вещи и снимаю чары", List.of("equip_item", "unequip_item", "repair_item", "disenchant_item"), List.of()),
             new Ability("даю тебе вещи и ставлю сундук", List.of("give_items", "give_wood", "place_block"), List.of()),
             new Ability("ищу торговцев и торгую с ними", List.of("scout_traders", "trade_items"), List.of()),
-            new Ability("берусь за долгую цель и довожу её до конца", List.of("pursue_goal"), List.of()),
+            new Ability("берусь за долгую цель и иду к ней, докуда смогу дойти", List.of("pursue_goal"), List.of()),
             new Ability("играю на гитаре у костра", List.of("campfire_song"), List.of()));
 
     private static final List<Ability> ALL = verify(DECLARED);
@@ -80,8 +80,7 @@ public final class CompanionAbilities {
 
     /** The answer to the local command «companion abilities <count>»: that many abilities, one short phrase each. */
     public static String answer(String command) {
-        int asked = count(command);
-        List<Ability> shown = ALL.subList(0, Math.min(Math.max(asked, 1), ALL.size()));
+        List<Ability> shown = ALL.subList(0, count(command));
         StringBuilder text = new StringBuilder("Умею вот что: ");
         for (int i = 0; i < shown.size(); i++) {
             if (i > 0) text.append("; ");
@@ -90,9 +89,21 @@ public final class CompanionAbilities {
         return text.append('.').toString();
     }
 
+    /**
+     * A count the player said, clamped to the list: any number of digits means at most all of them, and no parse can
+     * overflow on «расскажи 1000000000000 умений». «0 умений» is still one line rather than none.
+     */
+    public static int clampCount(String digits) {
+        if (digits == null || digits.isEmpty()) return DEFAULT_COUNT;
+        String significant = digits.replaceFirst("^0+(?!$)", "");
+        // Longer than any count the list can hold: all of it, and Integer.parseInt never sees the long digits.
+        if (significant.length() > 9) return ALL.size();
+        return Math.max(1, Math.min(ALL.size(), Integer.parseInt(significant)));
+    }
+
     private static int count(String command) {
         var matcher = java.util.regex.Pattern.compile("companion abilities\\s+(\\d+)").matcher(command == null ? "" : command);
-        return matcher.find() ? Integer.parseInt(matcher.group(1)) : DEFAULT_COUNT;
+        return matcher.find() ? clampCount(matcher.group(1)) : DEFAULT_COUNT;
     }
 
     /**

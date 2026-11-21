@@ -52,12 +52,40 @@ public final class CompanionAbilitiesTests {
     @GameTest(template = "empty")
     public static void theAskInOtherWordsIsLocalAndOtherQuestionsGoToTheModel(GameTestHelper h) {
         for (String phrase : new String[]{"что ты умеешь", "что умеешь?", "Олег, что ты умеешь", "расскажи, что ты умеешь",
-                "перечисли свои умения", "назови 3 умения", "расскажи мне 10 своих умений"})
+                "перечисли свои умения", "назови 3 умения", "расскажи мне 10 своих умений",
+                "расскажи о своих умениях", "что ты умеешь, Олег"})
             h.assertTrue(CompanionLocalCommands.route(phrase, "Олег").startsWith("companion abilities "),
                     "«" + phrase + "» -> " + CompanionLocalCommands.route(phrase, "Олег"));
         for (String phrase : new String[]{"что ты умеешь делать с медью", "Ты умеешь строить дом?", "расскажи про лошадь"})
             h.assertTrue(CompanionLocalCommands.route(phrase, "Олег") == null,
                     "«" + phrase + "» -> " + CompanionLocalCommands.route(phrase, "Олег"));
+        h.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void aNumberTooBigToParseStillAnswers(GameTestHelper h) {
+        // A player may say any number: «1000000000000 умений» is more than the list, not an error.
+        String command = CompanionLocalCommands.route("расскажи 1000000000000 умений", "Олег");
+        h.assertTrue(("companion abilities " + CompanionAbilities.size()).equals(command),
+                "«расскажи 1000000000000 умений» -> " + command);
+        String answer = CompanionAbilities.answer(command);
+        h.assertTrue(items(answer).size() == CompanionAbilities.size(),
+                "the answer names " + items(answer).size() + " abilities: " + answer);
+        // Digits no int can hold either: the answer is still the whole list.
+        String longDigits = "9".repeat(30);
+        h.assertTrue(("companion abilities " + CompanionAbilities.size()).equals(CompanionLocalCommands.route("расскажи " + longDigits + " умений", "Олег")),
+                "«расскажи " + longDigits + " умений» was not answered with the whole list");
+        h.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void phrasesPromiseOnlyWhatTheCodeDelivers(GameTestHelper h) {
+        CompanionAbilities.Ability goal = abilityWithAction("pursue_goal");
+        h.assertTrue(goal.phrase().contains("смогу"), "the long goal does not say how far he goes: «" + goal.phrase() + "»");
+        h.assertTrue(!goal.phrase().contains("до конца"), "the long goal claims to be finished: «" + goal.phrase() + "»");
+        CompanionAbilities.Ability home = abilityWithAction("set_home");
+        h.assertTrue(home.phrase().contains("запоминаю"), "the home is not named as a memory: «" + home.phrase() + "»");
+        h.assertTrue(!home.phrase().contains("ставлю"), "the home reads as building a house: «" + home.phrase() + "»");
         h.succeed();
     }
 
@@ -146,6 +174,13 @@ public final class CompanionAbilitiesTests {
             probe.add(new CompanionAbilities.Ability(ability.phrase(), actions, ability.deeds()));
         }
         return probe;
+    }
+
+    /** The ability that names the given plan action, so a test can check what its phrase promises. */
+    private static CompanionAbilities.Ability abilityWithAction(String action) {
+        for (CompanionAbilities.Ability ability : CompanionAbilities.all())
+            if (ability.actions().contains(action)) return ability;
+        throw new IllegalStateException("No ability names the action " + action);
     }
 
     /** The abilities the answer names, as the player reads them: a numbered line each. */

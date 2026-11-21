@@ -309,22 +309,28 @@ public final class CompanionLocalCommands {
      * count is the only thing that varies. A question about a thing («что ты умеешь делать с медью») is still the model's.
      */
     private static String abilitiesCommand(String normalized, String companionName) {
-        String rest = withoutAddress(normalized, companionName);
+        String rest = withoutTrailingAddress(withoutAddress(normalized, companionName), companionName);
         String question = "(?sU)(?:что\\s+(?:ты\\s+)?(?:вообще\\s+|сейчас\\s+|такого\\s+)*умеешь(?:\\s+делать)?"
                 + "|(?:расскажи|рассказывай|перечисли|назови|скажи|озвучь)\\s*,?\\s*(?:мне\\s+|нам\\s+)?"
                 + "(?:что\\s+(?:ты\\s+)?(?:вообще\\s+|сейчас\\s+|такого\\s+)*умеешь(?:\\s+делать)?"
-                + "|(?:\\d+\\s+|про\\s+|свои\\s+|своих\\s+|все\\s+|всё\\s+){0,3}умени[йяе]))"
+                + "|(?:\\d+\\s+|про\\s+|о\\s+|свои\\s+|своих\\s+|все\\s+|всё\\s+){0,3}умени[а-я]*))"
                 + "(?:\\s*,?\\s*пожалуйста)?\\W*";
         if (!rest.matches(question)) return null;
         int count = CompanionAbilities.DEFAULT_COUNT;
         if (rest.matches("(?sU).*\\b(все|всё)\\b.*")) count = CompanionAbilities.size();
         else {
             var digits = java.util.regex.Pattern.compile("\\d+").matcher(rest);
-            if (digits.find()) count = Integer.parseInt(digits.group());
+            // «Расскажи 1000000000000 умений» is more than the list, not an arithmetic overflow.
+            if (digits.find()) count = CompanionAbilities.clampCount(digits.group());
         }
-        // «Расскажи 100 умений» shows all of them, and «0 умений» is still one line rather than none.
-        count = Math.max(1, Math.min(count, CompanionAbilities.size()));
         return "companion abilities " + count;
+    }
+
+    /** «Что ты умеешь, Олег»: the name after the ask is the address, not part of the ask. */
+    private static String withoutTrailingAddress(String text, String companionName) {
+        String name = companionName == null ? "" : companionName.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е').strip();
+        if (name.isEmpty()) return text;
+        return text.replaceFirst("(?sU)[\\s,]+" + java.util.regex.Pattern.quote(name) + "\\W*$", "");
     }
 
     /** «Забудь всё» and «что ты обо мне помнишь»: only the whole message counts, so «забудь всё и добудь дерево» stays an order. */
