@@ -114,9 +114,9 @@ final class CompanionLoot {
     }
     void tickNearby() {
         if (!(owner.level() instanceof ServerLevel level) || !owner.canCollectItems()) return;
-        // On his own column or coming down it, the drops wait: he steps down dismantling it behind him, then takes what fell.
-        // A drop that landed on the column's top is not taken from under his feet while the column still stands (PATH7).
-        if (owner.getTemporarySupportCount() > 0 || owner.isRecoveringSupports()) return;
+        // gather_block and mine_obsidian take their drop only after stepping down their own column, dismantling it behind them:
+        // while it stands or comes down, the drops wait (PATH7). A wood gather takes what falls at its feet as it always did.
+        if (owner.work.holdsDropsForItsColumn()) return;
         while (!sites.isEmpty() && sites.peekFirst().expires < level.getGameTime()) sites.removeFirst();
         if (collecting && (owner.tickCount % 5 == 0 || level.getGameTime() <= rescanUntil)) discoverSurvivors(level);
         pending.removeIf(id -> gone(level, id));

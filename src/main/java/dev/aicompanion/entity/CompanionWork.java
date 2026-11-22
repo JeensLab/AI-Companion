@@ -326,6 +326,15 @@ public final class CompanionWork {
         return !isActive() || job != Job.HOUSE && job != Job.PEN && phase != Phase.WOOD
                 || workOrigin != null && owner.getY() < workOrigin.getY() - 1.25;
     }
+    /**
+     * gather_block and mine_obsidian take the drop of what they broke only after stepping down their own column, dismantling it
+     * behind them (PATH7): while it stands or comes down, the drop waits. No other work holds its drops.
+     */
+    boolean holdsDropsForItsColumn() {
+        return job != null && (job == Job.OBSIDIAN || job == Job.BLOCK)
+                && (owner.temporaryPillar.isActive() || owner.temporaryPillar.isRecovering());
+    }
+
     String currentDescription() {
         return job == Job.COME ? "пытается добраться до игрока" : job == Job.HUNT ? "поручение: ближайшие монстры" : job == Job.PICK_UP ? "подбирает лежащее рядом"
                 : job == Job.PLACE ? (placeHome ? "идёт домой" : "идёт к метке «" + placeName + "»") : job == Job.GAME ? "охотится, добыл " + gameKills + " из " + gameWanted
