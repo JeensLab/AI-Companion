@@ -121,14 +121,16 @@ final class CompanionObsidian {
         // A way up to obsidian stands on soil he carries: the work does not dig for it.
         CompanionReach.Available found = CompanionReach.available(c, level, blocks, 3.5D, true, false, CompanionPillar.WAY_SUPPORTS);
         int lava = 0;
-        boolean water = false;
+        boolean waterBucket = false;
         for (int slot = 0; slot < c.getContainerSize(); slot++) {
             if (c.getItem(slot).is(Items.LAVA_BUCKET)) lava += c.getItem(slot).getCount();
-            if (c.getItem(slot).is(Items.WATER_BUCKET)) water = true;
+            if (c.getItem(slot).is(Items.WATER_BUCKET)) waterBucket = true;
         }
-        // A bucket of his own lava makes a block only with his water at hand: without one it waits for the lava-cooling step,
-        // which fetches it, so no promise is made on it here.
-        return new CompanionReach.Available(found.count() + (water ? lava : 0), found.soil());
+        int count = found.count() + (waterBucket ? lava : 0);
+        // Lava about gives one block for each source his water cools, and how many there are is the work's own to find: the
+        // order's promise stays whole there, and the work says how far it got (a bucket of his own is counted above).
+        if ((waterBucket || CompanionWaterFill.refusal(level) == null) && CompanionChores.about(c, level, Items.LAVA_BUCKET)) count = Integer.MAX_VALUE;
+        return new CompanionReach.Available(count, found.soil(), count > found.count());
     }
 
     /** mine_obsidian: {@code count} more obsidian in his bag. Null when the work may start, else why not. */

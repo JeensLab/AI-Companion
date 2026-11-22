@@ -292,7 +292,12 @@ public final class CompanionObtain {
                 CompanionReach.Available found = reachable == null ? null : reachable.apply(Items.OBSIDIAN);
                 if (found != null) {
                     // Only what the world really gives is promised: a portal frame's ten from one block above him is one (PATH7).
-                    if (found.some()) return add("mine_obsidian", key, Math.min(count, found.count()));
+                    if (found.some()) {
+                        int promised = Math.min(count, found.count());
+                        // A promise that counts on cooled lava or on his own lava bucket needs the water for it in the plan.
+                        if (found.water() && !need("minecraft:water_bucket", 1, depth + 1)) return false;
+                        return add("mine_obsidian", key, promised);
+                    }
                 } else if (grows != null && about(Items.OBSIDIAN)) return add("mine_obsidian", key, count);
                 int buckets = bag.getOrDefault("minecraft:lava_bucket", 0);
                 if (grows != null && !about(Items.LAVA_BUCKET) && buckets == 0) {

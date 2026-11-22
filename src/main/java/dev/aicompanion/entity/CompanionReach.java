@@ -27,8 +27,10 @@ public final class CompanionReach {
         public boolean up() { return way == Way.UP; }
     }
 
-    /** What the world about him really gives of an item: how many it yields by these ways, and the soil a column still asks. */
-    public record Available(int count, int soil) {
+    /** What the world about him really gives of an item: how many it yields by these ways, the soil a column still asks, and
+     * whether the promise counts on water of his (obsidian cooled from lava or made of his own bucket). */
+    public record Available(int count, int soil, boolean water) {
+        public Available(int count, int soil) { this(count, soil, false); }
         public boolean some() { return count > 0; }
     }
 
