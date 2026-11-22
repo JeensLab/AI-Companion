@@ -74,6 +74,9 @@ final class CompanionCreeperGuard {
     private static final int SWELL_TICKS = 28;
     /** The blow that kills a lit creeper ({@link #finishes}) is waited for only with this many ticks of the fuse to spare. */
     private static final int FINISH_SPARE = 2;
+    /** A run that gains less than this many blocks on a lit creeper in this many ticks goes nowhere ({@link #stalled}): a wall instead. */
+    private static final int STALL_TICKS = 6;
+    private static final double STALL_GAIN = 1;
     /**
      * The house: a creeper this near its middle is walked away before the fight, until it is this far from it; he waits for it when it falls
      * this far behind, so that it keeps after him.
@@ -115,7 +118,9 @@ final class CompanionCreeperGuard {
 
     private final CompanionEntity owner;
     private boolean active, finished, noBlock, fighting, shielded, dashing, leading, mayStrike, room = true;
-    private long begun, lastSeen, nextLook, nextPlan, nextProbe, lastRetreat, lastFlee, fuseSince, fuseLook, leadAgainAt;
+    private long begun, lastSeen, nextLook, nextPlan, nextProbe, lastRetreat, lastFlee, fuseSince, fuseLook, leadAgainAt, runSince;
+    /** The gap to the creeper when the run last gained on it ({@link #stalled}); below nought before the first step of the run. */
+    private double runGap = -1;
     /** What {@link #walksTo} found for a creeper, for which stand, and until when it holds. */
     private record Walk(BlockPos stand, boolean near, long until) { }
     private final Map<Creeper, Walk> walks = new WeakHashMap<>();
@@ -206,6 +211,7 @@ final class CompanionCreeperGuard {
         begun = lastSeen = now;
         nextPlan = now + PLAN_EVERY;
         tries = 0;
+        runGap = -1;
         owner.getNavigation().stop();
         escape.reset();
         shown = "";
@@ -424,12 +430,14 @@ final class CompanionCreeperGuard {
 
     /**
      * The fuse is lit and he is to be out of its sight before it blows: along the way {@link CompanionFuseEscape} finds over the floor as it
-     * is, a push at a time to the next cell. Where there is none, under rock a wall of blocks between him and the creeper (in his mine one of its
-     * temporary blocks, taken up again; in a cave outside it the wall stays); by the house, or with no blocks, a blow at it: it throws it back, which is more than standing.
+     * is, a push at a time to the next cell. Where there is none, or the run gains nothing on the creeper ({@link #stalled}), under rock a wall
+     * of blocks between him and the creeper (in his mine one of its temporary blocks, taken up again; in a cave outside it the wall stays); by
+     * the house, or with no blocks, a blow at it: it throws it back, which is more than standing.
      */
     private void retreat(ServerLevel level, Creeper creeper) {
         if (finishes(creeper)) { finish(creeper); return; }
         Vec3 step = escape.step(level, threats(level));
+        if (step != null && !escape.holding() && stalled(creeper) && !byTheHouse() && escape.shut(level, creeper)) { mention("wall", creeper, null); return; }
         if (step != null) {
             mention(escape.holding() ? "hold" : "path", creeper, escape.goal());
             owner.getNavigation().stop();
@@ -468,6 +476,20 @@ final class CompanionCreeperGuard {
     private boolean finishes(Creeper creeper) {
         return creeper.getHealth() <= owner.getAttributeValue(Attributes.ATTACK_DAMAGE) && owner.isWithinMeleeAttackRange(creeper)
                 && owner.combat.ticksToSwing() + FINISH_SPARE <= (1 - creeper.getSwelling(0)) * SWELL_TICKS;
+    }
+
+    /**
+     * The run has gained less than {@link #STALL_GAIN} on the creeper in the last {@link #STALL_TICKS} ticks: two zombies' blows in turn keep
+     * him in the air (runs ct2 and ct52 20261031: the creeper blew under four blocks off), or water or a ledge holds him.
+     */
+    private boolean stalled(Creeper creeper) {
+        long now = owner.level().getGameTime();
+        double gap = owner.distanceTo(creeper);
+        if (runGap < 0 || gap >= runGap + STALL_GAIN) {
+            runGap = gap;
+            runSince = now;
+        }
+        return now - runSince >= STALL_TICKS;
     }
 
     /** He stands in reach until his swing is ready, and strikes. */

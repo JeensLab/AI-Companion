@@ -39,7 +39,7 @@ import static dev.aicompanion.gametest.CompanionMineFightTests.zombie;
 public final class CompanionMineGuardTests {
     private static final int FUSE_TICKS = 200, STAND = 6, LIT_AT = 8, FRESH_AT = 1;
     private static final double SLACK = .25;
-    private static final float KEPT = 10, WEAK = 5, SPENT = 7, NEARLY_FIT = 17, FIT = 18, TWO_BLOWS = 8;
+    private static final float KEPT = 10, WEAK = 5, SPENT = 7, NEARLY_FIT = 17, FIT = 18, TWO_BLOWS = 8, FULL = 20, WALLED = 4;
     private static final int PIT_FROM = 8, PIT_TO = 10, PIT_DEPTH = 4, DROP_AT = 12, PASSAGE_LENGTH = 4, PASSAGE_OFFSET = 2, GRACE_TICKS = 6, MAX_CHANGES = 2, HOLD_TICKS = 80, RELEASED_TICKS = 400;
     private static final double CLOSER = 1.5;
     private static final int ROOM_FROM = 4, ROOM_TO = 16, ROOM_SIDE = 6, RUN_TICKS = 20, CLIFF_DEPTH = 6, DEAD_END_LENGTH = 3;
@@ -244,14 +244,7 @@ public final class CompanionMineGuardTests {
     public static void aLitCreeperOneBlowFromDeathWithinReachIsFinishedNotRunFrom(GameTestHelper h) {
         mountain(h, false);
         CompanionEntity c = armed(h);
-        BlockPos foot = chamber(h, carveMine(h, c, 0));
-        for (int dy = 0; dy < 2; dy++) h.getLevel().setBlock(foot.offset(STAND + 3, dy, 0), Blocks.STONE.defaultBlockState(), 2 | 16);
-        place(c, foot.offset(STAND, 0, 0));
-        c.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
-        Creeper creeper = creeperAt(h, foot, STAND + 2.5, 0);
-        creeper.setHealth(TWO_BLOWS);
-        creeper.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
-        creeper.ignite();
+        Creeper creeper = stuckByALitCreeper(h, c, TWO_BLOWS);
         start(h, c, 1);
         float health = c.getHealth();
         h.onEachTick(() -> {
@@ -265,6 +258,44 @@ public final class CompanionMineGuardTests {
             h.assertTrue(creeper.getHealth() <= 0, "The creeper blew up, it was not finished with the sword" + trace);
             h.succeed();
         });
+    }
+
+    /**
+     * Stuck where he stands (two zombies' blows in turn kept him in the air in run ct52 20261031 void-4, and the creeper blew two and a half
+     * blocks off), a lit creeper with its full health two blocks off: the run gains nothing on it, so a wall goes up between them, and the
+     * blast costs him little.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aLitFuseWithTheRunGoingNowhereIsWalledOut(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        Creeper creeper = stuckByALitCreeper(h, c, FULL);
+        start(h, c, 1);
+        float[] before = {c.getHealth()};
+        h.onEachTick(() -> {
+            String trace = " | creeper " + (creeper.isAlive() ? "fuse " + String.format("%.2f", creeper.getSwelling(0)) : "gone") + "; he: health " + c.getHealth() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            if (creeper.isAlive()) {
+                h.assertTrue(h.getTick() < FUSE_TICKS, "The lit creeper never blew" + trace);
+                before[0] = c.getHealth();
+                return;
+            }
+            h.assertTrue(before[0] - c.getHealth() < WALLED, "The blast cost him " + (before[0] - c.getHealth()) + trace);
+            h.succeed();
+        });
+    }
+
+    /** He cannot take a step (speed nought); a lit creeper with this health stands two blocks east of him with a wall at its back, so no blow throws it off. */
+    private static Creeper stuckByALitCreeper(GameTestHelper h, CompanionEntity c, float health) {
+        BlockPos foot = chamber(h, carveMine(h, c, 0));
+        for (int dy = 0; dy < 2; dy++) h.getLevel().setBlock(foot.offset(STAND + 3, dy, 0), Blocks.STONE.defaultBlockState(), 2 | 16);
+        place(c, foot.offset(STAND, 0, 0));
+        c.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        Creeper creeper = creeperAt(h, foot, STAND + 2.5, 0);
+        creeper.setHealth(health);
+        creeper.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        creeper.ignite();
+        return creeper;
     }
 
     /**
