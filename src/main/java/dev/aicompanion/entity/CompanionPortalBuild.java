@@ -45,7 +45,9 @@ import java.util.function.Predicate;
  * way in has no step; lit at once with his flint and steel, which wears as a player's does. A lit portal within {@link #NEAR} blocks of
  * the player is his way to the Nether already: none is built; one he knows farther off he leads the player to (decided 09.11), unless
  * the player asked for a new one. A portal is known by its own block: one he built or saw, wherever the player has gone since. Short
- * of obsidian or of a flint and steel the order is refused at once as a shortage, and the plan gets them first (CompanionPlanRunner).
+ * of obsidian the order is refused at once as a shortage, and the plan gets it first (CompanionPlanRunner) — but obsidian in a chest
+ * near the frame is a source of its own: he walks to it, opens it, takes exactly what the frame still lacks and shuts the lid, and
+ * only the rest is got by the plan. Short of a flint and steel the order is refused the same way.
  * What stands of the frame is read from the world, so an order stopped half way goes on with the same frame; the obsidian he set is
  * not mined again for it (CompanionObsidian). He digs only natural ground and sets the frame in air: the player's blocks stay. The top
  * of a frame without corners hangs in the air: as a player does, he props it with a block of his under it and takes it away after.
@@ -66,6 +68,7 @@ final class CompanionPortalBuild {
     static final String LYING = "Не могу забрать то, что лежит в рамке, — убери, и я зажгу портал.";
     static final String CROWDED = "В рамке кто-то стоит — отойди, и я зажгу портал.";
     static final String FLUID = "К рамке подтекает вода или лава — место не годится.";
+    static final String NO_OBSIDIAN = "Обсидиан кончился, а рамка не достроена.";
     static final String PORTAL = "minecraft:nether_portal";
     /** A frame without its corners. */
     static final int OBSIDIAN = 10;
@@ -79,6 +82,8 @@ final class CompanionPortalBuild {
     private static final float HARDEST = 3;
     /** No chest this near the frame: the portal would stand in the way to it (blocks). */
     private static final int CHESTS = 2;
+    /** A chest with obsidian for the frame is looked for this near the frame (blocks). */
+    private static final int OBSIDIAN_FIND = 16;
     /** A player's reach for a block; walks to the place before he gives it up; ticks a block he set takes; how long he waits for someone in the way. */
     private static final double REACH = 4.5;
     private static final int LEGS = 8, PLACE_TICKS = 4, WAIT_TICKS = 100;
@@ -87,7 +92,7 @@ final class CompanionPortalBuild {
     /** What he props the top with besides planks and logs: blocks that come back as they were when broken (glass would not, review 09.11). */
     private static final Set<Item> PROPS = Set.of(Items.DIRT, Items.COARSE_DIRT, Items.COBBLESTONE, Items.COBBLED_DEEPSLATE, Items.NETHERRACK);
 
-    private enum Kind { DIG, PROP, OBSIDIAN, CLEAR, PICK, LIGHT }
+    private enum Kind { DIG, PROP, OBSIDIAN, CLEAR, PICK, TAKE, LIGHT }
     private record Step(Kind kind, BlockPos cell) { }
 
     /** The frame: its column 0 stands on {@code base}, it runs {@code along}, the way in is on the {@code front} side. */
@@ -116,6 +121,9 @@ final class CompanionPortalBuild {
     private int legs;
     private long waitingSince, pickingSince;
     private boolean retried;
+    /** The chest he has just opened for obsidian (shut on the next tick), and the chests already tried for it. */
+    private BlockPos fetchOpen;
+    private final Set<BlockPos> triedObsidian = new HashSet<>();
 
     CompanionPortalBuild(CompanionWork w) { this.w = w; this.c = w.owner; }
 
@@ -181,7 +189,9 @@ final class CompanionPortalBuild {
         if (frame == null) return CompanionActionResult.failed(NO_PLACE);
         int need = (int) frame.obsidian().stream().filter(cell -> !level.getBlockState(cell).is(Blocks.OBSIDIAN)).count();
         int have = w.items.countCarried(Items.OBSIDIAN);
-        if (have < need) return shortage("Для портала нужно " + need + " обсидиана, у меня " + have + ".", "minecraft:obsidian", need);
+        // Obsidian in a chest near the frame is a source of its own: the plan gets only what the chest cannot give.
+        int inChest = obsidianChestSupply(level, frame.fire());
+        if (have + inChest < need) return shortage("Для портала нужно " + need + " обсидиана, у меня " + have + ".", "minecraft:obsidian", need - inChest);
         if (!lighter()) return shortage(NO_FLINT, "minecraft:flint_and_steel", 1);
         // In sand there is no block to prop the top with: said now, not with eight obsidian set.
         if (!propped(level)) return CompanionActionResult.failed(NO_PROP);
@@ -201,9 +211,9 @@ final class CompanionPortalBuild {
         return "постройку портала (" + frame.obsidian().stream().filter(cell -> level.getBlockState(cell).is(Blocks.OBSIDIAN)).count() + " из " + OBSIDIAN + ")";
     }
 
-    void cancel() { reset(); }
+    void cancel() { if (fetchOpen != null) w.closeChest(); reset(); }
 
-    private void reset() { frame = null; leadTo = null; leadWait = 0; stands = walkingTo = Set.of(); path = null; legs = 0; waitingSince = pickingSince = 0; retried = false; }
+    private void reset() { frame = null; leadTo = null; leadWait = 0; stands = walkingTo = Set.of(); path = null; legs = 0; waitingSince = pickingSince = 0; retried = false; fetchOpen = null; triedObsidian.clear(); }
 
     /** «На север», «на юго-запад»: where the cell lies from the other, as he says it (north is −z). */
     private static String where(BlockPos from, BlockPos to) {
@@ -215,15 +225,18 @@ final class CompanionPortalBuild {
     /** One tick: to the portal he knows, or the next thing the frame lacks from where he can reach it; lit once whole. */
     void tick(ServerLevel level) {
         if (leadTo != null) { lead(level); return; }
+        if (fetchOpen != null) { w.closeChest(); fetchOpen = null; return; }
         if (frame == null) { w.finish(false, NO_PLACE); return; }
         if (level.getBlockState(frame.fire()).is(Blocks.NETHER_PORTAL)) { done(level); return; }
         Step step = next(level);
         if (step == null) return;
-        if (step.kind() != Kind.PICK) { pickingSince = 0; retried = false; }
+        // The steps he walks to himself, not to a cell of the frame: what lies in it, and the chest with obsidian.
+        boolean selfWalk = step.kind() == Kind.PICK || step.kind() == Kind.TAKE;
+        if (!selfWalk) { pickingSince = 0; retried = false; }
         // Out of the frame, with the cell in his reach and sight: from inside it the fire would take him to the Nether. What lies in
         // the frame he steps in for, the frame not lit yet.
         Vec3 eyes = c.getEyePosition();
-        if (step.kind() != Kind.PICK && (!c.onGround() || frame.box().intersects(c.getBoundingBox())
+        if (!selfWalk && (!c.onGround() || frame.box().intersects(c.getBoundingBox())
                 || new AABB(step.cell()).distanceToSqr(eyes) > REACH * REACH || !visible(level, eyes, step.cell()))) {
             c.workStatus("Иду строить портал.");
             // Come to a place it is still not seen from (a column set since hides it): that place is no good any more.
@@ -231,12 +244,13 @@ final class CompanionPortalBuild {
             if (!walk(stands)) { event("portal_no_way", "step", step); w.finish(false, NO_WAY); }
             return;
         }
-        if (step.kind() != Kind.PICK) w.route.stop();
+        if (!selfWalk) w.route.stop();
         switch (step.kind()) {
             case DIG, CLEAR -> dig(level, step.cell());
             case PROP -> prop(level, step.cell());
             case OBSIDIAN -> set(level, step.cell(), Items.OBSIDIAN);
             case PICK -> pick(level, step.cell());
+            case TAKE -> take(level, step.cell());
             case LIGHT -> light(level);
         }
     }
@@ -296,7 +310,15 @@ final class CompanionPortalBuild {
         for (BlockPos cell : frame.obsidian()) {
             if (level.getBlockState(cell).is(Blocks.OBSIDIAN)) continue;
             if (!free(level, cell)) { w.finish(false, TAKEN); return null; }
-            if (supported(level, cell)) return new Step(Kind.OBSIDIAN, cell);
+            if (supported(level, cell)) {
+                // His bag first; empty, obsidian in a chest near the frame is walked for before the plan is asked for more.
+                if (w.items.countCarried(Items.OBSIDIAN) == 0) {
+                    BlockPos chest = obsidianChest(level, frame.fire());
+                    if (chest != null) return new Step(Kind.TAKE, chest);
+                    if (remaining(level) > 0) { w.finish(false, NO_OBSIDIAN); return null; }
+                }
+                return new Step(Kind.OBSIDIAN, cell);
+            }
             BlockPos under = cell.below();
             if (frame.inside().contains(under) && level.getBlockState(under).isAir()) return new Step(Kind.PROP, under);
             w.finish(false, TAKEN);
@@ -311,6 +333,116 @@ final class CompanionPortalBuild {
         List<ItemEntity> lying = lying(level);
         if (!lying.isEmpty()) return new Step(Kind.PICK, lying.getFirst().blockPosition());
         return new Step(Kind.LIGHT, frame.fire());
+    }
+
+    /** Obsidian in chests near the frame he can walk to: how much the frame may take from them, never a stack he cannot reach. */
+    private int obsidianChestSupply(ServerLevel level, BlockPos near) {
+        int count = 0;
+        for (BlockPos pos : obsidianChests(level, near)) {
+            if (triedObsidian.contains(pos) || chestStands(level, pos).isEmpty()) continue;
+            count += obsidianCount(CompanionContainers.chestAt(level, pos));
+        }
+        return count;
+    }
+
+    /** The nearest chest near the frame holding obsidian he has not tried yet and can walk to, null when there is none. */
+    private BlockPos obsidianChest(ServerLevel level, BlockPos near) {
+        return obsidianChests(level, near).stream()
+                .filter(pos -> !triedObsidian.contains(pos))
+                .filter(pos -> obsidianSlot(CompanionContainers.chestAt(level, pos)) >= 0)
+                .filter(pos -> !chestStands(level, pos).isEmpty())
+                .min(Comparator.comparingDouble(pos -> pos.distSqr(near))).orElse(null);
+    }
+
+    /** The chests near the frame, a double chest once: its two halves are one container and are counted once. */
+    private List<BlockPos> obsidianChests(ServerLevel level, BlockPos near) {
+        List<BlockPos> found = new ArrayList<>(w.chests.blockEntitiesNear(level, near, OBSIDIAN_FIND));
+        found.sort(Comparator.comparingDouble(pos -> pos.distSqr(near)));
+        List<BlockPos> one = new ArrayList<>();
+        Set<BlockPos> otherHalves = new HashSet<>();
+        for (BlockPos pos : found) {
+            if (otherHalves.contains(pos)) continue;
+            BlockState state = level.getBlockState(pos);
+            if (state.hasProperty(net.minecraft.world.level.block.ChestBlock.TYPE)
+                    && state.getValue(net.minecraft.world.level.block.ChestBlock.TYPE) != net.minecraft.world.level.block.state.properties.ChestType.SINGLE)
+                otherHalves.add(pos.relative(net.minecraft.world.level.block.ChestBlock.getConnectedDirection(state)));
+            one.add(pos);
+        }
+        return one;
+    }
+
+    /** The slot of a chest with obsidian a player could take, -1 when there is none. */
+    private static int obsidianSlot(net.minecraft.world.Container chest) {
+        if (chest == null) return -1;
+        for (int slot = 0; slot < chest.getContainerSize(); slot++)
+            if (chest.getItem(slot).is(Items.OBSIDIAN) && CompanionContainers.takeable(chest, slot)) return slot;
+        return -1;
+    }
+
+    /** How much obsidian a chest holds that a player could take. */
+    private static int obsidianCount(net.minecraft.world.Container chest) {
+        if (chest == null) return 0;
+        int count = 0;
+        for (int slot = 0; slot < chest.getContainerSize(); slot++)
+            if (chest.getItem(slot).is(Items.OBSIDIAN) && CompanionContainers.takeable(chest, slot)) count += chest.getItem(slot).getCount();
+        return count;
+    }
+
+    /** Obsidian cells of the frame still empty: exactly what a chest may give. */
+    private int remaining(ServerLevel level) {
+        int left = 0;
+        for (BlockPos cell : frame.obsidian()) if (!level.getBlockState(cell).is(Blocks.OBSIDIAN)) left++;
+        return left;
+    }
+
+    /**
+     * Obsidian of a chest near the frame: walked to as the frame is, opened, exactly what the frame still lacks taken (never the
+     * whole stack), the lid shut on the next tick. What the chest cannot give the plan gets first (begin counted it).
+     */
+    private void take(ServerLevel level, BlockPos cell) {
+        net.minecraft.world.Container chest = CompanionContainers.chestAt(level, cell);
+        int slot = obsidianSlot(chest);
+        if (slot < 0) { triedObsidian.add(cell); return; }
+        boolean reach = c.distanceToSqr(cell.getCenter()) <= 3.2 * 3.2 && w.items.visibleFrom(level, c.getEyePosition(), cell);
+        if (!reach) {
+            c.workStatus("Иду за обсидианом.");
+            if (!walk(chestStands(level, cell))) { event("portal_chest_no_way", "chest", cell.toShortString()); triedObsidian.add(cell); }
+            return;
+        }
+        w.route.stop();
+        c.getNavigation().stop();
+        c.getLookControl().setLookAt(cell.getX() + .5, cell.getY() + .5, cell.getZ() + .5);
+        int want = Math.min(remaining(level), obsidianCount(chest));
+        w.openedChest = cell.immutable();
+        fetchOpen = cell.immutable();
+        w.animateChest(level, cell, 1);
+        CompanionContainers.playOpen(level, cell);
+        c.animateAction(3, cell, chest.getItem(slot).copyWithCount(Math.min(want, chest.getItem(slot).getCount())));
+        int moved = 0;
+        for (int index = 0; index < chest.getContainerSize() && moved < want; index++) {
+            if (!chest.getItem(index).is(Items.OBSIDIAN) || !CompanionContainers.takeable(chest, index)) continue;
+            moved += w.items.takeFromSlot(chest, index, want - moved);
+        }
+        chest.setChanged();
+        w.rememberedChest = cell.immutable();
+        c.rememberObserved(cell);
+        if (moved == 0) { triedObsidian.add(cell); w.closeChest(); fetchOpen = null; w.finish(false, CompanionObsidian.FULL_BAG); return; }
+        event("portal_obsidian_taken", "chest", cell.toShortString(), "took", moved, "left", remaining(level));
+        c.workStatus("Взял обсидиан из сундука: " + moved + ".");
+        w.cooldown = 10;
+    }
+
+    /** Cells from which his hand reaches the chest and sees it, out of it. */
+    private Set<BlockPos> chestStands(ServerLevel level, BlockPos chest) {
+        Set<BlockPos> cells = new HashSet<>();
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = -1; dy <= 1; dy++) {
+            BlockPos stand = chest.offset(dx, dy, dz);
+            if (stand.equals(chest) || !CompanionMiningNavigation.standable(c, stand)) continue;
+            Vec3 eyes = Vec3.atBottomCenterOf(stand).add(0, c.getEyeHeight(), 0);
+            if (eyes.distanceToSqr(Vec3.atCenterOf(chest)) > 3.2 * 3.2 || !w.items.visibleFrom(level, eyes, chest)) continue;
+            cells.add(stand.immutable());
+        }
+        return cells;
     }
 
     /** The ground under the bottom, a prop or a plant inside the frame: broken as he breaks blocks, what it drops picked up. */
