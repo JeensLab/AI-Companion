@@ -72,8 +72,8 @@ final class CompanionCreeperGuard {
     private static final double LUNGE = 4;
     /** {@link Creeper#getSwelling} counts the fuse over this many ticks. */
     private static final int SWELL_TICKS = 28;
-    /** The blow that kills a lit creeper ({@link #finishes}) is waited for only with this many ticks of the fuse to spare. */
-    private static final int FINISH_SPARE = 2;
+    /** The blow that kills a lit creeper ({@link #finishes}) is waited for only with this many ticks of the fuse to spare, and its hurt time down to this. */
+    private static final int FINISH_SPARE = 2, HURT_HALF = 10;
     /** A run that gains less than this many blocks on a lit creeper in this many ticks goes nowhere ({@link #stalled}): a wall instead. */
     private static final int STALL_TICKS = 6;
     private static final double STALL_GAIN = 1;
@@ -118,7 +118,7 @@ final class CompanionCreeperGuard {
 
     private final CompanionEntity owner;
     private boolean active, finished, noBlock, fighting, shielded, dashing, leading, mayStrike, room = true;
-    private long begun, lastSeen, nextLook, nextPlan, nextProbe, lastRetreat, lastFlee, fuseSince, fuseLook, leadAgainAt, runSince;
+    private long begun, lastSeen, nextLook, nextPlan, nextProbe, lastRetreat, lastFlee, fuseSince, fuseLook, leadAgainAt, runSince, runTick;
     /** The gap to the creeper when the run last gained on it ({@link #stalled}); below nought before the first step of the run. */
     private double runGap = -1;
     /** What {@link #walksTo} found for a creeper, for which stand, and until when it holds. */
@@ -129,7 +129,7 @@ final class CompanionCreeperGuard {
     /** His stand on the route when the cells were chosen: a step back is to it. */
     private BlockPos stand;
     private Vec3 flee, house;
-    private Creeper watched, fuseOf;
+    private Creeper watched, fuseOf, runOf;
     private String shown = "";
     private final CompanionShieldGuard shield;
     /** The way out while he runs, and a second one only to judge, before the fuse is lit, whether he would have one. */
@@ -474,21 +474,26 @@ final class CompanionCreeperGuard {
      * left two blocks off, twenty ticks of the run through water went nowhere, and the blow came the tick it blew).
      */
     private boolean finishes(Creeper creeper) {
+        int swing = owner.combat.ticksToSwing();
+        // A creeper struck less than half its hurt time before the blow takes only what exceeds that hit (LivingEntity#hurt): no sure kill.
         return creeper.getHealth() <= owner.getAttributeValue(Attributes.ATTACK_DAMAGE) && owner.isWithinMeleeAttackRange(creeper)
-                && owner.combat.ticksToSwing() + FINISH_SPARE <= (1 - creeper.getSwelling(0)) * SWELL_TICKS;
+                && creeper.invulnerableTime - swing <= HURT_HALF && swing + FINISH_SPARE <= (1 - creeper.getSwelling(0)) * SWELL_TICKS;
     }
 
     /**
      * The run has gained less than {@link #STALL_GAIN} on the creeper in the last {@link #STALL_TICKS} ticks: two zombies' blows in turn keep
-     * him in the air (runs ct2 and ct52 20261031: the creeper blew under four blocks off), or water or a ledge holds him.
+     * him in the air (runs ct2 and ct52 20261031: the creeper blew under four blocks off), or water or a ledge holds him. A break in the run
+     * (a fuse out and lit again, a hold) or another creeper starts the count afresh.
      */
     private boolean stalled(Creeper creeper) {
         long now = owner.level().getGameTime();
         double gap = owner.distanceTo(creeper);
-        if (runGap < 0 || gap >= runGap + STALL_GAIN) {
+        if (runGap < 0 || creeper != runOf || now - runTick > 1 || gap >= runGap + STALL_GAIN) {
             runGap = gap;
             runSince = now;
+            runOf = creeper;
         }
+        runTick = now;
         return now - runSince >= STALL_TICKS;
     }
 
