@@ -4,6 +4,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
 
@@ -43,8 +45,34 @@ public final class CompanionReach {
         // The block under his feet is worked from where he stands: its drop rests in the hole and he steps down into it.
         if (block.equals(feet.below()) && CompanionMiningNavigation.visible(c, c.getEyePosition(), block)
                 && (!forTheDrop || CompanionMiningNavigation.dropCollectable(level, block, feet))) return new How(Way.DOWN, 0);
-        var stands = CompanionMiningNavigation.standCells(c, block, reach, false, true);
-        if (forTheDrop) stands.removeIf(stand -> !CompanionMiningNavigation.dropCollectable(level, block, stand));
+        // On the bed of the water he works it from the water over it, as the swimmer stands at the surface (CompanionSwimming):
+        // the dry stand cells of standCells are no use there, and a block below him is no way up.
+        boolean wet = !level.getFluidState(block).isEmpty() || !level.getFluidState(block.above()).isEmpty();
+        var stands = new java.util.HashSet<BlockPos>();
+        if (wet) {
+            for (int dy = 1; dy <= 11; dy++) {
+                BlockPos cell = block.above(dy);
+                if (!level.getFluidState(cell).is(FluidTags.WATER)) break;
+                if (CompanionMiningNavigation.pickupStand(c, cell)) { stands.add(cell); break; }
+            }
+        } else {
+            // A block with a body is worked from a cell beside it, not from on top of it; a flower, a cane or a vine has no body
+            // for the eye to rest on: it is worked from a cell the ray reaches it from (the picking's own rule, CompanionPicking).
+            boolean solid = !level.getBlockState(block).getCollisionShape(level, block).isEmpty();
+            if (solid) {
+                stands.addAll(CompanionMiningNavigation.standCells(c, block, reach, false, true));
+                if (forTheDrop) stands.removeIf(stand -> !CompanionMiningNavigation.dropCollectable(level, block, stand));
+            } else {
+                for (int dy = -2; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
+                    BlockPos cell = block.offset(dx, dy, dz);
+                    if (!CompanionMiningNavigation.standable(c, cell) || level.getBlockState(cell).is(net.minecraft.world.level.block.Blocks.COBWEB)) continue;
+                    Vec3 eye = Vec3.atBottomCenterOf(cell).add(0, c.getEyeHeight(), 0);
+                    if (level.clip(new net.minecraft.world.level.ClipContext(eye, block.getCenter(),
+                            net.minecraft.world.level.ClipContext.Block.COLLIDER, net.minecraft.world.level.ClipContext.Fluid.NONE, c)).getType()
+                            == net.minecraft.world.phys.HitResult.Type.MISS) stands.add(cell);
+                }
+            }
+        }
         if (!stands.isEmpty()) {
             // A block farther than his own search is a walk in legs, not a lost one (CompanionTravel).
             return new How(block.distSqr(feet) > (double) c.getSearchRadius() * c.getSearchRadius() ? Way.ACROSS : Way.WALK, 0);
