@@ -110,6 +110,27 @@ final class CompanionObsidian {
                 pos -> !laid.test(pos) && free(level, pos, site)) != null;
     }
 
+    /**
+     * What the world about him really gives of obsidian by the one reach answer (CompanionReach): the blocks he can mine —
+     * walked to, across, up a column of his soil or under his feet — and no portal's, no site's, none beside lava — and one
+     * block for each bucket of lava of his that water can be had for (a bucket makes one).
+     */
+    static CompanionReach.Available available(CompanionEntity c, ServerLevel level, Predicate<BlockPos> laid) {
+        Predicate<BlockPos> site = CompanionPicking.sites(c, level);
+        List<BlockPos> blocks = all(c, level, DEPTH, state -> state.is(Blocks.OBSIDIAN), pos -> !laid.test(pos) && free(level, pos, site));
+        // A way up to obsidian stands on soil he carries: the work does not dig for it.
+        CompanionReach.Available found = CompanionReach.available(c, level, blocks, 3.5D, true, false, CompanionPillar.WAY_SUPPORTS);
+        int lava = 0;
+        boolean water = false;
+        for (int slot = 0; slot < c.getContainerSize(); slot++) {
+            if (c.getItem(slot).is(Items.LAVA_BUCKET)) lava += c.getItem(slot).getCount();
+            if (c.getItem(slot).is(Items.WATER_BUCKET)) water = true;
+        }
+        // A bucket of his own lava makes a block only with his water at hand: without one it waits for the lava-cooling step,
+        // which fetches it, so no promise is made on it here.
+        return new CompanionReach.Available(found.count() + (water ? lava : 0), found.soil());
+    }
+
     /** mine_obsidian: {@code count} more obsidian in his bag. Null when the work may start, else why not. */
     CompanionActionResult begin(int count) {
         String refusal = refusal(c.level(), w.items.carriedItems());
@@ -133,7 +154,12 @@ final class CompanionObsidian {
         if (ending != null) { if (takeWaterBack(level)) end(ending); return; }
         site = c.getOwnerId() == null ? pos -> false : CompanionPlayerBuilds.get(level.getServer()).sites(c.getOwnerId(), level);
         int got = got();
-        if (got >= wanted) { if (takeWaterBack(level)) end(true, "Накопал обсидиана: " + got + "."); return; }
+        if (got >= wanted) {
+            // The order is not done on top of his own column: mine, step down dismantling it behind him, then the drop.
+            if (descend()) return;
+            if (takeWaterBack(level)) end(true, "Накопал обсидиана: " + got + ".");
+            return;
+        }
         if (refusal(level, w.items.carriedItems()) != null) { end(false, NO_PICKAXE + short_(got)); return; }
         // A block of his own buckets is being made: the hole, his lava, his water, the block waited for.
         if (madeStep != 0) { make(level, got); return; }
@@ -150,11 +176,13 @@ final class CompanionObsidian {
     }
 
     /**
-     * Enough is mined: his water back first, the drops floating in it (the pickup takes no drop over a pit under water) settle in
-     * the dry holes, then they are picked up (the work waits while the pickup runs). What is still not in his bag after that is
-     * lost, burnt or washed away, and more is mined.
+     * Enough is mined: his column comes down first — he steps down it dismantling it behind him, and the drop waits below — then
+     * his water back, the drops floating in it (the pickup takes no drop over a pit under water) settle in the dry holes, then
+     * they are picked up (the work waits while the pickup runs). What is still not in his bag after that is lost, burnt or washed
+     * away, and more is mined.
      */
     private void collect(ServerLevel level, int got) {
+        if (descend()) return;
         if (!takeWaterBack(level)) return;
         long now = level.getGameTime();
         if (settleAt == 0) { settleAt = now + SETTLE; return; }
@@ -163,6 +191,16 @@ final class CompanionObsidian {
         event("obsidian_drops_lost", "mined", mined, "loot", c.loot.diagnosticState());
         mined = got; settleAt = 0; retried = false;
     }
+
+    /** Mine, step down the column dismantling it behind him, take the drop: true while the column is still coming down. */
+    private boolean descend() {
+        if (!c.temporaryPillar.isActive() && !c.temporaryPillar.isRecovering()) return false;
+        c.temporaryPillar.requestCleanup();
+        return true;
+    }
+
+    /** The drop of what he mined is not in his bag yet: descending for it or walking to it is not standing still. */
+    boolean waitingForHisDrop() { return mined > got(); }
 
     private String short_(int got) { return got == 0 ? "" : " Накопал " + got + " из " + wanted + "."; }
 
@@ -210,7 +248,7 @@ final class CompanionObsidian {
     }
 
     /** Whether the block at this cell is his to mine at all: no portal's frame, no site of the player's, its drop safe from lava. */
-    private static boolean free(ServerLevel level, BlockPos pos, Predicate<BlockPos> site) {
+    static boolean free(ServerLevel level, BlockPos pos, Predicate<BlockPos> site) {
         return level.hasChunkAt(pos) && level.getBlockState(pos).is(Blocks.OBSIDIAN) && !site.test(pos)
                 && !portal(level, pos) && !frame(level, pos) && safe(level, pos);
     }
@@ -589,6 +627,34 @@ final class CompanionObsidian {
             for (Direction side : Direction.Plane.HORIZONTAL) next.add(cell.relative(side));
         }
         return cells;
+    }
+
+    /**
+     * Every block of this kind within his search radius and {@code depth} above and below him that passes the test: the same
+     * scan nearest makes, without stopping at the first, for the one reach answer's count of what the world really gives.
+     */
+    static List<BlockPos> all(CompanionEntity c, ServerLevel level, int depth, Predicate<BlockState> kind, Predicate<BlockPos> ok) {
+        BlockPos center = c.blockPosition();
+        int radius = c.getSearchRadius();
+        int minY = Math.max(level.getMinBuildHeight(), center.getY() - depth), maxY = Math.min(level.getMaxBuildHeight() - 1, center.getY() + depth);
+        double far = (double) radius * radius;
+        List<BlockPos> found = new ArrayList<>();
+        for (int cx = (center.getX() - radius) >> 4; cx <= (center.getX() + radius) >> 4; cx++)
+            for (int cz = (center.getZ() - radius) >> 4; cz <= (center.getZ() + radius) >> 4; cz++)
+                for (int index = level.getSectionIndex(minY); index <= level.getSectionIndex(maxY); index++) {
+                    var chunk = level.getChunkSource().getChunkNow(cx, cz);
+                    if (chunk == null) continue;
+                    var section = chunk.getSection(index);
+                    if (section.hasOnlyAir() || !section.maybeHas(kind)) continue;
+                    int bottom = level.getSectionYFromSectionIndex(index) << 4;
+                    for (int y = Math.max(minY, bottom); y <= Math.min(maxY, bottom + 15); y++) for (int x = 0; x < 16; x++) for (int z = 0; z < 16; z++) {
+                        if (!kind.test(section.getBlockState(x, y & 15, z))) continue;
+                        BlockPos cell = new BlockPos((cx << 4) + x, y, (cz << 4) + z);
+                        if (cell.distSqr(center) > far || !ok.test(cell)) continue;
+                        found.add(cell.immutable());
+                    }
+                }
+        return found;
     }
 
     /**

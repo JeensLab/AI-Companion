@@ -134,6 +134,96 @@ public final class CompanionObsidianTests {
     }
 
     /**
+     * The live report of PATH7: «добудь обсидиан» without his name and «олег добудь обсидиан» are the same order of ten
+     * (a portal frame), and one obsidian hangs ten blocks above each of two identical scenes. The phrasing must not decide
+     * the outcome: both promise only what is there — one block — mine it, come down, take the drop and end with
+     * «Накопал обсидиана: 1.» instead of refusing for the nine blocks that are not.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 8000)
+    public static void thePhraseWithAndWithoutHisNameGivesTheSameOutcome(GameTestHelper h) {
+        ground(h);
+        BlockPos bareBlock = new BlockPos(8, GROUND + 11, 8);
+        BlockPos namedBlock = new BlockPos(24, GROUND + 11, 24);
+        h.setBlock(bareBlock, Blocks.OBSIDIAN);
+        h.setBlock(namedBlock, Blocks.OBSIDIAN);
+        CompanionEntity bare = spawnAt(h, 6, 8);
+        CompanionEntity named = spawnAt(h, 22, 24);
+        for (CompanionEntity c : List.of(bare, named)) {
+            c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+            c.setItem(1, new ItemStack(Items.DIRT, 20));
+        }
+        String bareCommand = CompanionLocalCommands.route("добудь обсидиан", "Олег");
+        String namedCommand = CompanionLocalCommands.route("Олег, добудь обсидиан", "Олег");
+        h.assertTrue(bareCommand != null && namedCommand != null, "A phrase went to the model: " + bareCommand + " / " + namedCommand);
+        h.assertTrue(bareCommand.equals(namedCommand), "The phrasing decides the command: " + bareCommand + " / " + namedCommand);
+        var bareFuture = CompanionPlanRunner.run(CompanionLocalCommands.actions(bareCommand),
+                new CompanionServerPlanPort(h.getLevel().getServer(), bare.getOwnerId(), "gametest-obsidian-bare", () -> false));
+        var namedFuture = CompanionPlanRunner.run(CompanionLocalCommands.actions(namedCommand),
+                new CompanionServerPlanPort(h.getLevel().getServer(), named.getOwnerId(), "gametest-obsidian-named", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(bareFuture.isDone() && namedFuture.isDone() && !bareFuture.isCompletedExceptionally() && !namedFuture.isCompletedExceptionally(),
+                    "A plan still running: " + bare.getLastTaskResult() + " / " + named.getLastTaskResult());
+            String bareReport = bareFuture.join().report(), namedReport = namedFuture.join().report();
+            h.assertTrue(bareReport.equals(namedReport), "The phrasing changed the outcome:\n" + bareReport + "\n---\n" + namedReport);
+            h.assertTrue(bareReport.contains("Накопал обсидиана: 1"), "Not the one block that was there: " + bareReport);
+            h.assertTrue(!bareReport.contains("Не нашёл лавы") && !bareReport.contains("Полторы минуты"), "A wrong end: " + bareReport);
+            h.assertTrue(count(bare, Items.OBSIDIAN) == 1 && count(named, Items.OBSIDIAN) == 1,
+                    "The drop is not in the bag: " + count(bare, Items.OBSIDIAN) + " / " + count(named, Items.OBSIDIAN) + ", " + bareReport);
+            h.assertBlockPresent(Blocks.AIR, bareBlock);
+            h.assertBlockPresent(Blocks.AIR, namedBlock);
+            h.assertTrue(bare.getTemporarySupportCount() == 0 && named.getTemporarySupportCount() == 0,
+                    "A column stands: " + bare.getTemporarySupportCount() + " / " + named.getTemporarySupportCount());
+            h.assertTrue(count(bare, Items.DIRT) == 20 && count(named, Items.DIRT) == 20,
+                    "The soil of a column was lost: " + count(bare, Items.DIRT) + " / " + count(named, Items.DIRT));
+            h.assertTrue(dirtAboveGround(h) == 0, "A block of a column was left standing");
+            h.assertBlockPresent(Blocks.GRASS_BLOCK, new BlockPos(8, GROUND, 8));
+            h.assertBlockPresent(Blocks.GRASS_BLOCK, new BlockPos(24, GROUND, 24));
+        });
+    }
+
+    /**
+     * The live order of PATH7: mine, then step down the column dismantling it behind him, then take the drop, then done.
+     * Standing on his own column while the drop lies below is not progress, and the watchdog must not close the order for
+     * it: no «Полторы минуты» and no «Не нашёл лавы» for the nine blocks that were never there.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 5000)
+    public static void obsidianAboveIsMinedThenTheColumnComesDownThenTheDropIsTaken(GameTestHelper h) {
+        ground(h);
+        BlockPos obsidian = new BlockPos(12, GROUND + 11, 16);
+        h.setBlock(obsidian, Blocks.OBSIDIAN);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.DIRT, 20));
+        long[] minedAt = {-1}, downAt = {-1}, bagAt = {-1}, doneAt = {-1}; int[] supportsAtBag = {-1}, most = {0};
+        String command = CompanionLocalCommands.route("добудь обсидиан", "Олег");
+        h.assertTrue(command != null, "«добудь обсидиан» went to the model");
+        var future = CompanionPlanRunner.run(CompanionLocalCommands.actions(command),
+                new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-order", () -> false));
+        h.onEachTick(() -> {
+            most[0] = Math.max(most[0], c.getTemporarySupportCount());
+            if (minedAt[0] < 0 && h.getBlockState(obsidian).is(Blocks.AIR)) minedAt[0] = h.getTick();
+            if (minedAt[0] >= 0 && downAt[0] < 0 && c.getTemporarySupportCount() < most[0]) downAt[0] = h.getTick();
+            if (bagAt[0] < 0 && count(c, Items.OBSIDIAN) > 0) { bagAt[0] = h.getTick(); supportsAtBag[0] = c.getTemporarySupportCount(); }
+            if (doneAt[0] < 0 && future.isDone()) doneAt[0] = h.getTick();
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(most[0] >= 7, "He never built up to it: supports " + most[0] + ", " + report);
+            h.assertTrue(minedAt[0] >= 0, "The obsidian above him was never mined: " + report);
+            h.assertTrue(downAt[0] > minedAt[0], "He did not come down after mining: mined " + minedAt[0] + ", down " + downAt[0] + ", " + report);
+            h.assertTrue(bagAt[0] > downAt[0], "The drop came before the column came down: down " + downAt[0] + ", bag " + bagAt[0] + ", " + report);
+            h.assertTrue(supportsAtBag[0] == 0, "He took the drop with the column still standing: " + supportsAtBag[0] + ", " + report);
+            h.assertTrue(doneAt[0] >= bagAt[0], "The order ended before the drop was in the bag: " + report);
+            h.assertTrue(report.contains("Накопал обсидиана: 1"), "Not an honest count: " + report);
+            h.assertTrue(!report.contains("Полторы минуты") && !report.contains("Не нашёл лавы"), "A wrong end: " + report);
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1, "The drop is not in the bag: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertTrue(c.getTemporarySupportCount() == 0 && dirtAboveGround(h) == 0, "A block of the column was left standing");
+            h.assertTrue(count(c, Items.DIRT) == 20, "The soil of the column was lost: " + count(c, Items.DIRT));
+        });
+    }
+
+    /**
      * An obsidian two blocks up on a stone ledge beside him, its drop resting on the ledge: a walk reaches a stand cell, so no
      * column is built and none of his soil is spent.
      */
@@ -337,27 +427,27 @@ public final class CompanionObsidianTests {
     }
 
     /**
-     * One obsidian lies about, a bucket of lava in his bag and no water at all: he mines the block that lies and then names the water
-     * for the second — not the lava he is holding. Before this he said «Накопал 1 из 2: лава рядом кончилась.» over a bag with a
-     * bucket of lava in it, and the player went for lava he already had.
+     * One obsidian lies about, a bucket of lava in his bag and no water at all: the order for two promises only the block that
+     * lies — the bucket cannot be used without water — so he mines it, ends with «Накопал обсидиана: 1.» and his lava bucket
+     * stays in the bag, never spent on a block that was not promised (PATH7: an order promises only what is there).
      */
     @GameTest(template = "tall_tree", timeoutTicks = 1200)
-    public static void withHisLavaBucketAndNoWaterHeNamesTheWater(GameTestHelper h) {
+    public static void oneObsidianAndALavaBucketWithoutWaterPromisesOnlyTheBlock(GameTestHelper h) {
         ground(h);
         h.setBlock(new BlockPos(12, GROUND + 1, 16), Blocks.OBSIDIAN);
         CompanionEntity c = spawn(h);
         c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
         c.setItem(1, new ItemStack(Items.LAVA_BUCKET));
-        // Obsidian lies about, so the plan asks for no water: the second block would be his own, and that is where the water is missed.
+        // Obsidian lies about, so the plan asks for no water and promises only that one block.
         var plan = c.obtainPlan(OBSIDIAN, 2);
-        h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("mine_obsidian", OBSIDIAN, 2))), "Not the two asked for: " + plan);
+        h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("mine_obsidian", OBSIDIAN, 1))), "Not the one that lies: " + plan);
         var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":2}]");
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
             String report = future.join().report();
-            h.assertTrue(report.contains("Нет ведра воды — нечем залить лаву."), "The water is not named: " + report);
-            h.assertTrue(!report.contains("Не нашёл лавы") && !report.contains("лава рядом кончилась"),
-                    "The lava he holds is said to be missing: " + report);
+            h.assertTrue(report.contains("Накопал обсидиана: 1."), "Not an honest count: " + report);
+            h.assertTrue(!report.contains("Нет ведра воды") && !report.contains("Не нашёл лавы") && !report.contains("лава рядом кончилась"),
+                    "A block that was never promised is said to be missing: " + report);
             h.assertTrue(count(c, Items.OBSIDIAN) == 1 && count(c, Items.LAVA_BUCKET) == 1 && count(c, Items.BUCKET) == 0,
                     "His lava was spent: " + c.getStoredItemsSummary() + ", " + report);
         });
@@ -665,12 +755,12 @@ public final class CompanionObsidianTests {
     }
 
     /**
-     * «Добудь 2 обсидиана» with one bucket of lava and one of water and nothing about to mine or cool: he makes the one block his
-     * buckets give, and the rest is planned again with no lava left — said truthfully, the obsidian he holds and the lava his buckets
-     * spent. Before this the reused refusal said «Рядом нечего копать: ни обсидиана, ни лавы» over a bag that already had one.
+     * «Добудь 2 обсидиана» with one bucket of lava and one of water and nothing about to mine or cool: the buckets make one
+     * block, so the order promises one, makes it and ends with «Накопал обсидиана: 1.» — his lava spent, the empty bucket and
+     * his water back — never «не выполнено» for the second block that nothing could give.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 2400)
-    public static void afterHisOwnBucketsMadeWhatTheyCouldHeSaysWhatIsMissing(GameTestHelper h) {
+    public static void anOrderForTwoWithOneLavaBucketPromisesOneAndMakesIt(GameTestHelper h) {
         ground(h);
         CompanionEntity c = spawn(h);
         c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
@@ -683,9 +773,8 @@ public final class CompanionObsidianTests {
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
             String report = future.join().report();
-            h.assertTrue(report.contains("Обсидиана у меня 1, а лавы рядом и в вёдрах больше нет"),
-                    "He does not say what he made and what is missing: " + report);
-            h.assertTrue(!report.contains("Рядом нечего копать"), "The old line over a bag that had one: " + report);
+            h.assertTrue(report.contains("Накопал обсидиана: 1."), "Not the one block his buckets make: " + report);
+            h.assertTrue(!report.contains("Рядом нечего копать") && !report.contains("Полторы минуты"), "A wrong end: " + report);
             h.assertTrue(count(c, Items.OBSIDIAN) == 1 && count(c, Items.LAVA_BUCKET) == 0 && count(c, Items.BUCKET) == 1
                     && count(c, Items.WATER_BUCKET) == 1, "His buckets are lost or doubled: " + c.getStoredItemsSummary() + ", " + report);
         });
@@ -764,15 +853,27 @@ public final class CompanionObsidianTests {
 
     private static CompanionEntity spawn(GameTestHelper h) {
         CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 10, GROUND + 1, 16);
+        bind(h, c, 8, 14);
+        // The least radius: the lava and obsidian of the tests beside this one, beyond its walls, would be out of his way.
+        c.setSearchRadius(16);
+        return c;
+    }
+
+    /** The same companion of a scene of its own, at this cell, with a player of its own beside it (two scenes in one test). */
+    private static CompanionEntity spawnAt(GameTestHelper h, int x, int z) {
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), x, GROUND + 1, z);
+        bind(h, c, x - 2, z);
+        c.setSearchRadius(16);
+        return c;
+    }
+
+    private static void bind(GameTestHelper h, CompanionEntity c, int playerX, int playerZ) {
         var owner = h.makeMockServerPlayerInLevel();
-        BlockPos stand = h.absolutePos(new BlockPos(8, GROUND + 1, 14));
+        BlockPos stand = h.absolutePos(new BlockPos(playerX, GROUND + 1, playerZ));
         owner.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
         c.setOwnerId(owner.getUUID());
         owner.getPersistentData().putUUID("aicompanion:canonical_companion", c.getUUID());
         CompanionEvents.getOwnedCompanion(owner);
-        // The least radius: the lava and obsidian of the tests beside this one, beyond its walls, would be out of his way.
-        c.setSearchRadius(16);
-        return c;
     }
 
     private static CompletableFuture<CompanionPlanRunner.Outcome> run(GameTestHelper h, CompanionEntity c, String json) {

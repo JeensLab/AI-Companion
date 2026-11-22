@@ -286,6 +286,42 @@ public final class CompanionObtainTests {
     }
     private static List<String> types(CompanionObtain.Plan plan) { return plan.steps().stream().map(CompanionObtain.Step::type).toList(); }
 
+    /**
+     * The live report of PATH7: a pumpkin hanging ten blocks above his feet, nothing under it. The model's «добудь тыкву» is
+     * obtain_item, and it must come at the pumpkin the same way as at the obsidian above: up a column of his own soil, break
+     * it, come down and take the drop — the ground left as it was. The harvest path's own answer (a stand or a short column)
+     * never reached it, so the pumpkin stayed hanging.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 5000)
+    public static void aPumpkinHangingAboveIsBrokenFromAColumnOfHisOwnSoil(GameTestHelper h) {
+        ground(h);
+        BlockPos pumpkin = new BlockPos(16, GROUND + 11, 16);
+        h.setBlock(pumpkin, Blocks.PUMPKIN);
+        CompanionEntity companion = spawn(h);
+        companion.setItem(0, new ItemStack(Items.DIRT, 20));
+        int[] most = {0};
+        h.onEachTick(() -> most[0] = Math.max(most[0], companion.getTemporarySupportCount()));
+        var future = run(h, companion, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:pumpkin\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + companion.getLastTaskResult());
+            String report = future.join().report();
+            h.assertBlockPresent(Blocks.AIR, pumpkin);
+            h.assertTrue(count(companion, Items.PUMPKIN) == 1, "The pumpkin is not in the bag: " + count(companion, Items.PUMPKIN) + ", " + report);
+            h.assertTrue(most[0] >= 6, "He never built up to it: supports " + most[0] + ", " + report);
+            h.assertTrue(companion.getTemporarySupportCount() == 0, "The column is still standing: " + companion.getTemporarySupportCount());
+            h.assertTrue(count(companion, Items.DIRT) == 20, "The soil of the column was lost: " + count(companion, Items.DIRT));
+            h.assertTrue(dirtAboveGround(h) == 0, "A block of the column was left standing");
+            h.assertTrue(!report.contains("Полторы минуты") && !report.contains("Рядом не вижу"), "A wrong end: " + report);
+        });
+    }
+
+    private static int dirtAboveGround(GameTestHelper h) {
+        int count = 0;
+        for (int x = 1; x < 31; x++) for (int z = 1; z < 31; z++) for (int y = GROUND + 1; y <= GROUND + 12; y++)
+            if (h.getBlockState(new BlockPos(x, y, z)).is(Blocks.DIRT)) count++;
+        return count;
+    }
+
     private static java.util.concurrent.CompletableFuture<CompanionPlanRunner.Outcome> run(GameTestHelper h, CompanionEntity companion, String json) {
         var plan = CompanionPlanCodec.parsePlan(JsonParser.parseString(json));
         return CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), companion.getOwnerId(), "gametest-obtain", () -> false));

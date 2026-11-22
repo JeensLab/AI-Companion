@@ -684,6 +684,7 @@ public final class CompanionWork {
         // Breaking does not wait for the last drop: the next block goes while the drop is still on its way to him, and the
         // pickup settles after the breaking. Waiting per block is what made a crown one block at a time.
         if (job != Job.BLOCK && job != Job.COME && job != Job.COURSE && job != Job.HUNT && job != Job.PICK_UP && job != Job.PLACE
+                && job != Job.OBSIDIAN
                 && owner.hasPendingLoot() && !(job == Job.HOUSE && templateJob && templateHouse.scaffolding())) return;
         if (owner.getOwnerId() == null || level.getServer().getPlayerList().getPlayer(owner.getOwnerId()) == null) {
             finish(false, "Потерял связь с игроком, остановился."); return;
@@ -753,6 +754,9 @@ public final class CompanionWork {
      */
     private boolean stalled() {
         if (phase == Phase.COOK || awaitingHouse() != null || building() != null && building().waitingForRoom()) { stallTicks = 0; return false; }
+        // Coming down his own column, or walking to the drop of what he just broke, is not standing still (PATH7: the order
+        // stood on top of its column for ninety seconds waiting for a drop that lay below).
+        if (owner.temporaryPillar.isRecovering() || obsidian.waitingForHisDrop() || picking.waitingForHisDrop()) { stallTicks = 0; return false; }
         long signature = progressSignature();
         boolean news = stallSeen.size() < 256 && stallSeen.add(phase + "|" + owner.getLastTaskResult());
         if (news || signature != stallSignature || stallAnchor == null || owner.position().distanceToSqr(stallAnchor) >= 2 * 2) {

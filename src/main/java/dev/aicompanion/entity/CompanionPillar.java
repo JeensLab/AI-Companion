@@ -353,6 +353,21 @@ public final class CompanionPillar {
         return longest;
     }
 
+    /** The fewest steps of soil a column to this block takes, at most {@code limit}: 0 when no column reaches it at all. */
+    public int leastSteps(BlockPos block, int limit) {
+        int least = Integer.MAX_VALUE;
+        for (int steps : columns(block, Math.clamp(limit, 1, WAY_SUPPORTS)).values()) least = Math.min(least, steps);
+        return least == Integer.MAX_VALUE ? 0 : least;
+    }
+
+    /** The cells a column could stand at to this block, with a way of up to {@code limit} steps and this much soil. */
+    public Set<BlockPos> buildCells(BlockPos block, int limit, int supply) {
+        Set<BlockPos> cells = new HashSet<>();
+        for (var column : columns(block, Math.clamp(limit, 1, WAY_SUPPORTS)).entrySet())
+            if (column.getValue() > 0 && column.getValue() <= limit && column.getValue() <= supply) cells.add(column.getKey());
+        return cells;
+    }
+
     private Set<BlockPos> buildCells(BlockPos block, int supply) {
         Set<BlockPos> cells = new HashSet<>();
         for (var column : columns(block, LEAF_SUPPORTS).entrySet())

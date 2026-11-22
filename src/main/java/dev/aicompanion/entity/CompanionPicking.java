@@ -137,6 +137,9 @@ final class CompanionPicking {
     /** What the broken blocks dropped so far: progress for the watchdog while the drops are walked to. */
     int due() { return due; }
 
+    /** What he broke is not in his bag yet: descending his own column or walking to the drop is not standing still. */
+    boolean waitingForHisDrop() { return due > got(); }
+
     String jobName() { return "сбор: «" + name() + "» (" + got() + " из " + wanted + ")"; }
 
     private String name() { return leafOrder ? "Листва" : new ItemStack(item).getHoverName().getString(); }
@@ -155,6 +158,29 @@ final class CompanionPicking {
         if (find(c, level, here, site, Set.of(), new HashSet<>(), false, false, false) != null) return true;
         // A crown above every stand cell is still his when the soil for the column can be dug about him (the owner, 18.11).
         return find(c, level, here, site, Set.of(), new HashSet<>(), true, false, false) != null && soilAbout(c, level);
+    }
+
+    /**
+     * What the world about him really gives of the item by the one reach answer (CompanionReach): the blocks a hand takes it
+     * from that he can walk to, reach across, take from under his feet or climb to on a column of his soil — the pieces they
+     * yield, and the soil a column still asks. Null when no block gives it at all (a recipe's or an animal's item).
+     */
+    static CompanionReach.Available available(CompanionEntity c, ServerLevel level, Item item) {
+        List<CompanionPickable.Source> sources = allowed(level, CompanionPickable.sources(level, item));
+        if (sources.isEmpty()) return null;
+        Predicate<BlockPos> site = kept(c, level);
+        List<BlockPos> blocks = CompanionObsidian.all(c, level, DEPTH, state -> gives(sources, state) > 0, pos ->
+                c.errand.within(pos) && takes(level, pos, site) && grounded(c, level, pos) && !lavaBeside(level, pos));
+        int count = 0, steps = 0;
+        for (BlockPos block : blocks) {
+            CompanionReach.How how = CompanionReach.how(c, level, block, STAND_REACH, true, true, CompanionPillar.WAY_SUPPORTS);
+            if (!how.yes()) continue;
+            count += gives(sources, level.getBlockState(block));
+            if (how.up()) steps = Math.max(steps, how.steps());
+        }
+        int soil = Math.max(0, steps - c.temporaryPillar.soilCarried());
+        if (soil > 0 && !CompanionReach.soilAbout(c, level)) soil = 0;
+        return new CompanionReach.Available(count, soil);
     }
 
     /**
@@ -239,26 +265,8 @@ final class CompanionPicking {
         return found;
     }
 
-    /** Whether a block of soil stands within the reach the dig works in, where he may take it: the dig's own rule, the site of a building and all (CompanionDigGoal). */
-    static boolean soilAbout(CompanionEntity c, ServerLevel level) {
-        BlockPos origin = c.blockPosition();
-        for (BlockPos pos : CompanionLogSearch.find(level, origin, 12, BlockTags.DIRT)) {
-            if (!c.leashAllows(pos) || !CompanionGround.SOIL.matches(level.getBlockState(pos))) continue;
-            if (pos.getY() < origin.getY() - 1 || pos.getY() > origin.getY() + 5 || pos.distSqr(origin) > 12 * 12) continue;
-            if (!CompanionGround.SOIL.safeCell(level, pos, c) || !exposed(level, pos)) continue;
-            return true;
-        }
-        return false;
-    }
-
-    /** A face of the block open to the air: the dig takes only a block he can come at from a stand. */
-    private static boolean exposed(ServerLevel level, BlockPos pos) {
-        for (Direction side : Direction.values()) {
-            BlockPos beside = pos.relative(side);
-            if (level.hasChunkAt(beside) && level.getBlockState(beside).getCollisionShape(level, beside).isEmpty()) return true;
-        }
-        return false;
-    }
+    /** Whether a block of soil stands within the reach the dig works in, where he may take it: the one reach answer's soil (CompanionReach). */
+    static boolean soilAbout(CompanionEntity c, ServerLevel level) { return CompanionReach.soilAbout(c, level); }
 
     /**
      * The soil he must dig for the crown of these leaves the order will come at: the steps of the longest column among the
@@ -480,7 +488,11 @@ final class CompanionPicking {
         if (standOnly) return stand;
         if (stand) return true;
         if (!c.temporaryPillar.buildCells(pos).isEmpty()) return true;
-        return dugSoil && !c.temporaryPillar.buildCellsWithAnySoil(pos).isEmpty();
+        if (dugSoil && !c.temporaryPillar.buildCellsWithAnySoil(pos).isEmpty()) return true;
+        // A block no stand cell and no short column reaches: the one reach answer's way up, which may take sixteen steps
+        // (PATH7: a pumpkin hanging ten blocks above was never taken). A leaf crown keeps its short column (CompanionLeaves).
+        return !level.getBlockState(pos).is(BlockTags.LEAVES)
+                && CompanionReach.how(c, level, pos, STAND_REACH, true, dugSoil, CompanionPillar.WAY_SUPPORTS).up();
     }
 
     /** A leaf that does not fade: set down by a player, his own hedge or roof, and still a leaf a shears gives. */
@@ -559,17 +571,19 @@ final class CompanionPicking {
     /**
      * A crown that stands above every stand cell: he walks to the cells beside the trunk, builds up on his own soil until the
      * block is within a swing, and cuts it from the top of the column — the same supports the wood path raises (CompanionPillar),
-     * never a teleport. False when he cannot build up to it at all: no soil, a ceiling, or a crown too high for six steps.
+     * never a teleport. A leaf crown keeps its short column; any other block a hand gives (a pumpkin, a cane) may take the way
+     * up's sixteen steps (PATH7). False when he cannot build up to it at all: no soil, a ceiling, or a block too high.
      */
-    private boolean climb() {
+    private boolean climb(ServerLevel level) {
         // Already within a swing from the top of his own column: no more steps up, the crown is cut from here.
         if (c.temporaryPillar.isActive() && c.temporaryPillar.inReach(target)) { stands = Set.of(c.blockPosition()); return true; }
-        Set<BlockPos> feet = c.temporaryPillar.buildCells(target);
+        int limit = level.getBlockState(target).is(BlockTags.LEAVES) ? CompanionPillar.LEAF_SUPPORTS : CompanionPillar.WAY_SUPPORTS;
+        Set<BlockPos> feet = c.temporaryPillar.buildCells(target, limit, c.temporaryPillar.soilCarried());
         if (feet.isEmpty()) return false;
         // The pillar plans its column beside him: from farther off he walks to the trunk's foot first, as the wood path walks
         // to a tree. While it already stands he lets it plan from where he is.
         if (!c.temporaryPillar.isActive() && !feet.contains(c.blockPosition())) return approach(feet);
-        CompanionPillar.Outcome outcome = c.temporaryPillar.tickToward(target, false);
+        CompanionPillar.Outcome outcome = c.temporaryPillar.tickToward(target, false, limit);
         if (outcome == CompanionPillar.Outcome.FAILED) return false;
         if (outcome == CompanionPillar.Outcome.READY) { stands = Set.of(c.blockPosition()); return true; }
         c.workStatus("Поднимаюсь на опоре: " + name() + ".");
@@ -682,7 +696,7 @@ final class CompanionPicking {
             // A crown above every stand cell: he builds up to it on the wood path's own soil supports, cuts it from the top
             // of the column, and the soil comes back when he is down (requestCleanup, the descent of RecoverSupportsGoal).
             // Stone dug by name is taken where a face shows from the ground, never from a column (CompanionPickable).
-            if (stone || !climb()) { passed.add(target); release(); }
+            if (stone || !climb(level)) { passed.add(target); release(); }
             return;
         }
         if (!stands.contains(c.blockPosition())) {
@@ -702,7 +716,7 @@ final class CompanionPicking {
                 walkFailed = true;
                 legs = waited = 0;
             }
-            if (!stone && climb()) return;
+            if (!stone && climb(level)) return;
             passed.add(target);
             release();
             return;

@@ -161,7 +161,18 @@ final class CompanionBag {
                         || CompanionPicking.near(c, serverLevel, CompanionPickable.sources(serverLevel, wanted)) || CompanionFarming.reapableNear(c, serverLevel, wanted)
                         || CompanionChores.about(c, serverLevel, wanted), wanted -> CompanionMobDrops.near(c, serverLevel, wanted),
                 new CompanionObtain.Trip(serverLevel.dimension() == net.minecraft.world.level.Level.OVERWORLD ? CompanionPortals.litNear(serverLevel, c.blockPosition()) : null, c.errand.away(), CompanionErrand.holdsChunks(c, serverLevel)),
-                stack -> !c.carriedForPlayer(stack));
+                stack -> !c.carriedForPlayer(stack), wanted -> available(serverLevel, wanted));
+    }
+
+    /**
+     * What the world about him really gives of the item by the one reach answer: the blocks he can work it from, walked to,
+     * across, up a column of his soil or from under his feet, and the soil a column still asks. Null where the answer is not
+     * about blocks (a recipe's or an animal's item), and for leaves, whose own chain sizes their column (CompanionLeaves).
+     */
+    CompanionReach.Available available(ServerLevel level, net.minecraft.world.item.Item wanted) {
+        if (wanted == net.minecraft.world.item.Items.OBSIDIAN) return CompanionObsidian.available(c, level, c.work.portal::laid);
+        if (CompanionLeaves.isLeaf(BuiltInRegistries.ITEM.getKey(wanted).toString())) return null;
+        return CompanionPicking.available(c, level, wanted);
     }
     /** The end of obtain_item: success only by the bag, never by the plan. */
     public CompanionActionResult carriedCheck(String item, int count) {

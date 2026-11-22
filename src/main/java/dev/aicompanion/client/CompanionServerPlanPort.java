@@ -8,6 +8,7 @@ import dev.aicompanion.entity.CompanionAutonomy;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
 import dev.aicompanion.entity.CompanionFurnaceBatches;
+import dev.aicompanion.entity.CompanionReach;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -273,8 +274,17 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
                 need = action.count() - dev.aicompanion.entity.CompanionLeaves.carried(companion) + companion.carriedCount(item);
                 check = dev.aicompanion.entity.CompanionLeaves.FAMILY;
             }
+            // An order for more than the world gives promises only what is there (PATH7: «добудь обсидиан» is a portal frame's
+            // ten, and one block above him is one): the same reach answer the work asks, so the phrasing cannot change it.
+            CompanionReach.Available world = leafOrder ? null : companion.obtainAvailable(item);
+            int promisedWorld = world == null ? need : Math.min(need, companion.carriedCount(item) + world.count());
+            if (world != null && promisedWorld > 0 && companion.carriedCount(item) >= promisedWorld)
+                return new CompanionPlanRunner.Expansion(java.util.List.of(new PlannedAction("verify_item", 0, promisedWorld, check)), null);
             var plan = companion.obtainPlan(item, need);
             if (plan.refused()) return new CompanionPlanRunner.Expansion(java.util.List.of(), plan.refusal());
+            // The promise is what the chain really produces (one block of his own lava is one obsidian), never more.
+            int produced = plan.steps().isEmpty() ? 0 : plan.steps().getLast().count();
+            int promised = world == null ? need : Math.min(need, companion.carriedCount(item) + produced);
             java.util.List<PlannedAction> steps = new java.util.ArrayList<>();
             // A crown above every stand cell is climbed on soil he digs himself: the dirt for the column comes first, and
             // «дай земли» is left for a world with no soil about him (the owner, 18.11: «до листвы не достану — дай земли»
@@ -285,7 +295,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             // No gather left in the chain (the bag meets the order): the soil for a column is not dug for nothing.
             if (soil > 0 && !plan.steps().isEmpty()) steps.add(new PlannedAction("gather_dirt", 0, soil, ""));
             for (var step : plan.steps()) steps.add(new PlannedAction(step.type(), 0, step.count(), step.item()));
-            steps.add(new PlannedAction("verify_item", 0, action.count(), check));
+            steps.add(new PlannedAction("verify_item", 0, world == null ? action.count() : promised, check));
             return new CompanionPlanRunner.Expansion(java.util.List.copyOf(steps), null);
         });
     }

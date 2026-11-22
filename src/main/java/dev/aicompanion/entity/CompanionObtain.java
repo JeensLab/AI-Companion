@@ -82,6 +82,8 @@ public final class CompanionObtain {
     private final Trip trip;
     /** Whether a stack he carries is his to use now: what he carries for the player (a sort) is not. */
     private final java.util.function.Predicate<ItemStack> his;
+    /** What the world about him really gives of an item by the one reach answer (CompanionReach); null where it is not about blocks. */
+    private final java.util.function.Function<Item, CompanionReach.Available> reachable;
     /** A step of the chain is Nether-only and is fetched through the portal; and why the trip cannot be made (no portal, no chunk loading: said instead of any other refusal). */
     private boolean viaNether;
     private String errandRefusal;
@@ -98,8 +100,8 @@ public final class CompanionObtain {
     private static final double SPARE = 1.25;
 
     private CompanionObtain(ServerLevel level, List<ItemStack> carried, boolean bench, java.util.function.Predicate<Item> grows, java.util.function.Predicate<Item> roams, Trip trip,
-                            java.util.function.Predicate<ItemStack> his) {
-        this.level = level; this.carried = carried; this.bench = bench; this.grows = grows; this.roams = roams; this.trip = trip; this.his = his;
+                            java.util.function.Predicate<ItemStack> his, java.util.function.Function<Item, CompanionReach.Available> reachable) {
+        this.level = level; this.carried = carried; this.bench = bench; this.grows = grows; this.roams = roams; this.trip = trip; this.his = his; this.reachable = reachable;
         blade = carried.stream().anyMatch(stack -> stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES));
         for (ItemStack stack : carried) if (!stack.isEmpty()) bag.merge(key(stack.getItem()), stack.getCount(), Integer::sum);
     }
@@ -131,16 +133,28 @@ public final class CompanionObtain {
      */
     public static Plan plan(ServerLevel level, List<ItemStack> carried, boolean benchNearby, String requested, int count, java.util.function.Predicate<Item> grows,
                             java.util.function.Predicate<Item> roams, Trip trip, java.util.function.Predicate<ItemStack> his) {
+        return plan(level, carried, benchNearby, requested, count, grows, roams, trip, his, null);
+    }
+
+    /**
+     * {@code reachable}: what the world about him really gives of an item by the one reach answer (CompanionReach) — how many
+     * it yields and the soil a column still asks, or null where the answer is not about blocks. An order for more than is there
+     * promises only what is: ten obsidian from one block above him is one (PATH7).
+     */
+    public static Plan plan(ServerLevel level, List<ItemStack> carried, boolean benchNearby, String requested, int count, java.util.function.Predicate<Item> grows,
+                            java.util.function.Predicate<Item> roams, Trip trip, java.util.function.Predicate<ItemStack> his,
+                            java.util.function.Function<Item, CompanionReach.Available> reachable) {
         boolean[] viaNether = {false};
-        return errand(planned(level, carried, benchNearby, requested, count, grows, roams, trip, viaNether, his), level, trip, viaNether[0]);
+        return errand(planned(level, carried, benchNearby, requested, count, grows, roams, trip, viaNether, his, reachable), level, trip, viaNether[0]);
     }
 
     private static Plan planned(ServerLevel level, List<ItemStack> carried, boolean benchNearby, String requested, int count, java.util.function.Predicate<Item> grows,
-                                java.util.function.Predicate<Item> roams, Trip trip, boolean[] viaNether, java.util.function.Predicate<ItemStack> his) {
+                                java.util.function.Predicate<Item> roams, Trip trip, boolean[] viaNether, java.util.function.Predicate<ItemStack> his,
+                                java.util.function.Function<Item, CompanionReach.Available> reachable) {
         var id = ResourceLocation.tryParse(requested == null ? "" : requested.trim());
         Item item = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
         if (item == null || item == Items.AIR) return new Plan(List.of(), "Не понял, какой предмет нужен.");
-        CompanionObtain planner = new CompanionObtain(level, carried, benchNearby || carried.stream().anyMatch(stack -> stack.is(Items.CRAFTING_TABLE)), grows, roams, trip, his);
+        CompanionObtain planner = new CompanionObtain(level, carried, benchNearby || carried.stream().anyMatch(stack -> stack.is(Items.CRAFTING_TABLE)), grows, roams, trip, his, reachable);
         // Logs the player asked for by name are that species, wherever the plan goes on; inside a chain wood stays a family (key).
         var species = CompanionWoodKind.of(id.toString());
         if (species != null && plainLog(id.getPath())) {
@@ -275,7 +289,11 @@ public final class CompanionObtain {
             case "minecraft:obsidian" -> {
                 String refusal = CompanionObsidian.refusal(level, carried);
                 if (refusal != null) return refuse(refusal);
-                if (grows != null && about(Items.OBSIDIAN)) return add("mine_obsidian", key, count);
+                CompanionReach.Available found = reachable == null ? null : reachable.apply(Items.OBSIDIAN);
+                if (found != null) {
+                    // Only what the world really gives is promised: a portal frame's ten from one block above him is one (PATH7).
+                    if (found.some()) return add("mine_obsidian", key, Math.min(count, found.count()));
+                } else if (grows != null && about(Items.OBSIDIAN)) return add("mine_obsidian", key, count);
                 int buckets = bag.getOrDefault("minecraft:lava_bucket", 0);
                 if (grows != null && !about(Items.LAVA_BUCKET) && buckets == 0) {
                     // After the blocks his own buckets made, the old line said there was nothing about to dig over a bag that already
@@ -375,8 +393,17 @@ public final class CompanionObtain {
         // A coral block is mined for the dead one: any pickaxe of his, else a wooden one. Snow gives snowballs to a shovel only: the same.
         // What only Silk Touch gives (a coral, its fan, a live coral block) is picked only with a tool that carries it; none is
         // made for it (silk is an enchantment, not a craft), so the chain refuses before the walk when he carries none.
-        if (picked(item)) {
+        // How the world gives it is the one reach answer (CompanionReach): walked to, across, up a column of his soil or from
+        // under his feet — and only as much as those blocks really yield (PATH7: a pumpkin hanging ten blocks above).
+        CompanionReach.Available found = reachable == null || CompanionLeaves.isLeaf(BuiltInRegistries.ITEM.getKey(item).toString())
+                ? null : reachable.apply(item);
+        if (found == null ? picked(item) : found.some()) {
             if (silked(item) && !carriesSilk(item)) return refuse("Для «" + name(item) + "» нужен инструмент с «Шёлковым касанием»: в сумке такого нет.");
+            if (found != null) {
+                count = Math.min(count, found.count());
+                // A column for it stands on soil he does not carry: the plan digs that soil first, as a crown's is dug.
+                if (found.soil() > 0) addSplit("gather_dirt", "", found.soil(), 64);
+            }
             return gather(item, key, count, depth);
         }
         // A monster drops it (string, a bone, gunpowder): fought for, if one is about.

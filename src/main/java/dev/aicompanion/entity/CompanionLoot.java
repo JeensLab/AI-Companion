@@ -114,6 +114,9 @@ final class CompanionLoot {
     }
     void tickNearby() {
         if (!(owner.level() instanceof ServerLevel level) || !owner.canCollectItems()) return;
+        // On his own column or coming down it, the drops wait: he steps down dismantling it behind him, then takes what fell.
+        // A drop that landed on the column's top is not taken from under his feet while the column still stands (PATH7).
+        if (owner.getTemporarySupportCount() > 0 || owner.isRecoveringSupports()) return;
         while (!sites.isEmpty() && sites.peekFirst().expires < level.getGameTime()) sites.removeFirst();
         if (collecting && (owner.tickCount % 5 == 0 || level.getGameTime() <= rescanUntil)) discoverSurvivors(level);
         pending.removeIf(id -> gone(level, id));
