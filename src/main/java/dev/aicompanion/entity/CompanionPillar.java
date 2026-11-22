@@ -29,11 +29,24 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/** A short, inventory-backed dirt pillar. Movement and falling use normal entity physics. */
+/**
+ * A short, inventory-backed dirt pillar. Movement and falling use normal entity physics.
+ * The steps are a per-climb limit: a leaf crown's column keeps its six, a way up to a block he cannot walk to (PATH7, #105)
+ * may take sixteen — a block ten blocks above his feet asks seven steps, sixteen asks thirteen.
+ */
 public final class CompanionPillar {
-    public static final int MAX_SUPPORTS = 6;
+    /** The steps a leaf crown's column may take: a crown stands close over the trunk. */
+    public static final int LEAF_SUPPORTS = 6;
+    /** The most steps a way up may take (PATH7): enough for a block sixteen blocks above his feet. */
+    public static final int WAY_SUPPORTS = 16;
+    /** How far above his feet a block may stand for a way up (PATH7). */
+    public static final int WAY_HEIGHT = 16;
+    /** Blocks placed and broken by one way, per task (PATH7): the budget of slice S2 is counted against this number. */
+    public static final int WAY_BUDGET = 64;
     private static final double REACH_SQR = 16.0D;
     private static final int MAX_ATTEMPT_TICKS = 200;
+    /** The ticks of one way's climb: its own steps at this much each, so thirteen steps still have room. */
+    private static final int WAY_STEP_TICKS = 40;
     private static final int STALLED_TICKS = 80;
     private static final int STEP_INTERVAL = 10;
 
@@ -58,6 +71,10 @@ public final class CompanionPillar {
     private int cooldown;
     private int cleanupTicks;
     private boolean recovering;
+    /** The steps this climb may take: a leaf crown's six, a way up's sixteen (set by tickToward). */
+    private int limit = LEAF_SUPPORTS;
+    /** Whether this column is a way up to a block no walk reaches (PATH7), not a leaf crown's climb. */
+    private boolean way;
     private String failureReason = "";
     /** The hand a gather keeps while its column comes down: the tool for a support goes back into it after each break. */
     private ItemStack keptHand;
@@ -70,13 +87,15 @@ public final class CompanionPillar {
     }
 
     public boolean isActive() { return base != null || jumpCell != null || !supports.isEmpty(); }
+    /** Whether the column standing is the way up of PATH7, not a leaf crown's climb. */
+    public boolean isWayActive() { return way && isActive(); }
     public boolean hasSupports() { return !supports.isEmpty(); }
     public boolean isRecovering() { return recovering; }
     public int supportCount() { return supports.size(); }
     public String failureReason() { return failureReason; }
 
     /** Called every server tick while harvesting. READY means that a normal log swing is in range. */
-    public Outcome tickToward(BlockPos log) { return tickToward(log, true); }
+    public Outcome tickToward(BlockPos log) { return tickToward(log, true, LEAF_SUPPORTS); }
 
     /**
      * The same climb toward a block he breaks — a log of the trunk, or a leaf of a crown that stands above every stand cell
@@ -84,8 +103,17 @@ public final class CompanionPillar {
      * или подстроиться»). A crown of leaves has no branch to switch to, so {@code wood} only decides what a swing over the
      * column means.
      */
-    public Outcome tickToward(BlockPos block, boolean wood) {
+    public Outcome tickToward(BlockPos block, boolean wood) { return tickToward(block, wood, LEAF_SUPPORTS); }
+
+    /**
+     * The same climb with its own limit on the steps: a leaf crown keeps {@link #LEAF_SUPPORTS}, a way up to a solid block no
+     * walk reaches (PATH7, #105) may take {@link #WAY_SUPPORTS}. {@code wood} false means the block is not a log: any block
+     * that is not air, so obsidian and stone are climbed to as a leaf crown is.
+     */
+    public Outcome tickToward(BlockPos block, boolean wood, int maxSupports) {
         if (!(owner.level() instanceof ServerLevel level) || recovering) return Outcome.FAILED;
+        limit = Math.clamp(maxSupports, 1, WAY_SUPPORTS);
+        way = limit > LEAF_SUPPORTS;
         if (!level.hasChunkAt(block) || (wood ? !level.getBlockState(block).is(BlockTags.LOGS) : level.getBlockState(block).isAir())) return Outcome.FAILED;
         if (owner.distanceToSqr(block.getX() + 0.5D, block.getY() + 0.5D, block.getZ() + 0.5D) <= REACH_SQR) {
             if (jumpCell == null && owner.onGround()) return Outcome.READY;
@@ -104,9 +132,9 @@ public final class CompanionPillar {
 
         int needed = requiredSteps(block, base);
         if (needed < 0) return fail("С этой опоры не достану до соседней ветки");
-        if (needed > MAX_SUPPORTS) return fail("Верхушка слишком высокая для короткой опоры");
+        if (needed > limit) return fail("Верхушка слишком высокая для короткой опоры");
         if (soilCount() < Math.max(0, needed - supports.size())) return fail("Для подъёма не хватает земли в сумке");
-        if (++attemptTicks > MAX_ATTEMPT_TICKS || !level.hasChunkAt(base)) return fail("Не получилось подняться, поищу дерево пониже");
+        if (++attemptTicks > attemptBudget() || !level.hasChunkAt(base)) return fail("Не получилось подняться, поищу дерево пониже");
         if (lastProgress == null || owner.position().distanceToSqr(lastProgress) >= 0.0025D) {
             lastProgress = owner.position();
             stalledTicks = 0;
@@ -141,7 +169,7 @@ public final class CompanionPillar {
         if (!owner.onGround()) return Outcome.WORKING;
         if (Math.abs(owner.getY() - surfaceY) > 0.2D) return fail("Здесь неудобно подниматься, поищу другое место");
         if (owner.distanceToSqr(block.getX() + 0.5D, block.getY() + 0.5D, block.getZ() + 0.5D) <= REACH_SQR) return Outcome.READY;
-        if (supports.size() >= needed || supports.size() >= MAX_SUPPORTS || cooldown > 0) return Outcome.WORKING;
+        if (supports.size() >= needed || supports.size() >= limit || cooldown > 0) return Outcome.WORKING;
 
         BlockPos placement = base.above(supports.size());
         // A branch of the same crown hanging over the column is not an obstacle: it is the next log to chop from here.
@@ -164,6 +192,9 @@ public final class CompanionPillar {
         owner.getNavigation().stop();
         owner.getMoveControl().setWantedPosition(base.getX() + 0.5D, owner.getY(), base.getZ() + 0.5D, 0.35D);
         jumpTicks++;
+        // The game holds a jump back for ten ticks after any other one (a hop onto a step on the way here): asked again
+        // every eighth tick, as the self-rescue asks its own step, so a held-back first ask is not a failed climb.
+        if (owner.onGround() && jumpTicks % 8 == 1 && owner.getDeltaMovement().y <= 0.01D) owner.getJumpControl().jump();
         AABB cell = new AABB(jumpCell);
         if (owner.getBoundingBox().minY >= jumpCell.getY() + 1.001D
                 && !owner.getBoundingBox().intersects(cell)) {
@@ -194,6 +225,8 @@ public final class CompanionPillar {
         if (jumpTicks > 28 && owner.onGround()) {
             jumpCell = null;
             cooldown = STEP_INTERVAL;
+            if (way) dev.aicompanion.CompanionDiagnostics.event(owner.diagnosticTrace(), "way_jump_failed", "entity", owner.getUUID(),
+                    "failed", failedJumps + 1, "ticks", jumpTicks, "feetY", owner.getY(), "base", base);
             if (++failedJumps >= 2) return fail("Здесь не получается подпрыгнуть, поищу другое место");
         }
         return Outcome.WORKING;
@@ -296,7 +329,7 @@ public final class CompanionPillar {
     /**
      * The cells a short column could be built from to reach this block: ground under the crown, room over the feet for the
      * body and the supports, and at least one step up — a cell he is already within a swing from is no column's cell — no more
-     * than his soil and {@link #MAX_SUPPORTS} allow. Empty when he cannot build up to it: no soil in the bag, a ceiling over
+     * than his soil and {@link #LEAF_SUPPORTS} allow. Empty when he cannot build up to it: no soil in the bag, a ceiling over
      * the column, or a crown too high for a short column.
      */
     public Set<BlockPos> buildCells(BlockPos block) { return buildCells(block, soilCount()); }
@@ -305,7 +338,7 @@ public final class CompanionPillar {
      * The same cells as if the bag held the soil for the longest column: what the crown asks of him with the soil aside. When
      * these are there and {@link #buildCells} has none, the soil is what he lacks for it.
      */
-    public Set<BlockPos> buildCellsWithAnySoil(BlockPos block) { return buildCells(block, MAX_SUPPORTS); }
+    public Set<BlockPos> buildCellsWithAnySoil(BlockPos block) { return buildCells(block, LEAF_SUPPORTS); }
 
     /** The soil he carries for a column now: what the bag and the hands hold. */
     public int soilCarried() { return soilCount(); }
@@ -316,26 +349,26 @@ public final class CompanionPillar {
      */
     public int columnSteps(BlockPos block) {
         int longest = 0;
-        for (int steps : columns(block).values()) longest = Math.max(longest, steps);
+        for (int steps : columns(block, LEAF_SUPPORTS).values()) longest = Math.max(longest, steps);
         return longest;
     }
 
     private Set<BlockPos> buildCells(BlockPos block, int supply) {
         Set<BlockPos> cells = new HashSet<>();
-        for (var column : columns(block).entrySet())
-            if (column.getValue() > 0 && column.getValue() <= MAX_SUPPORTS && column.getValue() <= supply) cells.add(column.getKey());
+        for (var column : columns(block, LEAF_SUPPORTS).entrySet())
+            if (column.getValue() > 0 && column.getValue() <= LEAF_SUPPORTS && column.getValue() <= supply) cells.add(column.getKey());
         return cells;
     }
 
     /** The cells a column to this block could stand at, each with the steps it asks: ground below, room over it, the reach. */
-    private java.util.Map<BlockPos, Integer> columns(BlockPos block) {
+    private java.util.Map<BlockPos, Integer> columns(BlockPos block, int limit) {
         java.util.Map<BlockPos, Integer> cells = new java.util.LinkedHashMap<>();
         if (!(owner.level() instanceof ServerLevel level) || !level.hasChunkAt(block)) return cells;
-        for (int down = 1; down <= MAX_SUPPORTS + 2; down++) for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
+        for (int down = 1; down <= limit + 2; down++) for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
             BlockPos feet = block.offset(dx, -down, dz);
             if (!safeFoundation(level, feet.below())) continue;
             int steps = requiredSteps(block, feet);
-            if (steps < 0 || steps > MAX_SUPPORTS || !columnClearable(level, feet, steps)) continue;
+            if (steps < 0 || steps > limit || !columnClearable(level, feet, steps)) continue;
             cells.put(feet.immutable(), steps);
         }
         return cells;
@@ -353,7 +386,7 @@ public final class CompanionPillar {
     private Column planColumn(ServerLevel level, BlockPos log) {
         int supply = soilCount();
         if (supply == 0) { failureReason = "Для подъёма не хватает земли в сумке"; return null; }
-        failureReason = log.getY() + 0.5D - owner.getY() > MAX_SUPPORTS + 5.0D
+        failureReason = log.getY() + 0.5D - owner.getY() > limit + 5.0D
                 ? "Верхушка слишком высокая для короткой опоры" : "Не нашёл безопасного места для подъёма";
         Column best = null;
         BlockPos origin = owner.blockPosition();
@@ -364,8 +397,8 @@ public final class CompanionPillar {
                 BlockPos feet = new BlockPos(log.getX() + dx, origin.getY() + dy, log.getZ() + dz);
                 if (feet.distSqr(origin) > 100.0D || !safeFoundation(level, feet.below())) continue;
                 int steps = requiredSteps(log, feet);
-                if (steps > supply && steps <= MAX_SUPPORTS) failureReason = "Для подъёма не хватает земли в сумке";
-                if (steps <= 0 || steps > MAX_SUPPORTS || steps > supply || !columnClearable(level, feet, steps)) continue;
+                if (steps > supply && steps <= limit) failureReason = "Для подъёма не хватает земли в сумке";
+                if (steps <= 0 || steps > limit || steps > supply || !columnClearable(level, feet, steps)) continue;
                 if (!level.getEntities(owner, new AABB(feet).expandTowards(0, steps + 2, 0), CompanionPillar::blocksSupport).isEmpty()) continue;
                 Path path = owner.work.route.toCells(Set.of(feet));
                 if (path == null) continue;
@@ -563,6 +596,9 @@ public final class CompanionPillar {
         return Outcome.FAILED;
     }
 
+    /** The ticks one climb may take: a leaf crown's six steps in 200, a way's steps at {@link #WAY_STEP_TICKS} each. */
+    private int attemptBudget() { return way ? Math.max(MAX_ATTEMPT_TICKS, limit * WAY_STEP_TICKS) : MAX_ATTEMPT_TICKS; }
+
     private void clearColumn() {
         breaking.reset();
         base = target = jumpCell = branch = null;
@@ -570,6 +606,8 @@ public final class CompanionPillar {
         lastProgress = null;
         attemptTicks = stalledTicks = jumpTicks = failedJumps = cooldown = cleanupTicks = 0;
         recovering = false;
+        limit = LEAF_SUPPORTS;
+        way = false;
         keptHand = null;
         keepTool = false;
     }
@@ -596,7 +634,7 @@ public final class CompanionPillar {
         if (!owner.level().dimension().location().toString().equals(tag.getString("PillarDimension"))) return;
         base = BlockPos.of(tag.getLong("PillarBase"));
         ListTag saved = tag.getList("PillarSupports", Tag.TAG_COMPOUND);
-        for (int index = 0; index < saved.size() && supports.size() < MAX_SUPPORTS; index++) {
+        for (int index = 0; index < saved.size() && supports.size() < WAY_SUPPORTS; index++) {
             CompoundTag entry = saved.getCompound(index);
             BlockPos pos = BlockPos.of(entry.getLong("Pos"));
             ResourceLocation id = ResourceLocation.tryParse(entry.getString("Block"));

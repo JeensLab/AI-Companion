@@ -54,6 +54,8 @@ public final class CompanionRoute {
     private record Wide(long at, boolean exact) { }
     private final Map<Set<BlockPos>, Wide> wideFailed = new HashMap<>();
     private long changesSeen;
+    /** Whether the last failed search proved there is no way: its wide pass saw the whole reachable region, not a spent budget. */
+    private boolean provenMiss;
 
     CompanionRoute(CompanionWork w) { this.w = w; }
 
@@ -87,6 +89,7 @@ public final class CompanionRoute {
 
     private Reach find(Set<BlockPos> cells, int accuracy, java.util.function.Function<BlockPos, BlockPos> blockOf) {
         CompanionEntity owner = w.owner;
+        provenMiss = false;
         Kind kind = Kind.WALK;
         boolean wideGoing = nav().running(cells, accuracy, nav().followRange(3));
         Path path = wideGoing ? null : nav().search(cells, accuracy, nav().followRange(1));
@@ -102,8 +105,11 @@ public final class CompanionRoute {
             // Failed wide for these cells; for a set that holds them all too, if that search ran out of range (a group that failed has
             // failed for each of its faces), not if it ran out of budget (it may have spent it on a near cell that cannot be reached).
             for (var entry : wideFailed.entrySet())
-                if (now - entry.getValue().at() < 100 && (entry.getValue().exact() ? entry.getKey().equals(cells) : entry.getKey().containsAll(cells)))
+                if (now - entry.getValue().at() < 100 && (entry.getValue().exact() ? entry.getKey().equals(cells) : entry.getKey().containsAll(cells))) {
+                    // A failure that ran out of range holds for every subset of those cells: no way is proven.
+                    provenMiss = !entry.getValue().exact();
                     return new Reach(Kind.NONE, null, null, 0, "no route");
+                }
             if (!(owner.getNavigation() instanceof CompanionNavigation nav)) return new Reach(Kind.NONE, null, null, 0, "no route");
             path = nav.wide(cells, accuracy);
             // The wide search goes on at the next tick (this tick's cells are spent): not a failure.
@@ -112,6 +118,8 @@ public final class CompanionRoute {
                 if (wideFailed.size() > 64) wideFailed.values().removeIf(old -> now - old.at() >= 100);
                 if (wideFailed.size() > 256) wideFailed.clear();
                 wideFailed.put(Set.copyOf(cells), new Wide(now, nav.lastSearchExhausted()));
+                // Out of range is a proof for these cells and every subset; out of budget is a proof for this set alone.
+                provenMiss = !nav.lastSearchExhausted();
                 // It went on while the short one was not asked: the short one, from here and in the world as it is now, first.
                 if (wideGoing) return new Reach(Kind.NONE, null, null, 0, BUSY);
                 return new Reach(Kind.NONE, null, null, 0, "no route");
@@ -257,11 +265,64 @@ public final class CompanionRoute {
             w.path = reach.path();
             if (reach.kind() == Kind.FAR) setFar(w.path);
             // A failed search was told by nearest() already.
-            if (!reach.found()) { meter = null; return -1; }
+            if (!reach.found()) {
+                int way = buildUp(level, block, reach);
+                if (way < 0) { meter = null; return -1; }
+                return way;
+            }
         }
         if (w.path == null || !w.path.canReach()) { told("FAILED", "no route"); return -1; }
         walk(w.path);
         return 0;
+    }
+
+    /**
+     * A way up to a block no walk reaches (PATH7, #105). Only where the miss is proven — the wide search saw the whole reachable
+     * region, or no stand cell reaches the block at all — the block stands two to sixteen blocks above his feet within four
+     * across, and the work's own stairs or tunnel are not the cells he would stand on (CompanionWork.allowsRouteRecovery, the
+     * mirror of the recovery's own guard). The column is a leaf crown's climb with its own limit; the switch is the player's.
+     * 1: the block is in reach now, 0: climbing, -1: no way, the caller refuses as before.
+     */
+    private int buildUp(ServerLevel level, BlockPos block, Reach reach) {
+        CompanionEntity owner = w.owner;
+        if (!owner.buildWay()) return noWay(block, "switch off");
+        // The work's own stairs and its ore tunnel are the way back, not a trap to build out of (CompanionWork.allowsRouteRecovery).
+        if (!w.allowsRouteRecovery()) return noWay(block, "work keeps its own way");
+        if (owner.recovery.active()) return noWay(block, "recovery running");
+        // A walk that was not searched at all, or whose cells were spent, is no proof of no way: nearest() answered it already.
+        if (!provenMiss && !"no stand cell".equals(reach.reason())) return noWay(block, "not proven: " + reach.reason());
+        int rise = block.getY() - owner.blockPosition().getY();
+        if (rise < 2) return noWay(block, "not above: rise " + rise);
+        if (rise > CompanionPillar.WAY_HEIGHT) return noWay(block, "too high: rise " + rise);
+        double dx = block.getX() + .5D - owner.getX(), dz = block.getZ() + .5D - owner.getZ();
+        if (dx * dx + dz * dz > 16.0D) return noWay(block, "too far across: " + Math.sqrt(dx * dx + dz * dz));
+        CompanionPillar pillar = owner.temporaryPillar;
+        // A leaf crown's column is not ours to raise; one coming down is left to finish.
+        if (pillar.isRecovering()) return noWay(block, "a column is coming down");
+        // The column must be ticked every tick of its climb, the jump's own arc included: that is when its step is set down.
+        if (pillar.isWayActive()) return tickWay(pillar, block);
+        if (pillar.isActive()) return noWay(block, "a leaf crown's column stands");
+        // Between two steps before the column is raised (a hop on the way to it): the block is not given up, asked again next tick.
+        if (!owner.onGround()) return 0;
+        return tickWay(pillar, block);
+    }
+
+    private int tickWay(CompanionPillar pillar, BlockPos block) {
+        CompanionPillar.Outcome outcome = pillar.tickToward(block, false, CompanionPillar.WAY_SUPPORTS);
+        if (outcome == CompanionPillar.Outcome.FAILED) return noWay(block, "column failed: " + pillar.failureReason());
+        return outcome == CompanionPillar.Outcome.READY ? 1 : 0;
+    }
+
+    /** The last way refusal told to the journal, so a tick-by-tick retry says it once. */
+    private String wayRefusal = "";
+
+    private int noWay(BlockPos block, String why) {
+        if (!why.equals(wayRefusal)) {
+            wayRefusal = why;
+            dev.aicompanion.CompanionDiagnostics.event(w.owner.diagnosticTrace(), "way_refused", "entity", w.owner.getUUID(),
+                    "why", why, "block", block, "position", w.owner.blockPosition());
+        }
+        return -1;
     }
 
     private void setFar(Path path) {
