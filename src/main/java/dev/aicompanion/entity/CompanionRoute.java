@@ -266,7 +266,7 @@ public final class CompanionRoute {
             if (reach.kind() == Kind.FAR) setFar(w.path);
             // A failed search was told by nearest() already.
             if (!reach.found()) {
-                int way = buildUp(level, block, reach);
+                int way = buildUp(block, reach);
                 if (way < 0) { meter = null; return -1; }
                 return way;
             }
@@ -283,7 +283,7 @@ public final class CompanionRoute {
      * mirror of the recovery's own guard). The column is a leaf crown's climb with its own limit; the switch is the player's.
      * 1: the block is in reach now, 0: climbing, -1: no way, the caller refuses as before.
      */
-    private int buildUp(ServerLevel level, BlockPos block, Reach reach) {
+    private int buildUp(BlockPos block, Reach reach) {
         CompanionEntity owner = w.owner;
         if (!owner.buildWay()) return noWay(block, "switch off");
         // The work's own stairs and its ore tunnel are the way back, not a trap to build out of (CompanionWork.allowsRouteRecovery).
@@ -335,6 +335,7 @@ public final class CompanionRoute {
 
     private void begin(BlockPos block) {
         told("ABANDONED", "replaced");
+        wayRefusal = "";
         goal = block.immutable(); farUntil = 0; from = w.owner.blockPosition(); began = w.owner.level().getGameTime(); far = false;
         meter = CompanionNavigation.meterOf(w.owner);
     }
