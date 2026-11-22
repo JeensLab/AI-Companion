@@ -193,7 +193,9 @@ final class CompanionPortalBuild {
         int need = (int) frame.obsidian().stream().filter(cell -> !level.getBlockState(cell).is(Blocks.OBSIDIAN)).count();
         int have = w.items.countCarried(Items.OBSIDIAN);
         if (have < need) return shortage("Для портала нужно " + need + " обсидиана, у меня " + have + ".", "minecraft:obsidian", need);
-        if (!lighter() && w.items.countCarried(Items.FIRE_CHARGE) == 0 && chargeChest(level, center) == null)
+        // The gate reads the frame's cell, as the search in next() does: a chest found from the player and lost from the frame left him
+        // building and then refusing the fire he had.
+        if (!lighter() && w.items.countCarried(Items.FIRE_CHARGE) == 0 && chargeChest(level, frame.fire()) == null)
             return shortage(NO_LIGHT, "minecraft:flint_and_steel", 1);
         // In sand there is no block to prop the top with: said now, not with eight obsidian set.
         if (!propped(level)) return CompanionActionResult.failed(NO_PROP);

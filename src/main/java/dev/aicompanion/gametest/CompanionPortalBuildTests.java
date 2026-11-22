@@ -394,6 +394,35 @@ public final class CompanionPortalBuildTests {
         });
     }
 
+    /**
+     * A fire charge only in a chest that lies near the player but more than sixteen blocks from the frame: not the walk he takes for a
+     * charge, so it is no charge at all — said before the frame is built, not after eight of ten obsidian are set and he refuses anyway.
+     * The gate reads the frame's cell, as the search for the chest does: read from the player, a chest found at the order was lost at the
+     * fire.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200, batch = PORTALS)
+    public static void aChargeTooFarFromTheFrameIsSaidBeforeAnyObsidianIsSet(GameTestHelper h) {
+        ground(h);
+        // A frame stopped with eight of its ten obsidian: its two bottom blocks are still to be set, so there is building to be done.
+        standingFrame(h, 2, 6);
+        h.setBlock(new BlockPos(3, GROUND, 6), Blocks.AIR);
+        h.setBlock(new BlockPos(4, GROUND, 6), Blocks.AIR);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.OBSIDIAN, 10));
+        BlockPos chest = new BlockPos(20, GROUND + 1, 8);
+        placedByPlayer(h, c, chest, Blocks.CHEST);
+        ((net.minecraft.world.Container) h.getLevel().getBlockEntity(h.absolutePos(chest))).setItem(0, new ItemStack(Items.FIRE_CHARGE));
+        var future = run(h, c, "[{\"action\":\"build_portal\"}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(!report.contains("Портал готов."), "He lit it: " + report);
+            h.assertTrue(count(c, Items.OBSIDIAN) == 10, "Obsidian was set before the fire was looked for: " + c.getStoredItemsSummary() + " — " + report);
+            h.assertTrue(blocks(h, Blocks.OBSIDIAN).size() == 8 && blocks(h, Blocks.NETHER_PORTAL).isEmpty(), "The frame was finished or lit: " + report);
+            h.assertTrue(chestCount(h, chest, Items.FIRE_CHARGE) == 1, "The far chest was walked to: " + chestCount(h, chest, Items.FIRE_CHARGE));
+        });
+    }
+
     /** Two fire charges in his bag and no flint and steel: one lights the frame, the other stays whole in the bag. */
     @GameTest(template = "tall_tree", timeoutTicks = 1200, batch = PORTALS)
     public static void aStackOfTwoFireChargesLeavesOneInTheBag(GameTestHelper h) {
