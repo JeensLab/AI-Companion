@@ -39,7 +39,7 @@ import static dev.aicompanion.gametest.CompanionMineFightTests.zombie;
 public final class CompanionMineGuardTests {
     private static final int FUSE_TICKS = 200, STAND = 6, LIT_AT = 8, FRESH_AT = 1;
     private static final double SLACK = .25;
-    private static final float KEPT = 10, WEAK = 5, SPENT = 7, NEARLY_FIT = 17, FIT = 18;
+    private static final float KEPT = 10, WEAK = 5, SPENT = 7, NEARLY_FIT = 17, FIT = 18, TWO_BLOWS = 8;
     private static final int PIT_FROM = 8, PIT_TO = 10, PIT_DEPTH = 4, DROP_AT = 12, PASSAGE_LENGTH = 4, PASSAGE_OFFSET = 2, GRACE_TICKS = 6, MAX_CHANGES = 2, HOLD_TICKS = 80, RELEASED_TICKS = 400;
     private static final double CLOSER = 1.5;
     private static final int ROOM_FROM = 4, ROOM_TO = 16, ROOM_SIDE = 6, RUN_TICKS = 20, CLIFF_DEPTH = 6, DEAD_END_LENGTH = 3;
@@ -232,6 +232,39 @@ public final class CompanionMineGuardTests {
         place(c, foot.offset(STAND, 0, 0));
         Zombie zombie = zombie(h, foot.offset(STAND - 1, 0, 0));
         watchRun(h, c, creeperAt(h, foot, STAND + 3, 0), true, true, () -> { if (zombie.isAlive() && zombie.getTarget() == null) zombie.setTarget(c); });
+    }
+
+    /**
+     * Stuck where he stands (water under a ledge did that in run ct36 20261031 void-4: twenty ticks of the run went nowhere), a lit creeper
+     * two blows from death stands two blocks off with a wall at its back: the first blow leaves it one blow from death (eight health: that
+     * blow may still land with the pickaxe's damage, the sword is drawn the same tick), and that blow is struck before the fuse burns down.
+     * It dies by the sword, and no blast comes.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aLitCreeperOneBlowFromDeathWithinReachIsFinishedNotRunFrom(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        BlockPos foot = chamber(h, carveMine(h, c, 0));
+        for (int dy = 0; dy < 2; dy++) h.getLevel().setBlock(foot.offset(STAND + 3, dy, 0), Blocks.STONE.defaultBlockState(), 2 | 16);
+        place(c, foot.offset(STAND, 0, 0));
+        c.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        Creeper creeper = creeperAt(h, foot, STAND + 2.5, 0);
+        creeper.setHealth(TWO_BLOWS);
+        creeper.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        creeper.ignite();
+        start(h, c, 1);
+        float health = c.getHealth();
+        h.onEachTick(() -> {
+            String trace = " | creeper " + (creeper.isAlive() ? "fuse " + String.format("%.2f", creeper.getSwelling(0)) + "," : "gone,") + " health " + creeper.getHealth()
+                    + "; he: health " + c.getHealth() + " | " + report(c);
+            h.assertTrue(c.getHealth() >= health, "The blast hurt him" + trace);
+            if (creeper.isAlive()) {
+                h.assertTrue(h.getTick() < FUSE_TICKS, "The lit creeper never blew" + trace);
+                return;
+            }
+            h.assertTrue(creeper.getHealth() <= 0, "The creeper blew up, it was not finished with the sword" + trace);
+            h.succeed();
+        });
     }
 
     /**

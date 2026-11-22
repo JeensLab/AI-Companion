@@ -4,6 +4,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.util.LandRandomPos;
 import net.minecraft.world.entity.monster.Creeper;
@@ -71,6 +72,8 @@ final class CompanionCreeperGuard {
     private static final double LUNGE = 4;
     /** {@link Creeper#getSwelling} counts the fuse over this many ticks. */
     private static final int SWELL_TICKS = 28;
+    /** The blow that kills a lit creeper ({@link #finishes}) is waited for only with this many ticks of the fuse to spare. */
+    private static final int FINISH_SPARE = 2;
     /**
      * The house: a creeper this near its middle is walked away before the fight, until it is this far from it; he waits for it when it falls
      * this far behind, so that it keeps after him.
@@ -425,6 +428,7 @@ final class CompanionCreeperGuard {
      * temporary blocks, taken up again; in a cave outside it the wall stays); by the house, or with no blocks, a blow at it: it throws it back, which is more than standing.
      */
     private void retreat(ServerLevel level, Creeper creeper) {
+        if (finishes(creeper)) { finish(creeper); return; }
         Vec3 step = escape.step(level, threats(level));
         if (step != null) {
             mention(escape.holding() ? "hold" : "path", creeper, escape.goal());
@@ -454,6 +458,25 @@ final class CompanionCreeperGuard {
     private boolean openAhead(ServerLevel level, Vec3 way) {
         BlockPos ahead = BlockPos.containing(owner.position().add(way));
         return level.noCollision(owner, owner.getBoundingBox().move(way)) && !CompanionLava.at(level, ahead) && !CompanionLava.at(level, ahead.above());
+    }
+
+    /**
+     * One blow of what he holds kills this lit creeper, it is within his reach, and his swing is ready {@link #FINISH_SPARE} ticks before the
+     * fuse burns down: the blow, not the run. A dead creeper does not blow; a run may not get clear (run ct36 20261031 void-4: five health
+     * left two blocks off, twenty ticks of the run through water went nowhere, and the blow came the tick it blew).
+     */
+    private boolean finishes(Creeper creeper) {
+        return creeper.getHealth() <= owner.getAttributeValue(Attributes.ATTACK_DAMAGE) && owner.isWithinMeleeAttackRange(creeper)
+                && owner.combat.ticksToSwing() + FINISH_SPARE <= (1 - creeper.getSwelling(0)) * SWELL_TICKS;
+    }
+
+    /** He stands in reach until his swing is ready, and strikes. */
+    private void finish(Creeper creeper) {
+        owner.getNavigation().stop();
+        if (!owner.combat.swingReady()) { mention("finish", creeper, null); return; }
+        boolean landed = strike(creeper);
+        if (landed) landed();
+        event("finished", creeper, -1, "landed", landed);
     }
 
     /**
