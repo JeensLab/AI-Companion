@@ -162,6 +162,15 @@ public final class OpenRouterConfig {
             .translation("config.aicompanion.fence_gates")
             .define("fenceGates", true);
 
+    /**
+     * Whether he builds a way up to a block no walk reaches (PATH7, #105): a short column of his own soil when the target stands
+     * above him and the route search has proven there is no path. On unless the player turns it off.
+     */
+    public static final ModConfigSpec.BooleanValue BUILD_WAY = BUILDER
+            .comment("Build a way up to a block no walk reaches: a column of his own soil, taken back afterwards. Off: such a block is refused as before.")
+            .translation("config.aicompanion.build_way")
+            .define("buildWay", true);
+
     public static final ModConfigSpec.BooleanValue LONG_TERM_MEMORY = BUILDER
             .comment("Let the companion remember facts, promises and recent talk between sessions, adapt his character and raise topics of his own. Stored in the world save.")
             .translation("config.aicompanion.long_term_memory")

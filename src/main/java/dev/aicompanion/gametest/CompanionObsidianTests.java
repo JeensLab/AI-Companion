@@ -97,6 +97,98 @@ public final class CompanionObsidianTests {
         });
     }
 
+    /**
+     * The live bug of #105 (PATH7): an obsidian ten blocks above his feet, nothing under it, so no stand cell reaches it.
+     * With a diamond pickaxe and soil in his bag, «Олег, добудь обсидиан»: he builds a column of his own soil up to the block,
+     * mines it from the top, and comes down with every block of the column back in the bag — the ground left as it was.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 5000)
+    public static void obsidianTenAboveHisFeetIsMinedFromAColumnOfHisOwnSoil(GameTestHelper h) {
+        ground(h);
+        BlockPos obsidian = new BlockPos(12, GROUND + 11, 16);
+        h.setBlock(obsidian, Blocks.OBSIDIAN);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.DIRT, 20));
+        double groundY = c.getY();
+        int[] supports = {0};
+        double[] highest = {0};
+        h.onEachTick(() -> { supports[0] = Math.max(supports[0], c.getTemporarySupportCount()); highest[0] = Math.max(highest[0], c.getY()); });
+        String command = CompanionLocalCommands.route("Олег, добудь обсидиан", "Олег");
+        h.assertTrue(command != null, "«Олег, добудь обсидиан» went to the model");
+        var plan = CompanionLocalCommands.actions(command);
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-way", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1, "Not the obsidian above him: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertBlockPresent(Blocks.AIR, obsidian);
+            h.assertTrue(supports[0] >= 7, "He never built up to it: supports " + supports[0] + ", highest y " + highest[0] + ", " + report);
+            h.assertTrue(highest[0] > groundY + 5, "He never stood above the ground: highest y " + highest[0] + ", " + report);
+            h.assertTrue(c.onGround() && Math.abs(c.getY() - groundY) < 0.6, "He did not come back down: y " + c.getY() + ", " + report);
+            h.assertTrue(c.getTemporarySupportCount() == 0, "The column is still standing: " + c.getTemporarySupportCount());
+            h.assertTrue(dirtAboveGround(h) == 0, "A block of his column was left standing");
+            h.assertTrue(count(c, Items.DIRT) == 20, "The soil of his column was lost: " + count(c, Items.DIRT));
+            h.assertBlockPresent(Blocks.GRASS_BLOCK, new BlockPos(12, GROUND, 16));
+        });
+    }
+
+    /**
+     * An obsidian two blocks up on a stone ledge beside him, its drop resting on the ledge: a walk reaches a stand cell, so no
+     * column is built and none of his soil is spent.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void obsidianHeCanWalkToIsNotBuiltUpTo(GameTestHelper h) {
+        ground(h);
+        BlockPos ledge = new BlockPos(12, GROUND + 1, 16);
+        BlockPos obsidian = ledge.above();
+        h.setBlock(ledge, Blocks.STONE);
+        h.setBlock(obsidian, Blocks.OBSIDIAN);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.DIRT, 20));
+        int[] supports = {0};
+        h.onEachTick(() -> supports[0] = Math.max(supports[0], c.getTemporarySupportCount()));
+        String command = CompanionLocalCommands.route("Олег, добудь обсидиан", "Олег");
+        h.assertTrue(command != null, "«Олег, добудь обсидиан» went to the model");
+        var plan = CompanionLocalCommands.actions(command);
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-walkable", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1, "Not the obsidian he could walk to: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertBlockPresent(Blocks.AIR, obsidian);
+            h.assertTrue(supports[0] == 0, "A column was built to a block the walk reached: " + supports[0]);
+            h.assertTrue(dirtAboveGround(h) == 0, "A block of his column was left standing");
+            h.assertTrue(count(c, Items.DIRT) == 20, "The soil was spent on a reachable block: " + count(c, Items.DIRT));
+        });
+    }
+
+    /** The switch off: the same obsidian above him is left, no column is raised and none of his soil is spent. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void withTheWaySwitchedOffTheObsidianAboveIsLeft(GameTestHelper h) {
+        ground(h);
+        BlockPos obsidian = new BlockPos(12, GROUND + 11, 16);
+        h.setBlock(obsidian, Blocks.OBSIDIAN);
+        CompanionEntity c = spawn(h);
+        c.setBuildWay(false);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.DIRT, 20));
+        int[] supports = {0};
+        h.onEachTick(() -> supports[0] = Math.max(supports[0], c.getTemporarySupportCount()));
+        String command = CompanionLocalCommands.route("Олег, добудь обсидиан", "Олег");
+        h.assertTrue(command != null, "«Олег, добудь обсидиан» went to the model");
+        var plan = CompanionLocalCommands.actions(command);
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-way-off", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            h.assertTrue(count(c, Items.OBSIDIAN) == 0, "The obsidian above was taken with the switch off: " + count(c, Items.OBSIDIAN));
+            h.assertBlockPresent(Blocks.OBSIDIAN, obsidian);
+            h.assertTrue(supports[0] == 0, "A column was built with the switch off: " + supports[0]);
+            h.assertTrue(count(c, Items.DIRT) == 20, "The soil was spent with the switch off: " + count(c, Items.DIRT));
+        });
+    }
+
     /** No obsidian about, lava there: it is still cooled with his bucket of water, and the plan says so first. */
     @GameTest(template = "tall_tree", timeoutTicks = 20)
     public static void lavaWithoutObsidianStillNeedsHisWaterBucket(GameTestHelper h) {
@@ -660,6 +752,14 @@ public final class CompanionObsidianTests {
             else if (border) h.setBlock(new BlockPos(x, y, z), Blocks.BEDROCK);
             else h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
         }
+    }
+
+    /** The soil of a column above the ground of the test: what a column of his leaves behind if it is not taken back. */
+    private static int dirtAboveGround(GameTestHelper h) {
+        int count = 0;
+        for (int x = 1; x < 31; x++) for (int z = 1; z < 31; z++) for (int y = GROUND + 1; y <= GROUND + 12; y++)
+            if (h.getBlockState(new BlockPos(x, y, z)).is(Blocks.DIRT)) count++;
+        return count;
     }
 
     private static CompanionEntity spawn(GameTestHelper h) {
