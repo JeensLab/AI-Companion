@@ -36,6 +36,8 @@ final class CompanionExpeditionFight {
     private final CompanionWork w;
     private final CompanionEntity owner;
     private long since = -1, lastBusy, chasedSince;
+    /** His own tick count when the retreat now under way began ({@link #caught}); below nought while he is not retreating. */
+    private int retreatSince = -1;
     private Item tool;
     private LivingEntity chased;
     private final Set<UUID> givenUp = new HashSet<>();
@@ -47,7 +49,11 @@ final class CompanionExpeditionFight {
 
     /** True when the expedition must stand still this tick: a foe is to be fought. False lets the work (or the retreat) go on. */
     boolean hold(ServerLevel level, boolean retreating) {
-        if (retreating) return false;
+        if (retreating) {
+            if (retreatSince < 0) retreatSince = owner.tickCount;
+            return false;
+        }
+        retreatSince = -1;
         long now = level.getGameTime();
         // At low health with his way up under him and a mob on him that he can leave behind, the fight is over, whatever else is about: the climb takes the turn.
         if (fleeable()) { settle(now); return false; }
@@ -115,6 +121,7 @@ final class CompanionExpeditionFight {
 
     void reset() {
         since = -1;
+        retreatSince = -1;
         tool = null;
         chased = null;
         givenUp.clear();
@@ -170,14 +177,16 @@ final class CompanionExpeditionFight {
     }
 
     /**
-     * A foe within his reach struck him less than {@link #CAUGHT_TICKS} ago: the run up is not leaving it behind, whatever its speed (its blows
-     * throw him back, or it stands on his way up). Run ct68 20261031 descent: sixty ticks of the retreat with zombies in reach and his swing
-     * ready, four blows taken and none dealt.
+     * A hostile foe within his reach struck him since the retreat began, less than {@link #CAUGHT_TICKS} ago: the run up is not leaving it
+     * behind, whatever its speed (its blows throw him back, or it stands on his way up). The blow that sent him up does not count: an outrun
+     * foe lands that one at the start. Run ct68 20261031 descent: sixty ticks of the retreat with zombies in reach and his swing ready, four
+     * blows taken and none dealt.
      */
     private boolean caught() {
         LivingEntity by = owner.getLastHurtByMob();
-        return by != null && by.isAlive() && !(by instanceof RangedAttackMob) && owner.isWithinMeleeAttackRange(by)
-                && owner.tickCount - owner.getLastHurtByMobTimestamp() < CAUGHT_TICKS;
+        int at = owner.getLastHurtByMobTimestamp();
+        return by instanceof Monster && by.isAlive() && !(by instanceof RangedAttackMob) && owner.isWithinMeleeAttackRange(by)
+                && retreatSince >= 0 && at > retreatSince && owner.tickCount - at < CAUGHT_TICKS;
     }
 
     /** Low health, his way up under him, and a mob about that he can leave behind: whatever mob is on him, the work takes the turn to climb away (the melee goal would hold it). */
