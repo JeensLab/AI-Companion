@@ -32,10 +32,15 @@ final class CompanionBreath {
     /** The block over his water is broken only up to deepslate's hardness, and from no farther than a player's reach of it. */
     private static final float CUT_HARDNESS = 3;
     private static final double CUT_REACH = 4.5;
+    /** A cut not broken in this many ticks (out of reach after all, a block that does not give) is given up for the rest of the breath. */
+    private static final int CUT_PATIENCE = 200;
     private final CompanionEntity c;
     private final CompanionBlockBreaking breaking;
     /** The block over the top of his water that he breaks for air; null while there is a way to air or no such block. */
     private BlockPos cut;
+    /** When the cut was chosen, and whether one has been given up in this breath. */
+    private long cutSince;
+    private boolean cutGivenUp;
     private boolean active;
     private int unreachable;
     private long nextSearch;
@@ -52,11 +57,11 @@ final class CompanionBreath {
     boolean canContinue() { return active && c.isAlive() && (eyesInWater() || c.getAirSupply() < c.getMaxAirSupply()); }
 
     void begin() {
-        active = true; unreachable = 0; nextSearch = 0; way = List.of(); nearest = null;
+        active = true; unreachable = 0; nextSearch = 0; way = List.of(); nearest = null; cut = null; cutGivenUp = false;
         c.getNavigation().stop();
         if (c.hasActiveWorkOrder()) c.workStatus("Выныриваю подышать, потом вернусь к делу.");
     }
-    void end() { active = false; way = List.of(); nearest = null; cut = null; breaking.reset(); c.getNavigation().stop(); }
+    void end() { active = false; way = List.of(); nearest = null; dropCut(); c.getNavigation().stop(); }
 
     /** Going up for air and breathing: no dive holds him under meanwhile (CompanionSwimming, CompanionMobDrops.watch). */
     boolean active() { return active; }
@@ -80,10 +85,11 @@ final class CompanionBreath {
     private void search(long now) {
         nextSearch = now + AGAIN;
         way = wayToAir();
-        cut = null;
-        if (!way.isEmpty()) { unreachable = 0; return; }
+        if (!way.isEmpty()) { unreachable = 0; dropCut(); return; }
         nearest = nearestAir();
-        cut = airCut();
+        // The cut once chosen is kept while it holds (a drift of his does not move it and throw away the cracks), until its patience runs out.
+        if (cut != null && (now - cutSince > CUT_PATIENCE || !cuttable(cut))) { dropCut(); cutGivenUp = true; }
+        if (cut == null && !cutGivenUp && (cut = airCut()) != null) cutSince = now;
         if (cut != null) { unreachable = 0; return; }
         // No way for three looks: the work stops and says why, and he keeps swimming to the air he sees.
         if (++unreachable == 3 && c.work.isActive()) {
@@ -93,21 +99,41 @@ final class CompanionBreath {
 
     /**
      * The block over the top of the water he is in, when breaking it lets his head out (runs m20261031 void-4 and m7 descent: a pocket of
-     * water with a ceiling, no way to air, drowned where they stood): no harder than deepslate, not one that falls, and no water or lava over
-     * it or beside it to fill the cell. Null when there is none.
+     * water with a ceiling, no way to air, drowned where they stood); null when there is none. Only what {@link #cuttable} allows.
      */
     private BlockPos airCut() {
         var level = c.level();
         BlockPos top = c.blockPosition().above();
         if (!level.getFluidState(top).is(FluidTags.WATER)) return null;
         while (level.getFluidState(top.above()).is(FluidTags.WATER) && top.getY() < c.getBlockY() + UP) top = top.above();
-        BlockPos block = top.above();
+        return cuttable(top.above()) ? top.above() : null;
+    }
+
+    /**
+     * A block he may break for air, as the way out of a pit is cut (CompanionRecovery): soil, rock or leaves no harder than deepslate,
+     * not one that falls, not a plug of his mine or a cell it forbids, nothing anyone stands on, no chest or bench beside it, and no water or
+     * lava over it or beside it to fill the cell. A player's planks, glass or ladder stay.
+     */
+    private boolean cuttable(BlockPos block) {
+        var level = c.level();
         BlockState state = level.getBlockState(block);
         float hardness = state.getDestroySpeed(level, block);
-        if (state.getCollisionShape(level, block).isEmpty() || hardness < 0 || hardness > CUT_HARDNESS || state.getBlock() instanceof FallingBlock) return null;
-        if (!level.getFluidState(block.above()).isEmpty() || level.getBlockState(block.above()).getBlock() instanceof FallingBlock) return null;
-        for (Direction side : Direction.Plane.HORIZONTAL) if (!level.getFluidState(block.relative(side)).isEmpty()) return null;
-        return block;
+        if (!(CompanionQuarry.soil(state) || CompanionRecovery.rock(state) || state.is(net.minecraft.tags.BlockTags.LEAVES))
+                || hardness < 0 || hardness > CUT_HARDNESS || state.getBlock() instanceof FallingBlock) return false;
+        if (c.mineSite().seals().contains(block) || c.mineSite().forbidden(block) || CompanionMiningNavigation.supportsLivingEntity(c, block)) return false;
+        for (Direction side : Direction.values()) {
+            BlockPos near = block.relative(side);
+            var fluid = level.getFluidState(near);
+            if (fluid.is(FluidTags.LAVA) || side != Direction.DOWN && fluid.is(FluidTags.WATER) || level.getBlockEntity(near) != null
+                    || level.getBlockState(near).is(net.minecraft.world.level.block.Blocks.CRAFTING_TABLE)
+                    || side == Direction.UP && level.getBlockState(near).getBlock() instanceof FallingBlock) return false;
+        }
+        return true;
+    }
+
+    private void dropCut() {
+        if (cut != null) breaking.reset();
+        cut = null;
     }
 
     /** Up the water to within reach of the block over it, then the swing with the tool for it, and the block broken and dropped like any harvest. */
@@ -122,13 +148,13 @@ final class CompanionBreath {
         c.takeToolForBlock(state);
         if (!breaking.tick(level, cut)) return;
         ItemStack tool = c.getMainHandItem();
-        List<ItemStack> drops = CompanionTools.drops(state, level, cut, null, c, tool);
+        List<ItemStack> drops = CompanionTools.drops(state, level, cut, level.getBlockEntity(cut), c, tool);
         if (level.destroyBlock(cut, false, c, 512)) {
             CompanionTools.wearOnBreak(tool, level, state, cut, c);
             c.dropHarvest(cut, drops);
         }
-        breaking.reset();
-        cut = null;
+        c.putToolAway();
+        dropCut();
         nextSearch = 0;
     }
 

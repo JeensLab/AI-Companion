@@ -124,7 +124,17 @@ public final class CompanionBreathTests {
      */
     @GameTest(template = "large_search", timeoutTicks = 400)
     public static void withNoWayToAirTheWorkStopsAndTellsWhy(GameTestHelper h) {
-        sealedTunnel(h, Blocks.BEDROCK);
+        noWayToAir(h, Blocks.BEDROCK);
+    }
+
+    /** The same under a ceiling of planks (they give to a bare hand too): a player's block is not broken for air (only soil, rock, leaves), the planks stay and the work stops as under bedrock. */
+    @GameTest(template = "large_search", timeoutTicks = 400)
+    public static void aPlayersPlanksOverTheWaterAreNotBrokenForAir(GameTestHelper h) {
+        noWayToAir(h, Blocks.OAK_PLANKS);
+    }
+
+    private static void noWayToAir(GameTestHelper h, Block ceiling) {
+        sealedTunnel(h, ceiling);
         CompanionEntity c = oleg(h, 14, 24);
         h.runAfterDelay(5, () -> {
             h.assertTrue(c.startWork("come", "", 1).success(), "Come order not accepted");
@@ -136,6 +146,7 @@ public final class CompanionBreathTests {
             h.assertTrue(h.getTick() > 5 && !c.isWorking() && !c.didLastTaskSucceed() && c.getLastTaskResult().contains("воздух"),
                     "The work did not stop with the reason: " + c.getLastTaskResult() + " working " + c.isWorking() + " alive " + c.isAlive());
             h.assertTrue(nearest[0] <= 3, "Did not swim for the air: nearest to the wall " + nearest[0] + ", at " + h.relativePos(c.blockPosition()).toShortString());
+            for (int x = 7; x <= 25; x++) h.assertTrue(h.getBlockState(new BlockPos(x, 4, 16)).is(ceiling), "The ceiling over the water was broken at x " + x);
         });
     }
 
