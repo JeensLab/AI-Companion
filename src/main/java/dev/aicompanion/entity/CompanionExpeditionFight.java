@@ -30,6 +30,8 @@ final class CompanionExpeditionFight {
     /** How far a mob in sight is met, and how far one that has chosen him. */
     private static final double ENGAGE = 9, AWARE = 16, CONTACT_SQR = 9, FALL_LIMIT = 3, FUSE_NEAR = 12, OUTRUN = .8, LONE_FOE = 5, PER_EXTRA_FOE = 3;
     private static final int LONGEST = 20 * 45, HURT_MEMORY = 100;
+    /** A zombie's blows come twenty ticks apart: a blow this recent from a foe in reach means it keeps up with the run ({@link #caught}). */
+    private static final int CAUGHT_TICKS = 20;
 
     private final CompanionWork w;
     private final CompanionEntity owner;
@@ -156,14 +158,26 @@ final class CompanionExpeditionFight {
 
     /**
      * True when the melee goal must let go of this foe. Retreating, only one who has not caught up (the one who has is struck where he
-     * stands, running from him would be a blow in the back). Otherwise at low health when leaving is possible.
+     * stands, running from him would be a blow in the back), or, wounded and fleeing, one he outruns while the run is not {@link #caught}.
+     * Otherwise at low health when leaving is possible.
      */
     boolean avoids(LivingEntity foe, boolean retreating) {
         if (foe == null) return false;
         if (letGo(foe)) return true;
         if (below(foe)) return true;
-        if (retreating) return !owner.isWithinMeleeAttackRange(foe) || w.expedition.fleeing() && wounded() && outrun(foe);
+        if (retreating) return !owner.isWithinMeleeAttackRange(foe) || w.expedition.fleeing() && wounded() && outrun(foe) && !caught();
         return fleeable();
+    }
+
+    /**
+     * A foe within his reach struck him less than {@link #CAUGHT_TICKS} ago: the run up is not leaving it behind, whatever its speed (its blows
+     * throw him back, or it stands on his way up). Run ct68 20261031 descent: sixty ticks of the retreat with zombies in reach and his swing
+     * ready, four blows taken and none dealt.
+     */
+    private boolean caught() {
+        LivingEntity by = owner.getLastHurtByMob();
+        return by != null && by.isAlive() && !(by instanceof RangedAttackMob) && owner.isWithinMeleeAttackRange(by)
+                && owner.tickCount - owner.getLastHurtByMobTimestamp() < CAUGHT_TICKS;
     }
 
     /** Low health, his way up under him, and a mob about that he can leave behind: whatever mob is on him, the work takes the turn to climb away (the melee goal would hold it). */

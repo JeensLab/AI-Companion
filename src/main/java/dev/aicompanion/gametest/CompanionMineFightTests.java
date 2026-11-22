@@ -47,7 +47,8 @@ public final class CompanionMineFightTests {
     private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 4, OPEN_CAVE_STAND = 3, KILL_TICKS = 1200, FUSE_TICKS = 200, CRAFT_TICKS = 1200, BRIDGE_FROM = 4, BRIDGE_TO = 10, BRIDGE_SIDE = 5, CAVERN_DEPTH = 7, PASSAGE_LENGTH = 4, PASSAGE_OFFSET = 2, PASSAGE_HEIGHT = 2, STRIKE_TICKS = 60, FIGHT_TICKS = 100, FAR_STAND = 10;
     private static final float SURVIVES = 1, HURT = 12, TWO_BLOWS = 9, HALF = 10;
     private static final double THROWN = 0.6, REACHED = 3;
-    private static final int BLOW_GAP = 20;
+    private static final int BLOW_GAP = 20, ANSWER_TICKS = 40, ANSWERS = 2;
+    private static final float RETREAT_HEALTH = 8;
     /** What he says when a creeper sends him off (CompanionCreeperGuard). */
     private static final String SENT_OFF = "Рядом крипер, ухожу от него.", CREEPER_NEAR = "Рядом крипер, ";
     private static final int FAR_ZOMBIE = 8, CREEPER_SIDE = 5;
@@ -78,6 +79,42 @@ public final class CompanionMineFightTests {
             h.assertTrue(alive == 0, "The order ended with zombies alive" + trace);
             h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The order did not go on to the diamond: " + result.message() + trace);
             h.succeed();
+        });
+    }
+
+    /**
+     * Wounded on his stairs with no bread, two zombies come down the one-wide stairs at him, on his way up: the retreat cannot pass them, and
+     * a zombie that has struck him is struck back (run ct68 20261031 descent: sixty ticks of the retreat with a zombie in reach and his swing
+     * ready, four blows taken and none dealt). Each blow he takes is answered within {@link #ANSWER_TICKS}.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aZombieThatCatchesHimOnTheRetreatIsStruckBack(GameTestHelper h) {
+        mountain(h);
+        CompanionEntity c = armed(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        int foot = stairs.size() - 1;
+        place(c, stairs.get(foot - 3));
+        for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.BREAD)) c.setItem(slot, ItemStack.EMPTY);
+        c.setHealth(RETREAT_HEALTH);
+        List<Zombie> zombies = new ArrayList<>();
+        for (int k : new int[]{6, 8}) zombies.add(zombie(h, stairs.get(foot - k)));
+        start(h, c, 1);
+        float[] health = {c.getHealth()}, theirs = {0};
+        long[] unanswered = {-1};
+        int[] answers = {0};
+        h.onEachTick(() -> {
+            for (Zombie zombie : zombies) if (zombie.isAlive() && zombie.getTarget() == null) zombie.setTarget(c);
+            float left = 0;
+            for (Zombie zombie : zombies) left += zombie.isAlive() ? zombie.getHealth() : 0;
+            if (c.getHealth() < health[0] && unanswered[0] < 0) unanswered[0] = h.getTick();
+            if (left < theirs[0] && unanswered[0] >= 0) { unanswered[0] = -1; answers[0]++; }
+            health[0] = c.getHealth();
+            theirs[0] = left;
+            String trace = " | stage " + c.expeditionStage() + ", answered " + answers[0] + ", zombies' health " + left + ", he at " + rel(h, c.blockPosition()).toShortString()
+                    + ", health " + c.getHealth() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died before he struck back" + trace);
+            h.assertTrue(unanswered[0] < 0 || h.getTick() - unanswered[0] <= ANSWER_TICKS, "A blow he took was not answered in " + ANSWER_TICKS + " ticks" + trace);
+            if (answers[0] >= ANSWERS) h.succeed();
         });
     }
 
