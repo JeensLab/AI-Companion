@@ -277,9 +277,6 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             // An order for more than the world gives promises only what is there (PATH7: «добудь обсидиан» is a portal frame's
             // ten, and one block above him is one): the same reach answer the work asks, so the phrasing cannot change it.
             CompanionReach.Available world = leafOrder ? null : companion.obtainAvailable(item);
-            int promisedWorld = world == null ? need : Math.min(need, companion.carriedCount(item) + world.count());
-            if (world != null && promisedWorld > 0 && companion.carriedCount(item) >= promisedWorld)
-                return new CompanionPlanRunner.Expansion(java.util.List.of(new PlannedAction("verify_item", 0, promisedWorld, check)), null);
             var plan = companion.obtainPlan(item, need);
             if (plan.refused()) return new CompanionPlanRunner.Expansion(java.util.List.of(), plan.refusal());
             // The promise is what the chain really produces (one block of his own lava is one obsidian), never more.

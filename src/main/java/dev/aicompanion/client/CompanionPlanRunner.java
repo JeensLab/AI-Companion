@@ -132,7 +132,15 @@ public final class CompanionPlanRunner {
             }
             run.plan.remove(index);
             run.plan.addAll(index, expansion.steps());
-            run.obtain = action; run.obtainEnd = index + expansion.steps().size(); run.obtainSteps = 0; run.noGain = 0; run.noGainFailure = null;
+            // The chain's own promise is what the world really gives (a portal frame's ten from one block above him is one):
+            // the replan after each of its steps asks for that part only, so a shortage the world cannot fill is not asked
+            // again and the order ends with the honest count (PATH7).
+            PlannedAction promised = action;
+            for (int at = expansion.steps().size() - 1; at >= 0; at--) {
+                PlannedAction step = expansion.steps().get(at);
+                if ("verify_item".equals(step.type())) { promised = new PlannedAction(action.type(), action.seconds(), step.count(), action.item(), action.slot(), action.location()); break; }
+            }
+            run.obtain = promised; run.obtainEnd = index + expansion.steps().size(); run.obtainSteps = 0; run.noGain = 0; run.noGainFailure = null;
             run.gathered.clear();
             return step(run, index, run.plan.get(index), false);
         });

@@ -404,11 +404,12 @@ public final class CompanionObtain {
                 ? null : reachable.apply(item);
         if (found == null ? picked(item) : found.some()) {
             if (silked(item) && !carriesSilk(item)) return refuse("Для «" + name(item) + "» нужен инструмент с «Шёлковым касанием»: в сумке такого нет.");
-            if (found != null) {
-                count = Math.min(count, found.count());
+            if (found != null && found.soil() > 0) {
                 // A column for it stands on soil he does not carry: the plan digs that soil first, as a crown's is dug.
-                if (found.soil() > 0) addSplit("gather_dirt", "", found.soil(), 64);
+                addSplit("gather_dirt", "", found.soil(), 64);
             }
+            // The gather takes the order as it is said: what the blocks really bring is counted by the gather itself, which
+            // reports how far it got («Собрал 1 из 3»), not by a promise of blocks (a layer of snow brings three snowballs).
             return gather(item, key, count, depth);
         }
         // A monster drops it (string, a bone, gunpowder): fought for, if one is about.
