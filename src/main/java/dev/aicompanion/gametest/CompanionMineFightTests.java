@@ -14,6 +14,7 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.Skeleton;
 import net.minecraft.world.entity.monster.Zombie;
+import net.minecraft.world.entity.monster.ZombifiedPiglin;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
@@ -424,6 +425,39 @@ public final class CompanionMineFightTests {
                     return;
                 }
                 h.assertTrue((boolean) canChase.invoke(loot), "The pickup does not run with no foe near" + trace);
+                h.succeed();
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException(e);
+            }
+        });
+    }
+
+    /** A zombified piglin two blocks off that nobody has angered goes for nobody: it does not hold the pickup of his drop, which would else wait on it for good. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aCalmZombifiedPiglinWithinReachDoesNotHoldThePickupOfADrop(GameTestHelper h) throws Exception {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        BlockPos foot = chamber(h, carveMine(h, c, 0));
+        place(c, foot.offset(1, 0, 0));
+        ZombifiedPiglin piglin = h.spawn(EntityType.ZOMBIFIED_PIGLIN, rel(h, foot.offset(3, 0, 0)));
+        piglin.setPersistenceRequired();
+        piglin.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        BlockPos at = foot.offset(DROP_REACH, 0, 0);
+        ItemEntity drop = new ItemEntity(h.getLevel(), at.getX() + .5, at.getY(), at.getZ() + .5, new ItemStack(Items.COBBLESTONE));
+        drop.setDeltaMovement(Vec3.ZERO);
+        drop.setNoPickUpDelay();
+        h.getLevel().addFreshEntity(drop);
+        c.claimDrops(List.of(drop));
+        Object loot = CompanionSingleRouteTests.field(c, "loot");
+        var canChase = loot.getClass().getDeclaredMethod("canChase");
+        canChase.setAccessible(true);
+        long begun = h.getTick();
+        h.onEachTick(() -> {
+            if (h.getTick() < begun + 2) return;
+            try {
+                String trace = " | piglin at " + String.format("%.1f", Math.sqrt(c.distanceToSqr(piglin))) + ", its target " + piglin.getTarget() + ", " + report(c);
+                h.assertTrue(piglin.isAlive() && piglin.getTarget() == null && c.distanceToSqr(piglin) < 3 * 3, "The piglin is not a calm one within three blocks" + trace);
+                h.assertTrue((boolean) canChase.invoke(loot), "The pickup waits on a calm zombified piglin" + trace);
                 h.succeed();
             } catch (ReflectiveOperationException e) {
                 throw new IllegalStateException(e);

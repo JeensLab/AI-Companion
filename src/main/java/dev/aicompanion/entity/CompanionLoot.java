@@ -276,9 +276,10 @@ final class CompanionLoot {
         if (!(owner.level() instanceof ServerLevel level)) return false;
         if (owner.combat.footwork.onHim(level)) return true;
         // Series h, 21.11: zombies on him struck while he walked off after a drop. The fight may have let such a mob go (shuns) or it may keep a bow
-        // (not counted by the footwork), yet within three blocks any awake hostile in sight is on him, and the pickup starves the retreat.
+        // (not counted by the footwork), yet within three blocks any awake hostile in sight is on him, and the pickup starves the retreat. A neutral
+        // mob that goes for nobody (a zombified piglin, an enderman) is no such foe: the pickup would wait on it for good.
         return !level.getEntitiesOfClass(Monster.class, owner.getBoundingBox().inflate(CONTACT), mob -> mob.isAlive() && !mob.isNoAi()
-                && owner.distanceToSqr(mob) < CONTACT * CONTACT && owner.hasLineOfSight(mob)).isEmpty();
+                && owner.distanceToSqr(mob) < CONTACT * CONTACT && owner.hasLineOfSight(mob) && owner.combat.fairTarget(mob, owner.combat.provokes(mob))).isEmpty();
     }
     void tickChase() {
         if (!(owner.level() instanceof ServerLevel level)) return;
