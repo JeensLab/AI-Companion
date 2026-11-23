@@ -211,9 +211,10 @@ final class CompanionExpedition {
         boolean digging = stage == Stage.DESCEND || stage == Stage.BRANCH;
         // A foe is fought before anything else is done; the time it takes is given back to the step.
         if (!expired && fight.hold(level, stage == Stage.RETREAT)) return;
-        // Wounded with a mob on him, the fight has let it go for the climb: the climb starts before the cave's turn, which would else keep it
-        // from starting and leave him neither fighting nor leaving (run r20261031-d2/water: two zombies, seven seconds, not a blow struck).
-        if (!expired && cave.busy() && stage != Stage.LOCATE && stage != Stage.CLIMB && stage != Stage.RETREAT && fight.fleeable()) {
+        // Wounded with a mob on him, the fight has let it go for the climb: the climb starts before any other turn (the cave's, a bench's, an
+        // ore's), which would else keep it from starting and leave him neither fighting nor leaving (run r20261031-d2/water: two zombies, seven
+        // seconds, not a blow struck).
+        if (!expired && stage != Stage.LOCATE && stage != Stage.CLIMB && stage != Stage.RETREAT && fight.fleeable()) {
             String danger = hazard.now();
             if (danger != null) { cave.abandon(); startRetreat(level, danger); return; }
         }

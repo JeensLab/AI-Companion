@@ -699,8 +699,9 @@ public final class CompanionWork {
         if (job != Job.BLOCK && job != Job.COME && job != Job.COURSE && job != Job.HUNT && job != Job.PICK_UP && job != Job.PLACE
                 && owner.hasPendingLoot() && !(job == Job.HOUSE && templateJob && templateHouse.scaffolding())) {
             // The pickup waits while a foe is on him (CompanionLoot.foeOnHim): with the expedition's fight skipped too, nothing turns him on it until it strikes.
-            if (phase == Phase.EXPEDITION) expedition.fight.holdFight(level);
-            return;
+            // And a foe the fight has let go for the climb is no wait at all: the climb is the expedition's to begin, a drop behind the mobs
+            // would else leave him neither fighting nor leaving (series p 20261031 d1 descent: seven blows taken and none dealt).
+            if (phase != Phase.EXPEDITION || expedition.fight.holdFight(level) || !expedition.fight.fleeable()) return;
         }
         if (owner.getOwnerId() == null || level.getServer().getPlayerList().getPlayer(owner.getOwnerId()) == null) {
             finish(false, "Потерял связь с игроком, остановился."); return;

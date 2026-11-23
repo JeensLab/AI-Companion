@@ -5,6 +5,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.monster.RangedAttackMob;
+import net.minecraft.world.item.ProjectileWeaponItem;
 import net.minecraft.world.level.pathfinder.Path;
 
 import java.util.EnumSet;
@@ -18,7 +19,8 @@ import java.util.Set;
  * mobs). Probes of 23.11, five zombies and a stone sword: a corner 12–15 blows taken, his own tunnel 14–18 and a death in four, a column
  * none. The column is the one of {@link CompanionPillar}: real blocks, a jump for each, taken down and back into the bag when the crowd is
  * dead or gone. Where it cannot stand (no blocks, a low roof, no floor) the goal does not start and he fights as before. A creeper is still
- * for the guard, at a higher priority; under a guard order he stays on the ground, where the player is.
+ * for the guard, at a higher priority; under a guard order he stays on the ground, where the player is, and so he does with a skeleton
+ * shooting at him: a column is a stand for its arrows.
  * <p>
  * The column does not hold him: a mob that reaches him on it (from a ledge beside it, a spider up its side), an arrow or a blast that
  * throws him off, the guard that runs him from a fuse, all give the fight back to the melee goal, and the column stands until nobody is
@@ -38,6 +40,8 @@ final class CompanionHighGround extends Goal {
     private static final double OFF_CENTRE_SQR = .2 * .2, CENTRE_SPEED = .3;
     /** How far he counts them, and how near one presses on him so that his blow must throw it back before a block goes under his feet. */
     private static final double LOOKOUT = 10, TOUCH_SQR = 1.5 * 1.5, NEAR_COLUMN_SQR = 3 * 3;
+    /** How far a mob with a bow that is after him keeps him on the ground. */
+    private static final double ARCHERS = 20;
     /** How long with nobody about before he comes down, and how long after a column that did not stand before the next one is tried. */
     private static final int CALM_TICKS = 40, RETRY_TICKS = 200;
     /** How often they are counted, and how long he stands with none of them in his reach (behind a fence, across a gap) before he comes down. */
@@ -65,12 +69,18 @@ final class CompanionHighGround extends Goal {
             if (!c.temporaryPillar.isActive()) left = false;
             return left && c.combat.footwork.foes(level, LOOKOUT).isEmpty();
         }
-        if (c.tickCount < retryAt || c.temporaryPillar.isActive() || CompanionGuardWatch.watching(c)) return false;
+        if (c.tickCount < retryAt || c.temporaryPillar.isActive() || CompanionGuardWatch.watching(c) || shotAt(level)) return false;
         int after = 0;
         for (Monster foe : c.combat.footwork.foes(level, LOOKOUT)) if (foe.getTarget() == c) after++;
         if (after < (c.getHealth() <= CompanionCaveSense.HEALTH_WARY ? HURT_CROWD : CROWD)) return false;
         height = c.temporaryPillar.canStandUp(TALL) ? TALL : LOW;
         return height == TALL || c.temporaryPillar.canStandUp(LOW);
+    }
+
+    /** A mob with a bow is after him and sees him: on a column he would stand still for its arrows, on the ground he closes in on it or raises the shield. */
+    private boolean shotAt(ServerLevel level) {
+        return !level.getEntitiesOfClass(Monster.class, c.getBoundingBox().inflate(ARCHERS), foe -> foe.isAlive() && !foe.isNoAi() && foe.getTarget() == c
+                && foe instanceof RangedAttackMob && foe.getMainHandItem().getItem() instanceof ProjectileWeaponItem && c.hasLineOfSight(foe)).isEmpty();
     }
 
     /** An order of the player (stop, follow) takes the column down at once: that descent is the turn of the recovery goal. */
@@ -129,12 +139,12 @@ final class CompanionHighGround extends Goal {
         c.work.expedition.fight.fightGoing();
         c.getNavigation().stop();
         BlockPos foot = c.temporaryPillar.foot();
-        // Thrown off it (an arrow, a blast), or struck on it by a mob that stands where it reaches him: the fight is the turn of the melee goal
-        // again. A zombie that jumps at the column lands a blow now and then (in the air, from the floor): far fewer than on the ground.
+        // Thrown off it (a blast), shot on it, or struck on it by a mob that stands where it reaches him: the fight is the turn of the melee
+        // goal again. A zombie that jumps at the column lands a blow now and then (in the air, from the floor): far fewer than on the ground.
         boolean reached = false;
         if (c.getLastHurtByMobTimestamp() != hurtAt) {
             hurtAt = c.getLastHurtByMobTimestamp();
-            reached = foot != null && c.getLastHurtByMob() instanceof Monster by && !(by instanceof RangedAttackMob) && by.onGround() && by.getY() >= foot.getY() + REACHES_FROM;
+            reached = foot != null && c.getLastHurtByMob() instanceof Monster by && (by instanceof RangedAttackMob || by.onGround() && by.getY() >= foot.getY() + REACHES_FROM);
         }
         if (reached || c.onGround() && !c.temporaryPillar.onTop()) { retryAt = c.tickCount + RETRY_TICKS; over = true; return; }
         if (c.onGround() && foot != null && c.distanceToSqr(foot.getX() + .5, c.getY(), foot.getZ() + .5) > OFF_CENTRE_SQR) c.getMoveControl().setWantedPosition(foot.getX() + .5, c.getY(), foot.getZ() + .5, CENTRE_SPEED);

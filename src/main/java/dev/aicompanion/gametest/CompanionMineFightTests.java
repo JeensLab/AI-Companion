@@ -50,6 +50,8 @@ public final class CompanionMineFightTests {
     private static final double THROWN = 0.6, REACHED = 3;
     private static final int BLOW_GAP = 20, ANSWER_TICKS = 40, ANSWERS = 2;
     private static final float RETREAT_HEALTH = 8;
+    private static final int DROP_STEP = 12;
+    private static final float BLOW_ABOVE_RETREAT = 10;
     /** What he says when a creeper sends him off (CompanionCreeperGuard). */
     private static final String SENT_OFF = "Рядом крипер, ухожу от него.", CREEPER_NEAR = "Рядом крипер, ";
     private static final int FAR_ZOMBIE = 8, CREEPER_SIDE = 5;
@@ -97,6 +99,51 @@ public final class CompanionMineFightTests {
         place(c, stairs.get(foot - 3));
         for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.BREAD)) c.setItem(slot, ItemStack.EMPTY);
         c.setHealth(RETREAT_HEALTH);
+        List<Zombie> zombies = new ArrayList<>();
+        for (int k : new int[]{6, 8}) zombies.add(zombie(h, stairs.get(foot - k)));
+        start(h, c, 1);
+        float[] health = {c.getHealth()}, theirs = {0};
+        long[] unanswered = {-1};
+        int[] answers = {0};
+        h.onEachTick(() -> {
+            for (Zombie zombie : zombies) if (zombie.isAlive() && zombie.getTarget() == null) zombie.setTarget(c);
+            float left = 0;
+            for (Zombie zombie : zombies) left += zombie.isAlive() ? zombie.getHealth() : 0;
+            if (c.getHealth() < health[0] && unanswered[0] < 0) unanswered[0] = h.getTick();
+            if (left < theirs[0] && unanswered[0] >= 0) { unanswered[0] = -1; answers[0]++; }
+            health[0] = c.getHealth();
+            theirs[0] = left;
+            String trace = " | stage " + c.expeditionStage() + ", answered " + answers[0] + ", zombies' health " + left + ", he at " + rel(h, c.blockPosition()).toShortString()
+                    + ", health " + c.getHealth() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died before he struck back" + trace);
+            h.assertTrue(unanswered[0] < 0 || h.getTick() - unanswered[0] <= ANSWER_TICKS, "A blow he took was not answered in " + ANSWER_TICKS + " ticks" + trace);
+            if (answers[0] >= ANSWERS) h.succeed();
+        });
+    }
+
+    /**
+     * The same two zombies, a wound a blow lighter, and a drop of his lies on the stairs above them, where he cannot go for it: the work
+     * waits for the pickup, the fight has let the zombies go for the climb, and the climb must begin all the same, or he neither fights
+     * nor leaves (series p 20261031 d1 descent: four zombies killed on the way down his stairs, their drops behind the rest of them, then
+     * eighty ticks in a corner with «Подбираю добытые вещи», seven blows taken and none dealt). Each blow he takes is answered within
+     * {@link #ANSWER_TICKS}.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aDropBehindTheZombiesDoesNotKeepHimFromTheClimb(GameTestHelper h) {
+        mountain(h);
+        CompanionEntity c = armed(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        int foot = stairs.size() - 1;
+        place(c, stairs.get(foot - 3));
+        BlockPos behind = stairs.get(foot - DROP_STEP);
+        ItemEntity drop = new ItemEntity(h.getLevel(), behind.getX() + .5, behind.getY(), behind.getZ() + .5, new ItemStack(Items.ROTTEN_FLESH));
+        drop.setDeltaMovement(Vec3.ZERO);
+        drop.setNoPickUpDelay();
+        h.getLevel().addFreshEntity(drop);
+        c.claimDrops(List.of(drop));
+        for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.BREAD)) c.setItem(slot, ItemStack.EMPTY);
+        // A blow above the health at which two zombies are left for the climb: the wound comes with the drop already waited for.
+        c.setHealth(BLOW_ABOVE_RETREAT);
         List<Zombie> zombies = new ArrayList<>();
         for (int k : new int[]{6, 8}) zombies.add(zombie(h, stairs.get(foot - k)));
         start(h, c, 1);
