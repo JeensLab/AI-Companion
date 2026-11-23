@@ -43,6 +43,7 @@ public final class CompanionMineClimbStopsTests {
     /** Wear left of the iron pickaxe (the reserve kept for ore is just above it), the stands the record still knows, the stand he is in, and the one his plug closes. */
     private static final int IRON_LEFT = 60, KNOWN_STANDS = 3, GAP_AT = 12, PLUG_AT = 8, FAR_PLUG_AT = 4, WALL_AT = 5, DIAMOND_AT = 2;
     private static final int CAGE_AT = 8, CAGE_PAD = 7, CAGE_NEAR = 5;
+    private static final int CRATER = 4, CRATER_TIMEOUT = 2400;
     private static final int HALL_FROM = 6, HALL_TO = 18, HALL_TOP = 19, HALL_MID = 12, SHELF_AT = 8, SHELF_Y = 17, GAP = 4, LEDGE_DROP = 2, LEDGE_WATCH = 160;
 
     private CompanionMineClimbStopsTests() { }
@@ -225,7 +226,7 @@ public final class CompanionMineClimbStopsTests {
      */
     @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
     public static void climbsOutOfOneBlockOfWaterAtTheBottomOfHisStairs(GameTestHelper h) {
-        climbAboveAGap(h, stairs -> h.getLevel().setBlock(stairs.get(GAP_AT), Blocks.WATER.defaultBlockState(), 2 | 16), true, false);
+        climbAboveAGap(h, (c, stairs) -> h.getLevel().setBlock(stairs.get(GAP_AT), Blocks.WATER.defaultBlockState(), 2 | 16), true, false);
     }
 
     /**
@@ -235,13 +236,32 @@ public final class CompanionMineClimbStopsTests {
      */
     @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
     public static void laysAFloorAcrossAGapOfAirInTheWayUp(GameTestHelper h) {
-        climbAboveAGap(h, stairs -> airUnder(h, stairs), true, true);
+        climbAboveAGap(h, (c, stairs) -> airUnder(h, stairs), true, true);
     }
 
     /** The same gap with no block to lay: the climb ends once, said as it is, and he stays where he is. */
     @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
     public static void endsTheClimbOnceWhenAGapOfAirHasNoBlockToBridgeIt(GameTestHelper h) {
-        climbAboveAGap(h, stairs -> airUnder(h, stairs), false, true);
+        climbAboveAGap(h, (c, stairs) -> airUnder(h, stairs), false, true);
+    }
+
+    /**
+     * Run t7-d3/come (seed 7, 24.11): a creeper blew up on his stairs near the surface. The floors of four steps were gone, and the blocks he had set
+     * against it at head height hung over the crater. The walk took the first step with a floor for its target and the cell he stood in the tick after,
+     * in turn, for 6000 ticks, with «Убираю свой блок с лестницы» as the last thing said. With three floors or more gone he lays them again, as with
+     * fewer, and reaches the surface.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = CRATER_TIMEOUT)
+    public static void climbsAcrossACraterWithHisOwnBlocksHangingOverIt(GameTestHelper h) {
+        climbAboveAGap(h, (c, stairs) -> {
+            int floor = stairs.get(GAP_AT).getY() - 1;
+            for (int k = GAP_AT - CRATER; k < GAP_AT; k++) {
+                for (BlockPos cell = stairs.get(k).below(); cell.getY() > floor; cell = cell.below()) h.getLevel().setBlock(cell, Blocks.AIR.defaultBlockState(), 2 | 16);
+                BlockPos block = stairs.get(k - 1).above();
+                h.getLevel().setBlock(block, Blocks.COBBLESTONE.defaultBlockState(), 2 | 16);
+                c.mineSite().temporary(block);
+            }
+        }, true, false);
     }
 
     private static void airUnder(GameTestHelper h, List<BlockPos> stairs) {
@@ -249,7 +269,7 @@ public final class CompanionMineClimbStopsTests {
     }
 
     /** He stands deep on his stairs with no stone pickaxe and the iron one at its reserve, the record lost below the first stands; {@code twist} changes the stairs between. */
-    private static void climbAboveAGap(GameTestHelper h, java.util.function.Consumer<List<BlockPos>> twist, boolean hasBlocks, boolean cutRecord) {
+    private static void climbAboveAGap(GameTestHelper h, java.util.function.BiConsumer<CompanionEntity, List<BlockPos>> twist, boolean hasBlocks, boolean cutRecord) {
         mountain(h, true);
         CompanionEntity c = rig(h);
         c.setFollowing(false);
@@ -261,7 +281,7 @@ public final class CompanionMineClimbStopsTests {
         BlockPos here = stairs.get(GAP_AT);
         for (BlockPos stand : stairs.subList(GAP_AT + 1, stairs.size())) for (BlockPos cell : CompanionShaftPlan.column(stand)) h.getLevel().setBlock(cell, Blocks.STONE.defaultBlockState(), 2 | 16);
         if (cutRecord) c.mineSite().truncate(KNOWN_STANDS);
-        twist.accept(stairs);
+        twist.accept(c, stairs);
         c.teleportTo(here.getX() + .5, here.getY(), here.getZ() + .5);
         spendRestartsOnTheStairs(h, c, here);
         int surface = h.absolutePos(new BlockPos(0, GROUND + 1, 0)).getY() - SURFACE_MARGIN;

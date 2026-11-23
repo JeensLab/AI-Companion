@@ -84,8 +84,13 @@ final class CompanionExpeditionWalk {
 
     /** A creeper or a fight may have led him off the cells: the walk goes on from the one nearest to him, not from the one it left, which can be a long push away. */
     private void ledBack() {
-        // A target past cells with no floor lies further than LOST while he still stands by the cell before it: that is the gap to bridge, not a push off the walk.
-        if (dig.distSqr(cells.get(index)) <= LOST || index > 0 && dig.distSqr(cells.get(index - 1)) <= LOST) return;
+        // A target past cells with no floor lies further than LOST while he still stands by the cells before it, back to the last one with a floor: that
+        // is the gap to bridge, not a push off the walk. Run t7-d3/come (24.11): a creeper took the floor of four steps, the walk set the fifth as its
+        // target and was led back to his own cell the tick after, for 6000 ticks.
+        for (int i = index; i >= 0; i--) {
+            if (dig.distSqr(cells.get(i)) <= LOST) return;
+            if (i < index && dig.floored(cells.get(i))) break;
+        }
         for (int i = 0; i < cells.size(); i++) if (dig.distSqr(cells.get(i)) < dig.distSqr(cells.get(index))) index = i;
     }
 
