@@ -117,6 +117,10 @@ public final class CompanionWayAnyGeometryTests {
             int laid = 0;
             for (int x = 18; x <= 21; x++) if (h.getBlockState(new BlockPos(x, GROUND, 16)).is(Blocks.OAK_PLANKS)) laid++;
             h.assertTrue(laid >= 3, "The bridge was taken back: " + laid + " planks left, " + report);
+            // The journal says the decision the player can read: the block, its geometry and the shape of the way.
+            h.assertTrue(journal(c, "way_decision").stream().anyMatch(line -> line.contains("\"shape\":\"bridge\"")
+                    && line.contains("\"id\":\"minecraft:pumpkin\"") && line.contains("\"gap\":4")),
+                    "No bridge decision in the journal: " + journal(c, "way_decision"));
             h.assertTrue(!report.contains("Полторы минуты") && !report.contains("не выполнено"), "A wrong end: " + report);
         });
     }
@@ -380,6 +384,17 @@ public final class CompanionWayAnyGeometryTests {
         for (int x = 1; x < SIDE - 1; x++) for (int z = 1; z < SIDE - 1; z++) for (int y = GROUND + 1; y < TOP - 1; y++)
             if (h.getBlockState(new BlockPos(x, y, z)).is(Blocks.DIRT)) count++;
         return count;
+    }
+
+    /** The journalled lines of this companion with this event name. */
+    private static List<String> journal(CompanionEntity c, String event) {
+        dev.aicompanion.CompanionDiagnostics.flush();
+        var directory = net.neoforged.fml.loading.FMLPaths.GAMEDIR.get().resolve("logs").resolve("aicompanion");
+        List<String> lines = new java.util.ArrayList<>();
+        for (String name : List.of("companion-3.jsonl", "companion-2.jsonl", "companion-1.jsonl", "companion-latest.jsonl")) {
+            try { lines.addAll(java.nio.file.Files.readAllLines(directory.resolve(name))); } catch (java.io.IOException | java.io.UncheckedIOException ignored) { }
+        }
+        return lines.stream().filter(line -> line.contains(c.getUUID().toString()) && line.contains("\"event\":\"" + event + "\"")).toList();
     }
 
     private static int count(CompanionEntity c, Item item) {
