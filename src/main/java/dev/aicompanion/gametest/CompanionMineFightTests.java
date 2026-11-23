@@ -115,9 +115,10 @@ public final class CompanionMineFightTests {
             theirs[0] = left;
             String trace = " | stage " + c.expeditionStage() + ", answered " + answers[0] + ", zombies' health " + left + ", he at " + rel(h, c.blockPosition()).toShortString()
                     + ", health " + c.getHealth() + " | " + report(c);
+            // Both of them dead is the end as well: with a sword that reaches farther than their arms he may take no second blow at all.
+            if (answers[0] >= ANSWERS || left == 0) { h.succeed(); return; }
             h.assertTrue(c.isAlive(), "Died before he struck back" + trace);
             h.assertTrue(unanswered[0] < 0 || h.getTick() - unanswered[0] <= ANSWER_TICKS, "A blow he took was not answered in " + ANSWER_TICKS + " ticks" + trace);
-            if (answers[0] >= ANSWERS) h.succeed();
         });
     }
 
@@ -160,9 +161,10 @@ public final class CompanionMineFightTests {
             theirs[0] = left;
             String trace = " | stage " + c.expeditionStage() + ", answered " + answers[0] + ", zombies' health " + left + ", he at " + rel(h, c.blockPosition()).toShortString()
                     + ", health " + c.getHealth() + " | " + report(c);
+            // Both of them dead is the end as well: with a sword that reaches farther than their arms he may take no second blow at all.
+            if (answers[0] >= ANSWERS || left == 0) { h.succeed(); return; }
             h.assertTrue(c.isAlive(), "Died before he struck back" + trace);
             h.assertTrue(unanswered[0] < 0 || h.getTick() - unanswered[0] <= ANSWER_TICKS, "A blow he took was not answered in " + ANSWER_TICKS + " ticks" + trace);
-            if (answers[0] >= ANSWERS) h.succeed();
         });
     }
 

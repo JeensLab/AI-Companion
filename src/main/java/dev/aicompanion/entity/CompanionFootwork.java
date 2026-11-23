@@ -116,7 +116,7 @@ final class CompanionFootwork {
     }
 
     /** The mobs about that strike with a blade or a fist: awake, in sight, fair game and not for the guard (a creeper) or the bow (a skeleton that has one). */
-    List<Monster> foes(ServerLevel level, double range) {
+    private List<Monster> foes(ServerLevel level, double range) {
         return level.getEntitiesOfClass(Monster.class, owner.getBoundingBox().inflate(range), foe -> foe.isAlive() && !foe.isNoAi() && !(foe instanceof Creeper)
                 && !(foe instanceof RangedAttackMob && foe.getMainHandItem().getItem() instanceof ProjectileWeaponItem)
                 && owner.combat.fairTarget(foe, owner.combat.provokes(foe)) && !owner.work.expedition.shuns(foe) && owner.hasLineOfSight(foe));

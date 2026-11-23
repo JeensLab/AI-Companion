@@ -40,7 +40,7 @@ public final class CompanionPillar {
     private static final int STAND_REACH = 2, STAND_LOOKOUT = 8, STRAIGHT_SAMPLES = 8, STAND_JUMPS = 4, STAND_INTERVAL = 2;
     /** How often the way back to a column out of his reach is set while it is taken down, and how far a stand left standing is given up from. */
     private static final int WALK_BACK_EVERY = 10;
-    private static final double LEFT_FAR_SQR = 8 * 8;
+    private static final double LEFT_FAR_SQR = 8 * 8, STAND_OFF_CENTRE_SQR = .25 * .25;
 
     public enum Outcome { WORKING, READY, FAILED }
 
@@ -189,7 +189,8 @@ public final class CompanionPillar {
         int surfaceY = base.getY() + supports.size();
         if (!supports.isEmpty() && owner.getY() < surfaceY - 0.2D) return fail("Соскользнул с опоры, сначала уберу её");
         owner.getNavigation().stop();
-        if (horizontalDistanceSqr(base) > 0.0144D) {
+        // Not the middle of the cell to a hair, as for a climb at a tree: blows move him, and the block holds him from anywhere over it.
+        if (horizontalDistanceSqr(base) > STAND_OFF_CENTRE_SQR) {
             owner.getMoveControl().setWantedPosition(base.getX() + 0.5D, surfaceY, base.getZ() + 0.5D, 0.6D);
             return Outcome.WORKING;
         }

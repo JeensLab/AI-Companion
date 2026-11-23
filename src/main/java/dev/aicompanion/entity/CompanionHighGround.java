@@ -3,6 +3,7 @@ package dev.aicompanion.entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.monster.RangedAttackMob;
 import net.minecraft.world.item.ProjectileWeaponItem;
@@ -69,9 +70,14 @@ final class CompanionHighGround extends Goal {
         if (c.temporaryPillar.leftStanding()) { settle(level); return false; }
         // With no blade on a task he walks away from a monster (CompanionCombat.StepOffGoal): a column would only hold him among them.
         if (c.tickCount < retryAt || c.temporaryPillar.isActive() || CompanionGuardWatch.watching(c) || c.combat.unarmedOnTask() || shotAt(level)) return false;
-        int after = 0;
-        for (Monster foe : c.combat.footwork.foes(level, LOOKOUT)) if (foe.getTarget() == c) after++;
-        if (after < (c.getHealth() <= CompanionCaveSense.HEALTH_WARY ? HURT_CROWD : CROWD)) return false;
+        int after = 0, touching = 0;
+        for (Monster foe : about(level)) {
+            if (foe.getTarget() == c) after++;
+            if (c.distanceToSqr(foe) < TOUCH_SQR) touching++;
+        }
+        // One on him is thrown back by a blow and the block goes under his feet; with more of them in the cell a column takes too long to
+        // raise (series t 20261031 d1 mobs: 130 ticks and seven blows for it): he fights where he stands, as before.
+        if (after < (c.getHealth() <= CompanionCaveSense.HEALTH_WARY ? HURT_CROWD : CROWD) || touching > 1) return false;
         height = c.temporaryPillar.canStandUp(TALL) ? TALL : LOW;
         return height == TALL || c.temporaryPillar.canStandUp(LOW);
     }
@@ -88,6 +94,17 @@ final class CompanionHighGround extends Goal {
         else if (c.work.expedition.retreating() || sought(level)) return;
         else if (far) c.temporaryPillar.abandon();
         else c.temporaryPillar.requestCleanup();
+    }
+
+    /**
+     * The mobs about that strike with a blade or a fist: awake, in sight, fair game, no creeper (the guard has it) and none with a bow. Also
+     * one the fight of his mine has let go or leaves alone, unlike {@link CompanionFootwork#foes}: on a retreat that is every mob out of
+     * his reach, and a column is not taken down into them (series t 20261031 d1 mobs: «nobody about» with the crowd at its foot).
+     */
+    private List<Monster> about(ServerLevel level) {
+        return level.getEntitiesOfClass(Monster.class, c.getBoundingBox().inflate(LOOKOUT), foe -> foe.isAlive() && !foe.isNoAi() && !(foe instanceof Creeper)
+                && !(foe instanceof RangedAttackMob && foe.getMainHandItem().getItem() instanceof ProjectileWeaponItem)
+                && c.combat.fairTarget(foe, c.combat.provokes(foe)) && c.hasLineOfSight(foe));
     }
 
     /** A monster that sees him is after him. */
@@ -117,7 +134,7 @@ final class CompanionHighGround extends Goal {
 
     @Override public void tick() {
         if (!(c.level() instanceof ServerLevel level)) return;
-        List<Monster> foes = c.combat.footwork.foes(level, LOOKOUT);
+        List<Monster> foes = about(level);
         Monster nearest = null;
         for (Monster foe : foes) if (nearest == null || c.distanceToSqr(foe) < c.distanceToSqr(nearest)) nearest = foe;
         switch (phase) {
