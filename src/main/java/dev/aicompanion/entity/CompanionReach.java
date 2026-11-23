@@ -21,6 +21,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * The one answer to «how does he get to this block and work it», asked by every place that chooses a target. The answer is a
@@ -73,6 +74,12 @@ public final class CompanionReach {
     }
 
     private CompanionReach() { }
+
+    /** The last decision line said for a companion: a way asked again every tick is one decision, not sixty lines. */
+    private static final java.util.Map<UUID, String> SAID = java.util.Collections.synchronizedMap(
+            new java.util.LinkedHashMap<UUID, String>(64, .75F, true) {
+                @Override protected boolean removeEldestEntry(java.util.Map.Entry<UUID, String> eldest) { return size() > 64; }
+            });
 
     /**
      * How he gets to this block and works it. {@code reach}: how close a stand cell must be; {@code forTheDrop}: the drop must
@@ -133,8 +140,10 @@ public final class CompanionReach {
         if (!c.buildWay()) return new How(Way.NONE, 0, 0, "switch off");
         int rise = block.getY() - c.blockPosition().getY();
         if (rise < 2 || rise > CompanionPillar.WAY_HEIGHT) return new How(Way.NONE, 0, 0, "rise " + rise);
+        // The feet of the column may stand up to four across from the block (CompanionPillar.columns), so a block farther than
+        // that from him is no column's — the walk is what takes it. Any offset within that is the same question.
         double dx = block.getX() + .5D - c.getX(), dz = block.getZ() + .5D - c.getZ();
-        if (dx * dx + dz * dz > 16.0D) return new How(Way.NONE, 0, 0, "across " + Math.round(Math.sqrt(dx * dx + dz * dz) * 10) / 10D);
+        if (dx * dx + dz * dz > 64.0D) return new How(Way.NONE, 0, 0, "across " + Math.round(Math.sqrt(dx * dx + dz * dz) * 10) / 10D);
         int limit = Math.clamp(maxSteps, 1, CompanionPillar.WAY_SUPPORTS);
         int carried = c.temporaryPillar.soilCarried();
         int least = c.temporaryPillar.leastSteps(block, limit);
@@ -179,16 +188,19 @@ public final class CompanionReach {
                     if (gap > limit) break;
                     List<BlockPos> cells = new ArrayList<>();
                     boolean free = true;
-                    for (int step = 1; step <= gap; step++) {
+                    // The cell he works the block from stands on a floor of its own too: the last cell of the floor is under his
+                    // feet at the far end, never only up to it (a bridge that ends over the gap drops him into it).
+                    for (int step = 0; step <= gap; step++) {
                         BlockPos cell = end.relative(dir, step);
                         if (!airForBody(c, level, cell)) { free = false; break; }
                         BlockPos floor = cell.below();
                         BlockState floorState = level.getBlockState(floor);
-                        if (!floorState.getCollisionShape(level, floor).isEmpty()) continue;   // a ledge: no floor to lay
+                        if (!floorState.getCollisionShape(level, floor).isEmpty()) continue;   // a ledge or his own floor: nothing to lay
                         if (!level.getFluidState(floor).isEmpty()) { free = false; break; }
                         cells.add(floor.immutable());
                     }
-                    if (!free || cells.isEmpty()) continue;
+                    if (!free) continue;
+                    // A floor already there (a ledge, his own bridge from before) asks no material: only what he still lacks does.
                     if (cells.size() > material && !dig) continue;
                     if (best == null || cells.size() < best.length()) best = new BridgePlan(start.immutable(), end, List.copyOf(cells));
                 }
@@ -273,10 +285,15 @@ public final class CompanionReach {
         if (!(c.level() instanceof ServerLevel level) || !level.hasChunkAt(block)) return;
         BlockPos feet = c.blockPosition();
         double across = Math.hypot(block.getX() + .5D - c.getX(), block.getZ() + .5D - c.getZ());
+        String answer = how.way().name().toLowerCase(Locale.ROOT);
+        // A way asked again every tick is one decision, not sixty lines: said again only when it changes.
+        String line = block.toShortString() + "|" + answer + "|" + how.steps() + "|" + how.gap() + "|" + how.why();
+        if (line.equals(SAID.get(c.getUUID()))) return;
+        SAID.put(c.getUUID(), line);
         dev.aicompanion.CompanionDiagnostics.event(c.diagnosticTrace(), "way_decision", "entity", c.getUUID(),
                 "block", block.toShortString(), "id", BuiltInRegistries.BLOCK.getKey(level.getBlockState(block).getBlock()),
                 "rise", block.getY() - feet.getY(), "across", Math.round(across * 100) / 100D,
-                "answer", how.way().name().toLowerCase(Locale.ROOT), "shape", how.shape(),
+                "answer", answer, "shape", how.shape(),
                 "steps", how.steps(), "gap", how.gap(), "why", how.why());
     }
 

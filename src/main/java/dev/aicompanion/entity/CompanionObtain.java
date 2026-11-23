@@ -165,6 +165,18 @@ public final class CompanionObtain {
         Item item = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
         if (item == null || item == Items.AIR) return new Plan(List.of(), "Не понял, какой предмет нужен.");
         CompanionObtain planner = new CompanionObtain(level, carried, benchNearby || carried.stream().anyMatch(stack -> stack.is(Items.CRAFTING_TABLE)), grows, roams, trip, his, reachable, whyNot);
+        // What lies about him of this very item is taken by the one geometry way before anything is made of it — a planks
+        // block, a lapis block, a pumpkin in the air, a stripped block as it lies: the same rule for every block, no names
+        // (PATH7, #105). It comes before a chain of his own skills: what is already in the world is no work to make.
+        // Obsidian keeps its own work, which also cools lava and takes the water back, but its blocks are counted by that answer.
+        if (carried(carried, item) >= count) return new Plan(List.of(), null);
+        CompanionReach.Available lying = reachable == null || item == Items.OBSIDIAN
+                || CompanionLeaves.isLeaf(BuiltInRegistries.ITEM.getKey(item).toString()) ? null : reachable.apply(item);
+        if (lying != null && lying.some() && lying.count() >= count) {
+            if (lying.soil() > 0) planner.addSplit("gather_dirt", "", lying.soil(), 64);
+            if (!planner.gather(item, id.toString(), count, 0)) return new Plan(List.of(), planner.why);
+            return new Plan(List.copyOf(merged(planner.steps)), null);
+        }
         // Logs the player asked for by name are that species, wherever the plan goes on; inside a chain wood stays a family (key).
         var species = CompanionWoodKind.of(id.toString());
         if (species != null && plainLog(id.getPath())) {
@@ -183,16 +195,6 @@ public final class CompanionObtain {
         if (target.equals(STONE) && item != Items.COBBLESTONE)
             return new Plan(List.of(), carried(carried, item) >= count ? null : "Камень копаю какой попадётся: именно «" + name(item) + "» добыть не умею.");
         if (planner.bag.getOrDefault(target, 0) >= count) return new Plan(List.of(), null);
-        // What lies about him of this very item is taken by the one geometry way before anything is made of it — a planks
-        // block, a lapis block, a pumpkin in the air: the same rule for every block, no names (PATH7, #105). Obsidian keeps its
-        // own work, which also cools lava and takes the water back, but its blocks are counted by the same answer.
-        CompanionReach.Available lying = reachable == null || item == Items.OBSIDIAN
-                || CompanionLeaves.isLeaf(BuiltInRegistries.ITEM.getKey(item).toString()) ? null : reachable.apply(item);
-        if (lying != null && lying.some() && lying.count() >= count) {
-            if (lying.soil() > 0) planner.addSplit("gather_dirt", "", lying.soil(), 64);
-            if (!planner.gather(item, id.toString(), count, 0)) return new Plan(List.of(), planner.why);
-            return new Plan(List.copyOf(merged(planner.steps)), null);
-        }
         // The wood families are named by the exact item at the top: «доски» means real planks in the bag at the end.
         boolean ok = target.equals(PLANKS) || target.equals("minecraft:stick")
                 ? planner.need(target, count, 1) && planner.add("craft_item", id.toString(), count)

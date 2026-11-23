@@ -33,6 +33,8 @@ final class CompanionBridge {
     private static final int PATIENCE = 400;
     /** Ticks the way back may spend before his own floor is left standing (another player may need it). */
     private static final int CLEANUP_TICKS = 600;
+    /** How close a village or a remembered place of the player's is to his own floor being taken back (blocks). */
+    private static final int PLACE = 300;
 
     private final CompanionEntity owner;
     private final CompanionBlockBreaking breaking;
@@ -106,11 +108,25 @@ final class CompanionBridge {
     void requestCleanup() {
         breaking.reset();
         if (recovering) return;
-        recovering = isActive();
+        if (!isActive()) { clear(); return; }
+        // A bridge is a way, not a scaffold: it stays standing where he made it — in a village or at a place the player remembers
+        // within 300 blocks it is taken back, so nobody's street is left built over (idea PATH7, #105). The Nether is the same:
+        // no village, and his floor may stay unless a remembered point is there.
+        if (owner.level() instanceof ServerLevel level && !nearSomeoneElsesPlace(level)) { clear(); return; }
+        recovering = true;
         path = null;
         owner.getNavigation().stop();
         cleanupTicks = 0;
-        if (!recovering) clear();
+    }
+
+    /** A village or a remembered point of the player's within 300 blocks of where the bridge stands. */
+    private boolean nearSomeoneElsesPlace(ServerLevel level) {
+        BlockPos here = owner.blockPosition();
+        if (level.structureManager().getStructureWithPieceAt(here, net.minecraft.tags.StructureTags.VILLAGE).isValid()) return true;
+        if (owner.getOwnerId() == null) return false;
+        for (CompanionMarkers.Marker marker : CompanionMarkers.get(level.getServer()).all(owner.getOwnerId()))
+            if (marker.dimension().equals(level.dimension()) && marker.pos().distSqr(here) <= PLACE * PLACE) return true;
+        return false;
     }
 
     /** Called every tick by the recovery goal: true once the last of his own floor is back in his bag or left standing. */

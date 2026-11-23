@@ -86,7 +86,9 @@ final class CompanionPickable {
             if (block.asItem() != item) continue;
             BlockState state = block.defaultBlockState();
             if (state.isAir()) continue;
-            ItemStack given = sure(level, state, tool(state), breaker);
+            // The game's own map of a block to its item: what the block gives at all, with the strongest tool there is — the
+            // question is not what he can make (a lapis block is lapis though a wooden pickaxe takes nothing of it).
+            ItemStack given = sure(level, state, anyTool(state), breaker);
             boolean silk = false;
             if (given.isEmpty()) { given = sure(level, state, silkTool(level, state), breaker); silk = !given.isEmpty(); }
             if (given.isEmpty() || given.getItem() != item) continue;
@@ -276,5 +278,14 @@ final class CompanionPickable {
         if (tool.isEmpty()) tool = new ItemStack(Items.SHEARS);
         tool.enchant(level.registryAccess().holderOrThrow(Enchantments.SILK_TOUCH), 1);
         return tool;
+    }
+
+    /** The strongest tool of the game's, for the question of what a block gives at all, never what he makes. */
+    static ItemStack anyTool(BlockState state) {
+        for (ItemStack candidate : new ItemStack[]{new ItemStack(Items.DIAMOND_SHOVEL), new ItemStack(Items.DIAMOND_AXE),
+                new ItemStack(Items.DIAMOND_HOE), new ItemStack(Items.DIAMOND_PICKAXE)}) {
+            if (state.requiresCorrectToolForDrops() ? candidate.isCorrectToolForDrops(state) : candidate.getDestroySpeed(state) > 1) return candidate;
+        }
+        return ItemStack.EMPTY;
     }
 }

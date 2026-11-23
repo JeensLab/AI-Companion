@@ -305,6 +305,7 @@ public final class CompanionRoute {
         // The climb must be ticked every tick of its climb, the jump's own arc included: that is when its step is set down.
         // So the way already standing is ticked before anything else, even while he is off the ground in its jump.
         if (pillar.isWayActive()) return tickWay(pillar, block);
+        // A floor across the gap already being laid is ticked before anything else: its plan stands while it is his.
         if (owner.temporaryBridge.isActive() || owner.temporaryBridge.isRecovering()) return tickBridge(block);
         if (pillar.isActive()) return noWay(block, "a leaf crown's column stands");
         // Between two steps before a way is raised (a hop on the way to it): the block is not given up, asked again next tick.
@@ -314,7 +315,14 @@ public final class CompanionRoute {
         CompanionReach.How how = CompanionReach.how(owner, (ServerLevel) owner.level(), block, 3.5D, true, false, CompanionPillar.WAY_SUPPORTS);
         CompanionReach.decision(owner, block, how);
         if (how.bridge()) return tickBridge(block);
-        if (!how.up()) return noWay(block, how.why());
+        if (!how.up()) {
+            // A stand cell reaches it, yet the walk could not get there (a gap, a wall): a floor laid across the gap before it
+            // is the same geometry answer (PATH7: «мост через провал»).
+            if ((how.way() == CompanionReach.Way.WALK || how.way() == CompanionReach.Way.ACROSS)
+                    && CompanionReach.bridge(owner, (ServerLevel) owner.level(), block, 3.5D, true, CompanionPillar.WAY_SUPPORTS, false) != null)
+                return tickBridge(block);
+            return noWay(block, how.why());
+        }
         return tickWay(pillar, block);
     }
 
@@ -337,8 +345,11 @@ public final class CompanionRoute {
     private int noWay(BlockPos block, String why) {
         if (!why.equals(wayRefusal)) {
             wayRefusal = why;
+            // The refusal names the block and its real distance, not the first thing that came to mind (PATH7, #105).
             dev.aicompanion.CompanionDiagnostics.event(w.owner.diagnosticTrace(), "way_refused", "entity", w.owner.getUUID(),
-                    "why", why, "block", block, "position", w.owner.blockPosition());
+                    "why", why, "block", block, "position", w.owner.blockPosition(),
+                    "id", net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(w.owner.level().getBlockState(block).getBlock()),
+                    "rise", block.getY() - w.owner.blockPosition().getY(), "distance", CompanionReach.distance(w.owner, block));
         }
         return -1;
     }

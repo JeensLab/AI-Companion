@@ -370,7 +370,8 @@ final class CompanionPicking {
     }
 
     /** What he leaves where it stands: the player's buildings, and the stone the player set down anywhere (a path, a wall of andesite). */
-    private static Predicate<BlockPos> kept(CompanionEntity c, ServerLevel level) {
+    /** The cells that are the player's own build: never dug for a way (the wall in the way is walked round, not broken). */
+    static Predicate<BlockPos> kept(CompanionEntity c, ServerLevel level) {
         if (c.getOwnerId() == null) return pos -> false;
         Predicate<BlockPos> site = sites(c, level), stone = CompanionPlayerBuilds.get(level.getServer()).placedStone(c.getOwnerId(), level);
         return pos -> site.test(pos) || stone.test(pos);
@@ -581,15 +582,20 @@ final class CompanionPicking {
      * up's sixteen steps (PATH7). False when he cannot build up to it at all: no soil, a ceiling, or a block too high.
      */
     private boolean climb(ServerLevel level) {
+        // A floor across the gap already being laid is ticked before anything else: its plan is kept while it stands, and the
+        // material of its cells is already in the world (no plan is made anew for a floor that is laid).
+        if (c.temporaryBridge.isActive() || c.temporaryBridge.isRecovering()) return bridge(level);
         // Already within a swing from the top of his own column: no more steps up, the crown is cut from here.
         if (c.temporaryPillar.isActive() && c.temporaryPillar.inReach(target)) { stands = Set.of(c.blockPosition()); return true; }
         int limit = level.getBlockState(target).is(BlockTags.LEAVES) ? CompanionPillar.LEAF_SUPPORTS : CompanionPillar.WAY_SUPPORTS;
         Set<BlockPos> feet = c.temporaryPillar.buildCells(target, limit, c.temporaryPillar.soilCarried());
         if (feet.isEmpty()) {
             // No column reaches it: a floor laid across the gap between him and it, the same geometry answer (PATH7: «мост»).
+            // A stand cell that reaches it but no walk does (a gap, a wall) is the same case.
             CompanionReach.How how = CompanionReach.how(c, level, target, STAND_REACH, true, false, CompanionPillar.WAY_SUPPORTS);
             CompanionReach.decision(c, target, how);
-            if (how.bridge()) return bridge(level);
+            if (how.bridge() || (how.way() == CompanionReach.Way.WALK || how.way() == CompanionReach.Way.ACROSS)
+                    && CompanionReach.bridge(c, level, target, STAND_REACH, true, CompanionPillar.WAY_SUPPORTS, false) != null) return bridge(level);
             dev.aicompanion.CompanionDiagnostics.event(c.diagnosticTrace(), "climb_refused", "entity", c.getUUID(), "target", target,
                     "reason", how.why(), "limit", limit, "soil", c.temporaryPillar.soilCarried());
             return false;
@@ -738,10 +744,11 @@ final class CompanionPicking {
             if (stone && stands.removeAll(unreached) && stands.isEmpty()) { passed.add(target); release(); return; }
         }
         if (stands.isEmpty()) {
-            // A crown above every stand cell: he builds up to it on the wood path's own soil supports, cuts it from the top
-            // of the column, and the soil comes back when he is down (requestCleanup, the descent of RecoverSupportsGoal).
-            // Stone dug by name is taken where a face shows from the ground, never from a column (CompanionPickable).
-            if (stone || !climb(level)) { passed.add(target); release(); }
+            // A crown above every stand cell, or any block no stand cell reaches: he builds up to it on the wood path's own soil
+            // supports, cuts it from the top of the column, and the soil comes back when he is down (requestCleanup, the descent
+            // of RecoverSupportsGoal). Stone dug by name is taken where a face shows, and a column to it is the way when no
+            // ground reaches it (PATH7: a granite hanging in the air). A hollow with no way to the column's foot is still passed.
+            if (!climb(level)) { passed.add(target); release(); }
             return;
         }
         if (!stands.contains(c.blockPosition())) {

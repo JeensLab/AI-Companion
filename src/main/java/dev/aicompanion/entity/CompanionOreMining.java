@@ -113,6 +113,14 @@ final class CompanionOreMining {
     void mineOre(ServerLevel level) {
         if (w.oreDone || w.oreMined >= w.oreWanted) {
             w.oreDone = true;
+            // The way's own column comes down before the drop is looked for (PATH7): he steps down dismantling it behind him,
+            // and a bridge of his stays standing as any bridge does. The pickup waits while the way is his.
+            if (w.owner.temporaryPillar.isActive() || w.owner.temporaryPillar.isRecovering()
+                    || w.owner.temporaryBridge.isActive() || w.owner.temporaryBridge.isRecovering()) {
+                w.owner.temporaryPillar.requestCleanup();
+                w.owner.temporaryBridge.requestCleanup();
+                return;
+            }
             // A drop that fell into a pocket while the rest of the vein still closed it is reachable now: one more round.
             if (!w.oreLootRetried) { w.oreLootRetried = true; w.owner.retryHarvestPickup(); return; }
             climbOutOfOre(level); return;
@@ -237,7 +245,14 @@ final class CompanionOreMining {
             w.oreNoTunnel.add(candidate);
             if (lacked) lackedPlugs.add(candidate.immutable());
             if (fall) lavaFalls.add(candidate.immutable());
-            if (w.oreOffFoot.contains(candidate)) { unreachable(candidate); w.oreRejected.add(candidate); w.oreCandidates.remove(candidate); }
+            if (w.oreOffFoot.contains(candidate)) {
+                // Neither on foot nor by a tunnel: a block in the air is still a way of its own — a column of his soil up to it
+                // or a floor across the gap before it, the same geometry answer as for any block (PATH7, #105).
+                CompanionReach.How way = CompanionReach.how(w.owner, level, candidate, 3.5D, true, true, CompanionPillar.WAY_SUPPORTS);
+                CompanionReach.decision(w.owner, candidate, way);
+                if (way.yes()) return chosenOre(candidate, null);
+                unreachable(candidate); w.oreRejected.add(candidate); w.oreCandidates.remove(candidate);
+            }
         }
         return walk == null ? null : chosenOre(walk.block(), walk.path());
     }
