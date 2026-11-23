@@ -127,7 +127,7 @@ public final class CompanionReach {
         How up = up(c, level, block, allowDugSoil, maxSteps);
         if (up.yes()) return up;
         BridgePlan bridge = bridge(c, level, block, reach, forTheDrop, maxSteps, allowDugSoil);
-        if (bridge != null) return new How(Way.BRIDGE, 0, bridge.length(), "");
+        if (bridge != null && bridge.length() > 0) return new How(Way.BRIDGE, 0, bridge.length(), "");
         // No way: the distance is the honest reason, never the first thing that comes to mind.
         int rise = block.getY() - feet.getY();
         double across = Math.hypot(block.getX() + .5D - c.getX(), block.getZ() + .5D - c.getZ());
@@ -140,10 +140,10 @@ public final class CompanionReach {
         if (!c.buildWay()) return new How(Way.NONE, 0, 0, "switch off");
         int rise = block.getY() - c.blockPosition().getY();
         if (rise < 2 || rise > CompanionPillar.WAY_HEIGHT) return new How(Way.NONE, 0, 0, "rise " + rise);
-        // The feet of the column may stand up to four across from the block (CompanionPillar.columns), so a block farther than
-        // that from him is no column's — the walk is what takes it. Any offset within that is the same question.
+        // The way's budget across is four blocks from him: within it the feet of the column may stand anywhere the swing reaches
+        // (CompanionPillar.columns), and any offset there is the same question. A block farther is the walk's, not a column's.
         double dx = block.getX() + .5D - c.getX(), dz = block.getZ() + .5D - c.getZ();
-        if (dx * dx + dz * dz > 64.0D) return new How(Way.NONE, 0, 0, "across " + Math.round(Math.sqrt(dx * dx + dz * dz) * 10) / 10D);
+        if (dx * dx + dz * dz > 16.0D) return new How(Way.NONE, 0, 0, "across " + Math.round(Math.sqrt(dx * dx + dz * dz) * 10) / 10D);
         int limit = Math.clamp(maxSteps, 1, CompanionPillar.WAY_SUPPORTS);
         int carried = c.temporaryPillar.soilCarried();
         int least = c.temporaryPillar.leastSteps(block, limit);
@@ -266,8 +266,10 @@ public final class CompanionReach {
      * lies there.
      */
     public static Available lying(CompanionEntity c, ServerLevel level, Item item) {
+        // Only blocks that are his to take: a flower bed or a wall of the player's is not gathered (CompanionPicking's own rule).
+        java.util.function.Predicate<BlockPos> mine = pos -> !CompanionPicking.kept(c, level).test(pos);
         List<BlockPos> blocks = CompanionObsidian.all(c, level, CompanionObsidian.DEPTH,
-                state -> state.getBlock().asItem() == item, pos -> true);
+                state -> state.getBlock().asItem() == item, mine);
         return available(c, level, blocks, 3.5D, true, true, CompanionPillar.WAY_SUPPORTS);
     }
 

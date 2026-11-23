@@ -594,8 +594,9 @@ final class CompanionPicking {
             // A stand cell that reaches it but no walk does (a gap, a wall) is the same case.
             CompanionReach.How how = CompanionReach.how(c, level, target, STAND_REACH, true, false, CompanionPillar.WAY_SUPPORTS);
             CompanionReach.decision(c, target, how);
-            if (how.bridge() || (how.way() == CompanionReach.Way.WALK || how.way() == CompanionReach.Way.ACROSS)
-                    && CompanionReach.bridge(c, level, target, STAND_REACH, true, CompanionPillar.WAY_SUPPORTS, false) != null) return bridge(level);
+            CompanionReach.BridgePlan plan = (how.way() == CompanionReach.Way.WALK || how.way() == CompanionReach.Way.ACROSS)
+                    ? CompanionReach.bridge(c, level, target, STAND_REACH, true, CompanionPillar.WAY_SUPPORTS, false) : null;
+            if (how.bridge() || plan != null && plan.length() > 0) return bridge(level);
             dev.aicompanion.CompanionDiagnostics.event(c.diagnosticTrace(), "climb_refused", "entity", c.getUUID(), "target", target,
                     "reason", how.why(), "limit", limit, "soil", c.temporaryPillar.soilCarried());
             return false;

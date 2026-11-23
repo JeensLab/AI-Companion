@@ -318,9 +318,10 @@ public final class CompanionRoute {
         if (!how.up()) {
             // A stand cell reaches it, yet the walk could not get there (a gap, a wall): a floor laid across the gap before it
             // is the same geometry answer (PATH7: «мост через провал»).
-            if ((how.way() == CompanionReach.Way.WALK || how.way() == CompanionReach.Way.ACROSS)
-                    && CompanionReach.bridge(owner, (ServerLevel) owner.level(), block, 3.5D, true, CompanionPillar.WAY_SUPPORTS, false) != null)
-                return tickBridge(block);
+            CompanionReach.BridgePlan plan = (how.way() == CompanionReach.Way.WALK || how.way() == CompanionReach.Way.ACROSS)
+                    ? CompanionReach.bridge(owner, (ServerLevel) owner.level(), block, 3.5D, true, CompanionPillar.WAY_SUPPORTS, false) : null;
+            // A floor to lay is what makes a bridge: a bank and the far cell with a floor between them already is no bridge.
+            if (plan != null && plan.length() > 0) return tickBridge(block);
             return noWay(block, how.why());
         }
         return tickWay(pillar, block);

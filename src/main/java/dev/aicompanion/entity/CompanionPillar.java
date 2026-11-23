@@ -412,10 +412,9 @@ public final class CompanionPillar {
         java.util.Map<BlockPos, Integer> cells = new java.util.LinkedHashMap<>();
         if (!(owner.level() instanceof ServerLevel level) || !level.hasChunkAt(block)) return cells;
         // The feet may stand as far below the block as a swing from the top of the column reaches: four blocks and the block
-        // itself, so a crown nine above the ground is no crown above its own six-step column. Sideways the feet may stand
-        // anywhere the swing still reaches: not only under the block, but up to four across from it — the way to a block up
-        // and to the side is the same question of geometry for any block (idea PATH7, #105).
-        for (int down = 1; down <= limit + 5; down++) for (int dx = -4; dx <= 4; dx++) for (int dz = -4; dz <= 4; dz++) {
+        // itself, so a crown nine above the ground is no crown above its own six-step column. Sideways the feet stand within two
+        // of the block: from there the top of the column swings to it whatever its offset up to the way's four (PATH7, #105).
+        for (int down = 1; down <= limit + 5; down++) for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
             BlockPos feet = block.offset(dx, -down, dz);
             if (!safeFoundation(level, feet.below())) continue;
             int steps = requiredSteps(block, feet);
@@ -443,10 +442,10 @@ public final class CompanionPillar {
         BlockPos origin = owner.blockPosition();
         // Directly under the log is allowed: with the trunk chopped away, that is where a hanging crown is reached from.
         // While the trunk still stands, columnClearable rejects that column because the trunk itself is solid.
-        for (int dx = -4; dx <= 4; dx++) for (int dz = -4; dz <= 4; dz++) {
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
             for (int dy = -2; dy <= 2; dy++) {
                 BlockPos feet = new BlockPos(log.getX() + dx, origin.getY() + dy, log.getZ() + dz);
-                if (feet.distSqr(origin) > 144.0D || !safeFoundation(level, feet.below())) continue;
+                if (feet.distSqr(origin) > 100.0D || !safeFoundation(level, feet.below())) continue;
                 int steps = requiredSteps(log, feet);
                 if (steps > supply && steps <= limit) failureReason = "Для подъёма не хватает земли в сумке";
                 if (steps <= 0 || steps > limit || steps > supply || !columnClearable(level, feet, steps)) continue;
@@ -464,9 +463,9 @@ public final class CompanionPillar {
         double dx = log.getX() - feet.getX();
         double dz = log.getZ() - feet.getZ();
         double horizontal = dx * dx + dz * dz;
-        // The top of the column stands within a swing of the block: sideways the feet may be as far as the reach allows, less
-        // the half block a step rounds up to (the block's middle is half a block over the cell's).
-        if (horizontal > REACH_SQR - 0.25D) return -1;
+        // The top of the column stands within a swing of the block: the feet are within two across of it, so the top of the
+        // column reaches the block's middle, half a block over its cell.
+        if (horizontal > 8.0D) return -1;
         double vertical = Math.sqrt(REACH_SQR - horizontal);
         int steps = Math.max(0, (int) Math.ceil(log.getY() + 0.5D - feet.getY() - vertical));
         // A step rounded up may leave the top over the block: what the top does not reach is no column.
@@ -480,9 +479,9 @@ public final class CompanionPillar {
             if (!level.hasChunkAt(pos) || !level.getWorldBorder().isWithinBounds(pos)
                     || !level.getFluidState(pos).isEmpty()) return false;
             BlockState state = level.getBlockState(pos);
-            // Foliage and natural ground in the column's own cells are taken as it rises (clearJumpSpace): only a block of
-            // somebody's build stands in the way for good.
-            if (!state.getCollisionShape(level, pos).isEmpty() && !isFoliage(state) && !inTheWay(level, pos, state)) return false;
+            // Foliage in the column's own cells is taken as it rises; a solid block of any kind — the player's, or a natural
+            // ceiling — stands in the way for good, and the refusal says so (the matrix ratified it).
+            if (!state.getCollisionShape(level, pos).isEmpty() && !isFoliage(state)) return false;
         }
         return true;
     }

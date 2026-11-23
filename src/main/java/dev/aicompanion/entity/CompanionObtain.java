@@ -170,7 +170,10 @@ public final class CompanionObtain {
         // (PATH7, #105). It comes before a chain of his own skills: what is already in the world is no work to make.
         // Obsidian keeps its own work, which also cools lava and takes the water back, but its blocks are counted by that answer.
         if (carried(carried, item) >= count) return new Plan(List.of(), null);
+        // A field crop is the farm's own: the ripe ones about him are reaped and sown again, never gathered as a block (a carrot
+        // crop is a carrot, but the farm knows the field). Every other block that IS the item is taken as it lies.
         CompanionReach.Available lying = reachable == null || item == Items.OBSIDIAN
+                || CompanionCrops.Kind.yielding(item) != null
                 || CompanionLeaves.isLeaf(BuiltInRegistries.ITEM.getKey(item).toString()) ? null : reachable.apply(item);
         if (lying != null && lying.some() && lying.count() >= count) {
             if (lying.soil() > 0) planner.addSplit("gather_dirt", "", lying.soil(), 64);

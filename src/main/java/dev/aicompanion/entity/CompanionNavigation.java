@@ -221,7 +221,13 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
     CompanionSearch advance(Set<BlockPos> targets, int accuracy, float range) { return advance(targets, accuracy, range, false, TICK_CELLS); }
 
     private CompanionSearch advance(Set<BlockPos> targets, int accuracy, float range, boolean whole, int cap) {
-        if (targets.isEmpty() || mob.getY() < level.getMinBuildHeight() || !canUpdatePath()) return null;
+        if (targets.isEmpty() || mob.getY() < level.getMinBuildHeight() || !canUpdatePath()) {
+            // A search that did not run at all is no answer: said with the reason, so a wait is read from the world.
+            dev.aicompanion.CompanionDiagnostics.event(mob instanceof CompanionEntity c ? c.diagnosticTrace() : "", "search_skipped",
+                    "entity", mob.getUUID(), "at", mob.blockPosition(), "feetY", Math.round(mob.getY() * 100) / 100D,
+                    "ground", mob.onGround(), "empty", targets.isEmpty(), "cells", targets.size(), "dy", Math.round(mob.getDeltaMovement().y * 1000) / 1000D, "water", mob.isInWater(), "passenger", mob.isPassenger(), "climbable", mob.onClimbable(), "below", level.getBlockState(mob.blockPosition().below()).getBlock().toString());
+            return null;
+        }
         long now = level.getGameTime();
         Key key = new Key(Set.copyOf(targets), accuracy, range);
         CompanionSearch search = searches.get(key);
@@ -278,7 +284,12 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
         own.prepare(new net.minecraft.world.level.PathNavigationRegion(level, at.offset(-i, -i, -i), at.offset(i, i, i)), mob);
         own.keepOffBreath(CompanionDragonBreath.clouds(level, new net.minecraft.world.phys.AABB(at).inflate(i)));
         CompanionSearch search = CompanionSearch.create(own, mob, key.targets, key.accuracy, key.range, now);
-        if (search == null) own.done(); else search.budget = Math.min(search.budget, budget);
+        if (search == null) {
+            // No cell to stand in at all (inside a block, on a crop's thin shape): said once, so a search that did not run is read.
+            dev.aicompanion.CompanionDiagnostics.event(mob instanceof CompanionEntity c ? c.diagnosticTrace() : "", "search_not_started",
+                    "entity", mob.getUUID(), "at", at, "feetY", Math.round(mob.getY() * 100) / 100D, "ground", mob.onGround());
+            own.done();
+        } else search.budget = Math.min(search.budget, budget);
         return search;
     }
 
