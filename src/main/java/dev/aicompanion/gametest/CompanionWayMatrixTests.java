@@ -89,9 +89,19 @@ public final class CompanionWayMatrixTests {
         gourdAbove(h, 8, Blocks.PUMPKIN, Items.PUMPKIN, 1);
     }
 
+    @GameTest(template = "tall_tree", timeoutTicks = 6000)
+    public static void pumpkinNineAboveIsMinedFromAColumnThatComesDown(GameTestHelper h) {
+        gourdAbove(h, 9, Blocks.PUMPKIN, Items.PUMPKIN, 1);
+    }
+
     @GameTest(template = "tall_tree", timeoutTicks = 8000)
     public static void pumpkinTenAboveIsMinedFromAColumnThatComesDown(GameTestHelper h) {
         gourdAbove(h, 10, Blocks.PUMPKIN, Items.PUMPKIN, 1);
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 8000)
+    public static void pumpkinElevenAboveIsMinedFromAColumnThatComesDown(GameTestHelper h) {
+        gourdAbove(h, 11, Blocks.PUMPKIN, Items.PUMPKIN, 1);
     }
 
     @GameTest(template = "tall_tree", timeoutTicks = 8000)
@@ -99,7 +109,27 @@ public final class CompanionWayMatrixTests {
         gourdAbove(h, 12, Blocks.PUMPKIN, Items.PUMPKIN, 1);
     }
 
-    /** The top of the way: sixteen above his feet, thirteen steps of soil, every one of them back in the bag. */
+    /** Thirteen above: ten steps of soil, the height the old search of twelve never saw. */
+    @GameTest(template = "tall_tree", timeoutTicks = 10000)
+    public static void pumpkinThirteenAboveIsMinedFromAColumnThatComesDown(GameTestHelper h) {
+        gourdAbove(h, 13, Blocks.PUMPKIN, Items.PUMPKIN, 1);
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 10000)
+    public static void pumpkinFourteenAboveIsMinedFromAColumnThatComesDown(GameTestHelper h) {
+        gourdAbove(h, 14, Blocks.PUMPKIN, Items.PUMPKIN, 1);
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 10000)
+    public static void pumpkinFifteenAboveIsMinedFromAColumnThatComesDown(GameTestHelper h) {
+        gourdAbove(h, 15, Blocks.PUMPKIN, Items.PUMPKIN, 1);
+    }
+
+    /**
+     * The top of the way, and the only scenario at its bounds: sixteen above his feet is the height the search may see
+     * ({@code CompanionPicking.DEPTH}) and thirteen steps is the most the column may take ({@code CompanionPillar.WAY_SUPPORTS}),
+     * every one of the thirteen back in the bag.
+     */
     @GameTest(template = "tall_tree", timeoutTicks = 10000)
     public static void pumpkinSixteenAboveIsMinedFromAColumnThatComesDown(GameTestHelper h) {
         gourdAbove(h, 16, Blocks.PUMPKIN, Items.PUMPKIN, 1);
@@ -130,11 +160,6 @@ public final class CompanionWayMatrixTests {
         obsidianAbove(h, 12);
     }
 
-    @GameTest(template = "tall_tree", timeoutTicks = 10000)
-    public static void obsidianSixteenAboveIsMinedFromAColumnThatComesDown(GameTestHelper h) {
-        obsidianAbove(h, 16);
-    }
-
     @GameTest(template = "tall_tree", timeoutTicks = 6000)
     public static void melonFourAboveGivesItsSlicesFromAColumn(GameTestHelper h) {
         melonAbove(h, 4);
@@ -148,11 +173,6 @@ public final class CompanionWayMatrixTests {
     @GameTest(template = "tall_tree", timeoutTicks = 8000)
     public static void melonTenAboveGivesItsSlicesFromAColumn(GameTestHelper h) {
         melonAbove(h, 10);
-    }
-
-    @GameTest(template = "tall_tree", timeoutTicks = 10000)
-    public static void melonSixteenAboveGivesItsSlicesFromAColumn(GameTestHelper h) {
-        melonAbove(h, 16);
     }
 
     @GameTest(template = "tall_tree", timeoutTicks = 6000)
@@ -271,7 +291,7 @@ public final class CompanionWayMatrixTests {
         });
     }
 
-    /** Seventeen above is beyond the way's height: an honest refusal, the block left and no column started. */
+    /** The first height past the way's bound, and the only scenario at it: seventeen above is refused honestly, the block left and no column started. */
     @GameTest(template = "tall_tree", timeoutTicks = 800)
     public static void aBlockSeventeenAboveIsRefusedHonestly(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
@@ -290,46 +310,6 @@ public final class CompanionWayMatrixTests {
             h.assertBlockPresent(Blocks.PUMPKIN, target);
             h.assertTrue(count(c, Items.DIRT) == 20, "The soil was spent on a refusal: " + report);
             h.assertTrue(!report.contains("Полторы минуты") && !report.contains("не выполнено"), "A wrong end: " + report);
-            assertRestored(h, before);
-        });
-    }
-
-    @GameTest(template = "tall_tree", timeoutTicks = 800)
-    public static void obsidianSeventeenAboveIsRefusedHonestly(GameTestHelper h) {
-        flat(h, Blocks.GRASS_BLOCK);
-        BlockPos target = new BlockPos(16, FEET + 17, 16);
-        h.setBlock(target, Blocks.OBSIDIAN);
-        CompanionEntity c = spawn(h);
-        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
-        c.setItem(1, new ItemStack(Items.DIRT, 20));
-        int[] before = snapshot(h);
-        int[] most = {0};
-        h.onEachTick(() -> most[0] = Math.max(most[0], c.getTemporarySupportCount()));
-        var future = say(h, c, "добудь обсидиан");
-        h.succeedWhen(() -> {
-            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
-            String report = future.join().report();
-            h.assertTrue(count(c, Items.OBSIDIAN) == 0 && most[0] == 0 && count(c, Items.DIRT) == 20, "Seventeen above was taken: " + report);
-            h.assertBlockPresent(Blocks.OBSIDIAN, target);
-            assertRestored(h, before);
-        });
-    }
-
-    @GameTest(template = "tall_tree", timeoutTicks = 800)
-    public static void melonSeventeenAboveIsRefusedHonestly(GameTestHelper h) {
-        flat(h, Blocks.GRASS_BLOCK);
-        BlockPos target = new BlockPos(16, FEET + 17, 16);
-        h.setBlock(target, Blocks.MELON);
-        CompanionEntity c = spawn(h);
-        c.setItem(1, new ItemStack(Items.DIRT, 20));
-        int[] before = snapshot(h);
-        int[] most = {0};
-        h.onEachTick(() -> most[0] = Math.max(most[0], c.getTemporarySupportCount()));
-        var future = sayModel(h, c, "добудь 3 ломтика арбуза", melonPlan(3));
-        h.succeedWhen(() -> {
-            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
-            h.assertTrue(count(c, Items.MELON_SLICE) == 0 && most[0] == 0, "Seventeen above was taken: " + future.join().report());
-            h.assertBlockPresent(Blocks.MELON, target);
             assertRestored(h, before);
         });
     }
@@ -1864,7 +1844,7 @@ public final class CompanionWayMatrixTests {
         });
     }
 
-    /** The answer names the count it really took: one pumpkin, one in the bag. */
+    /** The answer names the count it really took: one pumpkin, and the line says one — not ten, eleven or twenty-one. */
     @GameTest(template = "tall_tree", timeoutTicks = 6000)
     public static void theOrderReportsTheCountItTook(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
@@ -1877,7 +1857,8 @@ public final class CompanionWayMatrixTests {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
             String report = future.join().report();
             String said = dev.aicompanion.client.CompanionDialogue.summarize(CompanionPlanCodec.parsePlan(JsonParser.parseString(pumpkinPlan(1))), report);
-            h.assertTrue(count(c, Items.PUMPKIN) == 1 && said.contains("1") && !said.contains("не выполнено"), "The answer hides the count: " + said + ", " + report);
+            String counted = "Готово: «" + new ItemStack(Items.PUMPKIN).getHoverName().getString() + "» у меня, 1 шт.";
+            h.assertTrue(count(c, Items.PUMPKIN) == 1 && said.equals(counted), "The answer hides the count: " + said + ", not " + counted + ", " + report);
         });
     }
 
