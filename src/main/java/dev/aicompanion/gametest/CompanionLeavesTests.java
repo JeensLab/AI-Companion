@@ -225,7 +225,8 @@ public final class CompanionLeavesTests {
             String report = future.join().report();
             String said = dev.aicompanion.client.CompanionDialogue.summarize(plan, report);
             h.assertTrue(count(c, Items.SPRUCE_LEAVES) >= 16, "Not sixteen leaves: " + count(c, Items.SPRUCE_LEAVES) + ", " + report);
-            h.assertTrue(said.equals("Собрал 16 листьев."), "The answer is not the count: " + said + ", " + report);
+            // A leaf the column cleared out of its way comes into the bag too: the answer names what the bag holds, never a fixed sixteen.
+            h.assertTrue(said.equals("Собрал " + count(c, Items.SPRUCE_LEAVES) + " листьев."), "The answer is not the count: " + said + ", " + report);
             h.assertTrue(supports[0] > 0 && highest[0] > groundY + 2, "He never built up: supports " + supports[0] + ", highest y " + highest[0] + ", " + report);
             h.assertTrue(c.onGround() && Math.abs(c.getY() - groundY) < 0.6, "He did not come back down: y " + c.getY() + ", " + report);
             h.assertTrue(c.getHealth() == c.getMaxHealth(), "The climb hurt him: " + c.getHealth() + " of " + c.getMaxHealth() + ", " + report);
