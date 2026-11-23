@@ -35,7 +35,7 @@ import static dev.aicompanion.gametest.CompanionMineFightTests.zombie;
 @PrefixGameTestTemplate(false)
 public final class CompanionCrowdFightTests {
     /** The hall is the chamber at the foot of the stairs, four cells of air: the least a column of two and he on it take. A column of three takes five. */
-    private static final int HALL = 13, ROOF = 3, HIGH = 5, KILL_TICKS = 1800, BLOWS = 3, STAND = 3, FIRST_KILL_TICKS = 400, COLUMN = 2, COLUMN_TICKS = 200, LEAST_CROWD = 3;
+    private static final int HALL = 13, ROOF = 3, HIGH = 5, KILL_TICKS = 1800, BLOWS = 3, STAND = 3, FIRST_KILL_TICKS = 400, COLUMN = 2, COLUMN_TICKS = 200, LEAST_CROWD = 3, THROWN = 2;
     private static final float HURT = 12;
     /** Where the five stand: across the hall from his corner. */
     private static final int[][] CROWD = {{6, 0}, {6, 2}, {7, 4}, {5, 5}, {8, 1}};
@@ -122,6 +122,39 @@ public final class CompanionCrowdFightTests {
             h.assertTrue(c.isAlive(), "Died" + trace);
             h.assertTrue(h.getTick() - begun < COLUMN_TICKS, "No column was raised from two zombies at " + HURT + " health" + trace);
             if (c.getTemporarySupportCount() >= COLUMN) h.succeed();
+        });
+    }
+
+    /**
+     * Thrown off the column in the middle of the fight (here: set down on the floor two cells from it, as a blast would), he fights the
+     * three on the ground, the column standing; with them dead he walks back to it and its blocks are in his bag again.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void thrownOffTheColumnHeFightsOnTheGroundAndComesBackForItsBlocks(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        BlockPos foot = chamber(h, carveMine(h, c, 0));
+        for (int dx = 0; dx <= HALL; dx++) for (int dz = -HALL / 2; dz <= HALL / 2; dz++) h.getLevel().setBlock(foot.offset(dx, HIGH - 1, dz), Blocks.AIR.defaultBlockState(), 2 | 16);
+        BlockPos corner = foot.offset(HALL, 0, HALL / 2);
+        place(c, corner);
+        int stone = count(c, Items.COBBLESTONE);
+        List<Zombie> zombies = new ArrayList<>();
+        for (int k = 0; k < LEAST_CROWD; k++) zombies.add(zombie(h, foot.offset(CROWD[k][0], 0, CROWD[k][1])));
+        long begun = h.getTick();
+        boolean[] thrown = {false};
+        start(h, c, 1);
+        h.onEachTick(() -> {
+            for (Zombie zombie : zombies) if (zombie.isAlive() && zombie.getTarget() == null) zombie.setTarget(c);
+            long alive = zombies.stream().filter(Zombie::isAlive).count();
+            if (!thrown[0] && alive > 0 && c.getTemporarySupportCount() >= COLUMN && c.onGround() && c.getY() >= corner.getY() + COLUMN) {
+                thrown[0] = true;
+                place(c, corner.offset(-THROWN, 0, -THROWN));
+            }
+            String trace = " | thrown " + thrown[0] + ", zombies alive " + alive + ", health " + c.getHealth() + ", he at " + rel(h, c.blockPosition()).toShortString() + ", corner " + rel(h, corner).toShortString()
+                    + ", supports " + c.getTemporarySupportCount() + ", cobblestone " + count(c, Items.COBBLESTONE) + " of " + stone + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            h.assertTrue(h.getTick() - begun < KILL_TICKS, "The three were not killed and the column taken down in time" + trace);
+            if (thrown[0] && alive == 0 && c.getTemporarySupportCount() == 0 && !c.isRecoveringSupports() && count(c, Items.COBBLESTONE) >= stone) h.succeed();
         });
     }
 }

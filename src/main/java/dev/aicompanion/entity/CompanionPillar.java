@@ -38,6 +38,9 @@ public final class CompanionPillar {
     private static final int STEP_INTERVAL = 10;
     /** A stand out of reach ({@link #tickUp}): how far from his cell it may be, how far the mobs it keeps away from are counted, the samples of the walk to it. */
     private static final int STAND_REACH = 2, STAND_LOOKOUT = 8, STRAIGHT_SAMPLES = 8, STAND_JUMPS = 4, STAND_INTERVAL = 2;
+    /** How often the way back to a column out of his reach is set while it is taken down, and how far a stand left standing is given up from. */
+    private static final int WALK_BACK_EVERY = 10;
+    private static final double LEFT_FAR_SQR = 8 * 8;
 
     public enum Outcome { WORKING, READY, FAILED }
 
@@ -62,6 +65,8 @@ public final class CompanionPillar {
     private boolean recovering;
     /** The column is a stand of {@link #tickUp}, not a climb toward a block. */
     private boolean stand;
+    /** The stand is left standing with him off it ({@link #leaveStanding}). */
+    private boolean leftStanding;
     private String failureReason = "";
     /** The hand a gather keeps while its column comes down: the tool for a support goes back into it after each break. */
     private ItemStack keptHand;
@@ -191,7 +196,7 @@ public final class CompanionPillar {
         if (!owner.onGround() || cooldown > 0) return Outcome.WORKING;
         BlockPos placement = base.above(supports.size());
         if (!roomFor(level, placement, height - supports.size())) return fail("Над опорой не хватает свободного места");
-        // Grass or a torch in the cell comes out like a plant, as in a plug of the stairs: the support takes a cell of air.
+        // Grass, a fern or thin snow in the cell comes out first, as for a plug of the stairs: the support takes a cell of air.
         if (!level.getBlockState(placement).isAir()) { level.destroyBlock(placement, true, owner); return Outcome.WORKING; }
         if (!prepareSoil()) return fail("Не могу взять блок для опоры в руку");
         Vec3 motion = owner.getDeltaMovement();
@@ -230,12 +235,15 @@ public final class CompanionPillar {
 
     /**
      * A blow may throw him off the column: every cell around its foot is a wall or has a floor no more than a block lower, so that he
-     * lands beside it and not down a pit (series p 20261031 d3 mobs: a column at the edge of a cavern, thrown off, three falls, dead).
+     * lands beside it and not down a pit (series p 20261031 d3 mobs: a column at the edge of a cavern, thrown off, three falls, dead),
+     * and none of them holds lava or water, nor does the floor under it.
      */
     private boolean flooredAround(ServerLevel level, BlockPos feet) {
         for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
             BlockPos beside = feet.offset(dx, 0, dz);
-            if ((dx != 0 || dz != 0) && CompanionShaftPlan.open(level, beside) && !safeFoundation(level, beside.below()) && !safeFoundation(level, beside.below(2))) return false;
+            if (dx == 0 && dz == 0) continue;
+            if (!level.getFluidState(beside).isEmpty() || !level.getFluidState(beside.below()).isEmpty()) return false;
+            if (CompanionShaftPlan.open(level, beside) && !safeFoundation(level, beside.below()) && !safeFoundation(level, beside.below(2))) return false;
         }
         return true;
     }
@@ -259,7 +267,8 @@ public final class CompanionPillar {
         double dx = cell.getX() + 0.5D - owner.getX(), dz = cell.getZ() + 0.5D - owner.getZ();
         for (int step = 1; step <= STRAIGHT_SAMPLES; step++) {
             double part = step / (double) STRAIGHT_SAMPLES;
-            if (!level.noCollision(owner, owner.getBoundingBox().move(dx * part, 0, dz * part))) return false;
+            AABB body = owner.getBoundingBox().move(dx * part, 0, dz * part);
+            if (!level.noCollision(owner, body) || level.containsAnyLiquid(body)) return false;
             if (!safeFoundation(level, BlockPos.containing(owner.getX() + dx * part, owner.getY() - 0.5D, owner.getZ() + dz * part))) return false;
         }
         return true;
@@ -272,6 +281,23 @@ public final class CompanionPillar {
 
     /** The cell his column stands in, or null with no column. */
     public BlockPos foot() { return base; }
+
+    /** The fight took him off his stand: it stays in the world and in the record until he comes back for it, takes it down by an order, or gives it up. */
+    public void leaveStanding() {
+        if (!stand || supports.isEmpty() || recovering) return;
+        leftStanding = true;
+        jumpCell = null;
+    }
+
+    /** His stand is left standing and he is off it: no climb is under way, so the pickup of a drop does not wait for it. */
+    public boolean leftStanding() { return leftStanding; }
+
+    /** The supports stay in the world as blocks anybody may take, and the column is forgotten: he could not come back for them. Nothing is refunded. */
+    public void abandon() {
+        supports.clear();
+        failureReason = "Опоры оставил на месте: вернуться за ними не вышло";
+        clearColumn();
+    }
 
     /** He stands on the top support of his column. */
     public boolean onTop() {
@@ -355,7 +381,6 @@ public final class CompanionPillar {
         if (!(owner.level() instanceof ServerLevel level)) return true;
         if (!recovering) requestCleanup();
         if (!recovering) return true;
-        owner.getNavigation().stop();
         cleanupTicks++;
         if (cooldown > 0) cooldown--;
 
@@ -395,9 +420,18 @@ public final class CompanionPillar {
         } else {
             double distance = owner.distanceToSqr(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D);
             if (distance > REACH_SQR) {
+                // A stand the fight took him far away from: its blocks are not worth the walk back through what he fought.
+                if (leftStanding && distance > LEFT_FAR_SQR) { abandon(); return true; }
+                // Out of his reach, he walks back to the cell beside it instead of standing out the budget: a blow that took him a few
+                // steps off in the middle of the descent, or a fight on the ground beside a stand.
+                if (base != null && cleanupTicks % WALK_BACK_EVERY == 1) {
+                    Path back = owner.work.route.toCells(Set.of(base.north(), base.south(), base.east(), base.west()));
+                    if (back != null) CompanionMiningNavigation.walk(owner, back);
+                }
                 return false;
             }
         }
+        owner.getNavigation().stop();
         if (anotherEntityDependsOn(level, pos)) return false;
         owner.getLookControl().setLookAt(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D);
         owner.takeToolForBlock(highest.state());
@@ -694,7 +728,7 @@ public final class CompanionPillar {
         approach = null;
         lastProgress = null;
         attemptTicks = stalledTicks = jumpTicks = failedJumps = cooldown = cleanupTicks = 0;
-        recovering = stand = false;
+        recovering = stand = leftStanding = false;
         keptHand = null;
         keepTool = false;
     }

@@ -264,7 +264,7 @@ final class CompanionLoot {
         }
     }
     boolean canChase() {
-        if (!hasPending() || !owner.canCollectItems() || owner.isRecoveringSupports() || owner.getTemporarySupportCount() > 0
+        if (!hasPending() || !owner.canCollectItems() || owner.isRecoveringSupports() || owner.getTemporarySupportCount() > 0 && !owner.temporaryPillar.leftStanding()
                 || owner.isSwingingAtBlock() || foeOnHim() || owner.creeperGuard.nearby(CREEPER_NEAR)) return false;
         if (owner.level() instanceof ServerLevel level) for (UUID id : pending) if (chaseable(level, id)) return true;
         return false;

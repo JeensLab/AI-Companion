@@ -23,14 +23,18 @@ final class CompanionEntityGoals {
         @Override public boolean requiresUpdateEveryTick() { return true; }
         @Override public void start() { c.getNavigation().stop(); }
         /**
-         * A mob on him while he is on the ground beside his column, or on what is left of it, too low to be out of reach: the blocks wait,
-         * the melee goal below this one has the turn (an order or a reload in the middle of a fight, a mob that comes while he takes it down).
+         * A mob has just struck him while he is on the ground beside his column, or on what is left of it, too low to be out of reach: the
+         * blocks wait, the goals below this one have the turn (an order or a reload in the middle of a fight, a mob that comes while he takes
+         * it down). Only a blow counts, and only for a while: a mob that stands near and cannot get at him, or that he does not fight, never
+         * holds the descent, and with it the work, for good.
          */
         private boolean pressed() {
-            return c.onGround() && !(c.temporaryPillar.onTop() && c.temporaryPillar.supportCount() >= OUT_OF_REACH)
-                    && c.level() instanceof net.minecraft.server.level.ServerLevel level && c.combat.footwork.onHim(level);
+            net.minecraft.world.entity.LivingEntity by = c.getLastHurtByMob();
+            return by != null && by.isAlive() && c.tickCount - c.getLastHurtByMobTimestamp() < PRESSED_TICKS && c.distanceToSqr(by) < PRESSED_SQR
+                    && c.onGround() && !(c.temporaryPillar.onTop() && c.temporaryPillar.supportCount() >= OUT_OF_REACH);
         }
-        private static final int OUT_OF_REACH = 2;
+        private static final int OUT_OF_REACH = 2, PRESSED_TICKS = 60;
+        private static final double PRESSED_SQR = 4 * 4;
         @Override public void tick() {
             if (c.temporaryPillar.tickCleanup()) c.syncWorkState();
         }

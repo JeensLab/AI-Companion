@@ -6,11 +6,9 @@ import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.monster.RangedAttackMob;
 import net.minecraft.world.item.ProjectileWeaponItem;
-import net.minecraft.world.level.pathfinder.Path;
 
 import java.util.EnumSet;
 import java.util.List;
-import java.util.Set;
 
 /**
  * A crowd after him is not met on its own ground, as a player does not: he lays two blocks from his bag under his feet and strikes down
@@ -23,11 +21,13 @@ import java.util.Set;
  * shooting at him: a column is a stand for its arrows.
  * <p>
  * The column does not hold him: a mob that reaches him on it (from a ledge beside it, a spider up its side), an arrow or a blast that
- * throws him off, the guard that runs him from a fuse, all give the fight back to the melee goal, and the column stands until nobody is
- * about; then he walks back to it and takes it down.
+ * throws him off, the guard that runs him from a fuse, all give the fight back to the melee goal, and the column is left standing. Its
+ * blocks are taken back (the descent of {@link CompanionPillar} walks him to it) only from near by, with nobody after him and no retreat
+ * of his mine under way; from afar, or after {@link #LEFT_PATIENCE}, they stay where they are, like any block a player leaves behind,
+ * and nothing waits for them.
  */
 final class CompanionHighGround extends Goal {
-    private enum Phase { RAISE, STAND, RETURN }
+    private enum Phase { RAISE, STAND }
 
     /**
      * How many of them after him are a crowd, and how many when he is already hurt; how high he stands: three blocks where the roof lets
@@ -39,23 +39,25 @@ final class CompanionHighGround extends Goal {
     /** How far from the middle of the top block he lets a blow move him before he steps back to it, and the pace of that step. */
     private static final double OFF_CENTRE_SQR = .2 * .2, CENTRE_SPEED = .3;
     /** How far he counts them, and how near one presses on him so that his blow must throw it back before a block goes under his feet. */
-    private static final double LOOKOUT = 10, TOUCH_SQR = 1.5 * 1.5, NEAR_COLUMN_SQR = 3 * 3;
+    private static final double LOOKOUT = 10, TOUCH_SQR = 1.5 * 1.5;
+    /** How far from a column left standing he still comes back for its blocks. */
+    private static final double COME_BACK_SQR = 8 * 8;
     /** How far a mob with a bow that is after him keeps him on the ground. */
     private static final double ARCHERS = 20;
     /** How long with nobody about before he comes down, and how long after a column that did not stand before the next one is tried. */
     private static final int CALM_TICKS = 40, RETRY_TICKS = 200;
     /** How often they are counted, and how long he stands with none of them in his reach (behind a fence, across a gap) before he comes down. */
     private static final int COUNT_EVERY = 5, PATIENCE = 20 * 30, AFTER_PATIENCE = 20 * 60;
-    /** How long the walk back to a column he was thrown off may take, and how often its course is set. */
-    private static final int RETURN_TICKS = 200, COURSE_EVERY = 10, COLUMN_ACCURACY = 2;
+    /** How long a column left standing is his at all. */
+    private static final int LEFT_PATIENCE = 20 * 30;
 
     private final CompanionEntity c;
     private Phase phase = Phase.RAISE;
-    /** The goal is over; the column comes down now (nobody about), or stands for later. */
+    /** The goal is over; the column comes down now (nobody about), or is left standing. */
     private boolean over, takeDown;
-    /** His column stands and he is not on it: he comes back for the blocks once nobody is about. */
-    private boolean left;
-    private int calm, idle, walked, retryAt, hurtAt, height;
+    private int calm, idle, retryAt, hurtAt, height;
+    /** His own tick at which the column was left standing. */
+    private int leftAt;
 
     CompanionHighGround(CompanionEntity c) {
         this.c = c;
@@ -64,17 +66,33 @@ final class CompanionHighGround extends Goal {
 
     @Override public boolean canUse() {
         if (c.tickCount % COUNT_EVERY != 0 || c.inventoryViewers != 0 || !c.onGround() || c.temporaryPillar.isRecovering() || !(c.level() instanceof ServerLevel level)) return false;
-        if (left) {
-            // Taken down by an order or a reload meanwhile: nothing is left to come back for.
-            if (!c.temporaryPillar.isActive()) left = false;
-            return left && c.combat.footwork.foes(level, LOOKOUT).isEmpty();
-        }
-        if (c.tickCount < retryAt || c.temporaryPillar.isActive() || CompanionGuardWatch.watching(c) || shotAt(level)) return false;
+        if (c.temporaryPillar.leftStanding()) { settle(level); return false; }
+        // With no blade on a task he walks away from a monster (CompanionCombat.StepOffGoal): a column would only hold him among them.
+        if (c.tickCount < retryAt || c.temporaryPillar.isActive() || CompanionGuardWatch.watching(c) || c.combat.unarmedOnTask() || shotAt(level)) return false;
         int after = 0;
         for (Monster foe : c.combat.footwork.foes(level, LOOKOUT)) if (foe.getTarget() == c) after++;
         if (after < (c.getHealth() <= CompanionCaveSense.HEALTH_WARY ? HURT_CROWD : CROWD)) return false;
         height = c.temporaryPillar.canStandUp(TALL) ? TALL : LOW;
         return height == TALL || c.temporaryPillar.canStandUp(LOW);
+    }
+
+    /**
+     * What becomes of the column left standing: taken down once nobody is after him, his mine is not being left, and it is near. From
+     * afar, or when the wait has been long, its blocks are left for good: a walk back through the mobs, or against his own retreat, costs
+     * more than they do.
+     */
+    private void settle(ServerLevel level) {
+        BlockPos foot = c.temporaryPillar.foot();
+        boolean far = foot == null || c.distanceToSqr(foot.getX() + .5, foot.getY(), foot.getZ() + .5) > COME_BACK_SQR;
+        if (c.tickCount - leftAt > LEFT_PATIENCE) c.temporaryPillar.abandon();
+        else if (c.work.expedition.retreating() || sought(level)) return;
+        else if (far) c.temporaryPillar.abandon();
+        else c.temporaryPillar.requestCleanup();
+    }
+
+    /** A monster that sees him is after him. */
+    private boolean sought(ServerLevel level) {
+        return !level.getEntitiesOfClass(Monster.class, c.getBoundingBox().inflate(LOOKOUT), foe -> foe.isAlive() && !foe.isNoAi() && foe.getTarget() == c && c.hasLineOfSight(foe)).isEmpty();
     }
 
     /** A mob with a bow is after him and sees him: on a column he would stand still for its arrows, on the ground he closes in on it or raises the shield. */
@@ -89,10 +107,9 @@ final class CompanionHighGround extends Goal {
 
     @Override public void start() {
         over = takeDown = false;
-        calm = idle = walked = 0;
-        phase = left ? Phase.RETURN : Phase.RAISE;
+        calm = idle = 0;
+        phase = Phase.RAISE;
         c.getNavigation().stop();
-        if (left) return;
         // Before the block for the column is in his hand: the tool of the work is what the fight gives back.
         c.work.expedition.fight.fightBegan();
         if (c.hasActiveWorkOrder()) c.workStatus("Их много: встаю на столбик из своих блоков, сверху меня не достанут.");
@@ -104,20 +121,9 @@ final class CompanionHighGround extends Goal {
         Monster nearest = null;
         for (Monster foe : foes) if (nearest == null || c.distanceToSqr(foe) < c.distanceToSqr(nearest)) nearest = foe;
         switch (phase) {
-            case RETURN -> back(nearest);
             case RAISE -> raise(nearest);
             case STAND -> stand(nearest);
         }
-    }
-
-    /** Back to the column he left, to within a swing of it; with somebody about again it waits on. */
-    private void back(Monster nearest) {
-        BlockPos foot = c.temporaryPillar.foot();
-        if (nearest != null || foot == null) { over = true; return; }
-        if (c.distanceToSqr(foot.getX() + .5, foot.getY(), foot.getZ() + .5) <= NEAR_COLUMN_SQR || ++walked > RETURN_TICKS) { over = takeDown = true; return; }
-        if (walked % COURSE_EVERY != 1) return;
-        Path path = c.work.route.toCells(Set.of(foot), COLUMN_ACCURACY);
-        if (path != null) CompanionMiningNavigation.walk(c, path);
     }
 
     private void raise(Monster nearest) {
@@ -161,9 +167,9 @@ final class CompanionHighGround extends Goal {
     @Override public void stop() {
         c.getNavigation().stop();
         CompanionPillar pillar = c.temporaryPillar;
-        if (!pillar.isActive() || pillar.isRecovering()) { left = false; return; }
+        if (!pillar.isActive() || pillar.isRecovering()) return;
         // With no support laid there is nothing to come back for: the cleanup only forgets the column.
-        left = !takeDown && pillar.hasSupports();
-        if (!left) pillar.requestCleanup();
+        if (takeDown || !pillar.hasSupports()) { pillar.requestCleanup(); return; }
+        if (!pillar.leftStanding()) { pillar.leaveStanding(); leftAt = c.tickCount; }
     }
 }
