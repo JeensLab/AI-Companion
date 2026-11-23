@@ -766,6 +766,9 @@ final class CompanionPicking {
     /** Enough is broken: the drops are picked up (the work waits while the pickup runs); what is not in his bag after that is lost, and more is gathered. */
     private void collect(ServerLevel level, int got) {
         long now = level.getGameTime();
+        // His own column is taken back first (down), and the pickup walks to nothing while it stands or comes down: the drops
+        // that fell below wait for the ground, so their settle clock starts when he is down, not on top of it (PATH7, 19.11).
+        if (c.temporaryPillar.isActive() || c.temporaryPillar.isRecovering()) { settleAt = 0; return; }
         if (settleAt == 0) { settleAt = now + SETTLE; return; }
         if (now < settleAt) return;
         if (!retried) { retried = true; settleAt = now + SETTLE; c.retryHarvestPickup(); return; }

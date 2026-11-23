@@ -90,6 +90,15 @@ public final class CompanionPillar {
     /** Whether the column standing is the way up of PATH7, not a leaf crown's climb. */
     public boolean isWayActive() { return way && isActive(); }
     public boolean hasSupports() { return !supports.isEmpty(); }
+    /** Whether a body or a drop resting on the column is on it: its box may sit on a support's corner, not only in the cell above it. */
+    public boolean carries(AABB box) {
+        for (Support support : supports) {
+            BlockPos pos = support.pos();
+            if (box.maxX > pos.getX() && box.minX < pos.getX() + 1 && box.maxZ > pos.getZ() && box.minZ < pos.getZ() + 1
+                    && Math.abs(box.minY - (pos.getY() + 1)) < 0.2D) return true;
+        }
+        return false;
+    }
     public boolean isRecovering() { return recovering; }
     public int supportCount() { return supports.size(); }
     public String failureReason() { return failureReason; }

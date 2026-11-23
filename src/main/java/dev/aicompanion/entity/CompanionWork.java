@@ -328,7 +328,8 @@ public final class CompanionWork {
     }
     /**
      * gather_block and mine_obsidian take the drop of what they broke only after stepping down their own column, dismantling it
-     * behind them (PATH7): while it stands or comes down, the drop waits. No other work holds its drops.
+     * behind them (PATH7): a drop resting on the column waits for the descent. A drop on a block beside it is no column's —
+     * it is taken from where he stands, or it is out of reach once he is down (19.11).
      */
     boolean holdsDropsForItsColumn() {
         return job != null && (job == Job.OBSIDIAN || job == Job.BLOCK)

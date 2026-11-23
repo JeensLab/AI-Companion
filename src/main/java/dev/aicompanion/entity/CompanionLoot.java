@@ -114,9 +114,10 @@ final class CompanionLoot {
     }
     void tickNearby() {
         if (!(owner.level() instanceof ServerLevel level) || !owner.canCollectItems()) return;
-        // gather_block and mine_obsidian take their drop only after stepping down their own column, dismantling it behind them:
-        // while it stands or comes down, the drops wait (PATH7). A wood gather takes what falls at its feet as it always did.
-        if (owner.work.holdsDropsForItsColumn()) return;
+        // gather_block and mine_obsidian take the drop of what they broke after stepping down their own column, dismantling it
+        // behind them (PATH7): the chase walks to nothing while the column stands or comes down (canChase), so a drop below him
+        // waits for the ground. What lies at his own level is taken from where he stands: a crown's leaf that fell on the trunk's
+        // top is out of reach once he is down, and waiting for the descent would lose it (the owner, 19.11).
         while (!sites.isEmpty() && sites.peekFirst().expires < level.getGameTime()) sites.removeFirst();
         if (collecting && (owner.tickCount % 5 == 0 || level.getGameTime() <= rescanUntil)) discoverSurvivors(level);
         pending.removeIf(id -> gone(level, id));
@@ -125,6 +126,11 @@ final class CompanionLoot {
             // discovering our harvest for the whole task, including after walking back down.
             if (!(level.getEntity(id) instanceof ItemEntity item) || item.hasPickUpDelay()) continue;
             if (!touches(owner.position(), item)) continue;
+            // A drop still falling falls to the ground and is taken from there; one resting on his own column falls with it.
+            // A drop at rest on a block beside the column is no column's: a crown's leaf on the trunk's top is out of reach
+            // once he is down, so it comes now (19.11).
+            if (owner.work.holdsDropsForItsColumn()
+                    && (!item.onGround() || owner.temporaryPillar.carries(item.getBoundingBox()) || !restsOnABlock(level, item))) continue;
             ItemStack offered = item.getItem().copy();
             int before = offered.getCount();
             // What fell out of the dead player is kept apart for him, as the loose pickup does.
@@ -219,6 +225,18 @@ final class CompanionLoot {
     }
     private boolean settling(ServerLevel level, UUID id, ItemEntity item) {
         return item.hasPickUpDelay() || level.getGameTime() - born.getOrDefault(id, 0L) < SETTLE || retryAt.getOrDefault(id, 0L) > level.getGameTime();
+    }
+    /** Whether a drop is at rest on a block: its box may sit on a block's corner, not only in the cell it is over. */
+    private static boolean restsOnABlock(ServerLevel level, ItemEntity item) {
+        var box = item.getBoundingBox();
+        int below = (int)Math.floor(box.minY) - 1;
+        if (Math.abs(box.minY - (below + 1)) > 0.2D) return false;
+        for (int x = (int)Math.floor(box.minX); x <= (int)Math.floor(box.maxX); x++)
+            for (int z = (int)Math.floor(box.minZ); z <= (int)Math.floor(box.maxZ); z++) {
+                BlockPos pos = new BlockPos(x, below, z);
+                if (level.getBlockState(pos).isFaceSturdy(level, pos, net.minecraft.core.Direction.UP)) return true;
+            }
+        return false;
     }
     /** A drop has this long to come to rest before «no way to it» is believed. */
     private static final int SETTLE = 40;
