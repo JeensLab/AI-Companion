@@ -47,7 +47,8 @@ import java.util.function.Predicate;
 final class CompanionPicking {
     static final String FULL_BAG = "Сумка забита — некуда класть.";
     /** Blocks above and below his feet that are looked at: the hill he stands on, not the cave under it. */
-    private static final int DEPTH = 12;
+    /** How far above and below him a target is looked for: the way's own height, so a block sixteen above is seen (PATH7). */
+    private static final int DEPTH = CompanionPillar.WAY_HEIGHT;
     /** Ticks the drops are given to be picked up before another try, and then before they are counted lost. */
     private static final int SETTLE = 40;
     /** Walks to one block before it is passed over. */

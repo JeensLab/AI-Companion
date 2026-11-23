@@ -379,7 +379,9 @@ public final class CompanionPillar {
     private java.util.Map<BlockPos, Integer> columns(BlockPos block, int limit) {
         java.util.Map<BlockPos, Integer> cells = new java.util.LinkedHashMap<>();
         if (!(owner.level() instanceof ServerLevel level) || !level.hasChunkAt(block)) return cells;
-        for (int down = 1; down <= limit + 2; down++) for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
+        // The feet may stand as far below the block as a swing from the top of the column reaches: four blocks and the block
+        // itself, so a crown nine above the ground is no crown above its own six-step column.
+        for (int down = 1; down <= limit + 5; down++) for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
             BlockPos feet = block.offset(dx, -down, dz);
             if (!safeFoundation(level, feet.below())) continue;
             int steps = requiredSteps(block, feet);
