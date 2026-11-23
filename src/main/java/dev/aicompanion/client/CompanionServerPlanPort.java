@@ -279,8 +279,11 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             CompanionReach.Available world = leafOrder ? null : companion.obtainAvailable(item);
             var plan = companion.obtainPlan(item, need);
             if (plan.refused()) return new CompanionPlanRunner.Expansion(java.util.List.of(), plan.refusal());
-            // The promise is what the chain really produces (one block of his own lava is one obsidian), never more.
-            int produced = plan.steps().isEmpty() ? 0 : plan.steps().getLast().count();
+            // The promise is what the chain really produces (one block of his own lava is one obsidian), never more. The errand's
+            // own walk to the portal and back is no produce: the last step that gives the item is counted.
+            int produced = 0;
+            for (var step : plan.steps())
+                if (!step.type().equals("nether_go") && !step.type().equals("nether_back")) produced = step.count();
             int promised = world == null ? need : Math.min(need, companion.carriedCount(item) + produced);
             java.util.List<PlannedAction> steps = new java.util.ArrayList<>();
             // A crown above every stand cell is climbed on soil he digs himself: the dirt for the column comes first, and
