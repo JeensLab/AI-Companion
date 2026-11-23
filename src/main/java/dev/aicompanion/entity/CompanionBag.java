@@ -1,6 +1,7 @@
 package dev.aicompanion.entity;
 
 import dev.aicompanion.inventory.CompanionEquipmentContainer;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EquipmentSlot;

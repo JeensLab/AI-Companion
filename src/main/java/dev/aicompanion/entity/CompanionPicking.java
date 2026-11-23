@@ -173,8 +173,9 @@ final class CompanionPicking {
         // A block that is the item itself, though a recipe also makes it: what lies there is taken (PATH7).
         if (sources.isEmpty()) sources = allowed(level, CompanionPickable.identity(level, item));
         if (sources.isEmpty()) return null;
+        List<CompanionPickable.Source> giving = sources;
         Predicate<BlockPos> site = kept(c, level);
-        List<BlockPos> blocks = CompanionObsidian.all(c, level, DEPTH, state -> gives(sources, state) > 0, pos ->
+        List<BlockPos> blocks = CompanionObsidian.all(c, level, DEPTH, state -> gives(giving, state) > 0, pos ->
                 c.errand.within(pos) && takes(level, pos, site) && grounded(c, level, pos) && !lavaBeside(level, pos));
         int count = 0, steps = 0;
         for (BlockPos block : blocks) {

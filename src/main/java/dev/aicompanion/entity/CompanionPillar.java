@@ -67,6 +67,8 @@ public final class CompanionPillar {
     private int attemptTicks;
     private int stalledTicks;
     private int jumpTicks;
+    /** The highest his feet reached in the last jump: said with a failed one, so the reason is read from the world. */
+    private double jumpTop;
     private int failedJumps;
     private int cooldown;
     private int cleanupTicks;
@@ -154,6 +156,10 @@ public final class CompanionPillar {
         if (needed > limit) return fail("Верхушка слишком высокая для короткой опоры");
         if (soilCount() < Math.max(0, needed - supports.size())) return fail("Для подъёма не хватает земли в сумке");
         if (++attemptTicks > attemptBudget() || !level.hasChunkAt(base)) return fail("Не получилось подняться, поищу дерево пониже");
+        if (way && attemptTicks % 40 == 0) dev.aicompanion.CompanionDiagnostics.event(owner.diagnosticTrace(), "way_climb", "entity", owner.getUUID(),
+                "base", base, "supports", supports.size(), "needed", requiredSteps(block, base), "limit", limit,
+                "jump", jumpCell, "jumpTicks", jumpTicks, "ground", owner.onGround(), "feetY", Math.round(owner.getY() * 100) / 100D,
+                "cooldown", cooldown, "soil", soilCount());
         if (lastProgress == null || owner.position().distanceToSqr(lastProgress) >= 0.0025D) {
             lastProgress = owner.position();
             stalledTicks = 0;
@@ -203,6 +209,7 @@ public final class CompanionPillar {
         owner.setDeltaMovement(motion.x * 0.15D, motion.y, motion.z * 0.15D);
         jumpCell = placement.immutable();
         jumpTicks = 0;
+        jumpTop = owner.getBoundingBox().minY;
         owner.getJumpControl().jump();
         return Outcome.WORKING;
     }
@@ -211,9 +218,13 @@ public final class CompanionPillar {
         owner.getNavigation().stop();
         owner.getMoveControl().setWantedPosition(base.getX() + 0.5D, owner.getY(), base.getZ() + 0.5D, 0.35D);
         jumpTicks++;
+        jumpTop = Math.max(jumpTop, owner.getBoundingBox().minY);
         // The game holds a jump back for ten ticks after any other one (a hop onto a step on the way here): asked again
         // every eighth tick, as the self-rescue asks its own step, so a held-back first ask is not a failed climb.
         if (owner.onGround() && jumpTicks % 8 == 1 && owner.getDeltaMovement().y <= 0.01D) owner.getJumpControl().jump();
+        // A goal holding the jump flag can keep the ask from the game's own jump: while the feet stay down, the mob's jump is
+        // made straight (the same call the game makes for it), so a step is raised even then.
+        if (jumpTicks > 2 && owner.onGround() && owner.getDeltaMovement().y <= 0.01D) owner.jumpFromGround();
         AABB cell = new AABB(jumpCell);
         if (owner.getBoundingBox().minY >= jumpCell.getY() + 1.001D
                 && !owner.getBoundingBox().intersects(cell)) {
@@ -242,10 +253,12 @@ public final class CompanionPillar {
             return Outcome.WORKING;
         }
         if (jumpTicks > 28 && owner.onGround()) {
+            BlockPos failedCell = jumpCell;
             jumpCell = null;
             cooldown = STEP_INTERVAL;
             if (way) dev.aicompanion.CompanionDiagnostics.event(owner.diagnosticTrace(), "way_jump_failed", "entity", owner.getUUID(),
-                    "failed", failedJumps + 1, "ticks", jumpTicks, "feetY", owner.getY(), "base", base);
+                    "failed", failedJumps + 1, "ticks", jumpTicks, "feetY", owner.getY(), "base", base,
+                    "top", Math.round(jumpTop * 100) / 100D, "cell", failedCell);
             if (++failedJumps >= 2) return fail("Здесь не получается подпрыгнуть, поищу другое место");
         }
         return Outcome.WORKING;

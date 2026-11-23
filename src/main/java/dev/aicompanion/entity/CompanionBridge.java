@@ -35,7 +35,7 @@ final class CompanionBridge {
     private static final int CLEANUP_TICKS = 600;
 
     private final CompanionEntity owner;
-    private final CompanionBlockBreaking breaking = new CompanionBlockBreaking(owner);
+    private final CompanionBlockBreaking breaking;
     private CompanionReach.BridgePlan plan;
     private BlockPos target;
     private final List<BlockPos> placed = new ArrayList<>();
@@ -45,7 +45,7 @@ final class CompanionBridge {
     private boolean recovering;
     private String failureReason = "";
 
-    CompanionBridge(CompanionEntity owner) { this.owner = owner; }
+    CompanionBridge(CompanionEntity owner) { this.owner = owner; this.breaking = new CompanionBlockBreaking(owner); }
 
     boolean isActive() { return plan != null || !placed.isEmpty(); }
     boolean isRecovering() { return recovering; }
@@ -261,11 +261,11 @@ final class CompanionBridge {
         BlockPos end = BlockPos.of(tag.getLong("BridgeEnd"));
         List<BlockPos> cells = new ArrayList<>();
         var saved = tag.getList("BridgeCells", net.minecraft.nbt.Tag.TAG_LONG);
-        for (int index = 0; index < saved.size(); index++) cells.add(BlockPos.of(saved.getLong(index)));
+        for (int index = 0; index < saved.size(); index++) cells.add(BlockPos.of(((net.minecraft.nbt.LongTag) saved.get(index)).getAsLong()));
         if (cells.isEmpty()) return;
         plan = new CompanionReach.BridgePlan(start, end, List.copyOf(cells));
         var laid = tag.getList("BridgePlaced", net.minecraft.nbt.Tag.TAG_LONG);
-        for (int index = 0; index < laid.size(); index++) placed.add(BlockPos.of(laid.getLong(index)));
+        for (int index = 0; index < laid.size(); index++) placed.add(BlockPos.of(((net.minecraft.nbt.LongTag) laid.get(index)).getAsLong()));
         requestCleanup();
     }
 }
