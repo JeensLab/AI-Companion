@@ -10,6 +10,7 @@ import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.Skeleton;
@@ -45,6 +46,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionMineFightTests {
+    private static final int SHELF_DROP = 3, SHELF_GAP = 4, SHELF_TICKS = 300, SHELF_CREEPERS = 5, SHELF_HIT_AT = 40, SHELF_ZOMBIE_HEALTH = 11;
     private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 4, OPEN_CAVE_STAND = 3, KILL_TICKS = 1200, FUSE_TICKS = 200, CRAFT_TICKS = 1200, BRIDGE_FROM = 4, BRIDGE_TO = 10, BRIDGE_SIDE = 5, CAVERN_DEPTH = 7, PASSAGE_LENGTH = 4, PASSAGE_OFFSET = 2, PASSAGE_HEIGHT = 2, STRIKE_TICKS = 60, FIGHT_TICKS = 100, FAR_STAND = 10;
     private static final float SURVIVES = 1, HURT = 12, TWO_BLOWS = 9, HALF = 10;
     private static final double THROWN = 0.6, REACHED = 3;
@@ -255,6 +257,107 @@ public final class CompanionMineFightTests {
             h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The order did not go on to the diamond: " + result.message() + trace);
             h.succeed();
         });
+    }
+
+    /**
+     * Run p20261031-d2/void-4: his stairs cross a cave on single blocks, and creepers stand on a shelf across the gap, five blocks aside and two or
+     * three lower: in sight, near, with no way to them and none from them to him. He stood on the bridge with the sword for 6000 ticks: each was
+     * given forty-five seconds of its own, and there were eight. They do not hold him: he is off the bridge within {@link #SHELF_TICKS}.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void creepersOnAShelfAcrossAGapDoNotHoldHimOnTheBridge(GameTestHelper h) {
+        mountain(h);
+        CompanionEntity c = armed(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        List<BlockPos> shelf = shelfAcrossAGap(h, c, stairs);
+        BlockPos bottom = stairs.get(BRIDGE_TO);
+        List<Creeper> creepers = new ArrayList<>();
+        for (BlockPos stand : shelf.subList(0, SHELF_CREEPERS)) creepers.add(still(creeper(h, stand)));
+        long[] id = {0}, begun = {0};
+        h.onEachTick(() -> {
+            if (id[0] == 0) {
+                if (creepers.stream().anyMatch(creeper -> creeper.getTarget() != c)) return;
+                id[0] = start(h, c, 1);
+                begun[0] = h.getTick();
+            }
+            String trace = " | creepers alive " + creepers.stream().filter(Creeper::isAlive).count() + ", he at " + rel(h, c.blockPosition()).toShortString() + ", health " + c.getHealth() + ", target " + c.getTarget() + ", tick " + h.getTick() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            h.assertTrue(c.getBlockY() > bottom.getY() || c.getBlockZ() <= bottom.getZ(), "He stepped off the bridge after the creepers" + trace);
+            h.assertTrue(h.getTick() - begun[0] <= SHELF_TICKS || c.getBlockY() < bottom.getY(), "The creepers across the gap held him on the bridge" + trace);
+            if (c.isWorking() || c.isGatheringTask()) return;
+            CompanionActionResult result = ended(h, c, id[0]);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The order did not go on to the diamond: " + result.message() + trace);
+            h.succeed();
+        });
+    }
+
+    /**
+     * A skeleton on the same shelf, no way to it: once it has hit him it is his foe, as one he had let go is, and the sword is out for it (the
+     * blow is dealt by the test: an arrow of its own misses a walking man too often for a test, so it has no bow).
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aSkeletonAcrossAGapThatHasHitHimIsHisFoe(GameTestHelper h) {
+        mountain(h);
+        CompanionEntity c = armed(h);
+        List<BlockPos> shelf = shelfAcrossAGap(h, c, carveMine(h, c, 0));
+        Skeleton skeleton = still(skeleton(h, shelf.get(0)));
+        skeleton.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        start(h, c, 1);
+        long[] hit = {0};
+        h.onEachTick(() -> {
+            if (h.getTick() == SHELF_HIT_AT) { c.hurt(h.getLevel().damageSources().mobAttack(skeleton), 1); hit[0] = h.getTick(); }
+            if (hit[0] == 0) return;
+            if (c.getTarget() == skeleton && c.getMainHandItem().is(Items.STONE_SWORD)) h.succeed();
+            h.assertTrue(h.getTick() - hit[0] <= STRIKE_TICKS, "The skeleton that hit him from across the gap is not his foe: target " + c.getTarget() + ", in hand " + c.getMainHandItem() + " | " + report(c));
+        });
+    }
+
+    /**
+     * A zombie on the same shelf, no way to it or from it (hurt, it takes no fall of more than three blocks), and then a floor joins the shelf to his
+     * bridge and it comes for him: it is his foe again and is killed. No way to a foe is not for ever.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aZombieAcrossAGapIsFoughtOnceAFloorLeadsToIt(GameTestHelper h) {
+        mountain(h);
+        CompanionEntity c = armed(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        List<BlockPos> shelf = shelfAcrossAGap(h, c, stairs);
+        Zombie zombie = zombie(h, shelf.get(0));
+        zombie.setHealth(SHELF_ZOMBIE_HEALTH);
+        start(h, c, 1);
+        h.onEachTick(() -> {
+            if (h.getTick() < SHELF_HIT_AT) h.assertTrue(zombie.getBlockY() == shelf.get(0).getY(), "The zombie left its shelf before a floor led from it | " + report(c));
+            if (h.getTick() == SHELF_HIT_AT) for (int k = 1; k < SHELF_GAP; k++) h.getLevel().setBlock(stairs.get(BRIDGE_FROM + SHELF_DROP).below().west(k), Blocks.COBBLESTONE.defaultBlockState(), 2 | 16);
+            h.assertTrue(c.isAlive(), "Died | " + report(c));
+            if (!zombie.isAlive()) h.succeed();
+            h.assertTrue(h.getTick() <= SHELF_HIT_AT + KILL_TICKS, "The zombie that came over the floor was not killed, it at " + rel(h, zombie.blockPosition()).toShortString() + ", he at " + rel(h, c.blockPosition()).toShortString() + ", target " + c.getTarget() + " | " + report(c));
+        });
+    }
+
+    /**
+     * The cavern of {@link #creepersOnTheFloorOfACavernUnderTheStairsAreNotDivedAfter} with his bridge across it, him at its top, and a shelf two
+     * blocks wide across a gap west of the bridge, {@link #SHELF_DROP} lower than its top; the stands of the shelf, those by the gap first.
+     */
+    private static List<BlockPos> shelfAcrossAGap(GameTestHelper h, CompanionEntity c, List<BlockPos> stairs) {
+        BlockPos top = stairs.get(BRIDGE_FROM), bottom = stairs.get(BRIDGE_TO);
+        for (int x = top.getX() - BRIDGE_SIDE; x <= top.getX() + BRIDGE_SIDE; x++) for (int z = bottom.getZ(); z <= top.getZ() + 1; z++) for (int y = bottom.getY() - CAVERN_DEPTH; y <= top.getY() + 2; y++) {
+            h.getLevel().setBlock(new BlockPos(x, y, z), Blocks.AIR.defaultBlockState(), 2 | 16);
+        }
+        for (int k = BRIDGE_FROM; k <= BRIDGE_TO; k++) h.getLevel().setBlock(stairs.get(k).below(), Blocks.COBBLESTONE.defaultBlockState(), 2 | 16);
+        place(c, top);
+        List<BlockPos> stands = new ArrayList<>();
+        for (int dx = 0; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
+            BlockPos stand = stairs.get(BRIDGE_FROM + SHELF_DROP).west(SHELF_GAP + dx).north(dz);
+            h.getLevel().setBlock(stand.below(), Blocks.STONE.defaultBlockState(), 2 | 16);
+            stands.add(stand);
+        }
+        return stands;
+    }
+
+    /** It stands where it is, as the creepers of the run did: with a target a mob takes a fall of twelve blocks, and the floor of the cavern is ten under the shelf. */
+    private static <M extends Mob> M still(M mob) {
+        mob.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        return mob;
     }
 
     /**

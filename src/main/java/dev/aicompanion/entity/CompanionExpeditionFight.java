@@ -10,9 +10,12 @@ import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.pathfinder.Path;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -25,11 +28,17 @@ import java.util.UUID;
  * the tool he held comes back to his hand. A foe that is still alive after {@link #LONGEST} (one he sees and cannot get at, across a chasm or on a ledge) is let go for
  * the rest of the step, until it hurts him: the melee goal would otherwise hold the work for good, as the work does not tick while it runs.
  * A foe far below him is no foe: it cannot climb to him, and the chase to it is a step off his stairs or his bridge into its cave.
+ * Nor is one in sight that no walk of his leads to and that has not struck him ({@link #noWayTo}): {@link #LONGEST} is given to one foe at a
+ * time, and there may be any number of them (run p20261031-d2/void-4: eight creepers on a shelf across a gap from his bridge, and he stood
+ * on it with the sword for 6000 ticks).
  */
 final class CompanionExpeditionFight {
     /** How far a mob in sight is met, and how far one that has chosen him. */
     private static final double ENGAGE = 9, AWARE = 16, CONTACT_SQR = 9, FALL_LIMIT = 3, FUSE_NEAR = 12, OUTRUN = .8, LONE_FOE = 5, PER_EXTRA_FOE = 3;
     private static final int LONGEST = 20 * 45, HURT_MEMORY = 100;
+    /** The way to a foe is looked for again this often, and no farther round than this. */
+    private static final int WAY_EVERY = 40;
+    private static final float WAY_RANGE = 24;
     /** A zombie's blows come twenty ticks apart: a blow this recent from a foe in reach means it keeps up with the run ({@link #caught}). */
     private static final int CAUGHT_TICKS = 20;
 
@@ -41,6 +50,9 @@ final class CompanionExpeditionFight {
     private Item tool;
     private LivingEntity chased;
     private final Set<UUID> givenUp = new HashSet<>();
+    /** When the way to a foe was last looked for, and whether there was none. */
+    private record Way(long at, boolean none) { }
+    private final Map<UUID, Way> ways = new HashMap<>();
 
     CompanionExpeditionFight(CompanionWork w) {
         this.w = w;
@@ -125,6 +137,7 @@ final class CompanionExpeditionFight {
         tool = null;
         chased = null;
         givenUp.clear();
+        ways.clear();
     }
 
     /** False once the same foe has been fought for {@link #LONGEST} and lives: it is let go. */
@@ -138,8 +151,26 @@ final class CompanionExpeditionFight {
     }
 
     /** A foe let go that has struck him since is a foe again. */
-    private boolean letGo(LivingEntity foe) {
-        return givenUp.contains(foe.getUUID()) && !(owner.getLastHurtByMob() == foe && owner.tickCount - owner.getLastHurtByMobTimestamp() < HURT_MEMORY);
+    private boolean letGo(LivingEntity foe) { return givenUp.contains(foe.getUUID()) && !struckBy(foe); }
+
+    private boolean struckBy(LivingEntity foe) { return owner.getLastHurtByMob() == foe && owner.tickCount - owner.getLastHurtByMobTimestamp() < HURT_MEMORY; }
+
+    /**
+     * A foe in sight, out of his reach, that has not struck him and that no walk of his leads to (across a chasm, on a shelf or a pillar): the last
+     * search said so, and it is made again every {@link #WAY_EVERY} ticks. Where no search can be made (he is in the air, as on every step of his
+     * stairs) what was known stands, and a foe not yet looked at is a foe: one that comes for him is met with no wait for the ground.
+     * With a bow and an arrow no walk is needed: the foe is the bow's.
+     */
+    private boolean noWayTo(LivingEntity foe) {
+        if (owner.isWithinMeleeAttackRange(foe) || struckBy(foe) || owner.archery.armed()) return false;
+        long now = owner.level().getGameTime();
+        Way known = ways.get(foe.getUUID());
+        if (known != null && now - known.at() < WAY_EVERY) return known.none();
+        if (!owner.hasLineOfSight(foe)) return false;
+        Path path = ((CompanionNavigation) owner.getNavigation()).search(Set.of(foe.blockPosition()), 1, WAY_RANGE, true);
+        if (path == null) return known != null && known.none();
+        ways.put(foe.getUUID(), new Way(now, !path.canReach()));
+        return !path.canReach();
     }
 
     /** The fight is over: its time goes back to the step, and the pickaxe (or what was in his hand) comes back. */
@@ -171,7 +202,7 @@ final class CompanionExpeditionFight {
     boolean avoids(LivingEntity foe, boolean retreating) {
         if (foe == null) return false;
         if (letGo(foe)) return true;
-        if (below(foe)) return true;
+        if (below(foe) || noWayTo(foe)) return true;
         if (retreating) return !owner.isWithinMeleeAttackRange(foe) || w.expedition.fleeing() && wounded() && outrun(foe) && !caught();
         return fleeable();
     }
