@@ -199,14 +199,20 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
 
     /** {@code whole}: the answer is wanted now: the search goes on to its end whatever this tick's share. */
     Path search(Set<BlockPos> targets, int accuracy, float range, boolean whole) {
+        notSearched = false;
         if (path instanceof CompanionSearch.Found && !path.isDone() && targets.contains(path.getTarget())) return path;
         CompanionSearch search = advance(targets, accuracy, range, whole, CHOICE_CELLS);
-        if (search == null) return null;
+        // No search came about at all (no cell to stand in, in the air): the answer is not known, not «no way».
+        if (search == null) { notSearched = true; return null; }
         if (search.state() == CompanionSearch.State.RUNNING) return BUSY;
         ranOut = search.state() == CompanionSearch.State.EXHAUSTED && !search.complete();
         Path way = search.from(mob.position());
         return way;
     }
+
+    /** Whether the last search did not run at all: the caller waits for the next tick instead of believing «no way». */
+    private boolean notSearched;
+    boolean lastNotSearched() { return notSearched; }
 
     /**
      * This tick's share of the search to these cells: the one begun before is gone on with, else a new one is begun (null if he

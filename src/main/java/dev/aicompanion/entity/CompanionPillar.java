@@ -70,6 +70,9 @@ public final class CompanionPillar {
     private int failedJumps;
     private int cooldown;
     private int cleanupTicks;
+    /** Ticks the column could not be planned for want of a search (he is in the air): waited for, bounded. */
+    private int unplannedTicks;
+    private static final int UNPLANNED_TICKS = 40;
     private boolean recovering;
     /** The steps this climb may take: a leaf crown's six, a way up's sixteen (set by tickToward). */
     private int limit = LEAF_SUPPORTS;
@@ -129,9 +132,16 @@ public final class CompanionPillar {
         }
         if (base == null) {
             int busy = owner.work.route.busyAnswers();
+            int unknown = owner.work.route.notSearchedAnswers();
             Column column = planColumn(level, block);
             // A column it could not search to for want of this tick's cells is not one without a way: planned again next tick.
-            if (column == null) return owner.work.route.busyAnswers() != busy ? Outcome.WORKING : Outcome.FAILED;
+            // Nor is one whose search did not run at all (he is in the air, in a jump): waited for, but not for ever.
+            if (column == null) {
+                boolean notKnown = owner.work.route.busyAnswers() != busy || owner.work.route.notSearchedAnswers() != unknown;
+                if (notKnown && ++unplannedTicks <= UNPLANNED_TICKS) return Outcome.WORKING;
+                return Outcome.FAILED;
+            }
+            unplannedTicks = 0;
             base = column.feet();
             approach = column.path();
             resetWatchdog(block);
@@ -630,7 +640,7 @@ public final class CompanionPillar {
         base = target = jumpCell = branch = null;
         approach = null;
         lastProgress = null;
-        attemptTicks = stalledTicks = jumpTicks = failedJumps = cooldown = cleanupTicks = 0;
+        attemptTicks = stalledTicks = jumpTicks = failedJumps = cooldown = cleanupTicks = unplannedTicks = 0;
         recovering = false;
         limit = LEAF_SUPPORTS;
         way = false;

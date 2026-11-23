@@ -580,12 +580,25 @@ final class CompanionPicking {
         if (c.temporaryPillar.isActive() && c.temporaryPillar.inReach(target)) { stands = Set.of(c.blockPosition()); return true; }
         int limit = level.getBlockState(target).is(BlockTags.LEAVES) ? CompanionPillar.LEAF_SUPPORTS : CompanionPillar.WAY_SUPPORTS;
         Set<BlockPos> feet = c.temporaryPillar.buildCells(target, limit, c.temporaryPillar.soilCarried());
-        if (feet.isEmpty()) return false;
+        if (feet.isEmpty()) {
+            dev.aicompanion.CompanionDiagnostics.event(c.diagnosticTrace(), "climb_refused", "entity", c.getUUID(), "target", target,
+                    "reason", "no feet", "limit", limit, "soil", c.temporaryPillar.soilCarried());
+            return false;
+        }
         // The pillar plans its column beside him: from farther off he walks to the trunk's foot first, as the wood path walks
         // to a tree. While it already stands he lets it plan from where he is.
-        if (!c.temporaryPillar.isActive() && !feet.contains(c.blockPosition())) return approach(feet);
+        if (!c.temporaryPillar.isActive() && !feet.contains(c.blockPosition())) {
+            boolean walked = approach(feet);
+            if (!walked) dev.aicompanion.CompanionDiagnostics.event(c.diagnosticTrace(), "climb_refused", "entity", c.getUUID(),
+                    "target", target, "reason", "no way to the feet", "feet", feet.size(), "legs", legs, "waited", waited);
+            return walked;
+        }
         CompanionPillar.Outcome outcome = c.temporaryPillar.tickToward(target, false, limit);
-        if (outcome == CompanionPillar.Outcome.FAILED) return false;
+        if (outcome == CompanionPillar.Outcome.FAILED) {
+            dev.aicompanion.CompanionDiagnostics.event(c.diagnosticTrace(), "climb_refused", "entity", c.getUUID(), "target", target,
+                    "reason", c.temporaryPillar.failureReason(), "soil", c.temporaryPillar.soilCarried(), "limit", limit);
+            return false;
+        }
         if (outcome == CompanionPillar.Outcome.READY) { stands = Set.of(c.blockPosition()); return true; }
         c.workStatus("Поднимаюсь на опоре: " + name() + ".");
         return true;
@@ -596,6 +609,11 @@ final class CompanionPicking {
         // The leg already being walked is the way there: searched again only when it is over, as a walk to a stand is. Asked
         // afresh every tick it barely moved him — eight ticks of a walk are not eight blocks (the stair he cannot climb, 18.11).
         if (path != null && !w.route.legOver()) return true;
+        // The last step into the cell, as walk() takes it: the game stops a node half a block off, and the column's foot is his own.
+        if (path != null && w.route.done() && path.getEndNode() != null && feet.contains(path.getEndNode().asBlockPos())) {
+            Vec3 end = Vec3.atBottomCenterOf(path.getEndNode().asBlockPos());
+            if (c.distanceToSqr(end) < 1 && ++waited < LAST_STEP) { c.getMoveControl().setWantedPosition(end.x, end.y, end.z, .7); return true; }
+        }
         if (++legs > LEGS) return false;
         CompanionRoute.Reach reach = w.route.cells(feet, 0);
         if (reach.busy() || CompanionRoute.NOT_SEARCHED.equals(reach.reason())) { legs--; return ++waited < WAIT; }

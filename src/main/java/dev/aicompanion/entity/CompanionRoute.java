@@ -201,6 +201,8 @@ public final class CompanionRoute {
     Path toCells(Set<BlockPos> cells, int accuracy) {
         Path path = nav().search(cells, accuracy);
         if (path == CompanionNavigation.BUSY) { busyAnswers++; return null; }
+        // A search that did not run at all (he is in the air, in a jump) is not an answer: «not known yet», ask again next tick.
+        if (path == null && nav().lastNotSearched()) { notSearchedAnswers++; return null; }
         return path != null && path.canReach() ? path : null;
     }
 
@@ -210,6 +212,9 @@ public final class CompanionRoute {
      * that cannot tell the two apart from the answer reads it before and after: changed means "not known yet, ask again next tick".
      */
     int busyAnswers() { return busyAnswers; }
+    private int notSearchedAnswers;
+    /** The same for a search that did not run at all this tick: no way is not known either. */
+    int notSearchedAnswers() { return notSearchedAnswers; }
 
     private CompanionNavigation nav() { return (CompanionNavigation)w.owner.getNavigation(); }
 
