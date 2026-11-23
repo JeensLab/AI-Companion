@@ -262,14 +262,16 @@ public final class CompanionReach {
 
     /**
      * The blocks that ARE this item about him — a planks block is planks, a lapis block is lapis — and how they are come at. The
-     * game's own block-to-item map, never a list of names: what a recipe also makes of it is no reason to leave the block that
-     * lies there.
+     * game's own block-to-item map, never a list of names: only a block that really gives this item counts (powder snow gives
+     * nothing to a hand, so it is no block of the item though it is the item's block).
      */
     public static Available lying(CompanionEntity c, ServerLevel level, Item item) {
+        List<CompanionPickable.Source> itself = CompanionPickable.identity(level, item);
+        if (itself.isEmpty()) return new Available(0, 0);
         // Only blocks that are his to take: a flower bed or a wall of the player's is not gathered (CompanionPicking's own rule).
         java.util.function.Predicate<BlockPos> mine = pos -> !CompanionPicking.kept(c, level).test(pos);
         List<BlockPos> blocks = CompanionObsidian.all(c, level, CompanionObsidian.DEPTH,
-                state -> state.getBlock().asItem() == item, mine);
+                state -> itself.stream().anyMatch(source -> state.is(source.block())), mine);
         return available(c, level, blocks, 3.5D, true, true, CompanionPillar.WAY_SUPPORTS);
     }
 

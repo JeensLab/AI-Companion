@@ -225,7 +225,7 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
             // A search that did not run at all is no answer: said with the reason, so a wait is read from the world.
             dev.aicompanion.CompanionDiagnostics.event(mob instanceof CompanionEntity c ? c.diagnosticTrace() : "", "search_skipped",
                     "entity", mob.getUUID(), "at", mob.blockPosition(), "feetY", Math.round(mob.getY() * 100) / 100D,
-                    "ground", mob.onGround(), "empty", targets.isEmpty(), "cells", targets.size(), "dy", Math.round(mob.getDeltaMovement().y * 1000) / 1000D, "water", mob.isInWater(), "passenger", mob.isPassenger(), "climbable", mob.onClimbable(), "below", level.getBlockState(mob.blockPosition().below()).getBlock().toString());
+                    "ground", mob.onGround(), "empty", targets.isEmpty(), "cells", targets.size());
             return null;
         }
         long now = level.getGameTime();
