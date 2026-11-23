@@ -160,6 +160,46 @@ public final class CompanionPillar {
         return Outcome.WORKING;
     }
 
+    /**
+     * A column raised where he stands, this many supports high, with nothing to reach from it: a stand out of the reach of a crowd
+     * ({@link CompanionHighGround}). READY once he stands on it; a failure with supports laid takes them down as any other.
+     */
+    public Outcome tickUp(int height) {
+        if (!(owner.level() instanceof ServerLevel level) || recovering) return Outcome.FAILED;
+        if (base == null) {
+            BlockPos feet = owner.blockPosition();
+            if (!owner.onGround() || !safeFoundation(level, feet.below()) || !columnClearable(level, feet, height) || soilCount() < height) return Outcome.FAILED;
+            base = feet.immutable();
+            resetWatchdog(base);
+        }
+        if (jumpCell != null) return tickJump(level);
+        if (supports.size() >= height) return owner.onGround() ? Outcome.READY : Outcome.WORKING;
+        if (++attemptTicks > MAX_ATTEMPT_TICKS) return fail("Не получилось подняться на опору");
+        if (cooldown > 0) cooldown--;
+        int surfaceY = base.getY() + supports.size();
+        if (!supports.isEmpty() && owner.getY() < surfaceY - 0.2D) return fail("Соскользнул с опоры, сначала уберу её");
+        owner.getNavigation().stop();
+        if (horizontalDistanceSqr(base) > 0.0144D) {
+            owner.getMoveControl().setWantedPosition(base.getX() + 0.5D, surfaceY, base.getZ() + 0.5D, 0.6D);
+            return Outcome.WORKING;
+        }
+        if (!owner.onGround() || cooldown > 0) return Outcome.WORKING;
+        BlockPos placement = base.above(supports.size());
+        if (!jumpSpaceClear(level, placement)) return fail("Над опорой не хватает свободного места");
+        if (!prepareSoil()) return fail("Не могу взять блок для опоры в руку");
+        Vec3 motion = owner.getDeltaMovement();
+        owner.setDeltaMovement(motion.x * 0.15D, motion.y, motion.z * 0.15D);
+        jumpCell = placement.immutable();
+        jumpTicks = 0;
+        owner.getJumpControl().jump();
+        return Outcome.WORKING;
+    }
+
+    /** He stands on the top support of his column. */
+    public boolean onTop() {
+        return !supports.isEmpty() && owner.onGround() && Math.abs(owner.getY() - (supports.getLast().pos().getY() + 1.0D)) < 0.2D && overlapsColumn(owner.getBoundingBox(), supports.getLast().pos());
+    }
+
     private Outcome tickJump(ServerLevel level) {
         owner.getNavigation().stop();
         owner.getMoveControl().setWantedPosition(base.getX() + 0.5D, owner.getY(), base.getZ() + 0.5D, 0.35D);

@@ -58,12 +58,15 @@ final class CompanionCombat {
             super.tick();
             c.work.expedition.fight.fightGoing();
         }
-        @Override protected void checkAndPerformAttack(LivingEntity target) {
-            if (!c.combat.swingReady() || !c.isWithinMeleeAttackRange(target) || !c.getSensing().hasLineOfSight(target)) return;
-            c.combat.swung();
-            c.swing(InteractionHand.MAIN_HAND);
-            if (c.doHurtTarget(target) && target instanceof net.minecraft.world.entity.monster.Creeper) c.creeperGuard.landed();
-        }
+        @Override protected void checkAndPerformAttack(LivingEntity target) { c.combat.strike(target); }
+    }
+
+    /** One blow at the pace of his weapon, when the foe is in his reach and in sight. */
+    void strike(LivingEntity target) {
+        if (!swingReady() || !c.isWithinMeleeAttackRange(target) || !c.getSensing().hasLineOfSight(target)) return;
+        swung();
+        c.swing(InteractionHand.MAIN_HAND);
+        if (c.doHurtTarget(target) && target instanceof net.minecraft.world.entity.monster.Creeper) c.creeperGuard.landed();
     }
 
     /**
