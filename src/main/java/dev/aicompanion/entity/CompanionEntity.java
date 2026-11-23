@@ -126,6 +126,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     int inventoryViewers;
     final NonNullList<ItemStack> companionInventory = NonNullList.withSize(27, ItemStack.EMPTY);
     final CompanionPillar temporaryPillar = new CompanionPillar(this);
+    /** A floor across a gap (PATH7): laid of what he carries, taken back when he comes home. */
+    final CompanionBridge temporaryBridge = new CompanionBridge(this);
     final CompanionWork work = new CompanionWork(this);
     private final CompanionFurnaceBatches batches = new CompanionFurnaceBatches(this);
     final CompanionGathering gathering = new CompanionGathering(this);
@@ -579,6 +581,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         supportSoilTask = false;
         work.cancel();
         temporaryPillar.requestCleanup();
+        temporaryBridge.requestCleanup();
         roaming = false;
         entityData.set(DATA_ROAMING, false);
         this.following = following;
@@ -603,6 +606,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         supportSoilTask = false;
         work.cancel();
         temporaryPillar.requestCleanup();
+        temporaryBridge.requestCleanup();
         roaming = false;
         entityData.set(DATA_ROAMING, false);
         this.protecting = protecting;
@@ -630,6 +634,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
 
     public int getTemporarySupportCount() { return temporaryPillar.supportCount(); }
     public boolean isRecoveringSupports() { return temporaryPillar.isRecovering(); }
+    /** Read only, for the GameTest observer: the cells of his own floor across a gap, and its way back. */
+    public int getTemporaryBridgeCount() { return temporaryBridge.supportCount(); }
+    public boolean isRecoveringBridge() { return temporaryBridge.isRecovering(); }
 
     public boolean isWorking() { return work.isActive(); }
     /** Read only, for the GameTest observer: a self-rescue running, the work's job/phase, and a visible action in hand. */
@@ -648,7 +655,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** The work's own craft step, for the GameTest observer: a stack into a hand only after the bag said it has no cell. */
     public CompanionActionResult craftHoldingIfTheBagIsFull(String itemId, int count) { return work.items.craftFromBagMakingRoom(itemId, count); }
     public String watchDetail() { return diagnosticState(); }
-    public boolean isVisiblyBusy() { return isSwingingAtBlock() || isMiningAnimation() || actionAnimation() != 0 || eatTicks > 0 || temporaryPillar.isActive() || temporaryPillar.isRecovering(); }
+    public boolean isVisiblyBusy() { return isSwingingAtBlock() || isMiningAnimation() || actionAnimation() != 0 || eatTicks > 0 || temporaryPillar.isActive() || temporaryPillar.isRecovering()
+            || temporaryBridge.isActive() || temporaryBridge.isRecovering(); }
     public void enableProtectionForWork() { protecting = true; entityData.set(DATA_PROTECTING, true); }
     public long activeWorkId() { return work.activeTaskId(); }
     public CompanionFurnaceBatches batches() { return batches; }
@@ -660,11 +668,12 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public String releaseBatch(long id) { return batches.release(id); }
     public CompanionActionResult workResult(long id) { return work.taskResult(id); }
     public boolean hasActiveWorkOrder() {
-        return gatheringLogs || gatheringDirt || work.isActive() || temporaryPillar.isActive() || temporaryPillar.isRecovering();
+        return gatheringLogs || gatheringDirt || work.isActive() || temporaryPillar.isActive() || temporaryPillar.isRecovering()
+                || temporaryBridge.isActive() || temporaryBridge.isRecovering();
     }
-    boolean isGatheringWoodForWork() { return gatheringLogs || supportSoilTask || temporaryPillar.isRecovering(); }
-    boolean canWorkNow() { return inventoryViewers == 0 && !temporaryPillar.isRecovering(); }
-    void syncWorkState() { entityData.set(DATA_GATHERING_LOGS, gatheringLogs || gatheringDirt || temporaryPillar.isRecovering() || work.isActive() || loot.hasPending() || recovery.active()); }
+    boolean isGatheringWoodForWork() { return gatheringLogs || supportSoilTask || temporaryPillar.isRecovering() || temporaryBridge.isRecovering(); }
+    boolean canWorkNow() { return inventoryViewers == 0 && !temporaryPillar.isRecovering() && !temporaryBridge.isRecovering(); }
+    void syncWorkState() { entityData.set(DATA_GATHERING_LOGS, gatheringLogs || gatheringDirt || temporaryPillar.isRecovering() || temporaryBridge.isRecovering() || work.isActive() || loot.hasPending() || recovery.active()); }
     public boolean isMiningAnimation() { return entityData.get(DATA_MINING); }
     void miningAnimation(boolean value) { entityData.set(DATA_MINING, value); }
     public int actionAnimation() { return level().getGameTime() < entityData.get(DATA_ACTION_UNTIL) ? entityData.get(DATA_ACTION) : 0; }

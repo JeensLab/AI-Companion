@@ -2,47 +2,85 @@ package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.FluidTags;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.EmptyBlockGetter;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.ClipContext;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 /**
- * The one answer to «how does he get to this block and work it», asked by every place that chooses a target — the obtain chain
- * and the harvest path now, the ore, lying items, chests and building still on their own checks. The answer is a way, not a
- * yes: WALK a cell he can stand and work it from, ACROSS a walk farther than his own search (legs, CompanionTravel), UP a
- * column of his own soil with the steps it takes, DOWN the block under his feet (its drop rests in the hole he steps into),
- * or NONE. Phrasing cannot decide the outcome when every chooser asks the same question, and a promise is only as large as
- * what these ways really give (PATH7, #105: «добудь обсидиан» promised a portal frame's ten from one block ten blocks above,
- * and the harvest path never reached a pumpkin hanging there).
+ * The one answer to «how does he get to this block and work it», asked by every place that chooses a target. The answer is a
+ * way, not a yes: WALK a cell he can stand and work it from, ACROSS a walk farther than his own search (legs, CompanionTravel),
+ * UP a column of his own soil with the steps it takes, BRIDGE a floor across a gap with the cells it takes, DOWN the block under
+ * his feet (its drop rests in the hole he steps into), or NONE.
+ *
+ * The answer is geometry only — how far up, how far across, whether a stand cell exists, whether there is a gap — never what the
+ * block is: a pumpkin, an obsidian block and a lapis block in the air are the same question, and so is every block of the game
+ * (idea PATH7, #105: «для любой цели в мире, а не для отдельных предметов»). The material comes in order: what he carries, then
+ * what he can dig about him. A way that cannot be made names its distance, never the first thing that comes to mind.
  */
 public final class CompanionReach {
-    public enum Way { WALK, ACROSS, UP, DOWN, NONE }
+    public enum Way { WALK, ACROSS, UP, BRIDGE, DOWN, NONE }
 
-    /** The way to the block and, for UP, the least steps of soil a column to it takes (0 otherwise). */
-    public record How(Way way, int steps) {
+    /** The way to the block and what it asks: for UP the least steps of soil, for BRIDGE the cells of floor, else why there is none. */
+    public record How(Way way, int steps, int gap, String why) {
+        public How(Way way, int steps) { this(way, steps, 0, ""); }
         public boolean yes() { return way != Way.NONE; }
         public boolean up() { return way == Way.UP; }
+        public boolean bridge() { return way == Way.BRIDGE; }
+        /** The shape of the way, as the decision line names it. */
+        public String shape() {
+            return switch (way) {
+                case WALK, ACROSS -> "walk";
+                case UP -> "column";
+                case BRIDGE -> "bridge";
+                case DOWN -> "step down";
+                case NONE -> "none";
+            };
+        }
     }
 
-    /** What the world about him really gives of an item: how many it yields by these ways, the soil a column still asks, and
+    /** What the world about him really gives of an item: how many it yields by these ways, the blocks a way still asks, and
      * whether the promise counts on water of his (obsidian cooled from lava or made of his own bucket). */
     public record Available(int count, int soil, boolean water) {
         public Available(int count, int soil) { this(count, soil, false); }
         public boolean some() { return count > 0; }
+        /** The two answers together: the blocks themselves and the drops of other blocks. */
+        public static Available sum(Available a, Available b) {
+            if (a == null) return b;
+            if (b == null) return a;
+            return new Available(a.count() + b.count(), Math.max(a.soil(), b.soil()), a.water() || b.water());
+        }
+    }
+
+    /** A floor across a gap: the bank he walks to, the cell he works the block from, and the cells of floor to lay between. */
+    public record BridgePlan(BlockPos start, BlockPos end, List<BlockPos> cells) {
+        public int length() { return cells.size(); }
     }
 
     private CompanionReach() { }
 
     /**
      * How he gets to this block and works it. {@code reach}: how close a stand cell must be; {@code forTheDrop}: the drop must
-     * rest where he can pick it up from that cell; {@code allowDugSoil}: soil he can dig about him counts for a column;
-     * {@code maxSteps}: the most steps a column may take (a leaf crown keeps its short one).
+     * rest where he can pick it up from that cell; {@code allowDugSoil}: blocks he can dig about him count for a column or a
+     * bridge; {@code maxSteps}: the most steps a column may take (a leaf crown keeps its short one).
      */
     public static How how(CompanionEntity c, ServerLevel level, BlockPos block, double reach, boolean forTheDrop, boolean allowDugSoil, int maxSteps) {
-        if (!level.hasChunkAt(block) || level.getBlockState(block).isAir()) return new How(Way.NONE, 0);
+        if (!level.hasChunkAt(block) || level.getBlockState(block).isAir()) return new How(Way.NONE, 0, 0, "no block");
         BlockPos feet = c.blockPosition();
         // The block under his feet is worked from where he stands: its drop rests in the hole and he steps down into it.
         if (block.equals(feet.below()) && CompanionMiningNavigation.visible(c, c.getEyePosition(), block)
@@ -50,7 +88,7 @@ public final class CompanionReach {
         // On the bed of the water he works it from the water over it, as the swimmer stands at the surface (CompanionSwimming):
         // the dry stand cells of standCells are no use there, and a block below him is no way up.
         boolean wet = !level.getFluidState(block).isEmpty() || !level.getFluidState(block.above()).isEmpty();
-        var stands = new java.util.HashSet<BlockPos>();
+        Set<BlockPos> stands = new HashSet<>();
         if (wet) {
             for (int dy = 1; dy <= 11; dy++) {
                 BlockPos cell = block.above(dy);
@@ -69,9 +107,8 @@ public final class CompanionReach {
                     BlockPos cell = block.offset(dx, dy, dz);
                     if (!CompanionMiningNavigation.standable(c, cell) || level.getBlockState(cell).is(net.minecraft.world.level.block.Blocks.COBWEB)) continue;
                     Vec3 eye = Vec3.atBottomCenterOf(cell).add(0, c.getEyeHeight(), 0);
-                    if (level.clip(new net.minecraft.world.level.ClipContext(eye, block.getCenter(),
-                            net.minecraft.world.level.ClipContext.Block.COLLIDER, net.minecraft.world.level.ClipContext.Fluid.NONE, c)).getType()
-                            == net.minecraft.world.phys.HitResult.Type.MISS) stands.add(cell);
+                    if (level.clip(new ClipContext(eye, block.getCenter(), ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, c)).getType()
+                            == HitResult.Type.MISS) stands.add(cell);
                 }
             }
         }
@@ -79,38 +116,173 @@ public final class CompanionReach {
             // A block farther than his own search is a walk in legs, not a lost one (CompanionTravel).
             return new How(block.distSqr(feet) > (double) c.getSearchRadius() * c.getSearchRadius() ? Way.ACROSS : Way.WALK, 0);
         }
-        // No stand cell reaches it: up a column of his own soil, at most sixteen blocks above his feet and four across.
-        // The way up is the player's switch («Строить себе путь»): off, no column is raised.
-        if (!c.buildWay()) return new How(Way.NONE, 0);
+        // No stand cell reaches it: a column of his own soil, or a floor laid across the gap between him and it.
+        How up = up(c, level, block, allowDugSoil, maxSteps);
+        if (up.yes()) return up;
+        BridgePlan bridge = bridge(c, level, block, reach, forTheDrop, maxSteps, allowDugSoil);
+        if (bridge != null) return new How(Way.BRIDGE, 0, bridge.length(), "");
+        // No way: the distance is the honest reason, never the first thing that comes to mind.
         int rise = block.getY() - feet.getY();
-        if (rise < 2 || rise > CompanionPillar.WAY_HEIGHT) return new How(Way.NONE, 0);
+        double across = Math.hypot(block.getX() + .5D - c.getX(), block.getZ() + .5D - c.getZ());
+        return new How(Way.NONE, 0, 0, "up " + rise + ", across " + Math.round(across * 10) / 10D + (up.why().isEmpty() ? "" : ", " + up.why()));
+    }
+
+    /** A column of his own soil to a block no stand cell reaches, or why there is none. Geometry only. */
+    private static How up(CompanionEntity c, ServerLevel level, BlockPos block, boolean allowDugSoil, int maxSteps) {
+        // The way up is the player's switch («Строить себе путь»): off, no column is raised.
+        if (!c.buildWay()) return new How(Way.NONE, 0, 0, "switch off");
+        int rise = block.getY() - c.blockPosition().getY();
+        if (rise < 2 || rise > CompanionPillar.WAY_HEIGHT) return new How(Way.NONE, 0, 0, "rise " + rise);
         double dx = block.getX() + .5D - c.getX(), dz = block.getZ() + .5D - c.getZ();
-        if (dx * dx + dz * dz > 16.0D) return new How(Way.NONE, 0);
+        if (dx * dx + dz * dz > 16.0D) return new How(Way.NONE, 0, 0, "across " + Math.round(Math.sqrt(dx * dx + dz * dz) * 10) / 10D);
         int limit = Math.clamp(maxSteps, 1, CompanionPillar.WAY_SUPPORTS);
         int carried = c.temporaryPillar.soilCarried();
         int least = c.temporaryPillar.leastSteps(block, limit);
-        if (least <= 0) return new How(Way.NONE, 0);
-        if (least <= carried || allowDugSoil && soilAbout(c, level)) return new How(Way.UP, least);
-        return new How(Way.NONE, 0);
+        if (least <= 0) return new How(Way.NONE, 0, 0, "no column");
+        if (least <= carried) return new How(Way.UP, least);
+        if (allowDugSoil && soilAbout(c, level)) return new How(Way.UP, least);
+        return new How(Way.NONE, 0, 0, "short " + (least - carried) + " blocks");
     }
 
-    /** How many of these blocks he can work by these ways, and the soil a column still asks (dug soil counts when allowed). */
+    /**
+     * A floor across the gap between a bank he can walk to and a cell he can work this block from: the cells of air under the
+     * walking line, and the bank behind them. Geometry only: how far across, whether the cells are free, whether the material
+     * is his. Null when no line is there.
+     */
+    public static BridgePlan bridge(CompanionEntity c, ServerLevel level, BlockPos block, double reach, boolean forTheDrop, int maxGap, boolean allowDugSoil) {
+        if (!c.buildWay()) return null;
+        int limit = Math.clamp(maxGap, 1, CompanionPillar.WAY_SUPPORTS);
+        int material = bridgeBlocks(c);
+        boolean dig = allowDugSoil && soilAbout(c, level);
+        // The cells he can work the block from, nearest him first: air for a body, in reach and in sight, the drop collectable there.
+        List<BlockPos> ends = new ArrayList<>();
+        for (int dy = -1; dy <= 1; dy++) for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) {
+            if (dx * dx + dz * dz > 9) continue;
+            BlockPos end = block.offset(dx, dy, dz);
+            if (Vec3.atBottomCenterOf(end).distanceToSqr(block.getCenter()) > reach * reach) continue;
+            if (!airForBody(c, level, end)) continue;
+            Vec3 eye = Vec3.atBottomCenterOf(end).add(0, c.getEyeHeight(), 0);
+            if (!CompanionMiningNavigation.visible(c, eye, block)) continue;
+            if (forTheDrop && !CompanionMiningNavigation.dropCollectable(level, block, end)) continue;
+            ends.add(end.immutable());
+        }
+        ends.sort(java.util.Comparator.comparingDouble(end -> end.distSqr(c.blockPosition())));
+        for (BlockPos end : ends) {
+            BridgePlan best = null;
+            for (Direction dir : Direction.Plane.HORIZONTAL) {
+                for (int back = 1; back <= limit + 1; back++) {
+                    BlockPos start = end.relative(dir, back);
+                    // The bank: a cell he stands in with the ground under it already.
+                    if (!CompanionMiningNavigation.standable(c, start)) continue;
+                    int gap = back - 1;
+                    if (gap <= 0) break;
+                    if (gap > limit) break;
+                    List<BlockPos> cells = new ArrayList<>();
+                    boolean free = true;
+                    for (int step = 1; step <= gap; step++) {
+                        BlockPos cell = end.relative(dir, step);
+                        if (!airForBody(c, level, cell)) { free = false; break; }
+                        BlockPos floor = cell.below();
+                        BlockState floorState = level.getBlockState(floor);
+                        if (!floorState.getCollisionShape(level, floor).isEmpty()) continue;   // a ledge: no floor to lay
+                        if (!level.getFluidState(floor).isEmpty()) { free = false; break; }
+                        cells.add(floor.immutable());
+                    }
+                    if (!free || cells.isEmpty()) continue;
+                    if (cells.size() > material && !dig) continue;
+                    if (best == null || cells.size() < best.length()) best = new BridgePlan(start.immutable(), end, List.copyOf(cells));
+                }
+            }
+            if (best != null) return best;
+        }
+        return null;
+    }
+
+    /** How many cells of floor he carries: any solid block item in the bag or hands is a cell of a bridge. */
+    public static int bridgeBlocks(CompanionEntity c) {
+        int count = 0;
+        for (int slot = 0; slot < c.getContainerSize(); slot++) {
+            ItemStack stack = c.getItem(slot);
+            if (placeable(stack)) count += stack.getCount();
+        }
+        if (placeable(c.getMainHandItem())) count += c.getMainHandItem().getCount();
+        if (placeable(c.getOffhandItem())) count += c.getOffhandItem().getCount();
+        return count;
+    }
+
+    /** Whether this stack is a block that can be set down as a cell of floor. */
+    public static boolean placeable(ItemStack stack) {
+        return !stack.isEmpty() && stack.getItem() instanceof BlockItem item
+                && !item.getBlock().defaultBlockState().getCollisionShape(EmptyBlockGetter.INSTANCE, BlockPos.ZERO).isEmpty();
+    }
+
+    /** The material for a bridge in his hand: the first solid block of the hands or the bag. */
+    static ItemStack bridgeMaterial(CompanionEntity c) {
+        if (placeable(c.getMainHandItem())) return c.getMainHandItem();
+        if (placeable(c.getOffhandItem())) return c.getOffhandItem();
+        for (int slot = 0; slot < c.getContainerSize(); slot++) if (placeable(c.getItem(slot))) return c.getItem(slot);
+        return ItemStack.EMPTY;
+    }
+
+    /** Air for a body at this cell: nothing solid there or over it, no fluid, inside the border and the loaded world. */
+    private static boolean airForBody(CompanionEntity c, ServerLevel level, BlockPos cell) {
+        return level.hasChunkAt(cell) && level.hasChunkAt(cell.above()) && level.getWorldBorder().isWithinBounds(cell)
+                && level.getFluidState(cell).isEmpty() && level.getFluidState(cell.above()).isEmpty()
+                && level.getBlockState(cell).getCollisionShape(level, cell).isEmpty()
+                && level.getBlockState(cell.above()).getCollisionShape(level, cell.above()).isEmpty()
+                && level.noCollision(c, new AABB(cell.getX() + .2, cell.getY(), cell.getZ() + .2,
+                        cell.getX() + .8, cell.getY() + c.getBbHeight(), cell.getZ() + .8));
+    }
+
+    /** How many of these blocks he can work by these ways, and the blocks a way still asks (dug blocks count when allowed). */
     public static Available available(CompanionEntity c, ServerLevel level, List<BlockPos> blocks, double reach, boolean forTheDrop, boolean allowDugSoil, int maxSteps) {
-        int count = 0, steps = 0;
+        int count = 0, soil = 0;
         for (BlockPos block : blocks) {
             How how = how(c, level, block, reach, forTheDrop, allowDugSoil, maxSteps);
             if (!how.yes()) continue;
             count++;
-            if (how.up()) steps = Math.max(steps, how.steps());
+            if (how.up()) soil = Math.max(soil, Math.max(0, how.steps() - c.temporaryPillar.soilCarried()));
+            if (how.bridge()) soil = Math.max(soil, Math.max(0, how.gap() - bridgeBlocks(c)));
         }
-        int soil = steps <= 0 ? 0 : Math.max(0, steps - c.temporaryPillar.soilCarried());
         if (soil > 0 && !(allowDugSoil && soilAbout(c, level))) soil = 0;
         return new Available(count, soil);
     }
 
     /**
-     * Whether a block of soil stands within the dig's reach, where he may take it: the soil for a column (the dig's own rule,
-     * the site of a building and all, CompanionDigGoal).
+     * The blocks that ARE this item about him — a planks block is planks, a lapis block is lapis — and how they are come at. The
+     * game's own block-to-item map, never a list of names: what a recipe also makes of it is no reason to leave the block that
+     * lies there.
+     */
+    public static Available lying(CompanionEntity c, ServerLevel level, Item item) {
+        List<BlockPos> blocks = CompanionObsidian.all(c, level, CompanionObsidian.DEPTH,
+                state -> state.getBlock().asItem() == item, pos -> true);
+        return available(c, level, blocks, 3.5D, true, true, CompanionPillar.WAY_SUPPORTS);
+    }
+
+    /** «5 блоков вверх и 3 вбок»: the geometry of a block, as a refusal names it. */
+    public static String distance(CompanionEntity c, BlockPos block) {
+        BlockPos feet = c.blockPosition();
+        int rise = block.getY() - feet.getY();
+        double across = Math.hypot(block.getX() + .5D - c.getX(), block.getZ() + .5D - c.getZ());
+        String vertical = rise > 0 ? CompanionWorkItems.blocks(rise) + " вверх" : rise < 0 ? CompanionWorkItems.blocks(-rise) + " вниз" : "на моей высоте";
+        return vertical + (across < .6D ? "" : " и " + Math.round(across) + " вбок");
+    }
+
+    /** One line of the journal per decision: the block, where it is, how far up and across, the answer, the shape, and why not. */
+    public static void decision(CompanionEntity c, BlockPos block, How how) {
+        if (!(c.level() instanceof ServerLevel level) || !level.hasChunkAt(block)) return;
+        BlockPos feet = c.blockPosition();
+        double across = Math.hypot(block.getX() + .5D - c.getX(), block.getZ() + .5D - c.getZ());
+        dev.aicompanion.CompanionDiagnostics.event(c.diagnosticTrace(), "way_decision", "entity", c.getUUID(),
+                "block", block.toShortString(), "id", BuiltInRegistries.BLOCK.getKey(level.getBlockState(block).getBlock()),
+                "rise", block.getY() - feet.getY(), "across", Math.round(across * 100) / 100D,
+                "answer", how.way().name().toLowerCase(Locale.ROOT), "shape", how.shape(),
+                "steps", how.steps(), "gap", how.gap(), "why", how.why());
+    }
+
+    /**
+     * Whether a block of soil stands within the dig's reach, where he may take it: the material for a column or a bridge (the
+     * dig's own rule, the site of a building and all, CompanionDigGoal).
      */
     static boolean soilAbout(CompanionEntity c, ServerLevel level) {
         BlockPos origin = c.blockPosition();

@@ -172,7 +172,24 @@ final class CompanionBag {
     CompanionReach.Available available(ServerLevel level, net.minecraft.world.item.Item wanted) {
         if (wanted == net.minecraft.world.item.Items.OBSIDIAN) return CompanionObsidian.available(c, level, c.work.portal::laid);
         if (CompanionLeaves.isLeaf(BuiltInRegistries.ITEM.getKey(wanted).toString())) return null;
-        return CompanionPicking.available(c, level, wanted);
+        // What the blocks of the item give, and the blocks that are the item itself: one geometry answer for both (PATH7).
+        return CompanionReach.Available.sum(CompanionPicking.available(c, level, wanted), CompanionReach.lying(c, level, wanted));
+    }
+
+    /**
+     * Why no block of this item is come at: the nearest one's distance from the one geometry answer — «в 6 блоках вверх и
+     * 3 вбок», the real reason, never the first thing that comes to mind.
+     */
+    String whyNot(ServerLevel level, net.minecraft.world.item.Item wanted) {
+        List<BlockPos> blocks = new java.util.ArrayList<>(CompanionObsidian.all(c, level, CompanionObsidian.DEPTH,
+                state -> state.getBlock().asItem() == wanted, pos -> true));
+        var sources = CompanionPickable.sources(level, wanted);
+        if (!sources.isEmpty()) blocks.addAll(CompanionObsidian.all(c, level, CompanionObsidian.DEPTH,
+                state -> sources.stream().anyMatch(source -> state.is(source.block())), pos -> true));
+        if (blocks.isEmpty()) return "";
+        BlockPos nearest = blocks.stream().min(java.util.Comparator.comparingDouble(pos -> c.distanceToSqr(pos.getCenter()))).orElse(null);
+        if (nearest == null) return "";
+        return CompanionReach.distance(c, nearest);
     }
     /** The end of obtain_item: success only by the bag, never by the plan. */
     public CompanionActionResult carriedCheck(String item, int count) {

@@ -120,6 +120,8 @@ final class CompanionPicking {
         Item asked = key == null ? null : BuiltInRegistries.ITEM.getOptional(key).orElse(null);
         ServerLevel level = c.level() instanceof ServerLevel here ? here : null;
         speciesSources = asked == null || level == null ? List.of() : allowed(level, CompanionPickable.sources(level, asked));
+        // A block that is the item itself (a planks block, a lapis block), which a recipe also makes: it is taken as it lies.
+        if (asked != null && level != null && speciesSources.isEmpty()) speciesSources = allowed(level, CompanionPickable.identity(level, asked));
         // A leaf order is the leaves of any tree or hedge about, whatever species it named: the named one is tried first, and
         // another kind stands in for the part it cannot give (any #minecraft:leaves) before the order is refused.
         leafOrder = asked != null && level != null && new ItemStack(asked).is(ItemTags.LEAVES);
@@ -168,6 +170,8 @@ final class CompanionPicking {
      */
     static CompanionReach.Available available(CompanionEntity c, ServerLevel level, Item item) {
         List<CompanionPickable.Source> sources = allowed(level, CompanionPickable.sources(level, item));
+        // A block that is the item itself, though a recipe also makes it: what lies there is taken (PATH7).
+        if (sources.isEmpty()) sources = allowed(level, CompanionPickable.identity(level, item));
         if (sources.isEmpty()) return null;
         Predicate<BlockPos> site = kept(c, level);
         List<BlockPos> blocks = CompanionObsidian.all(c, level, DEPTH, state -> gives(sources, state) > 0, pos ->
@@ -581,8 +585,12 @@ final class CompanionPicking {
         int limit = level.getBlockState(target).is(BlockTags.LEAVES) ? CompanionPillar.LEAF_SUPPORTS : CompanionPillar.WAY_SUPPORTS;
         Set<BlockPos> feet = c.temporaryPillar.buildCells(target, limit, c.temporaryPillar.soilCarried());
         if (feet.isEmpty()) {
+            // No column reaches it: a floor laid across the gap between him and it, the same geometry answer (PATH7: «мост»).
+            CompanionReach.How how = CompanionReach.how(c, level, target, STAND_REACH, true, false, CompanionPillar.WAY_SUPPORTS);
+            CompanionReach.decision(c, target, how);
+            if (how.bridge()) return bridge(level);
             dev.aicompanion.CompanionDiagnostics.event(c.diagnosticTrace(), "climb_refused", "entity", c.getUUID(), "target", target,
-                    "reason", "no feet", "limit", limit, "soil", c.temporaryPillar.soilCarried());
+                    "reason", how.why(), "limit", limit, "soil", c.temporaryPillar.soilCarried());
             return false;
         }
         // The pillar plans its column beside him: from farther off he walks to the trunk's foot first, as the wood path walks
@@ -601,6 +609,19 @@ final class CompanionPicking {
         }
         if (outcome == CompanionPillar.Outcome.READY) { stands = Set.of(c.blockPosition()); return true; }
         c.workStatus("Поднимаюсь на опоре: " + name() + ".");
+        return true;
+    }
+
+    /** The floor across the gap to a block no column reaches: laid, crossed, and taken back when he is home. */
+    private boolean bridge(ServerLevel level) {
+        CompanionBridge.Outcome outcome = c.temporaryBridge.tickToward(target);
+        if (outcome == CompanionBridge.Outcome.FAILED) {
+            dev.aicompanion.CompanionDiagnostics.event(c.diagnosticTrace(), "bridge_refused", "entity", c.getUUID(), "target", target,
+                    "reason", c.temporaryBridge.failureReason());
+            return false;
+        }
+        if (outcome == CompanionBridge.Outcome.READY) { stands = Set.of(c.blockPosition()); return true; }
+        c.workStatus("Мостю провал: " + name() + ".");
         return true;
     }
 
@@ -626,6 +647,10 @@ final class CompanionPicking {
 
     /** His own column is taken back before the drops on the ground are walked to: the pickup waits while it stands. */
     private boolean down() {
+        if (c.temporaryBridge.isActive() || c.temporaryBridge.isRecovering()) {
+            c.temporaryBridge.requestCleanup();
+            return c.temporaryBridge.hasSupports();
+        }
         if (!c.temporaryPillar.isActive()) return false;
         boolean stood = c.temporaryPillar.hasSupports();
         // The gather's own tool stays in his hand while the column comes down: the shears cut the next leaf, not the hand the
@@ -786,7 +811,7 @@ final class CompanionPicking {
         long now = level.getGameTime();
         // His own column is taken back first (down), and the pickup walks to nothing while it stands or comes down: the drops
         // that fell below wait for the ground, so their settle clock starts when he is down, not on top of it (PATH7, 19.11).
-        if (c.temporaryPillar.isActive() || c.temporaryPillar.isRecovering()) { settleAt = 0; return; }
+        if (c.temporaryPillar.isActive() || c.temporaryPillar.isRecovering() || c.temporaryBridge.isActive() || c.temporaryBridge.isRecovering()) { settleAt = 0; return; }
         if (settleAt == 0) { settleAt = now + SETTLE; return; }
         if (now < settleAt) return;
         if (!retried) { retried = true; settleAt = now + SETTLE; c.retryHarvestPickup(); return; }

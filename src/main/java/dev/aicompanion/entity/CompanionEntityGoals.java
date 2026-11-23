@@ -18,12 +18,13 @@ final class CompanionEntityGoals {
     static final class RecoverSupportsGoal extends Goal {
         final CompanionEntity c;
         RecoverSupportsGoal(CompanionEntity c) { this.c = c; setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK, Flag.JUMP)); }
-        @Override public boolean canUse() { return c.temporaryPillar.isRecovering() && c.inventoryViewers == 0; }
+        @Override public boolean canUse() { return (c.temporaryPillar.isRecovering() || c.temporaryBridge.isRecovering()) && c.inventoryViewers == 0; }
         @Override public boolean canContinueToUse() { return canUse(); }
         @Override public boolean requiresUpdateEveryTick() { return true; }
         @Override public void start() { c.getNavigation().stop(); }
         @Override public void tick() {
             if (c.temporaryPillar.tickCleanup()) c.syncWorkState();
+            if (c.temporaryBridge.tickCleanup()) c.syncWorkState();
         }
     }
 

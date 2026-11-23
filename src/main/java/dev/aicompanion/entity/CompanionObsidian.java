@@ -42,7 +42,7 @@ final class CompanionObsidian {
     /** A player's reach for a block, as his bucket has it (CompanionWaterBucket); a cell to stand at keeps a margin. */
     private static final double REACH = 4.5;
     /** Lava and obsidian above and below his feet that are looked at (blocks), as water is (CompanionWaterFill). */
-    private static final int DEPTH = 32;
+    static final int DEPTH = 32;
     /** Pours one order takes at most, walks to one place before it is passed over, lava cells of one pond remembered as his. */
     private static final int POURS = 16, LEGS = 8, BODY = 512;
     /** How far his water runs from where it is poured (seven cells on the level) and how deep the lava under it is his. */
@@ -118,8 +118,8 @@ final class CompanionObsidian {
     static CompanionReach.Available available(CompanionEntity c, ServerLevel level, Predicate<BlockPos> laid) {
         Predicate<BlockPos> site = CompanionPicking.sites(c, level);
         List<BlockPos> blocks = all(c, level, DEPTH, state -> state.is(Blocks.OBSIDIAN), pos -> !laid.test(pos) && free(level, pos, site));
-        // A way up to obsidian stands on soil he carries: the work does not dig for it.
-        CompanionReach.Available found = CompanionReach.available(c, level, blocks, 3.5D, true, false, CompanionPillar.WAY_SUPPORTS);
+        // A way up to obsidian stands on soil he carries — or on soil he digs about him, as the plan then digs it.
+        CompanionReach.Available found = CompanionReach.available(c, level, blocks, 3.5D, true, true, CompanionPillar.WAY_SUPPORTS);
         int lava = 0;
         boolean waterBucket = false;
         for (int slot = 0; slot < c.getContainerSize(); slot++) {
@@ -196,6 +196,7 @@ final class CompanionObsidian {
 
     /** Mine, step down the column dismantling it behind him, take the drop: true while the column is still coming down. */
     private boolean descend() {
+        if (c.temporaryBridge.isActive() || c.temporaryBridge.isRecovering()) { c.temporaryBridge.requestCleanup(); return true; }
         if (!c.temporaryPillar.isActive() && !c.temporaryPillar.isRecovering()) return false;
         c.temporaryPillar.requestCleanup();
         return true;

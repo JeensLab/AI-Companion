@@ -34,6 +34,7 @@ final class CompanionEntityNbt {
         ContainerHelper.saveAllItems(tag, c.companionInventory, c.level().registryAccess());
         c.playersThings.save(tag);
         c.temporaryPillar.save(tag);
+        c.temporaryBridge.save(tag);
         c.recovery.save(tag);
         c.work.save(tag);
         c.parked.save(tag);
@@ -111,6 +112,7 @@ final class CompanionEntityNbt {
         c.getEntityData().set(CompanionEntity.DATA_PROTECTING, c.protecting);
         c.getEntityData().set(CompanionEntity.DATA_GATHERING_LOGS, c.gatheringLogs || c.gatheringDirt);
         c.temporaryPillar.load(tag);
+        c.temporaryBridge.load(tag);
         c.work.load(tag);
         c.parked.load(tag);
         c.batches().load(tag);

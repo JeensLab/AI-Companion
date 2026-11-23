@@ -333,7 +333,8 @@ public final class CompanionWork {
      */
     boolean holdsDropsForItsColumn() {
         return job != null && (job == Job.OBSIDIAN || job == Job.BLOCK)
-                && (owner.temporaryPillar.isActive() || owner.temporaryPillar.isRecovering());
+                && (owner.temporaryPillar.isActive() || owner.temporaryPillar.isRecovering()
+                    || owner.temporaryBridge.isActive() || owner.temporaryBridge.isRecovering());
     }
 
     String currentDescription() {
@@ -766,7 +767,7 @@ public final class CompanionWork {
         if (phase == Phase.COOK || awaitingHouse() != null || building() != null && building().waitingForRoom()) { stallTicks = 0; return false; }
         // Coming down his own column, or walking to the drop of what he just broke, is not standing still (PATH7: the order
         // stood on top of its column for ninety seconds waiting for a drop that lay below).
-        if (owner.temporaryPillar.isRecovering() || obsidian.waitingForHisDrop() || picking.waitingForHisDrop()) { stallTicks = 0; return false; }
+        if (owner.temporaryPillar.isRecovering() || owner.temporaryBridge.isRecovering() || obsidian.waitingForHisDrop() || picking.waitingForHisDrop()) { stallTicks = 0; return false; }
         long signature = progressSignature();
         boolean news = stallSeen.size() < 256 && stallSeen.add(phase + "|" + owner.getLastTaskResult());
         if (news || signature != stallSignature || stallAnchor == null || owner.position().distanceToSqr(stallAnchor) >= 2 * 2) {

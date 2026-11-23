@@ -73,6 +73,28 @@ final class CompanionPickable {
         return sources.getOrDefault(item, List.of());
     }
 
+    /**
+     * The blocks that ARE this item: a planks block is planks, a lapis block is lapis. The game's own block-to-item map, not a
+     * list of names — what a recipe also makes of the item is no reason to leave the block that lies there (PATH7, #105).
+     * Empty when no block of the game gives this item as itself.
+     */
+    static synchronized List<Source> identity(ServerLevel level, Item item) {
+        ensure(level);
+        Entity breaker = new Marker(EntityType.MARKER, level);
+        List<Source> all = new ArrayList<>();
+        for (Block block : BuiltInRegistries.BLOCK) {
+            if (block.asItem() != item) continue;
+            BlockState state = block.defaultBlockState();
+            if (state.isAir()) continue;
+            ItemStack given = sure(level, state, tool(state), breaker);
+            boolean silk = false;
+            if (given.isEmpty()) { given = sure(level, state, silkTool(level, state), breaker); silk = !given.isEmpty(); }
+            if (given.isEmpty() || given.getItem() != item) continue;
+            all.add(new Source(block, given.getCount(), false, silk));
+        }
+        return all;
+    }
+
     /** Every leaf block the world has: the family word of an order, whatever species grows here. */
     static synchronized List<Source> leaves(ServerLevel level) {
         ensure(level);

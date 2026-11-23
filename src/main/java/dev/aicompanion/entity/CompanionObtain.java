@@ -84,6 +84,8 @@ public final class CompanionObtain {
     private final java.util.function.Predicate<ItemStack> his;
     /** What the world about him really gives of an item by the one reach answer (CompanionReach); null where it is not about blocks. */
     private final java.util.function.Function<Item, CompanionReach.Available> reachable;
+    /** Why no block of an item is come at: its distance, «5 блоков вверх и 3 вбок» (the refusal names the real reason). */
+    private final java.util.function.Function<Item, String> whyNot;
     /** A step of the chain is Nether-only and is fetched through the portal; and why the trip cannot be made (no portal, no chunk loading: said instead of any other refusal). */
     private boolean viaNether;
     private String errandRefusal;
@@ -100,8 +102,9 @@ public final class CompanionObtain {
     private static final double SPARE = 1.25;
 
     private CompanionObtain(ServerLevel level, List<ItemStack> carried, boolean bench, java.util.function.Predicate<Item> grows, java.util.function.Predicate<Item> roams, Trip trip,
-                            java.util.function.Predicate<ItemStack> his, java.util.function.Function<Item, CompanionReach.Available> reachable) {
-        this.level = level; this.carried = carried; this.bench = bench; this.grows = grows; this.roams = roams; this.trip = trip; this.his = his; this.reachable = reachable;
+                            java.util.function.Predicate<ItemStack> his, java.util.function.Function<Item, CompanionReach.Available> reachable,
+                            java.util.function.Function<Item, String> whyNot) {
+        this.level = level; this.carried = carried; this.bench = bench; this.grows = grows; this.roams = roams; this.trip = trip; this.his = his; this.reachable = reachable; this.whyNot = whyNot;
         blade = carried.stream().anyMatch(stack -> stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES));
         for (ItemStack stack : carried) if (!stack.isEmpty()) bag.merge(key(stack.getItem()), stack.getCount(), Integer::sum);
     }
@@ -144,17 +147,24 @@ public final class CompanionObtain {
     public static Plan plan(ServerLevel level, List<ItemStack> carried, boolean benchNearby, String requested, int count, java.util.function.Predicate<Item> grows,
                             java.util.function.Predicate<Item> roams, Trip trip, java.util.function.Predicate<ItemStack> his,
                             java.util.function.Function<Item, CompanionReach.Available> reachable) {
+        return plan(level, carried, benchNearby, requested, count, grows, roams, trip, his, reachable, null);
+    }
+
+    /** {@code whyNot}: why no block of the item is come at — its distance, said as the real reason of a refusal. */
+    public static Plan plan(ServerLevel level, List<ItemStack> carried, boolean benchNearby, String requested, int count, java.util.function.Predicate<Item> grows,
+                            java.util.function.Predicate<Item> roams, Trip trip, java.util.function.Predicate<ItemStack> his,
+                            java.util.function.Function<Item, CompanionReach.Available> reachable, java.util.function.Function<Item, String> whyNot) {
         boolean[] viaNether = {false};
-        return errand(planned(level, carried, benchNearby, requested, count, grows, roams, trip, viaNether, his, reachable), level, trip, viaNether[0]);
+        return errand(planned(level, carried, benchNearby, requested, count, grows, roams, trip, viaNether, his, reachable, whyNot), level, trip, viaNether[0]);
     }
 
     private static Plan planned(ServerLevel level, List<ItemStack> carried, boolean benchNearby, String requested, int count, java.util.function.Predicate<Item> grows,
                                 java.util.function.Predicate<Item> roams, Trip trip, boolean[] viaNether, java.util.function.Predicate<ItemStack> his,
-                                java.util.function.Function<Item, CompanionReach.Available> reachable) {
+                                java.util.function.Function<Item, CompanionReach.Available> reachable, java.util.function.Function<Item, String> whyNot) {
         var id = ResourceLocation.tryParse(requested == null ? "" : requested.trim());
         Item item = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
         if (item == null || item == Items.AIR) return new Plan(List.of(), "Не понял, какой предмет нужен.");
-        CompanionObtain planner = new CompanionObtain(level, carried, benchNearby || carried.stream().anyMatch(stack -> stack.is(Items.CRAFTING_TABLE)), grows, roams, trip, his, reachable);
+        CompanionObtain planner = new CompanionObtain(level, carried, benchNearby || carried.stream().anyMatch(stack -> stack.is(Items.CRAFTING_TABLE)), grows, roams, trip, his, reachable, whyNot);
         // Logs the player asked for by name are that species, wherever the plan goes on; inside a chain wood stays a family (key).
         var species = CompanionWoodKind.of(id.toString());
         if (species != null && plainLog(id.getPath())) {
@@ -173,6 +183,16 @@ public final class CompanionObtain {
         if (target.equals(STONE) && item != Items.COBBLESTONE)
             return new Plan(List.of(), carried(carried, item) >= count ? null : "Камень копаю какой попадётся: именно «" + name(item) + "» добыть не умею.");
         if (planner.bag.getOrDefault(target, 0) >= count) return new Plan(List.of(), null);
+        // What lies about him of this very item is taken by the one geometry way before anything is made of it — a planks
+        // block, a lapis block, a pumpkin in the air: the same rule for every block, no names (PATH7, #105). Obsidian keeps its
+        // own work, which also cools lava and takes the water back, but its blocks are counted by the same answer.
+        CompanionReach.Available lying = reachable == null || item == Items.OBSIDIAN
+                || CompanionLeaves.isLeaf(BuiltInRegistries.ITEM.getKey(item).toString()) ? null : reachable.apply(item);
+        if (lying != null && lying.some() && lying.count() >= count) {
+            if (lying.soil() > 0) planner.addSplit("gather_dirt", "", lying.soil(), 64);
+            if (!planner.gather(item, id.toString(), count, 0)) return new Plan(List.of(), planner.why);
+            return new Plan(List.copyOf(merged(planner.steps)), null);
+        }
         // The wood families are named by the exact item at the top: «доски» means real planks in the bag at the end.
         boolean ok = target.equals(PLANKS) || target.equals("minecraft:stick")
                 ? planner.need(target, count, 1) && planner.add("craft_item", id.toString(), count)
@@ -294,6 +314,8 @@ public final class CompanionObtain {
                     // Only what the world really gives is promised: a portal frame's ten from one block above him is one (PATH7).
                     if (found.some()) {
                         int promised = Math.min(count, found.count());
+                        // A column or a bridge for it stands on soil he does not carry: the plan digs that soil first.
+                        if (found.soil() > 0) addSplit("gather_dirt", "", found.soil(), 64);
                         // A promise that counts on cooled lava or on his own lava bucket needs the water for it in the plan.
                         if (found.water() && !need("minecraft:water_bucket", 1, depth + 1)) return false;
                         return add("mine_obsidian", key, promised);

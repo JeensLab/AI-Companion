@@ -296,20 +296,34 @@ public final class CompanionRoute {
         if (owner.recovery.active()) return noWay(block, "recovery running");
         // A walk that was not searched at all, or whose cells were spent, is no proof of no way: nearest() answered it already.
         if (!provenMiss && !"no stand cell".equals(reach.reason())) return noWay(block, "not proven: " + reach.reason());
-        int rise = block.getY() - owner.blockPosition().getY();
-        if (rise < 2) return noWay(block, "not above: rise " + rise);
-        if (rise > CompanionPillar.WAY_HEIGHT) return noWay(block, "too high: rise " + rise);
-        double dx = block.getX() + .5D - owner.getX(), dz = block.getZ() + .5D - owner.getZ();
-        if (dx * dx + dz * dz > 16.0D) return noWay(block, "too far across: " + Math.sqrt(dx * dx + dz * dz));
+        // Between two steps before a way is raised (a hop on the way to it): the block is not given up, asked again next tick.
+        if (!owner.onGround()) return 0;
+        // The one geometry answer, logged as the decision the player can read: up a column, or a floor across a gap. It asks
+        // only where the block is — how far up, how far across, whether a bank is behind a gap — never what the block is.
+        CompanionReach.How how = CompanionReach.how(owner, (ServerLevel) owner.level(), block, 3.5D, true, false, CompanionPillar.WAY_SUPPORTS);
+        CompanionReach.decision(owner, block, how);
+        if (how.bridge()) {
+            if (owner.temporaryPillar.isRecovering()) return noWay(block, "a column is coming down");
+            if (owner.temporaryBridge.isRecovering()) return noWay(block, "a bridge is coming down");
+            if (owner.temporaryPillar.isActive()) return noWay(block, "a leaf crown's column stands");
+            return tickBridge(block);
+        }
+        if (!how.up()) return noWay(block, how.why());
         CompanionPillar pillar = owner.temporaryPillar;
         // A leaf crown's column is not ours to raise; one coming down is left to finish.
         if (pillar.isRecovering()) return noWay(block, "a column is coming down");
+        if (owner.temporaryBridge.isActive()) return noWay(block, "a bridge stands");
         // The column must be ticked every tick of its climb, the jump's own arc included: that is when its step is set down.
         if (pillar.isWayActive()) return tickWay(pillar, block);
         if (pillar.isActive()) return noWay(block, "a leaf crown's column stands");
-        // Between two steps before the column is raised (a hop on the way to it): the block is not given up, asked again next tick.
-        if (!owner.onGround()) return 0;
         return tickWay(pillar, block);
+    }
+
+    /** One tick of the floor across a gap: 1 in reach, 0 laying or walking, -1 no way. */
+    private int tickBridge(BlockPos block) {
+        CompanionBridge.Outcome outcome = w.owner.temporaryBridge.tickToward(block);
+        if (outcome == CompanionBridge.Outcome.FAILED) return noWay(block, "bridge failed: " + w.owner.temporaryBridge.failureReason());
+        return outcome == CompanionBridge.Outcome.READY ? 1 : 0;
     }
 
     private int tickWay(CompanionPillar pillar, BlockPos block) {
