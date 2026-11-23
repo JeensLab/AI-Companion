@@ -36,6 +36,8 @@ public final class CompanionPillar {
     private static final int MAX_ATTEMPT_TICKS = 200;
     private static final int STALLED_TICKS = 80;
     private static final int STEP_INTERVAL = 10;
+    /** A stand out of reach ({@link #tickUp}): how far from his cell it may be, how far the mobs it keeps away from are counted, the samples of the walk to it. */
+    private static final int STAND_REACH = 2, STAND_LOOKOUT = 8, STRAIGHT_SAMPLES = 8, STAND_JUMPS = 4, STAND_INTERVAL = 2;
 
     public enum Outcome { WORKING, READY, FAILED }
 
@@ -58,6 +60,8 @@ public final class CompanionPillar {
     private int cooldown;
     private int cleanupTicks;
     private boolean recovering;
+    /** The column is a stand of {@link #tickUp}, not a climb toward a block. */
+    private boolean stand;
     private String failureReason = "";
     /** The hand a gather keeps while its column comes down: the tool for a support goes back into it after each break. */
     private ItemStack keptHand;
@@ -167,9 +171,10 @@ public final class CompanionPillar {
     public Outcome tickUp(int height) {
         if (!(owner.level() instanceof ServerLevel level) || recovering) return Outcome.FAILED;
         if (base == null) {
-            BlockPos feet = owner.blockPosition();
-            if (!owner.onGround() || !safeFoundation(level, feet.below()) || !columnClearable(level, feet, height) || soilCount() < height) return Outcome.FAILED;
-            base = feet.immutable();
+            BlockPos feet = owner.onGround() && soilCount() >= height ? standFor(level, height) : null;
+            if (feet == null) return Outcome.FAILED;
+            base = feet;
+            stand = true;
             resetWatchdog(base);
         }
         if (jumpCell != null) return tickJump(level);
@@ -185,7 +190,9 @@ public final class CompanionPillar {
         }
         if (!owner.onGround() || cooldown > 0) return Outcome.WORKING;
         BlockPos placement = base.above(supports.size());
-        if (!jumpSpaceClear(level, placement)) return fail("Над опорой не хватает свободного места");
+        if (!roomFor(level, placement, height - supports.size())) return fail("Над опорой не хватает свободного места");
+        // Grass or a torch in the cell comes out like a plant, as in a plug of the stairs: the support takes a cell of air.
+        if (!level.getBlockState(placement).isAir()) { level.destroyBlock(placement, true, owner); return Outcome.WORKING; }
         if (!prepareSoil()) return fail("Не могу взять блок для опоры в руку");
         Vec3 motion = owner.getDeltaMovement();
         owner.setDeltaMovement(motion.x * 0.15D, motion.y, motion.z * 0.15D);
@@ -194,6 +201,77 @@ public final class CompanionPillar {
         owner.getJumpControl().jump();
         return Outcome.WORKING;
     }
+
+    /**
+     * Where a column of this height can stand: his own cell, else the cell within {@link #STAND_REACH} on his level that he walks straight
+     * to and that is the farthest from the mobs about (the roof of a cave is seldom even: run ct78, four cells of air over the corner he
+     * was pinned in and five two cells away). Null when there is none.
+     */
+    private BlockPos standFor(ServerLevel level, int height) {
+        BlockPos feet = owner.blockPosition();
+        if (stands(level, feet, height)) return feet.immutable();
+        List<net.minecraft.world.entity.monster.Monster> mobs = level.getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class, owner.getBoundingBox().inflate(STAND_LOOKOUT), LivingEntity::isAlive);
+        BlockPos best = null;
+        double bestGap = -1;
+        for (int dx = -STAND_REACH; dx <= STAND_REACH; dx++) for (int dz = -STAND_REACH; dz <= STAND_REACH; dz++) {
+            BlockPos cell = feet.offset(dx, 0, dz);
+            if (dx == 0 && dz == 0 || !stands(level, cell, height) || !walksStraightTo(level, cell)) continue;
+            double gap = Double.MAX_VALUE;
+            for (var mob : mobs) gap = Math.min(gap, mob.distanceToSqr(cell.getX() + 0.5D, cell.getY(), cell.getZ() + 0.5D));
+            if (gap > bestGap) { best = cell.immutable(); bestGap = gap; }
+        }
+        return best;
+    }
+
+    private boolean stands(ServerLevel level, BlockPos feet, int height) {
+        return safeFoundation(level, feet.below()) && roomFor(level, feet, height) && flooredAround(level, feet)
+                && level.getEntities(owner, new AABB(feet).expandTowards(0, height, 0), CompanionPillar::blocksSupport).isEmpty();
+    }
+
+    /**
+     * A blow may throw him off the column: every cell around its foot is a wall or has a floor no more than a block lower, so that he
+     * lands beside it and not down a pit (series p 20261031 d3 mobs: a column at the edge of a cavern, thrown off, three falls, dead).
+     */
+    private boolean flooredAround(ServerLevel level, BlockPos feet) {
+        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
+            BlockPos beside = feet.offset(dx, 0, dz);
+            if ((dx != 0 || dz != 0) && CompanionShaftPlan.open(level, beside) && !safeFoundation(level, beside.below()) && !safeFoundation(level, beside.below(2))) return false;
+        }
+        return true;
+    }
+
+    /**
+     * Room for the supports and for him on top of them: the cell at the feet takes a block (air or a plant), the cells above it up to his
+     * head on the column are open. A roof right over that head is no obstacle: the jump for the last support ends under it.
+     */
+    private boolean roomFor(ServerLevel level, BlockPos feet, int height) {
+        for (int dy = 0; dy <= height + 1; dy++) {
+            BlockPos pos = feet.above(dy);
+            if (!level.hasChunkAt(pos) || !level.getWorldBorder().isWithinBounds(pos) || !level.getFluidState(pos).isEmpty()) return false;
+            BlockState state = level.getBlockState(pos);
+            if (!state.getCollisionShape(level, pos).isEmpty() || dy < height && !state.isAir() && !state.canBeReplaced()) return false;
+        }
+        return true;
+    }
+
+    /** Nothing in the way of his body on the straight line to the middle of the cell, and a floor under every step of it. */
+    private boolean walksStraightTo(ServerLevel level, BlockPos cell) {
+        double dx = cell.getX() + 0.5D - owner.getX(), dz = cell.getZ() + 0.5D - owner.getZ();
+        for (int step = 1; step <= STRAIGHT_SAMPLES; step++) {
+            double part = step / (double) STRAIGHT_SAMPLES;
+            if (!level.noCollision(owner, owner.getBoundingBox().move(dx * part, 0, dz * part))) return false;
+            if (!safeFoundation(level, BlockPos.containing(owner.getX() + dx * part, owner.getY() - 0.5D, owner.getZ() + dz * part))) return false;
+        }
+        return true;
+    }
+
+    /** A column of this height can be raised now: nothing of his stands, the bag has the blocks, and there is a cell for it ({@link #tickUp}). */
+    public boolean canStandUp(int height) {
+        return owner.level() instanceof ServerLevel level && !isActive() && !recovering && owner.onGround() && soilCount() >= height && standFor(level, height) != null;
+    }
+
+    /** The cell his column stands in, or null with no column. */
+    public BlockPos foot() { return base; }
 
     /** He stands on the top support of his column. */
     public boolean onTop() {
@@ -207,6 +285,12 @@ public final class CompanionPillar {
         AABB cell = new AABB(jumpCell);
         if (owner.getBoundingBox().minY >= jumpCell.getY() + 1.001D
                 && !owner.getBoundingBox().intersects(cell)) {
+            // A stand in a fight: a mob pressed against him is in the cell. Not the end of the column: his next blow throws it back, and the jump is tried again.
+            if (stand && !level.getEntities(owner, cell, CompanionPillar::blocksSupport).isEmpty()) {
+                jumpCell = null;
+                cooldown = STEP_INTERVAL;
+                return ++failedJumps >= STAND_JUMPS ? fail("Место для опоры занято") : Outcome.WORKING;
+            }
             if (!prepareSoil() || !level.getBlockState(jumpCell).isAir()
                     || !level.getFluidState(jumpCell).isEmpty() || !level.getWorldBorder().isWithinBounds(jumpCell)
                     || !level.getEntities(owner, cell, CompanionPillar::blocksSupport).isEmpty()) return fail("Место для опоры занято, попробую другое дерево");
@@ -225,7 +309,8 @@ public final class CompanionPillar {
                     (sound.getVolume() + 1.0F) * 0.5F, sound.getPitch() * 0.8F);
             level.gameEvent(GameEvent.BLOCK_PLACE, jumpCell, GameEvent.Context.of(owner, state));
             jumpCell = null;
-            cooldown = STEP_INTERVAL;
+            // A stand goes up at the pace of a player with mobs on the way; a climb at a tree is unhurried and seen.
+            cooldown = stand ? STAND_INTERVAL : STEP_INTERVAL;
             failedJumps = 0;
             stalledTicks = 0;
             lastProgress = owner.position();
@@ -609,7 +694,7 @@ public final class CompanionPillar {
         approach = null;
         lastProgress = null;
         attemptTicks = stalledTicks = jumpTicks = failedJumps = cooldown = cleanupTicks = 0;
-        recovering = false;
+        recovering = stand = false;
         keptHand = null;
         keepTool = false;
     }

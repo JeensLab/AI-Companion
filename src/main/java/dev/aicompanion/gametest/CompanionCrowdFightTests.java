@@ -34,7 +34,8 @@ import static dev.aicompanion.gametest.CompanionMineFightTests.zombie;
 @GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionCrowdFightTests {
-    private static final int HALL = 13, HALL_HEIGHT = 7, KILL_TICKS = 1800, BLOWS = 3, STAND = 3, FIRST_KILL_TICKS = 400, COLUMN = 2, COLUMN_TICKS = 200;
+    /** The hall is the chamber at the foot of the stairs, four cells of air: the least a column of two and he on it take. A column of three takes five. */
+    private static final int HALL = 13, ROOF = 3, HIGH = 5, KILL_TICKS = 1800, BLOWS = 3, STAND = 3, FIRST_KILL_TICKS = 400, COLUMN = 2, COLUMN_TICKS = 200, LEAST_CROWD = 3;
     private static final float HURT = 12;
     /** Where the five stand: across the hall from his corner. */
     private static final int[][] CROWD = {{6, 0}, {6, 2}, {7, 4}, {5, 5}, {8, 1}};
@@ -42,15 +43,15 @@ public final class CompanionCrowdFightTests {
     private CompanionCrowdFightTests() { }
 
     /**
-     * Five zombies cross a high hall at him, he stands in its corner with the stone sword: all five die, he takes no more than
-     * {@link #BLOWS} blows, and the blocks he stood on are back in his bag.
+     * Five zombies cross a hall at him, he stands in its corner with the stone sword, five cells of air over the floor: all five die, he
+     * takes no more than {@link #BLOWS} blows, and the blocks he stood on are back in his bag.
      */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void fiveZombiesAtHisCornerAreKilledFromAColumnAndTheBlocksComeBack(GameTestHelper h) {
         mountain(h, false);
         CompanionEntity c = armed(h);
         BlockPos foot = chamber(h, carveMine(h, c, 0));
-        for (int dx = 0; dx <= HALL; dx++) for (int dz = -HALL / 2; dz <= HALL / 2; dz++) for (int dy = 0; dy < HALL_HEIGHT; dy++) h.getLevel().setBlock(foot.offset(dx, dy, dz), Blocks.AIR.defaultBlockState(), 2 | 16);
+        for (int dx = 0; dx <= HALL; dx++) for (int dz = -HALL / 2; dz <= HALL / 2; dz++) h.getLevel().setBlock(foot.offset(dx, HIGH - 1, dz), Blocks.AIR.defaultBlockState(), 2 | 16);
         place(c, foot.offset(HALL, 0, HALL / 2));
         int stone = count(c, Items.COBBLESTONE);
         List<Zombie> zombies = new ArrayList<>();
@@ -73,35 +74,42 @@ public final class CompanionCrowdFightTests {
         });
     }
 
-    /** Under a roof too low for a column the same five are fought as before: no block is laid, and the first of them is dead in time. */
+    /** Under a roof of three cells, too low for a column, a crowd of three is fought as before: no block is laid, and the first of them is dead in time. */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void underALowRoofTheCrowdIsFoughtFromTheGround(GameTestHelper h) {
         mountain(h, false);
         CompanionEntity c = armed(h);
         BlockPos foot = chamber(h, carveMine(h, c, 0));
+        for (int dx = 0; dx <= HALL; dx++) for (int dz = -HALL / 2; dz <= HALL / 2; dz++) h.getLevel().setBlock(foot.offset(dx, ROOF, dz), Blocks.STONE.defaultBlockState(), 2 | 16);
         place(c, foot.offset(STAND, 0, 0));
         int stone = count(c, Items.COBBLESTONE);
         List<Zombie> zombies = new ArrayList<>();
-        for (int[] at : CROWD) zombies.add(zombie(h, foot.offset(at[0], 0, at[1])));
+        for (int k = 0; k < LEAST_CROWD; k++) zombies.add(zombie(h, foot.offset(CROWD[k][0], 0, CROWD[k][1])));
         long begun = h.getTick();
         start(h, c, 1);
         h.onEachTick(() -> {
             for (Zombie zombie : zombies) if (zombie.isAlive() && zombie.getTarget() == null) zombie.setTarget(c);
             long alive = zombies.stream().filter(Zombie::isAlive).count();
             String trace = " | zombies alive " + alive + ", health " + c.getHealth() + ", he at " + rel(h, c.blockPosition()).toShortString() + ", supports " + c.getTemporarySupportCount() + " | " + report(c);
-            h.assertTrue(c.getTemporarySupportCount() == 0 && count(c, Items.COBBLESTONE) == stone, "A block was laid under a roof with no room for a column" + trace);
+            // Only under the roof: outside the hall, or a step dug down from it, there is a cell more over him.
+            BlockPos at = c.blockPosition().subtract(foot);
+            boolean inHall = at.getY() == 0 && at.getX() >= 0 && at.getX() <= HALL && Math.abs(at.getZ()) <= HALL / 2;
+            h.assertTrue(!inHall || c.getTemporarySupportCount() == 0 && count(c, Items.COBBLESTONE) == stone, "A block was laid under a roof with no room for a column" + trace);
             h.assertTrue(h.getTick() - begun < FIRST_KILL_TICKS, "None of the crowd was killed in time" + trace);
             if (alive < zombies.size()) h.succeed();
         });
     }
 
-    /** Already hurt, two zombies are a crowd for him: the column is raised. In full health two are fought from the ground (CompanionMineFightTests). */
+    /**
+     * Already hurt, two zombies are a crowd for him: the column is raised, two blocks under a roof of four cells, and beside the corner
+     * he stands in, where the roof hangs a cell lower over him. In full health two are fought from the ground (CompanionMineFightTests).
+     */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void hurtHeStandsOnAColumnFromTwoZombies(GameTestHelper h) {
         mountain(h, false);
         CompanionEntity c = armed(h);
         BlockPos foot = chamber(h, carveMine(h, c, 0));
-        for (int dx = 0; dx <= HALL; dx++) for (int dz = -HALL / 2; dz <= HALL / 2; dz++) for (int dy = 0; dy < HALL_HEIGHT; dy++) h.getLevel().setBlock(foot.offset(dx, dy, dz), Blocks.AIR.defaultBlockState(), 2 | 16);
+        h.getLevel().setBlock(foot.offset(HALL, ROOF, HALL / 2), Blocks.STONE.defaultBlockState(), 2 | 16);
         place(c, foot.offset(HALL, 0, HALL / 2));
         c.setHealth(HURT);
         List<Zombie> zombies = new ArrayList<>();

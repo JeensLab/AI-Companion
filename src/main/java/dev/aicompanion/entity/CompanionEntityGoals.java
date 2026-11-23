@@ -18,10 +18,19 @@ final class CompanionEntityGoals {
     static final class RecoverSupportsGoal extends Goal {
         final CompanionEntity c;
         RecoverSupportsGoal(CompanionEntity c) { this.c = c; setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK, Flag.JUMP)); }
-        @Override public boolean canUse() { return c.temporaryPillar.isRecovering() && c.inventoryViewers == 0; }
+        @Override public boolean canUse() { return c.temporaryPillar.isRecovering() && c.inventoryViewers == 0 && !pressed(); }
         @Override public boolean canContinueToUse() { return canUse(); }
         @Override public boolean requiresUpdateEveryTick() { return true; }
         @Override public void start() { c.getNavigation().stop(); }
+        /**
+         * A mob on him while he is on the ground beside his column, or on what is left of it, too low to be out of reach: the blocks wait,
+         * the melee goal below this one has the turn (an order or a reload in the middle of a fight, a mob that comes while he takes it down).
+         */
+        private boolean pressed() {
+            return c.onGround() && !(c.temporaryPillar.onTop() && c.temporaryPillar.supportCount() >= OUT_OF_REACH)
+                    && c.level() instanceof net.minecraft.server.level.ServerLevel level && c.combat.footwork.onHim(level);
+        }
+        private static final int OUT_OF_REACH = 2;
         @Override public void tick() {
             if (c.temporaryPillar.tickCleanup()) c.syncWorkState();
         }
