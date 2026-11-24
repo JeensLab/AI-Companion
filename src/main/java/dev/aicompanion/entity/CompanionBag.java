@@ -174,8 +174,11 @@ final class CompanionBag {
      */
     CompanionReach.Available available(ServerLevel level, net.minecraft.world.item.Item wanted) {
         if (wanted == net.minecraft.world.item.Items.OBSIDIAN) return CompanionObsidian.available(c, level, c.work.portal::laid);
-        if (CompanionLeaves.isLeaf(BuiltInRegistries.ITEM.getKey(wanted).toString())) return null;
-        return CompanionWaySearch.available(c, level, wanted, CompanionPicking.mine(c, level));
+        if (CompanionLeaves.isLeaf(BuiltInRegistries.ITEM.getKey(wanted).toString())) {
+            CompanionWaySearch.skipped(c.diagnosticTrace(), wanted, "листва — своё дело листвы (CompanionLeaves)");
+            return null;
+        }
+        return CompanionWaySearch.available(c, level, wanted, CompanionPicking.requested(c, level));
     }
 
     /**
@@ -183,10 +186,11 @@ final class CompanionBag {
      * the real reason, never the first thing that comes to mind. The search itself journals the box it looked through.
      */
     String whyNot(ServerLevel level, net.minecraft.world.item.Item wanted) {
-        // Obsidian is his only where it may be mined: never a portal's frame, never a site of the player's, never beside lava.
-        java.util.function.Predicate<BlockPos> mine = wanted == net.minecraft.world.item.Items.OBSIDIAN
-                ? pos -> CompanionObsidian.free(level, pos, CompanionPicking.sites(c, level))
-                : CompanionPicking.mine(c, level);
+        // Obsidian is his only where it may be mined: never a portal's frame, never beside lava — and a block the player set down
+        // himself is his, the order named it.
+        CompanionWaySearch.Mine mine = wanted == net.minecraft.world.item.Items.OBSIDIAN
+                ? CompanionObsidian.requested(c, level, c.work.portal::laid)
+                : CompanionPicking.requested(c, level);
         BlockPos nearest = CompanionWaySearch.nearestBlock(c, level, wanted, mine);
         if (nearest == null) return "";
         return CompanionReach.distance(c, nearest);

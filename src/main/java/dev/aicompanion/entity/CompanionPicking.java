@@ -97,6 +97,8 @@ final class CompanionPicking {
     private long settleAt;
     private boolean retried;
     private BlockPos target;
+    /** The target is a block the player set down himself: the order named it, so it is his to take (no column of soil is the way's own). */
+    private boolean ownTarget;
     /** The cells he takes the target from, his way to them and the walks so far. */
     private Set<BlockPos> stands = Set.of();
     /** A leaf order is the leaves of any kind: the species it named first, the leaves of any tree or hedge about after it (any #minecraft:leaves). */
@@ -129,8 +131,9 @@ final class CompanionPicking {
         Item asked = key == null ? null : BuiltInRegistries.ITEM.getOptional(key).orElse(null);
         ServerLevel level = c.level() instanceof ServerLevel here ? here : null;
         speciesSources = asked == null || level == null ? List.of() : allowed(level, CompanionPickable.sources(level, asked));
-        // A block that is the item itself (a planks block, a lapis block), which a recipe also makes: it is taken as it lies.
-        if (asked != null && level != null && speciesSources.isEmpty()) speciesSources = allowed(level, CompanionPickable.identity(level, asked));
+        // A block that is the item itself (a planks block, a lapis block, a cobblestone the player hung) is taken as it lies, as
+        // much as the blocks that drop it: the game's own block-to-item map, never a list of names.
+        if (asked != null && level != null) speciesSources = merge(speciesSources, allowed(level, CompanionPickable.identity(level, asked)));
         // A leaf order is the leaves of any tree or hedge about, whatever species it named: the named one is tried first, and
         // another kind stands in for the part it cannot give (any #minecraft:leaves) before the order is refused.
         leafOrder = asked != null && level != null && new ItemStack(asked).is(ItemTags.LEAVES);
@@ -185,6 +188,27 @@ final class CompanionPicking {
     static Predicate<BlockPos> mine(CompanionEntity c, ServerLevel level) {
         Predicate<BlockPos> site = kept(c, level);
         return pos -> takes(level, pos, site) && grounded(c, level, pos) && !lavaBeside(level, pos);
+    }
+
+    /** No cell is the player's own: the rule of an order that named the block itself (see {@link #requested}). */
+    private static final Predicate<BlockPos> NOTHING_KEPT = pos -> false;
+
+    /**
+     * The gather's rule for an explicit order, named for the search's line: a block the player set down himself is no reason to
+     * pass it over — «do not break the player's build» governs the soil a way lays under his feet, never the block the order
+     * names (the owner: he hung a pumpkin above his own base and «добудь тыкву» found nothing). What still keeps a block is lava
+     * beside it, a drop that would burn, and the rest of the gather's own rules.
+     */
+    static CompanionWaySearch.Mine requested(CompanionEntity c, ServerLevel level) {
+        Predicate<BlockPos> own = kept(c, level);
+        return new CompanionWaySearch.Mine() {
+            @Override public String why(BlockPos pos) {
+                if (lavaBeside(level, pos)) return LAVA;
+                if (!grounded(c, level, pos) || !takes(level, pos, NOTHING_KEPT)) return OTHER;
+                return null;
+            }
+            @Override public boolean own(BlockPos pos) { return own.test(pos); }
+        };
     }
 
     /**
@@ -393,6 +417,18 @@ final class CompanionPicking {
     private static int gives(List<CompanionPickable.Source> sources, BlockState state) {
         for (CompanionPickable.Source source : sources) if (state.is(source.block())) return source.yield();
         return 0;
+    }
+
+    /** The blocks of the second list added to the first, one source per block: a block is taken once, whatever names it. */
+    private static List<CompanionPickable.Source> merge(List<CompanionPickable.Source> first, List<CompanionPickable.Source> second) {
+        if (second.isEmpty()) return first;
+        List<CompanionPickable.Source> all = new ArrayList<>(first);
+        for (CompanionPickable.Source source : second) {
+            boolean known = false;
+            for (CompanionPickable.Source has : all) if (has.block() == source.block()) { known = true; break; }
+            if (!known) all.add(source);
+        }
+        return all;
     }
 
     private static boolean shorn(List<CompanionPickable.Source> sources, BlockState state) {
@@ -705,7 +741,7 @@ final class CompanionPicking {
         }
         if (due >= wanted) { down(); collect(level, got); return; }
         Predicate<BlockPos> site = kept(c, level);
-        if (target != null && (gives(sources, level.getBlockState(target)) == 0 || !takes(level, target, site) || lavaBeside(level, target))) release();
+        if (target != null && (gives(sources, level.getBlockState(target)) == 0 || !takes(level, target, ownTarget ? NOTHING_KEPT : site) || lavaBeside(level, target))) { release(); ownTarget = false; }
         if (target == null) {
             boolean dug = soilAbout(level);
             if (leafOrder) {
@@ -721,6 +757,9 @@ final class CompanionPicking {
                 // A block of the kind he may take: from a stand he can walk to first, then up a column of his own soil.
                 // Stone dug by name: from the ground only, and not after the hollows it showed in had no way to them (#197).
                 if (!(stone && missed >= STONE_TRIES)) target = pick(level, site, speciesSources, dug && !stone, false);
+                // A block the player set down himself is the order's too: taken when none of the kind is his by the way's own
+                // rule — the pumpkin he hung above his base, the lapis block in the air (the owner, PATH7).
+                if (target == null) { target = pick(level, NOTHING_KEPT, speciesSources, dug && !stone, false); ownTarget = target != null; }
             }
         }
         if (target == null) {

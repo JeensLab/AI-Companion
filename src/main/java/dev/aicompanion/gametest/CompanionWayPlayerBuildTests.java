@@ -40,8 +40,8 @@ import java.util.concurrent.CompletableFuture;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionWayPlayerBuildTests {
-    private static final int SIDE = 24, TOP = 18, GROUND = 4, FEET = GROUND + 1;
-    private static final int HOME_X = 12, HOME_Z = 12;
+    private static final int SIDE = 48, TOP = 24, GROUND = 5, FEET = GROUND + 1;
+    private static final int HOME_X = 20, HOME_Z = 16;
 
     // ---- one kind each: hung above the base he built, asked for by the phrase ----
 
@@ -67,6 +67,12 @@ public final class CompanionWayPlayerBuildTests {
     @GameTest(template = "way_far", timeoutTicks = 16000)
     public static void aPlainBlockHeHungAboveHisBaseIsTaken(GameTestHelper h) {
         taken(h, Blocks.COBBLESTONE, Items.COBBLESTONE, 8, 2, 10, "добудь булыжник", "minecraft:cobblestone");
+    }
+
+    /** The far corner of his own numbers: a barrel 25 across and 20 up, hung by him above his base — the search's box holds it. */
+    @GameTest(template = "way_far", timeoutTicks = 32000)
+    public static void aFarCornerBlockHeHungAboveHisBaseIsTaken(GameTestHelper h) {
+        taken(h, Blocks.BARREL, Items.BARREL, 25, 0, 20, "добудь бочку", "minecraft:barrel");
     }
 
     /** His whole scene: four blocks of different kinds hung above his base at once, asked one after another — every one is taken. */
@@ -134,6 +140,45 @@ public final class CompanionWayPlayerBuildTests {
             h.assertTrue(line.contains("\"kinds\":") && line.contains("\"cells\":") && line.contains("\"own\":"), "The fields of the stages are missing: " + line);
             h.assertBlockPresent(Blocks.AIR, target);
         });
+    }
+
+    /**
+     * A block he sees but no way reaches: the refusal names the distance and says it SAW the block — «вижу, но не достать: 21
+     * блок вверх и 12 вбок», never «Рядом не вижу» and a distance in the same sentence (the judge read both together).
+     */
+    @GameTest(template = "way_far", timeoutTicks = 400)
+    public static void aSeenBlockIsRefusedAsSeenNotAsMissing(GameTestHelper h) {
+        flat(h, Blocks.GRASS_BLOCK);
+        CompanionEntity c = spawn(h);
+        base(h, c);
+        BlockPos target = new BlockPos(HOME_X + 12, FEET + 21, HOME_Z);
+        hung(h, c, target, Blocks.PUMPKIN);
+        var plan = c.obtainPlan("minecraft:pumpkin", 1);
+        h.assertTrue(plan.refused(), "The pumpkin 21 up is not refused: " + plan);
+        h.assertTrue(plan.refusal().contains("вижу, но не достать"), "The refusal does not say it saw the block: " + plan.refusal());
+        h.assertTrue(plan.refusal().contains("21 блок") && plan.refusal().contains("вверх"), "The refusal does not name the distance: " + plan.refusal());
+        h.assertTrue(!plan.refusal().contains("Рядом не вижу"), "The refusal says it did not see a block it names the distance of: " + plan.refusal());
+        h.assertBlockPresent(Blocks.PUMPKIN, target);
+        h.succeed();
+    }
+
+    /**
+     * A block outside the box is said once for one answer: the search is asked again every tick of an order, and the line «за
+     * коробкой 24 вбок есть 1» must not repeat for an answer that did not change (the judge counted seventeen).
+     */
+    @GameTest(template = "way_far", timeoutTicks = 400)
+    public static void theOutsideLineIsSaidOnceForOneAnswer(GameTestHelper h) {
+        flat(h, Blocks.GRASS_BLOCK);
+        CompanionEntity c = spawn(h);
+        BlockPos far = new BlockPos(HOME_X + 30, FEET + 4, HOME_Z);
+        h.setBlock(far, Blocks.PUMPKIN);
+        c.setSearchRadius(24);
+        for (int look = 0; look < 20; look++) c.obtainAvailable("minecraft:pumpkin");
+        List<String> lines = journal(c, "way_search").stream()
+                .filter(entry -> entry.contains("\"item\":\"minecraft:pumpkin\"") && entry.contains("\"outside\":1")).toList();
+        h.assertTrue(lines.size() == 1, "The outside line was said " + lines.size() + " times for one answer: " + lines);
+        h.assertBlockPresent(Blocks.PUMPKIN, far);
+        h.succeed();
     }
 
     // ---- helpers ----

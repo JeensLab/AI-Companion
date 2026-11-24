@@ -55,16 +55,19 @@ public final class CompanionTools {
         }
         ItemStack best = ItemStack.EMPTY;
         float bestSpeed = 1;
+        // The hand first: a tool already in it is no worse than the same tool in the bag, and swapping two equal ones every tick
+        // resets the break before it ever lands (a plain and a Silk Touch pickaxe in one bag, the judge's scene). The bag may
+        // still win with a faster one or one with more use left.
+        for (ItemStack held : new ItemStack[]{owner.getMainHandItem(), owner.getOffhandItem()}) {
+            if (!takesTheDrop(held, state)) continue;
+            float speed = breakSpeed(owner, held, state);
+            if (better(held, speed, best, bestSpeed)) { best = held; bestSpeed = speed; }
+        }
         for (int slot = 0; slot < owner.getContainerSize(); slot++) {
             ItemStack stack = owner.getItem(slot);
             if (owner.carriedForPlayer(stack) || !takesTheDrop(stack, state)) continue;
             float speed = breakSpeed(owner, stack, state);
             if (better(stack, speed, best, bestSpeed)) { best = stack; bestSpeed = speed; }
-        }
-        for (ItemStack held : new ItemStack[]{owner.getMainHandItem(), owner.getOffhandItem()}) {
-            if (!takesTheDrop(held, state)) continue;
-            float speed = breakSpeed(owner, held, state);
-            if (better(held, speed, best, bestSpeed)) { best = held; bestSpeed = speed; }
         }
         return best;
     }
@@ -77,16 +80,17 @@ public final class CompanionTools {
     static ItemStack bestSilkToolForBlock(CompanionEntity owner, BlockState state) {
         ItemStack best = ItemStack.EMPTY;
         float bestSpeed = 1;
+        // The hand first, as for any tool: two equal ones swapped every tick never finish the break.
+        for (ItemStack held : new ItemStack[]{owner.getMainHandItem(), owner.getOffhandItem()}) {
+            if (owner.carriedForPlayer(held) || !silkTouch(owner, held) || !takesTheDrop(held, state)) continue;
+            float speed = breakSpeed(owner, held, state);
+            if (betterSilk(held, speed, best, bestSpeed)) { best = held; bestSpeed = speed; }
+        }
         for (int slot = 0; slot < owner.getContainerSize(); slot++) {
             ItemStack stack = owner.getItem(slot);
             if (owner.carriedForPlayer(stack) || !silkTouch(owner, stack) || !takesTheDrop(stack, state)) continue;
             float speed = breakSpeed(owner, stack, state);
             if (betterSilk(stack, speed, best, bestSpeed)) { best = stack; bestSpeed = speed; }
-        }
-        for (ItemStack held : new ItemStack[]{owner.getMainHandItem(), owner.getOffhandItem()}) {
-            if (owner.carriedForPlayer(held) || !silkTouch(owner, held) || !takesTheDrop(held, state)) continue;
-            float speed = breakSpeed(owner, held, state);
-            if (betterSilk(held, speed, best, bestSpeed)) { best = held; bestSpeed = speed; }
         }
         return best;
     }

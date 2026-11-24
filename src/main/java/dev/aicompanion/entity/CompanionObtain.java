@@ -88,6 +88,8 @@ public final class CompanionObtain {
     private final java.util.function.Function<Item, String> whyNot;
     /** The distance of the nearest block of the item that he sees but no way reaches: said in the refusal, never an ore's name. */
     private String near;
+    /** The name of the item that distance is of: a refusal that names a distance names the block it saw. */
+    private String nearItem;
     /** The item the player asked for, by its name: a chain's refusal names it, not the ore or the log it fell back to. */
     private String ordered;
     /** A step of the chain is Nether-only and is fetched through the portal; and why the trip cannot be made (no portal, no chunk loading: said instead of any other refusal). */
@@ -175,13 +177,21 @@ public final class CompanionObtain {
         // (PATH7, #105). It comes before a chain of his own skills: what is already in the world is no work to make.
         // Obsidian keeps its own work, which also cools lava and takes the water back, but its blocks are counted by that answer.
         if (carried(carried, item) >= count) return new Plan(List.of(), null);
-        // A field crop is the farm's own: the ripe ones about him are reaped and sown again, never gathered as a block (a carrot
-        // crop is a carrot, but the farm knows the field). Every other block that IS the item is taken as it lies.
-        CompanionReach.Available lying = reachable == null || item == Items.OBSIDIAN
-                || CompanionCrops.Kind.yielding(item) != null
-                || CompanionLeaves.isLeaf(BuiltInRegistries.ITEM.getKey(item).toString()) ? null : reachable.apply(item);
+        // What lies about him of this very item is asked of the one search before anything is made of it — a gourd, a storage
+        // block, an ore's item, a plain block: the same rule for every item, no names (PATH7, #105). The two paths that are
+        // another skill's own say why they do not ask it, so a line of the search is never missing without a reason.
+        CompanionReach.Available lying = null;
+        if (reachable != null) {
+            if (item == Items.OBSIDIAN) CompanionWaySearch.skipped("", item, "обсидиан — своя работа (mine_obsidian), её блоки считает тот же поиск");
+            else if (CompanionLeaves.isLeaf(BuiltInRegistries.ITEM.getKey(item).toString())) CompanionWaySearch.skipped("", item, "листва — своё дело листвы (CompanionLeaves)");
+            else lying = reachable.apply(item);
+        }
         planner.noteSeen(item, lying);
-        if (lying != null && lying.some() && lying.count() >= count) {
+        // A block that makes the item (a lapis block for nine lapis) is no block OF the item: its own break gives the block, not
+        // the item, so the chain gathers the block and crafts it (produce's storage step below). A block that IS the item, or
+        // drops it, is taken as it lies.
+        boolean blockItself = !CompanionPickable.sources(level, item).isEmpty() || !CompanionPickable.identity(level, item).isEmpty();
+        if (lying != null && lying.some() && lying.count() >= count && blockItself) {
             if (lying.soil() > 0) planner.addSplit("gather_dirt", "", lying.soil(), 64);
             if (!planner.gather(item, id.toString(), count, 0)) return new Plan(List.of(), planner.why);
             return new Plan(List.copyOf(merged(planner.steps)), null);
@@ -211,8 +221,11 @@ public final class CompanionObtain {
         if (!ok && planner.errandRefusal != null) return new Plan(List.of(), planner.errandRefusal);
         if (!ok) {
             String reason = planner.why == null ? "Не знаю, как добыть «" + name(item) + "»." : planner.why;
-            // «Красную краску» he looked for in every flower that gives it: all of them are named, not the first.
-            return new Plan(List.of(), planner.absent.isEmpty() || reason.startsWith(ABSENT) ? reason : reason + " " + ABSENT + ": " + String.join(", ", planner.absent) + ".");
+            // «Красную краску» he looked for in every flower that gives it: all of them are named, not the first. A reason that
+            // already named the distance of a block SAW it: the list of what is not about is not added to it («вижу, но не
+            // достать: 21 блок вверх» and «Рядом не вижу» in one sentence contradict each other, the judge).
+            return new Plan(List.of(), planner.absent.isEmpty() || reason.startsWith(ABSENT) || planner.near != null ? reason
+                    : reason + " " + ABSENT + ": " + String.join(", ", planner.absent) + ".");
         }
         if (planner.steps.size() > MAX_STEPS) return new Plan(List.of(), "Для «" + name(item) + "» слишком длинная цепочка дел. Давай по частям.");
         viaNether[0] = planner.viaNether;
@@ -486,20 +499,13 @@ public final class CompanionObtain {
     /**
      * The block a recipe of one block makes this item of, or null: a storage block of the item's own material — a lapis block
      * for nine lapis, an iron block for nine ingots, a wool block for four string. The game's own shapeless recipe of a single
-     * block, never a list of names.
+     * block, never a list of names, and the same table the one search asks (CompanionPickable.storage).
      */
     private Storage storage(Item item) {
-        for (var holder : level.getRecipeManager().getAllRecipesFor(RecipeType.CRAFTING)) {
-            var recipe = holder.value();
-            ItemStack result = recipe.getResultItem(level.registryAccess());
-            if (result.isEmpty() || !result.is(item) || recipe.isSpecial()) continue;
-            var ingredients = recipe.getIngredients();
-            if (ingredients.size() != 1) continue;
-            ItemStack[] options = ingredients.getFirst().getItems();
-            if (options.length != 1 || !(options[0].getItem() instanceof net.minecraft.world.item.BlockItem block)) continue;
-            return new Storage(block, result.getCount());
-        }
-        return null;
+        List<CompanionPickable.Source> blocks = CompanionPickable.storage(level, item);
+        if (blocks.isEmpty()) return null;
+        CompanionPickable.Source source = blocks.getFirst();
+        return new Storage(source.block().asItem(), source.yield());
     }
 
     /** gather_block with the tool the block wants: his shears, pickaxe or shovel, else one made by the whole chain first. */
@@ -768,7 +774,12 @@ public final class CompanionObtain {
         return true;
     }
     private boolean refuse(String reason) {
-        if (why == null) why = near == null || reason.contains(near) ? reason : reason + " Ближайший — " + near + ".";
+        if (why != null) return false;
+        // A refusal that can name the distance SAW the block: it says «вижу, но не достать: 21 блок вверх и 12 вбок», never
+        // «Рядом не вижу» and a distance in one line (the judge read both in one sentence).
+        why = near == null || reason.contains(near) ? reason
+                : reason.contains(ABSENT) ? "«" + nearItem + "» вижу, но не достать: " + near + "."
+                : reason + " Ближайший — " + near + ".";
         return false;
     }
 
@@ -779,7 +790,7 @@ public final class CompanionObtain {
     private void noteSeen(Item item, CompanionReach.Available answer) {
         if (near != null || answer == null || answer.some() || whyNot == null) return;
         String distance = whyNot.apply(item);
-        if (distance != null && !distance.isBlank()) near = distance;
+        if (distance != null && !distance.isBlank()) { near = distance; nearItem = name(item); }
     }
     private int cost() {
         int cost = 0;

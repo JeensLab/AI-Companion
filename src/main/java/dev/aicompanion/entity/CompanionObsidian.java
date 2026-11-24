@@ -104,22 +104,21 @@ final class CompanionObsidian {
      * water is needed for it. What a portal's frame is, what stands on a site of the player's and what lies beside lava is not.
      */
     static boolean liesAbout(CompanionEntity c, ServerLevel level, Predicate<BlockPos> laid) {
-        Predicate<BlockPos> site = CompanionPicking.sites(c, level);
         // The block under his feet is one a player mines too: its drop comes to rest in the hole it leaves and he steps down to it.
-        return nearest(c, level, DEPTH, state -> state.is(Blocks.OBSIDIAN),
-                pos -> !laid.test(pos) && free(level, pos, site)) != null;
+        CompanionWaySearch.Mine mine = requested(c, level, laid);
+        return nearest(c, level, DEPTH, state -> state.is(Blocks.OBSIDIAN), pos -> mine.why(pos) == null) != null;
     }
 
     /**
      * What the world about him really gives of obsidian by the one search and the one reach answer (CompanionWaySearch,
      * CompanionReach): the blocks he can mine — walked to, across, up a column of his soil or under his feet — and no portal's,
-     * no site's, none beside lava — and one block for each bucket of lava of his that water can be had for (a bucket makes one).
+     * none beside lava — and one block for each bucket of lava of his that water can be had for (a bucket makes one). A block the
+     * player set down himself is his too: the order named obsidian, and «do not break the player's build» keeps the soil a way
+     * lays, never the target (the owner hung obsidian above his own base and «добудь обсидиан» found nothing).
      * The buckets are the fallback after the blocks that lie there: what is in the world is taken first.
      */
     static CompanionReach.Available available(CompanionEntity c, ServerLevel level, Predicate<BlockPos> laid) {
-        Predicate<BlockPos> site = CompanionPicking.sites(c, level);
-        CompanionReach.Available found = CompanionWaySearch.available(c, level, Items.OBSIDIAN,
-                pos -> !laid.test(pos) && free(level, pos, site));
+        CompanionReach.Available found = CompanionWaySearch.available(c, level, Items.OBSIDIAN, requested(c, level, laid));
         int lava = 0;
         boolean waterBucket = false;
         for (int slot = 0; slot < c.getContainerSize(); slot++) {
@@ -166,9 +165,11 @@ final class CompanionObsidian {
         // A block of his own buckets is being made: the hole, his lava, his water, the block waited for.
         if (madeStep != 0) { make(level, got); return; }
         if (mined >= wanted) { collect(level, got); return; }
-        if (target != null && !minable(level, target)) { target = null; w.breaking.reset(); w.resetApproach(); }
+        if (target != null && !minable(level, target) && !minableOwn(level, target)) { target = null; w.breaking.reset(); w.resetApproach(); }
         if (target == null && level.getGameTime() >= nextLook) {
             target = nearest(c, level, DEPTH, state -> state.is(Blocks.OBSIDIAN), pos -> minable(level, pos));
+            // A block the player set down himself is the order's too: taken when no block of obsidian is his by the way's own rule.
+            if (target == null) target = nearest(c, level, DEPTH, state -> state.is(Blocks.OBSIDIAN), pos -> minableOwn(level, pos));
             if (target == null) nextLook = level.getGameTime() + LOOK;
         }
         if (target != null) { mine(level, got); return; }
@@ -250,10 +251,40 @@ final class CompanionObsidian {
         return safe(level, pos);
     }
 
-    /** Whether the block at this cell is his to mine at all: no portal's frame, no site of the player's, its drop safe from lava. */
-    static boolean free(ServerLevel level, BlockPos pos, Predicate<BlockPos> site) {
-        return level.hasChunkAt(pos) && level.getBlockState(pos).is(Blocks.OBSIDIAN) && !site.test(pos)
-                && !portal(level, pos) && !frame(level, pos) && safe(level, pos);
+    /**
+     * The same, and a block the player set down himself: his own building never keeps the obsidian his order named — the pumpkin
+     * he hung above his base is taken the same way (CompanionPicking), and obsidian is no different. Asked only after the blocks
+     * that are nobody's, so a natural block about is taken before one of his own.
+     */
+    private boolean minableOwn(ServerLevel level, BlockPos pos) {
+        if (passed.contains(pos)) return false;
+        if (water != null && !pos.closerThan(water, SPREAD + 1)) return false;
+        if (w.portal.laid(pos)) return false;
+        if (!level.hasChunkAt(pos) || !level.getBlockState(pos).is(Blocks.OBSIDIAN)) return false;
+        if (!his.contains(pos) && (portal(level, pos) || frame(level, pos))) return false;
+        return safe(level, pos);
+    }
+
+    /** Whether the block at this cell is his to mine at all: no portal's frame, its drop safe from lava. */
+    static String whyFree(ServerLevel level, BlockPos pos) {
+        if (!level.hasChunkAt(pos) || !level.getBlockState(pos).is(Blocks.OBSIDIAN)) return CompanionWaySearch.Mine.OTHER;
+        if (portal(level, pos) || frame(level, pos)) return CompanionWaySearch.Mine.PORTAL;
+        return safe(level, pos) ? null : CompanionWaySearch.Mine.LAVA;
+    }
+
+    /**
+     * The rule for an explicit obsidian order, named for the search's line: a portal's frame and lava beside it keep a block —
+     * «do not break the player's build» does not, because the order named obsidian and a block of it is the target, not the way.
+     */
+    static CompanionWaySearch.Mine requested(CompanionEntity c, ServerLevel level, Predicate<BlockPos> laid) {
+        Predicate<BlockPos> site = CompanionPicking.sites(c, level);
+        return new CompanionWaySearch.Mine() {
+            @Override public String why(BlockPos pos) {
+                if (laid.test(pos)) return PORTAL;
+                return whyFree(level, pos);
+            }
+            @Override public boolean own(BlockPos pos) { return site.test(pos); }
+        };
     }
 
     /** Whether the drop of the block here rests where he can pick it up: under his water, or nowhere near lava. */
@@ -663,12 +694,15 @@ final class CompanionObsidian {
     /**
      * The nearest block of this kind within his search radius and {@code depth} above and below him that passes the test: the
      * sections nearest him first, those without it skipped by their palette (CompanionWaterFill looks for water the same way).
+     * The box is the one the way's search uses (CompanionWaySearch): {@code radius} across measured flat, {@code depth} above
+     * and below — a block twenty-five to the side and twenty up is in it, as a block at his own level is, and a 3-D radius threw
+     * the owner's far corner out while the search had already found it («нашёл 1 … column 17 шагов земли», then «не нашёл»).
      */
     static BlockPos nearest(CompanionEntity c, ServerLevel level, int depth, Predicate<BlockState> kind, Predicate<BlockPos> ok) {
         BlockPos center = c.blockPosition();
         int radius = c.getSearchRadius();
         int minY = Math.max(level.getMinBuildHeight(), center.getY() - depth), maxY = Math.min(level.getMaxBuildHeight() - 1, center.getY() + depth);
-        double far = (double) radius * radius;
+        long far = (long) radius * radius;
         List<int[]> sections = new ArrayList<>();
         for (int cx = (center.getX() - radius) >> 4; cx <= (center.getX() + radius) >> 4; cx++)
             for (int cz = (center.getZ() - radius) >> 4; cz <= (center.getZ() + radius) >> 4; cz++)
@@ -686,7 +720,9 @@ final class CompanionObsidian {
             for (int y = Math.max(minY, bottom); y <= Math.min(maxY, bottom + 15); y++) for (int x = 0; x < 16; x++) for (int z = 0; z < 16; z++) {
                 if (!kind.test(section.getBlockState(x, y & 15, z))) continue;
                 BlockPos cell = new BlockPos((s[0] << 4) + x, y, (s[1] << 4) + z);
-                if (cell.distSqr(center) > far || best != null && cell.distSqr(center) >= best.distSqr(center) || !ok.test(cell)) continue;
+                long dx = cell.getX() - center.getX(), dz = cell.getZ() - center.getZ();
+                if (dx * dx + dz * dz > far || Math.abs(cell.getY() - center.getY()) > depth) continue;
+                if (best != null && cell.distSqr(center) >= best.distSqr(center) || !ok.test(cell)) continue;
                 best = cell;
             }
         }

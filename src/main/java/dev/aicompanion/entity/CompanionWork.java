@@ -8,6 +8,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
@@ -557,6 +558,18 @@ public final class CompanionWork {
                 job = Job.SMELT; phase = Phase.COOK;
             }
             case "farm_crops", "harvest_crops", "use_bone_meal" -> {
+                // A pumpkin or a melon hung in the air is no field: the block of the fruit lies about him, so it is taken as it
+                // lies before the field's own harvest — the one search answers first, as for every obtain (a stem's fruit is a
+                // block, and one the player set down himself is the order's too).
+                CompanionCrops.Kind fruit = "harvest_crops".equals(action) ? CompanionCrops.Kind.of(item) : null;
+                if (fruit != null && fruit.stem()) {
+                    var lying = CompanionWaySearch.available(owner, level, fruit.produce, CompanionPicking.requested(owner, level));
+                    if (lying.some()) {
+                        int wanted = count > 0 ? Math.min(count, lying.count()) : lying.count();
+                        CompanionActionResult started = picking.begin(BuiltInRegistries.ITEM.getKey(fruit.produce).toString(), Math.max(1, wanted));
+                        if (started == null) { job = Job.BLOCK; phase = Phase.BLOCK; break; }
+                    } else CompanionWaySearch.skipped(owner.diagnosticTrace(), fruit.produce, "плода рядом нет — своё дело поля (harvest_crops)");
+                }
                 String problem = farming.begin(action, item, count);
                 if (problem != null) return CompanionActionResult.failed(problem);
                 job = Job.FARM; phase = Phase.FARM;
@@ -576,6 +589,15 @@ public final class CompanionWork {
                 ore = CompanionOre.Kind.of(item);
                 if (ore == null) return CompanionActionResult.failed("Не понял, какую руду добыть: уголь, железо, медь, лазурит, золото, редстоун, алмазы или изумруды.");
                 if (count > MAX_ORE) return CompanionActionResult.failed("За раз добываю до " + MAX_ORE + " блоков руды.");
+                // A block that gives the ore's item lies about him — a lapis block is nine lapis, a gold block nine gold, even
+                // one the player set down himself: its material is taken as it lies, and the ore is dug only when no block of
+                // it is here. The one search answers first, as it does for every obtain (a lapis block in the air is no ore).
+                List<CompanionPickable.Source> storage = CompanionPickable.storage(level, ore.drop);
+                Item lying = storage.isEmpty() ? ore.drop : storage.getFirst().block().asItem();
+                if (CompanionWaySearch.available(owner, level, lying, CompanionPicking.requested(owner, level)).some()) {
+                    CompanionActionResult started = picking.begin(BuiltInRegistries.ITEM.getKey(lying).toString(), Math.max(1, Math.min(count, MAX_ORE)));
+                    if (started == null) { job = Job.BLOCK; phase = Phase.BLOCK; break; }
+                }
                 job = Job.ORE; phase = Phase.ORE_PICK; oreWanted = count;
             }
             case "pick_up_nearby" -> {

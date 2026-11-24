@@ -106,6 +106,30 @@ final class CompanionPickable {
         return all;
     }
 
+    /**
+     * The blocks a recipe of one block makes this item of: a lapis block is nine lapis, an iron block nine ingots, a wool block
+     * four string. The game's own single-ingredient recipes of a block, never a list of names — a lapis block hanging in the air
+     * is where lapis lies, though no pickaxe gives lapis lazuli out of the ore for it (PATH7: «лазурит» beside a lapis block, and
+     * «поищу руду» was said instead). Empty when no block of the game makes this item.
+     */
+    static synchronized List<Source> storage(ServerLevel level, Item item) {
+        List<Source> all = new ArrayList<>();
+        for (var holder : level.getRecipeManager().getAllRecipesFor(net.minecraft.world.item.crafting.RecipeType.CRAFTING)) {
+            var recipe = holder.value();
+            ItemStack result = recipe.getResultItem(level.registryAccess());
+            if (result.isEmpty() || !result.is(item) || recipe.isSpecial()) continue;
+            var ingredients = recipe.getIngredients();
+            if (ingredients.size() != 1) continue;
+            ItemStack[] options = ingredients.getFirst().getItems();
+            if (options.length != 1 || !(options[0].getItem() instanceof net.minecraft.world.item.BlockItem block)) continue;
+            boolean known = false;
+            for (Source source : all) if (source.block() == block.getBlock()) { known = true; break; }
+            if (known) continue;
+            all.add(new Source(block.getBlock(), result.getCount(), false, false));
+        }
+        return all;
+    }
+
     /** Whether the item is had with shears only: no block gives it to a hand. */
     static synchronized boolean shorn(ServerLevel level, Item item) {
         List<Source> all = sources(level, item);
