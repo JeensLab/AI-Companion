@@ -280,6 +280,9 @@ public final class CompanionPillar {
         return owner.level() instanceof ServerLevel level && !isActive() && !recovering && owner.onGround() && soilCount() >= height && standFor(level, height) != null;
     }
 
+    /** A column of this height would stand in this cell, were he in it: the bag has the blocks and the cell takes them ({@link #tickUp}). */
+    public boolean standsAt(BlockPos feet, int height) { return owner.level() instanceof ServerLevel level && soilCount() >= height && stands(level, feet, height); }
+
     /** The cell his column stands in, or null with no column. */
     public BlockPos foot() { return base; }
 

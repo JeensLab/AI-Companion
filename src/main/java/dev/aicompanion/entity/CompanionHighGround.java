@@ -7,9 +7,14 @@ import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.monster.RangedAttackMob;
 import net.minecraft.world.item.ProjectileWeaponItem;
+import net.minecraft.world.level.pathfinder.Path;
+import net.minecraft.world.phys.Vec3;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * A crowd after him is not met on its own ground, as a player does not: he lays two blocks from his bag under his feet and strikes down
@@ -21,6 +26,11 @@ import java.util.List;
  * for the guard, at a higher priority; under a guard order he stays on the ground, where the player is, and so he does with a skeleton
  * shooting at him: a column is a stand for its arrows.
  * <p>
+ * With more than one of them near him the block does not go under his feet in time: it is not laid into a cell a mob stands in, and one
+ * blow throws back one mob (series ta 20261031 d3 mobs: zombies two by two, both on him, eight killed and dead at the ninth). He runs
+ * clear of them first, a few cells over the floor to where a column stands, and raises it there. Probes of 24.11, two on him and three
+ * pairs more coming: as before two deaths in four; nine cells run and the column up in some fifty ticks with no blow taken, four of four.
+ * <p>
  * The column does not hold him: a mob that reaches him on it (from a ledge beside it, a spider up its side), an arrow or a blast that
  * throws him off, the guard that runs him from a fuse, all give the fight back to the melee goal, and the column is left standing. Its
  * blocks are taken back (the descent of {@link CompanionPillar} walks him to it) only from near by, with nobody after him and no retreat
@@ -28,7 +38,7 @@ import java.util.List;
  * and nothing waits for them.
  */
 final class CompanionHighGround extends Goal {
-    private enum Phase { RAISE, STAND }
+    private enum Phase { BREAK, RAISE, STAND }
 
     /**
      * How many of them after him are a crowd, and how many when he is already hurt; how high he stands: three blocks where the roof lets
@@ -41,6 +51,11 @@ final class CompanionHighGround extends Goal {
     private static final double OFF_CENTRE_SQR = .2 * .2, CENTRE_SPEED = .3;
     /** How far he counts them, and how near one presses on him so that his blow must throw it back before a block goes under his feet. */
     private static final double LOOKOUT = 10, TOUCH_SQR = 1.5 * 1.5;
+    /**
+     * How near more than one of them leaves no time for a column where he stands: a zombie walks some three cells while a column of
+     * three goes up, and the second of them is on him before it is.
+     */
+    private static final double CLOSE_SQR = 6 * 6;
     /** How far from a column left standing he still comes back for its blocks. */
     private static final double COME_BACK_SQR = 8 * 8;
     /** How far a mob with a bow that is after him keeps him on the ground. */
@@ -52,8 +67,20 @@ final class CompanionHighGround extends Goal {
     /** How long a column left standing is his at all. */
     private static final int LEFT_PATIENCE = 20 * 30;
 
+    /**
+     * The run clear of them: how far a cell for the column is looked for, the least run that gains the time a column takes, how many
+     * ways are searched, the pace, how long the run may take, how near a ledge is one a mob reaches him from, and how long after no
+     * way was found the next is looked for: the searches are out of the share of the tick his fight finds its own steps with.
+     */
+    private static final int RUN = 9, LEAST_RUN_SQR = 4 * 4, PATH_TESTS = 3, RUN_TICKS = 80, LEDGE = 2, LOOK_EVERY = 40;
+    private static final double RUN_SPEED = 1.3;
+    private static final float RUN_RANGE = 16;
+
     private final CompanionEntity c;
     private Phase phase = Phase.RAISE;
+    /** The way clear of them, when more than one is on him; null when the column goes up where he stands. */
+    private Path run;
+    private int ran, lookAt;
     /** The goal is over; the column comes down now (nobody about), or is left standing. */
     private boolean over, takeDown;
     private int calm, idle, retryAt, hurtAt, height;
@@ -70,16 +97,68 @@ final class CompanionHighGround extends Goal {
         if (c.temporaryPillar.leftStanding()) { settle(level); return false; }
         // With no blade on a task he walks away from a monster (CompanionCombat.StepOffGoal): a column would only hold him among them.
         if (c.tickCount < retryAt || c.temporaryPillar.isActive() || CompanionGuardWatch.watching(c) || c.combat.unarmedOnTask() || shotAt(level)) return false;
-        int after = 0, touching = 0;
-        for (Monster foe : about(level)) {
+        int after = 0, touching = 0, close = 0;
+        List<Monster> foes = about(level);
+        for (Monster foe : foes) {
             if (foe.getTarget() == c) after++;
             if (c.distanceToSqr(foe) < TOUCH_SQR) touching++;
+            if (c.distanceToSqr(foe) < CLOSE_SQR) close++;
         }
-        // One on him is thrown back by a blow and the block goes under his feet; with more of them in the cell a column takes too long to
-        // raise (series t 20261031 d1 mobs: 130 ticks and seven blows for it): he fights where he stands, as before.
-        if (after < (c.getHealth() <= CompanionCaveSense.HEALTH_WARY ? HURT_CROWD : CROWD) || touching > 1) return false;
+        if (after < (c.getHealth() <= CompanionCaveSense.HEALTH_WARY ? HURT_CROWD : CROWD)) return false;
+        // One on him is thrown back by a blow and the block goes under his feet; with more of them near, the second is in the cell before
+        // the column is up (series t 20261031 d1 mobs: 130 ticks and seven blows for it): he runs clear of them first. With nowhere to
+        // run the column goes up where he stands, and with more than one on him already he fights there, as before.
+        run = close > 1 && c.tickCount >= lookAt ? clearOf(level, foes) : null;
+        if (close > 1 && run == null && c.tickCount >= lookAt) lookAt = c.tickCount + LOOK_EVERY;
+        if (run != null) return true;
+        if (touching > 1) return false;
         height = c.temporaryPillar.canStandUp(TALL) ? TALL : LOW;
         return height == TALL || c.temporaryPillar.canStandUp(LOW);
+    }
+
+    /**
+     * The way to a cell clear of them where a column stands: a cell of the floor about him, a step up or down at most, farther from the
+     * middle of the crowd than he is, the farthest from the nearest of them first, and none with a ledge beside it. Null with no such
+     * cell in reach.
+     */
+    private Path clearOf(ServerLevel level, List<Monster> foes) {
+        Vec3 crowd = Vec3.ZERO;
+        for (Monster foe : foes) crowd = crowd.add(foe.position().scale(1.0 / foes.size()));
+        double now = c.distanceToSqr(crowd);
+        BlockPos feet = c.blockPosition();
+        List<BlockPos> cells = new ArrayList<>();
+        for (int dx = -RUN; dx <= RUN; dx++) for (int dz = -RUN; dz <= RUN; dz++) for (int dy = -1; dy <= 1; dy++) {
+            BlockPos cell = feet.offset(dx, dy, dz);
+            if (dx * dx + dz * dz >= LEAST_RUN_SQR && crowd.distanceToSqr(cell.getX() + .5, cell.getY(), cell.getZ() + .5) > now) cells.add(cell);
+        }
+        cells.sort(Comparator.comparingDouble(cell -> -gap(cell, foes)));
+        int searched = 0;
+        for (BlockPos cell : cells) {
+            if (!c.temporaryPillar.standsAt(cell, LOW) || overlooked(level, cell)) continue;
+            Path path = ((CompanionNavigation) c.getNavigation()).search(Set.of(cell), 0, RUN_RANGE, true);
+            if (path != null && path.canReach()) return path;
+            if (++searched == PATH_TESTS) break;
+        }
+        return null;
+    }
+
+    /**
+     * A mob has somewhere to stand from where it reaches him on a column in this cell: a ledge or a step within {@link #LEDGE} cells,
+     * above the floor of the column and no higher than his head on it (the corner of a hall by his own stairs: a zombie two steps up
+     * them struck him off a column of three).
+     */
+    private static boolean overlooked(ServerLevel level, BlockPos cell) {
+        for (int dx = -LEDGE; dx <= LEDGE; dx++) for (int dz = -LEDGE; dz <= LEDGE; dz++) for (int dy = 1; dy <= TALL + 1; dy++) {
+            BlockPos at = cell.offset(dx, dy, dz);
+            if (!CompanionShaftPlan.open(level, at.below()) && CompanionShaftPlan.open(level, at) && CompanionShaftPlan.open(level, at.above())) return true;
+        }
+        return false;
+    }
+
+    private static double gap(BlockPos cell, List<Monster> foes) {
+        double gap = Double.MAX_VALUE;
+        for (Monster foe : foes) gap = Math.min(gap, foe.distanceToSqr(cell.getX() + .5, cell.getY(), cell.getZ() + .5));
+        return gap;
     }
 
     /**
@@ -124,12 +203,14 @@ final class CompanionHighGround extends Goal {
 
     @Override public void start() {
         over = takeDown = false;
-        calm = idle = 0;
-        phase = Phase.RAISE;
-        c.getNavigation().stop();
+        calm = idle = ran = 0;
+        phase = run != null ? Phase.BREAK : Phase.RAISE;
+        if (run != null) CompanionMiningNavigation.walk(c, run, RUN_SPEED);
+        else c.getNavigation().stop();
         // Before the block for the column is in his hand: the tool of the work is what the fight gives back.
         c.work.expedition.fight.fightBegan();
-        if (c.hasActiveWorkOrder()) c.workStatus("Их много: встаю на столбик из своих блоков, сверху меня не достанут.");
+        if (c.hasActiveWorkOrder()) c.workStatus(run != null ? "Их много, и они уже вплотную: отбегаю и встаю на столбик из своих блоков."
+                : "Их много: встаю на столбик из своих блоков, сверху меня не достанут.");
     }
 
     @Override public void tick() {
@@ -138,9 +219,20 @@ final class CompanionHighGround extends Goal {
         Monster nearest = null;
         for (Monster foe : foes) if (nearest == null || c.distanceToSqr(foe) < c.distanceToSqr(nearest)) nearest = foe;
         switch (phase) {
+            case BREAK -> breakAway();
             case RAISE -> raise(nearest);
             case STAND -> stand(nearest);
         }
+    }
+
+    /** The run is over where its way ends, or when it has taken too long: the column goes up there, or, with no room for it after all, the fight is on the ground. */
+    private void breakAway() {
+        c.work.expedition.fight.fightGoing();
+        if (!c.getNavigation().isDone() && ++ran < RUN_TICKS || !c.onGround()) return;
+        c.getNavigation().stop();
+        height = c.temporaryPillar.canStandUp(TALL) ? TALL : LOW;
+        if (height == LOW && !c.temporaryPillar.canStandUp(LOW)) { retryAt = c.tickCount + RETRY_TICKS; over = true; return; }
+        phase = Phase.RAISE;
     }
 
     private void raise(Monster nearest) {
