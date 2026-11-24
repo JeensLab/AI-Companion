@@ -121,6 +121,11 @@ public final class CompanionLocalCommands {
         if (grind != null) return grind;
         String compost = CompanionWorkCommands.compost(text, companionName);
         if (compost != null) return compost;
+        // «Добудь тыкву», «сорви блок тыквы», «принеси 2 тыквы»: any thing the game's own registry names, by the same obtain
+        // path the ore and obsidian take. After the orders above, so «добудь обсидиан» keeps its ten and «принеси воды» its
+        // hand-over; before the places, so «принеси мне тыкву» is no walk to a marker.
+        String item = CompanionWorkCommands.itemOrder(text, companionName, names);
+        if (item != null) return item;
         // «Запомни это место, это дом» names a marker: after the work grammar, so «запомни это место как дом» stays the
         // home it always was.
         CompanionPlaceSpeech.Result remembered = CompanionPlaceSpeech.remember(text, companionName, markersEnabled);

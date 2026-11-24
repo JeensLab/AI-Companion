@@ -12,6 +12,8 @@ public final class CompanionPlanRequirements {
     private CompanionPlanRequirements() { }
 
     public static CompanionReply apply(String request, CompanionReply decoded) {
+        // An order the model answered with words only says so in the log, before any step is looked for (owner, 24.11).
+        orderWithoutStep("", request, decoded);
         // A long goal is the whole plan: the wording of the request adds no step beside it.
         if (decoded.actions().stream().anyMatch(step -> step.type().equals("pursue_goal"))) return decoded;
         String text = request.toLowerCase(Locale.ROOT).replace('ё', 'е');
@@ -55,6 +57,28 @@ public final class CompanionPlanRequirements {
         return result.isEmpty() ? decoded : new CompanionReply(CompanionDialogue.acknowledge(result, decoded.repeat()), List.copyOf(result), decoded.repeat());
     }
     private static final String TOOL = ".*_(pickaxe|axe|shovel|sword|hoe|helmet|chestplate|leggings|boots)";
+
+    /**
+     * An order the model answered with words only: one line says so and why, in the game log as well as the journal, so a
+     * live report of «сказал и не сделал» is read instead of guessed (owner, 24.11: «добудь тыкву» got «Ага сейчас сорву»
+     * and no work at all — nothing in the log said which way the order went). The order is a verb of work, whatever the thing
+     * after it is: the noun list of {@link OpenRouterClient#requiresAction} is no list of the world's items, which is why the
+     * pumpkin order was no action at all. {@code item} is what the game's own registry names in the phrase (the player's
+     * language on the client): a named thing with no step is the model's answer to an order it could have planned, and a
+     * phrase it cannot name is a name only the model can pick. A talk (no order verb) is no line: silence is right there.
+     */
+    public static void orderWithoutStep(String trace, String request, CompanionReply decoded) {
+        if (!decoded.actions().isEmpty()) return;
+        String text = request == null ? "" : request.toLowerCase(Locale.ROOT).replace('ё', 'е');
+        if (!text.matches("(?sU).*\\b((?:до|да)будь|накопай|выкопай|сорви|нарви|принеси|набери|достань|собери|скрафти|сделай|поставь|возьми|сложи|переплавь|построй|подбери|убери)\\b.*")) return;
+        // A question that only asks something keeps its words: «Как думаешь, что лучше построить?» is no failed order.
+        if (text.contains("?") && !text.matches("(?s).*(можешь|сможешь|давай|пожалуйста).*")) return;
+        String item = dev.aicompanion.entity.CompanionItemLookup.itemFor(request);
+        String why = item == null ? "имени нет в игре — решает модель" : "предмет назван, а шага нет";
+        dev.aicompanion.CompanionDiagnostics.say(trace, "order_no_step", "«" + request + "»: шага нет — " + why
+                        + (decoded.text() == null || decoded.text().isBlank() ? "" : ", сказано: «" + decoded.text() + "»"),
+                "order", request, "reply", decoded.text() == null ? "" : decoded.text(), "item", item == null ? "" : item, "why", why);
+    }
 
     /**
      * Game log 22.10: «сделай себе и мне каменное оружие и инструменты» became one set for Oleg plus an unasked

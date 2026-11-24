@@ -409,6 +409,11 @@ public final class OpenRouterClient {
                 + "[ \t,]+(?:(?!объясн|расска[жз]|скаж|сказ|как(?![а-я])|" + PUT_OFF + ")[а-я]+[ \t,]+){0,3}(?:разложить|разложим|отсортировать|отсортируем)" + SORT_NOW + ".*");
         // Fields and harvest: «посади» or «собери» alone say little and a crop alone says nothing, but together they are an order.
         if (normalized.matches("(?s).*(посади(ть)?|засади(ть)?|засей|посей|высади(ть)?|вскопай|вскопать|вспаши|вспахать|разбей|разбить|сделай|сделать|создай|создать|собери|собрать|убери|убрать|сними|снять).*(огород|грядк|ферм|урожа|пшениц|морков|картош|картоф|свекл|тыкв|арбуз|посев).*")) return true;
+        // Any thing the game's own registry names after an order verb is an order too (owner, 24.11: «добудь тыкву» was no
+        // action for the list below, so the model was free to answer «Ага сейчас сорву» with no step at all). The list is no
+        // list of the world's items: a mod's own thing, «тыкву», «мак» are orders the same way «камень» is.
+        if (request && dev.aicompanion.entity.CompanionItemLookup.itemFor(text) != null
+                && normalized.matches("(?s).*\\b((?:до|да)будь|накопай|выкопай|сорви|нарви|принеси|набери|достань|собери|скрафти|сделай|поставь|возьми)\\b.*")) return true;
         return request
                 && normalized.matches("(?s).*(дом|стройку|верстак|меч|кирк|топор|лопат|мотыг|палк|доск|бревн|дерев|земл|инструмент|сундук|факел|щит|брон|шлем|нагрудник|понож|ботин|камень|камня|камен|булыж|моб|монстр|руд|желез|угол|угл|медь|меди|золот|алмаз|изумруд|лазурит|редстоун|дракон|незер|снаряж|загон|коров|овец|овц|свин|куриц).*");
     }

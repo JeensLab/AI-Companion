@@ -80,7 +80,37 @@ public final class CompanionItemLookup {
         return found;
     }
 
-    /** How well the phrase names this item: the sum of its words' best matches, 0 for an item it does not name at all. */
+    /**
+     * The id of the block the phrase names: «блок лазурита» is the lapis block, «блок золота» the gold block — the item whose
+     * name carries the word «блок» and answers the rest of the phrase, never the thing the block is made of («лазурит» is the
+     * lapis its own block gives). Null when no block answers it: «блок тыквы» is the pumpkin itself, whose item is named
+     * without «блок», and the plain name is the answer there.
+     */
+    public static String blockFor(String phrase, Function<Item, String> names) {
+        List<String> said = words(phrase);
+        if (said.isEmpty()) return null;
+        int best = 0;
+        Item picked = null;
+        for (Item item : BuiltInRegistries.ITEM) {
+            if (item == Items.AIR) continue;
+            String name = names.apply(item);
+            if (name == null || name.isBlank()) continue;
+            List<String> parts = words(name);
+            List<String> rest = new ArrayList<>();
+            boolean block = false;
+            for (String part : parts) {
+                if (part.startsWith("блок")) block = true;
+                else rest.add(part);
+            }
+            if (!block) continue;
+            int score = score(said, rest);
+            if (score > best) { best = score; picked = item; }
+        }
+        return picked == null ? null : BuiltInRegistries.ITEM.getKey(picked).toString();
+    }
+
+    /**
+     * How well the phrase names this item: the sum of its words' best matches, 0 for an item it does not name at all. */
     private static int score(List<String> said, List<String> name) {
         int total = 0;
         for (String word : said) {
