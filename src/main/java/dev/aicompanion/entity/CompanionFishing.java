@@ -132,17 +132,20 @@ public final class CompanionFishing {
 
     private static String name(Item kind) { return new ItemStack(kind).getHoverName().getString(); }
 
-    /** An order with no number ends well by any of its bounds; a counted one that fell short is planned again by «добудь» or told. */
+    /**
+     * An order with no number ends well by any of its bounds once he has fished; a counted one that fell short is no success (it is
+     * planned again by «добудь» or told), and neither is one that never cast.
+     */
     private void bound(String why, boolean blocked) {
-        String told = why + " " + report();
-        end(wanted == ALL ? CompanionActionResult.ok(told) : blocked ? CompanionActionResult.blocked(told) : CompanionActionResult.failed(told));
+        String told = casts == 0 ? why : why + " " + report();
+        end(wanted == ALL && casts > 0 ? CompanionActionResult.ok(told) : blocked ? CompanionActionResult.blocked(told) : CompanionActionResult.failed(told));
     }
 
     void tick(ServerLevel level) {
         long now = level.getGameTime();
         if (wanted != ALL && got() >= wanted) { end(CompanionActionResult.ok(report())); return; }
         if (w.items.countCarried(Items.FISHING_ROD) == 0) { bound("Удочка сломалась.", false); return; }
-        if (now - began >= LIMIT_SECONDS * 20L) { end(CompanionActionResult.ok("Рыбачу уже двадцать минут, сматываю удочку. " + report())); return; }
+        if (now - began >= LIMIT_SECONDS * 20L) { bound("Рыбачу уже двадцать минут, сматываю удочку.", false); return; }
         // A catch is anything: boots or a saddle want a slot of their own.
         if (!w.items.canStore(List.of(new ItemStack(Items.SADDLE)))) { bound(CompanionPicking.FULL_BAG, true); return; }
         // Gone by itself: the rod left his hand (a blade taken against a monster, food).
@@ -154,7 +157,7 @@ public final class CompanionFishing {
             BlockPos found = skipped.size() >= SKIPS ? null : water(c, level, skipped);
             if (found == null) {
                 String why = skipped.isEmpty() ? "Рядом не вижу воды, где порыбачить." : "Воду вижу, но встать у неё и закинуть удочку не смог.";
-                if (got() > 0 || wanted == ALL && casts > 0) bound(why, true); else end(CompanionActionResult.blocked(why));
+                bound(why, true);
                 return;
             }
             Set<BlockPos> cells = CompanionWaterFill.standsFor(c, level, List.of(found));
@@ -176,6 +179,8 @@ public final class CompanionFishing {
         }
         c.getNavigation().stop();
         if (!c.getMainHandItem().is(Items.FISHING_ROD)) {
+            // A rod in his other hand goes through the bag: the bobber is cast from the main one.
+            if (c.getOffhandItem().is(Items.FISHING_ROD)) c.unequipForSupport("offhand");
             if (!c.equipForWork(ROD).success()) { bound("Не могу взять удочку в руку: в сумке нет места.", true); return; }
             held = true;
         }
@@ -202,8 +207,10 @@ public final class CompanionFishing {
         for (BlockPos cell : BlockPos.betweenClosed(feet.offset(-THROW, -3, -THROW), feet.offset(THROW, 0, THROW))) {
             double away = Math.sqrt(cell.distSqr(feet));
             if (away < 2 || away > THROW || !surface(level, cell)) continue;
-            Vec3 top = Vec3.atCenterOf(cell).add(0, .6, 0);
-            if (level.clip(new ClipContext(eyes, top, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, c)).getType() != HitResult.Type.MISS) continue;
+            // The throw is an arc a block over the straight line: leaves or a low roof in its way would land the bobber on the bank.
+            Vec3 top = Vec3.atCenterOf(cell).add(0, .6, 0), crest = eyes.add(top).scale(.5).add(0, 1, 0);
+            if (level.clip(new ClipContext(eyes, crest, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, c)).getType() != HitResult.Type.MISS
+                    || level.clip(new ClipContext(crest, top, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, c)).getType() != HitResult.Type.MISS) continue;
             int open = 0;
             for (BlockPos near : BlockPos.betweenClosed(cell.offset(-2, 0, -2), cell.offset(2, 0, 2))) if (surface(level, near)) open++;
             if (open > most || open == most && away < nearest) { most = open; nearest = away; best = cell.immutable(); }
@@ -224,13 +231,15 @@ public final class CompanionFishing {
     /** Pulled in as a player pulls: the catch (if a fish was on) is his to pick up; the rod wears as the game wears it. */
     private void reel(ServerLevel level) {
         ItemStack rod = c.getMainHandItem();
+        // A blade took the rod's place this tick (a monster came): the line is let go, nothing is pulled with a sword.
+        if (!rod.is(Items.FISHING_ROD)) { bobber.discard(); bobber = null; return; }
         boolean ground = bobber.onGround();
         List<ItemEntity> catches = bobber.reel(c, rod);
         bobber = null;
         c.swing(InteractionHand.MAIN_HAND);
         level.playSound(null, c.getX(), c.getY(), c.getZ(), SoundEvents.FISHING_BOBBER_RETRIEVE, SoundSource.NEUTRAL, 1F, .4F / (level.getRandom().nextFloat() * .4F + .8F));
         int wear = ground ? 2 : catches.isEmpty() ? 0 : 1;
-        if (wear > 0 && rod.is(Items.FISHING_ROD)) rod.hurtAndBreak(wear, c, EquipmentSlot.MAINHAND);
+        if (wear > 0) rod.hurtAndBreak(wear, c, EquipmentSlot.MAINHAND);
         c.claimDrops(catches);
         c.setChanged();
         w.cooldown = 10;

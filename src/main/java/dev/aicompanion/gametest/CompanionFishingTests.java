@@ -15,6 +15,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.tags.ItemTags;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -118,6 +119,34 @@ public final class CompanionFishingTests {
         });
     }
 
+    /** His rod in his other hand and nothing else: it is his rod, taken into the hand that casts. */
+    @GameTest(template = "tall_tree", timeoutTicks = 6000)
+    public static void aRodInHisOtherHandIsCastToo(GameTestHelper h) {
+        pond(h);
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.FISHING_ROD));
+        var future = run(h, c, "[{\"action\":\"fish\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            h.assertTrue(fish(c) >= 1, "No fish with the rod in his other hand: " + future.join().report());
+        });
+    }
+
+    /** «Порыбачь» with no cell free in his bag: nothing is cast and it is no success, though the order names no number. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void aFullBagAtTheStartIsNoSuccess(GameTestHelper h) {
+        pond(h);
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.FISHING_ROD));
+        for (int slot = 1; slot < c.getContainerSize(); slot++) c.setItem(slot, new ItemStack(Items.DIRT, 64));
+        var future = run(h, c, "[{\"action\":\"fish\"}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Сумка забита") && !c.didLastTaskSucceed() && rod(c).getDamageValue() == 0 && bobbers(h) == 0, "A full bag: " + report);
+        });
+    }
+
     /** «Стоп» while the bobber is out: the line is in at once, the rod is back in his bag, nothing is caught after it. */
     @GameTest(template = "tall_tree", timeoutTicks = 2400)
     public static void stopTakesTheLineIn(GameTestHelper h) {
@@ -161,7 +190,7 @@ public final class CompanionFishingTests {
             var action = CompanionWorkCommands.parse(phrase.getKey(), "Олег");
             h.assertTrue(action != null && action.type().equals("fish") && action.count() == phrase.getValue() && action.item().equals("fish"), "«" + phrase.getKey() + "»: " + action);
         }
-        for (String other : List.of("порыбачь 5 минут", "налови рыбы и пожарь", "поймай курицу", "не лови рыбу", "налови 100 рыб")) {
+        for (String other : List.of("порыбачь 5 минут", "налови рыбы и пожарь", "поймай курицу", "не лови рыбу", "налови 100 рыб", "налови 0 рыб", "поймай 0 рыб")) {
             var action = CompanionWorkCommands.parse(other, "Олег");
             h.assertTrue(action == null || !action.type().equals("fish"), "«" + other + "» was taken as a fishing order: " + action);
         }

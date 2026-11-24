@@ -156,6 +156,7 @@ public final class CompanionBobber extends FishingHook {
     /**
      * Pulled in. With a fish on the line the catch of the game's fishing table flies out of the water to him, as it does to a
      * player, and experience falls at his feet; the item entities are returned for him to pick up. Empty otherwise.
+     * NeoForge's ItemFishedEvent is not posted: it is a player's event and has none to name here.
      */
     List<ItemEntity> reel(CompanionEntity c, ItemStack rod) {
         List<ItemEntity> catches = new ArrayList<>();
