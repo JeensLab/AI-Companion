@@ -99,6 +99,10 @@ final class CompanionCombat {
         if (entity instanceof net.minecraft.world.entity.monster.warden.Warden) return false;
         // Nobody but a player hurts the dragon (EnderDragon.hurt): a blade or an arrow of his is spent for nothing; its crystals are his part.
         if (entity instanceof net.minecraft.world.entity.boss.enderdragon.EnderDragon) return false;
+        // A hit silverfish wakes the infested blocks round it and they crumble (Silverfish.SilverfishWakeUpFriendsGoal): by lava, as
+        // in a stronghold's portal room, the lava comes out on the floor — twice his death in game (24.11). It goes for no one who did not hit it.
+        if (entity instanceof net.minecraft.world.entity.monster.Silverfish && net.minecraft.core.BlockPos.betweenClosedStream(entity.blockPosition().offset(-10, -5, -10),
+                entity.blockPosition().offset(10, 5, 10)).anyMatch(pos -> CompanionLava.at(entity.level(), pos))) return false;
         boolean neutral = entity instanceof net.minecraft.world.entity.NeutralMob || entity instanceof net.minecraft.world.entity.monster.piglin.AbstractPiglin
                 || entity instanceof net.minecraft.world.entity.monster.Spider;
         return !neutral || provoked;

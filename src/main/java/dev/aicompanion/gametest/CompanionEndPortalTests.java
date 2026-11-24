@@ -53,6 +53,41 @@ public final class CompanionEndPortalTests {
     }
 
     /**
+     * A stronghold's spawner stands on the top step before the ring, two blocks off its frames: as long as a player is near, it lets
+     * out silverfish. He breaks it with the pickaxe of his bag before the first eye, then opens the portal.
+     */
+    @GameTest(template = "large_search", skyAccess = true, timeoutTicks = 2400)
+    public static void theSpawnerBeforeTheRingIsBrokenFirst(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        List<BlockPos> frames = ring(h, 3, true);
+        BlockPos spawner = spawner(h, 3);
+        companion.setItem(0, new ItemStack(Items.ENDER_EYE, 12));
+        companion.setItem(1, new ItemStack(Items.IRON_PICKAXE));
+        h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "open_end_portal", "", 1).success(), "Order refused: " + companion.getLastTaskResult());
+        h.onEachTick(() -> h.assertTrue(eyes(h, frames) == 0 || !h.getBlockState(spawner).is(Blocks.SPAWNER), "An eye was put in with the spawner standing"));
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(companion.didLastTaskSucceed() && companion.getLastTaskResult().contains("Сломал спаунер") && companion.getLastTaskResult().contains("Портал Края открыт"), companion.getLastTaskResult());
+            h.assertTrue(h.getBlockState(spawner).isAir() && eyes(h, frames) == 12 && portal(h, 3) == 9, "Spawner " + h.getBlockState(spawner) + ", eyes in the frames " + eyes(h, frames));
+        });
+    }
+
+    /** No pickaxe: the spawner is broken by hand, as slowly as a player breaks it (25 seconds). */
+    @GameTest(template = "large_search", skyAccess = true, timeoutTicks = 2400)
+    public static void withNoPickaxeTheSpawnerIsBrokenByHand(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        List<BlockPos> frames = ring(h, 1, false);
+        BlockPos spawner = spawner(h, 1);
+        companion.setItem(0, new ItemStack(Items.ENDER_EYE, 12));
+        h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "open_end_portal", "", 1).success(), "Order refused: " + companion.getLastTaskResult());
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(companion.didLastTaskSucceed() && companion.getLastTaskResult().contains("Сломал спаунер") && companion.getLastTaskResult().contains("Портал Края открыт"), companion.getLastTaskResult());
+            h.assertTrue(h.getBlockState(spawner).isAir() && eyes(h, frames) == 12 && portal(h, 1) == 9, "Spawner " + h.getBlockState(spawner) + ", eyes in the frames " + eyes(h, frames));
+        });
+    }
+
+    /**
      * A ring a player set on the ground, two eyes in it already; five in his bag: he puts in the five and says how many are
      * missing. Given five more and told again he goes on with the empty ones. The order finds him standing in the ring: he
      * steps out of it first and puts no eye in from there, or the portal that opens in the ring would take him to the End.
@@ -188,6 +223,28 @@ public final class CompanionEndPortalTests {
     }
 
     /**
+     * A hit silverfish wakes the infested blocks round it (ten blocks across, five up and down) and they crumble: in a stronghold's
+     * portal room that lets the pool's lava out on the floor (twice his death in game, 24.11). By the player, with lava six blocks
+     * off, he leaves it alone (it goes for no one who did not hit it); the lava gone, he meets it as any monster at the player's side.
+     */
+    @GameTest(template = "large_search", skyAccess = true, timeoutTicks = 600)
+    public static void aSilverfishByLavaIsLeftAloneAndOneAwayFromItIsFought(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        var silverfish = h.spawn(net.minecraft.world.entity.EntityType.SILVERFISH, 54, 1, 62);
+        silverfish.setNoAi(true);
+        BlockPos lava = new BlockPos(60, 1, 62);
+        h.setBlock(lava, Blocks.LAVA);
+        for (Direction side : Direction.Plane.HORIZONTAL) h.setBlock(lava.relative(side), Blocks.BEDROCK);
+        float whole = silverfish.getMaxHealth();
+        h.onEachTick(() -> {
+            if (h.getBlockState(lava).is(Blocks.LAVA))
+                h.assertTrue(companion.getTarget() != silverfish && silverfish.getHealth() == whole, "A silverfish by lava was fought: health " + silverfish.getHealth());
+        });
+        h.runAfterDelay(120, () -> h.setBlock(lava, Blocks.BEDROCK));
+        h.succeedWhen(() -> h.assertTrue(!silverfish.isAlive() || silverfish.getHealth() < whole, "The silverfish with no lava near is not fought"));
+    }
+
+    /**
      * The twelve frames at this height, turned inward as a player sets them, none with an eye. Over lava they are a stronghold's:
      * a ring of stone with a pool in it on the floor, the frames two blocks over it. On the ground the floor under the ring is whole.
      */
@@ -200,6 +257,14 @@ public final class CompanionEndPortalTests {
         if (lava) for (int x = 0; x <= 4; x++) for (int z = 0; z <= 4; z++)
             h.setBlock(new BlockPos(X + x, 1, Z + z), x == 0 || x == 4 || z == 0 || z == 4 ? Blocks.STONE_BRICKS : Blocks.LAVA);
         return frames;
+    }
+
+    /** A spawner where a stronghold has it: in the middle before the ring's north side, two blocks off, at the frames' height, on stone. */
+    private static BlockPos spawner(GameTestHelper h, int y) {
+        BlockPos spawner = new BlockPos(X + 2, y, Z - 2);
+        for (int below = 1; below < y; below++) h.setBlock(spawner.atY(below), Blocks.STONE_BRICKS);
+        h.setBlock(spawner, Blocks.SPAWNER);
+        return spawner;
     }
 
     private static BlockPos frame(GameTestHelper h, int x, int y, int z, Direction facing) {

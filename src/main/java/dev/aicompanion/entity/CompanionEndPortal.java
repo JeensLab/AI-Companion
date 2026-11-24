@@ -1,13 +1,16 @@
 package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.EndPortalFrameBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -20,6 +23,10 @@ import java.util.List;
  * stronghold's frames hang over lava, and the portal that opens in the ring would take him to the End. Short of eyes he puts
  * in what he has and says how many are missing; the next order goes on with the empty frames. Nothing of it is saved: the
  * frames keep their eyes.
+ * <p>
+ * A spawner by the ring (a stronghold's stands on the top step before it) is broken first, with his best pickaxe or by hand: as
+ * long as a player is near it lets out silverfish, and a hit one wakes the infested blocks round it, the pool's border among them
+ * (CompanionCombat.fairTarget). Lava out on the floor all the same, he stands on no cell with lava in it or beside it.
  */
 final class CompanionEndPortal {
     /** How far a frame is looked for: on foot from where the player brought him, not across a stronghold. */
@@ -28,6 +35,8 @@ final class CompanionEndPortal {
     private static final int RING = 4;
     private static final int PACE = 12;
     private static final double REACH = 2.8D;
+    /** How far from the ring a spawner is broken first: a stronghold's is two blocks off the frames. */
+    private static final int SPAWNER_NEAR = 10, SPAWNER_NEAR_Y = 5;
 
     private final CompanionWork w;
     /** The frames of the ring, with an eye or without. */
@@ -35,6 +44,11 @@ final class CompanionEndPortal {
     private BlockPos frame;
     private int put;
     private long nextAt;
+    /** The spawner to break before the first eye; null once broken or left. */
+    private BlockPos spawner;
+    private boolean broke, missed;
+    /** A cell to stand on by a frame was refused for lava in it or beside it. */
+    private boolean wet;
 
     /** Made with the work, before its owner is set: the owner is read when used. */
     CompanionEndPortal(CompanionWork w) { this.w = w; }
@@ -42,7 +56,7 @@ final class CompanionEndPortal {
     /** null when the work may start, else the answer: why not, or that the portal is open already. */
     CompanionActionResult begin() {
         CompanionEntity c = w.owner;
-        ring = List.of(); frame = null; put = 0; nextAt = 0;
+        ring = List.of(); frame = null; put = 0; nextAt = 0; spawner = null; broke = false; missed = false; wet = false;
         if (!(c.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Не могу без загруженного мира.");
         ring = ringNear(level, c.blockPosition());
         if (ring.isEmpty()) return CompanionActionResult.failed("Не вижу рядом рамки портала Края: подведи меня к ней.");
@@ -52,13 +66,14 @@ final class CompanionEndPortal {
                 : w.items.countCarried(Items.ENDER_EYE) == 0 ? CompanionActionResult.failed("Нет ока Края: дай мне или скажи сделать.") : null;
         // No work of his begins: the ring is not kept, or the next portal built for the Nether would be taken for this one (active()).
         if (answer != null) ring = List.of();
+        else spawner = spawnerNear(level);
         return answer;
     }
 
     /** The work in hand is his (CompanionWork tells it from the Nether portal's build by this). */
     boolean active() { return !ring.isEmpty(); }
 
-    void cancel() { ring = List.of(); frame = null; }
+    void cancel() { ring = List.of(); frame = null; spawner = null; }
 
     String jobName() { return "очи в портал Края"; }
 
@@ -78,6 +93,16 @@ final class CompanionEndPortal {
         if (nearest == null) return List.of();
         frames.removeIf(pos -> pos.getY() != nearest.getY() || Math.abs(pos.getX() - nearest.getX()) > RING || Math.abs(pos.getZ() - nearest.getZ()) > RING);
         return frames;
+    }
+
+    /** The spawner nearest to the ring within reach of it, if any. */
+    private BlockPos spawnerNear(ServerLevel level) {
+        int y = ring.getFirst().getY();
+        Vec3 middle = new Vec3((minX() + maxX()) / 2D + .5, y, (minZ() + maxZ()) / 2D + .5);
+        BlockPos nearest = null;
+        for (BlockPos pos : BlockPos.betweenClosed(minX() - SPAWNER_NEAR, y - SPAWNER_NEAR_Y, minZ() - SPAWNER_NEAR, maxX() + SPAWNER_NEAR, y + SPAWNER_NEAR_Y, maxZ() + SPAWNER_NEAR))
+            if (level.hasChunkAt(pos) && level.getBlockState(pos).is(Blocks.SPAWNER) && (nearest == null || pos.getCenter().distanceToSqr(middle) < nearest.getCenter().distanceToSqr(middle))) nearest = pos.immutable();
+        return nearest;
     }
 
     private List<BlockPos> empty(ServerLevel level) {
@@ -100,23 +125,78 @@ final class CompanionEndPortal {
         return feet.getX() < minX() || feet.getX() > maxX() || feet.getZ() < minZ() || feet.getZ() > maxZ();
     }
 
+    /** No lava in the cell nor beside it: lava let out of the pool's border runs over the floor by the ring. */
+    private static boolean dry(ServerLevel level, BlockPos feet) {
+        if (CompanionLava.at(level, feet)) return false;
+        for (Direction side : Direction.Plane.HORIZONTAL) if (CompanionLava.at(level, feet.relative(side))) return false;
+        return true;
+    }
+
+    /** Where he may stand: outside the ring and dry; a cell refused for lava is remembered for what he says. */
+    private boolean stands(ServerLevel level, BlockPos feet) {
+        if (!outside(feet)) return false;
+        if (dry(level, feet)) return true;
+        wet = true;
+        return false;
+    }
+
     void tick(ServerLevel level) {
         CompanionEntity c = w.owner;
+        if (spawner != null && !level.getBlockState(spawner).is(Blocks.SPAWNER)) spawner = null;
+        if (spawner != null) { breakSpawner(level); return; }
         List<BlockPos> left = empty(level);
         if (left.isEmpty() || w.items.countCarried(Items.ENDER_EYE) == 0) { finish(level, left.size()); return; }
         // The last eye opens the portal under whoever stands in the ring: a player there is not sent to the End by his hand.
         if (left.size() == 1 && level.players().stream().anyMatch(player -> !outside(player.blockPosition()) && Math.abs(player.getBlockY() - left.getFirst().getY()) <= 2)) {
-            w.finish(false, (put > 0 ? "Вставил " + eyes(put) + ", осталось" : "Осталось") + " последнее око. Выйди из кольца портала и скажи ещё раз: портал откроется прямо под тобой.");
+            end(false, (put > 0 ? "Вставил " + eyes(put) + ", осталось" : "Осталось") + " последнее око. Выйди из кольца портала и скажи ещё раз: портал откроется прямо под тобой.");
             return;
         }
         if (frame == null || !left.contains(frame)) frame = left.stream().min(Comparator.comparingDouble(pos -> pos.distSqr(c.blockPosition()))).orElseThrow();
-        if (outside(c.blockPosition()) && c.placement.reaches(frame, Blocks.END_PORTAL_FRAME)) { put(level); return; }
+        if (outside(c.blockPosition()) && dry(level, c.blockPosition()) && c.placement.reaches(frame, Blocks.END_PORTAL_FRAME)) { put(level); return; }
         // In the air no way is searched (as to a bench); in water he goes on.
         if (!c.onGround() && !c.isInWater()) return;
         if (!frame.equals(w.heading)) { w.heading = frame; w.resetApproach(); }
         c.movementIntent(frame);
-        if (w.approach(level, frame, REACH, this::outside)) { c.workStatus("Иду к рамке портала Края."); return; }
-        w.finish(false, "Не смог подойти к рамке портала Края на " + frame.toShortString() + "." + (put > 0 ? " Вставил " + eyes(put) + ", пустых рамок ещё " + left.size() + "." : ""));
+        if (w.approach(level, frame, REACH, feet -> stands(level, feet))) { c.workStatus("Иду к рамке портала Края."); return; }
+        String did = put > 0 ? " Вставил " + eyes(put) + ", пустых рамок ещё " + left.size() + "." : "";
+        end(false, (wet ? "У рамки лава — не подойти." : "Не смог подойти к рамке портала Края на " + frame.toShortString() + ".") + did);
+    }
+
+    /** The spawner, broken as he breaks a block (CompanionBlockBreaking): the swings, the cracks, a player's time; what it drops is experience. */
+    private void breakSpawner(ServerLevel level) {
+        CompanionEntity c = w.owner;
+        BlockPos feet = c.blockPosition();
+        if (outside(feet) && dry(level, feet) && c.placement.reaches(spawner, Blocks.SPAWNER)) {
+            BlockState state = level.getBlockState(spawner);
+            c.takeToolForBlock(state);
+            c.workStatus("Ломаю спаунер.");
+            if (!w.breaking.tick(level, spawner)) return;
+            ItemStack tool = c.getMainHandItem();
+            int experience = state.getExpDrop(level, spawner, null, c, tool);
+            if (level.destroyBlock(spawner, false, c, 512)) {
+                CompanionTools.wearOnBreak(tool, level, state, spawner, c);
+                ExperienceOrb.award(level, Vec3.atCenterOf(spawner), experience);
+                broke = true;
+                dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "end_portal_spawner", "entity", c.getUUID(), "spawner", spawner, "broken", true);
+            }
+            c.putToolAway();
+            w.breaking.reset();
+            spawner = null;
+            return;
+        }
+        if (!c.onGround() && !c.isInWater()) return;
+        if (!spawner.equals(w.heading)) { w.heading = spawner; w.resetApproach(); }
+        c.movementIntent(spawner);
+        if (w.approach(level, spawner, REACH, cell -> stands(level, cell))) { c.workStatus("Иду к спаунеру."); return; }
+        dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "end_portal_spawner", "entity", c.getUUID(), "spawner", spawner, "broken", false);
+        missed = true;
+        spawner = null;
+        w.breaking.reset();
+    }
+
+    /** What he did of the spawner goes first in what he says at the end. */
+    private void end(boolean done, String text) {
+        w.finish(done, (broke ? "Сломал спаунер. " : missed ? "К спаунеру не подойти — оставил. " : "") + text);
     }
 
     /** An eye of his into the frame, as EnderEyeItem.useOn puts a player's: the frame's state, the sound, and the portal when the ring is whole. */
@@ -127,7 +207,7 @@ final class CompanionEndPortal {
         nextAt = level.getGameTime() + PACE;
         if (!c.getMainHandItem().is(Items.ENDER_EYE)) c.equipForWork("minecraft:ender_eye");
         ItemStack held = c.getMainHandItem();
-        if (!held.is(Items.ENDER_EYE)) { w.finish(false, "Не могу взять око в руку: в сумке нет места." + (put > 0 ? " Вставил " + eyes(put) + "." : "")); return; }
+        if (!held.is(Items.ENDER_EYE)) { end(false, "Не могу взять око в руку: в сумке нет места." + (put > 0 ? " Вставил " + eyes(put) + "." : "")); return; }
         BlockState state = level.getBlockState(frame), filled = state.setValue(EndPortalFrameBlock.HAS_EYE, true);
         ItemStack shown = held.copyWithCount(1);
         Block.pushEntitiesUp(state, filled, level, frame);
@@ -155,9 +235,9 @@ final class CompanionEndPortal {
         boolean opened = open(level);
         dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "end_portal_done", "entity", c.getUUID(), "put", put, "empty", left, "opened", opened);
         String did = put > 0 ? "Вставил " + eyes(put) : "Очей не вставил";
-        if (opened) w.finish(true, did + ". Портал Края открыт.");
-        else if (left > 0) w.finish(false, did + ", не хватает ещё " + left + " — дай мне или скажи сделать.");
-        else w.finish(false, did + ", но портал не открылся: рамка собрана не так.");
+        if (opened) end(true, did + ". Портал Края открыт.");
+        else if (left > 0) end(false, did + ", не хватает ещё " + left + " — дай мне или скажи сделать.");
+        else end(false, did + ", но портал не открылся: рамка собрана не так.");
     }
 
     private static String eyes(int count) {
