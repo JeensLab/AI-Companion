@@ -437,7 +437,9 @@ public final class OpenRouterClient {
 
     public static void recordLocalExchange(String userText, String reply) {
         synchronized (HISTORY) {
-            if (HISTORY.isEmpty()) HISTORY.add(message("system", systemPrompt()));
+            // A dedicated-server GameTest has no client config to build the seed prompt from: the exchange is recorded
+            // without it, so the local answers can be walked where the screen cannot be loaded.
+            if (HISTORY.isEmpty() && OpenRouterConfig.SPEC.isLoaded()) HISTORY.add(message("system", systemPrompt()));
             HISTORY.add(message("user", userText));
             HISTORY.add(message("assistant", reply));
             trimHistory();

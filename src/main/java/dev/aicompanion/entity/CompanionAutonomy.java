@@ -68,6 +68,16 @@ public final class CompanionAutonomy {
         Deed(String action, String what) { this.action = action; this.what = what; }
     }
 
+    /**
+     * The closed list of deeds by constant name: the abilities registry is checked against it, so a new deed cannot be
+     * taken up without a phrase in client/CompanionAbilities.
+     */
+    public static List<String> deedNames() {
+        List<String> names = new ArrayList<>();
+        for (Deed deed : Deed.values()) names.add(deed.name());
+        return List.copyOf(names);
+    }
+
     private final CompanionEntity owner;
     private boolean enabled;
     /** «Стоп» or «стой» came: nothing is taken up by itself until the next order or call. */
