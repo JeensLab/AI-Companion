@@ -227,21 +227,23 @@ final class CompanionHighGround extends Goal {
     }
 
     /**
-     * The run is over where its way ends, and the column goes up there. Cut short (an order of the player stops his walk, a blow throws
-     * him off the way), longer than {@link #RUN_TICKS}, with more than one of them on him all the same, or with no room for a column
-     * after all, it gains none: the fight is on the ground, as before.
+     * The run is over where its way ends, and the column goes up there. Cut short (an order of the player stops his walk and with it
+     * forgets the way; a walk gone to its end keeps it), under a guard order, longer than {@link #RUN_TICKS}, with more than one of them
+     * on him all the same, or with no room for a column after all, it gains none: the fight is on the ground, as before.
      */
     private void breakAway(List<Monster> foes) {
         c.work.expedition.fight.fightGoing();
         if (++ran < RUN_TICKS && !(c.getNavigation().isDone() && c.onGround())) return;
+        Path walked = c.getNavigation().getPath();
+        boolean arrived = walked != null && walked.isDone() && !CompanionGuardWatch.watching(c);
         c.getNavigation().stop();
         Node end = run.getEndNode();
         int touching = 0;
         for (Monster foe : foes) if (c.distanceToSqr(foe) < TOUCH_SQR) touching++;
         height = c.temporaryPillar.canStandUp(TALL) ? TALL : LOW;
-        if (ran >= RUN_TICKS || touching > 1 || end == null || c.distanceToSqr(end.x + .5, end.y, end.z + .5) > ARRIVED_SQR
+        if (!arrived || ran >= RUN_TICKS || touching > 1 || end == null || c.distanceToSqr(end.x + .5, end.y, end.z + .5) > ARRIVED_SQR
                 || height == LOW && !c.temporaryPillar.canStandUp(LOW)) {
-            retryAt = c.tickCount + LOOK_EVERY;
+            retryAt = c.tickCount + RETRY_TICKS;
             over = true;
             return;
         }

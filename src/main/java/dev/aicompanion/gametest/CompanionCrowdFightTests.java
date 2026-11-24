@@ -43,8 +43,8 @@ public final class CompanionCrowdFightTests {
      * from then until it is up (after that the fight is the one from a column: a zombie that jumps at it reaches him now and then).
      */
     private static final int LONG = 14, SIDE = 3, INTO = 8, WAVE = 20, PAIRS = 4, HORDE_TICKS = 2400, CLEAR = 3, RUN_BLOWS = 1;
-    /** How far from where the two were on him he is on the run for sure, and how long after an order no column may go up. */
-    private static final int ON_THE_RUN = 2, QUIET = 100;
+    /** How far from where the two were on him he is on the run for sure, how near its end the order comes, and how long after it no column may go up. */
+    private static final int ON_THE_RUN = 2, NEAR_THE_END = 2, QUIET = 100;
     /** Where the five stand: across the hall from his corner. */
     private static final int[][] CROWD = {{6, 0}, {6, 2}, {7, 4}, {5, 5}, {8, 1}};
 
@@ -216,11 +216,11 @@ public final class CompanionCrowdFightTests {
     }
 
     /**
-     * An order of the player in the middle of the run ends it, as it takes a column down: under the guard order he stays on the ground,
-     * and no block is laid where the order stopped him.
+     * An order of the player on the run ends it, as it takes a column down: under the guard order he stays on the ground, and no block
+     * is laid where the order stopped him, be it a step from the cell he ran to.
      */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
-    public static void aGuardOrderInTheMiddleOfTheRunLeavesNoColumn(GameTestHelper h) {
+    public static void aGuardOrderAStepFromTheEndOfTheRunLeavesNoColumn(GameTestHelper h) {
         mountain(h, false);
         CompanionEntity c = armed(h);
         List<BlockPos> stairs = carveMine(h, c, 0);
@@ -246,6 +246,8 @@ public final class CompanionCrowdFightTests {
             if (ordered[0] < 0) {
                 h.assertTrue(ticks < COLUMN_TICKS, "He did not run clear of the two on him" + trace);
                 if (from[0] == null || c.getTemporarySupportCount() > 0 || Math.hypot(c.getX() - from[0].getX() - .5, c.getZ() - from[0].getZ() - .5) < ON_THE_RUN) return;
+                var way = c.getNavigation().getPath();
+                if (way == null || way.isDone() || way.getEndNode() == null || c.distanceToSqr(way.getEndNode().x + .5, way.getEndNode().y, way.getEndNode().z + .5) > NEAR_THE_END * NEAR_THE_END) return;
                 ordered[0] = ticks;
                 c.setProtecting(true);
                 return;
