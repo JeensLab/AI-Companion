@@ -438,6 +438,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         // Review 22.10, В1: vanilla «hit back whoever hurt me» also hit back the player after a stray blow.
         this.targetSelector.addGoal(1, new HurtByTargetGoal(this) {
             @Override public boolean canUse() { return super.canUse() && fairTarget(getLastHurtByMob(), true); }
+            // The game's goal hands its mob back as the target every tick it holds it: a silverfish come by lava is given up here.
+            @Override public boolean canContinueToUse() { return super.canContinueToUse() && fairTarget(getTarget(), true); }
         });
         this.targetSelector.addGoal(1, new CompanionCombat.OwnerDefenseGoal(this));
         this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, net.minecraft.world.entity.Mob.class, 10,

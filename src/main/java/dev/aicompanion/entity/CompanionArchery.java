@@ -98,7 +98,7 @@ final class CompanionArchery {
         else c.getNavigation().stop();
         ItemStack bow = c.getMainHandItem();
         if (!(bow.getItem() instanceof BowItem)) { c.selectWeaponForCombat(); return; }
-        if (!drawn()) return;
+        if (!drawn() || CompanionCombat.wakesLava(target)) return;
         Vec3 aim = aim(target);
         if (loose(target, aim, List.of(c.getEyePosition(), aim))) held = 0;
         else if (++held >= HOLD_FIRE_TICKS) { bladeUntil = c.tickCount + BLADE_AFTER_HOLD_TICKS; held = 0; }

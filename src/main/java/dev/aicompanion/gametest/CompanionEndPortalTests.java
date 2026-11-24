@@ -85,6 +85,8 @@ public final class CompanionEndPortalTests {
         List<BlockPos> frames = ring(h, 1, false);
         BlockPos spawner = spawner(h, 1), other = new BlockPos(X + 2, 1, Z + 5);
         h.setBlock(other, Blocks.SPAWNER);
+        if (h.getBlockEntity(other) instanceof net.minecraft.world.level.block.entity.SpawnerBlockEntity block)
+            block.setEntityId(net.minecraft.world.entity.EntityType.ZOMBIE, h.getLevel().random);
         away(h, companion);
         companion.setItem(0, new ItemStack(Items.ENDER_EYE, 12));
         h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "open_end_portal", "", 1).success(), "Order refused: " + companion.getLastTaskResult());
@@ -292,6 +294,31 @@ public final class CompanionEndPortalTests {
         h.succeedWhen(() -> {
             h.assertTrue(back[0] != 0, "The silverfish with no lava near is not fought");
             h.assertTrue(h.getTick() > back[0] + 60 && companion.getTarget() != silverfish, "Still his target with lava by it");
+        });
+    }
+
+    /**
+     * A silverfish he fought away from lava bites him back; lava by it then, he lets it go and is free for the next monster: the
+     * game's «hit back whoever hurt me» must not hand it back to him every tick and keep a husk by the player off his hands.
+     */
+    @GameTest(template = "large_search", skyAccess = true, timeoutTicks = 900)
+    public static void aSilverfishThatBitHimIsLetGoByLavaAndTheNextMonsterIsMet(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        var silverfish = h.spawn(net.minecraft.world.entity.EntityType.SILVERFISH, 54, 1, 62);
+        silverfish.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH).setBaseValue(200);
+        silverfish.setHealth(200);
+        BlockPos lava = new BlockPos(60, 1, 62);
+        for (Direction side : Direction.Plane.HORIZONTAL) h.setBlock(lava.relative(side), Blocks.BEDROCK);
+        net.minecraft.world.entity.monster.Husk[] husk = {null};
+        h.onEachTick(() -> {
+            if (husk[0] != null || companion.getLastHurtByMob() != silverfish) return;
+            h.setBlock(lava, Blocks.LAVA);
+            husk[0] = h.spawn(net.minecraft.world.entity.EntityType.HUSK, 52, 1, 60);
+            husk[0].setNoAi(true);
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(husk[0] != null, "The silverfish has not bitten him");
+            h.assertTrue(husk[0].getHealth() < husk[0].getMaxHealth(), "The husk by the player is not met: his target " + companion.getTarget());
         });
     }
 

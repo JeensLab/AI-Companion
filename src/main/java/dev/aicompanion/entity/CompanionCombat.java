@@ -40,7 +40,8 @@ final class CompanionCombat {
         /** The best weapon before the first swing, not after the ten-tick check: otherwise the first blow goes with the digging pickaxe. */
         @Override public void start() { super.start(); c.selectWeaponForCombat(); }
         @Override protected void checkAndPerformAttack(LivingEntity target) {
-            if (!c.combat.swingReady() || !c.isWithinMeleeAttackRange(target) || !c.getSensing().hasLineOfSight(target)) return;
+            // The goal's own checks run every other tick, this one every tick: lava come by it in between stops the blow too.
+            if (!c.combat.swingReady() || !c.isWithinMeleeAttackRange(target) || !c.getSensing().hasLineOfSight(target) || wakesLava(target)) return;
             c.combat.swung();
             c.swing(InteractionHand.MAIN_HAND);
             if (c.doHurtTarget(target) && target instanceof net.minecraft.world.entity.monster.Creeper) c.creeperGuard.landed();
@@ -113,13 +114,13 @@ final class CompanionCombat {
 
     /**
      * A silverfish with lava near: a hit one wakes the infested blocks round it (ten blocks across, five up and down, where it stands
-     * a second later) and they crumble (Silverfish.SilverfishWakeUpFriendsGoal); one beside lava lets it out — in a stronghold's portal
+     * a second later, a few blocks on) and they crumble (Silverfish.SilverfishWakeUpFriendsGoal); one beside lava lets it out — in a stronghold's portal
      * room on the floor by the pool, twice his death in game (24.11). It goes for no one who did not hit it. Asked often, so a part of
      * a chunk whose palette has no lava is not looked through, and a chunk not loaded is not loaded for it.
      */
     static boolean wakesLava(net.minecraft.world.entity.Entity entity) {
         if (!(entity instanceof net.minecraft.world.entity.monster.Silverfish)) return false;
-        net.minecraft.core.BlockPos from = entity.blockPosition().offset(-12, -6, -12), to = entity.blockPosition().offset(12, 6, 12);
+        net.minecraft.core.BlockPos from = entity.blockPosition().offset(-14, -7, -14), to = entity.blockPosition().offset(14, 7, 14);
         java.util.function.Predicate<net.minecraft.world.level.block.state.BlockState> lava = state -> state.getFluidState().is(net.minecraft.tags.FluidTags.LAVA);
         for (int cx = from.getX() >> 4; cx <= to.getX() >> 4; cx++) for (int cz = from.getZ() >> 4; cz <= to.getZ() >> 4; cz++) {
             var chunk = entity.level().getChunkSource().getChunkNow(cx, cz);

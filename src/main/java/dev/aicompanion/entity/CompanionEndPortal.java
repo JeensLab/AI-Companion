@@ -110,7 +110,8 @@ final class CompanionEndPortal {
 
     private static boolean silverfish(ServerLevel level, BlockPos pos) {
         return level.getBlockEntity(pos) instanceof SpawnerBlockEntity block
-                && "minecraft:silverfish".equals(block.getSpawner().save(new net.minecraft.nbt.CompoundTag()).getCompound("SpawnData").getCompound("entity").getString("id"));
+                && net.minecraft.world.entity.EntityType.byString(block.getSpawner().save(new net.minecraft.nbt.CompoundTag()).getCompound("SpawnData").getCompound("entity").getString("id"))
+                        .filter(type -> type == net.minecraft.world.entity.EntityType.SILVERFISH).isPresent();
     }
 
     private List<BlockPos> empty(ServerLevel level) {
