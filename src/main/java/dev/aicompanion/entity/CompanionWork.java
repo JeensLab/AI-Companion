@@ -58,7 +58,7 @@ public final class CompanionWork {
     final CompanionPicking picking = new CompanionPicking(this);
     /** hunt_drop: what a monster drops, fought for and picked up. */
     final CompanionMobDrops drops = new CompanionMobDrops(this);
-    /** shear_sheep, milk_animal, collect_eggs, strip_log, harvest_hive, scoop_mob, scoop_block: what a tool in hand gets. */
+    /** shear_sheep, milk_animal, collect_eggs, strip_log, harvest_hive, scoop_mob, scoop_block, fish: what a tool in hand gets. */
     final CompanionChores chores = new CompanionChores(this);
     final CompanionBlockBreaking breaking;
     final CompanionToolSense pickaxeSense, shovelSense;
@@ -514,7 +514,7 @@ public final class CompanionWork {
                     return CompanionActionResult.failed("Не понял, какой предмет отдать.");
                 job = Job.GIVE; phase = Phase.HAND;
             }
-            case "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block" -> { CompanionActionResult refusal = chores.begin(action, item, count); if (refusal != null) return refusal; job = Job.CHORE; phase = Phase.CHORE; }
+            case "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block", "fish" -> { CompanionActionResult refusal = chores.begin(action, item, count); if (refusal != null) return refusal; job = Job.CHORE; phase = Phase.CHORE; }
             case "nether_go", "nether_back" -> { CompanionActionResult answer = owner.errand.begin(action, level); if (answer != null) return answer; job = Job.ERRAND; phase = Phase.ERRAND; }
             case "hunt_mobs" -> { job = Job.HUNT; phase = Phase.FIGHT; }
             case "hunt_drop" -> { CompanionActionResult refusal = drops.begin(item, count); if (refusal != null) return refusal; job = Job.HUNT; phase = Phase.DROPS; }
@@ -607,7 +607,7 @@ public final class CompanionWork {
         stoneCollectedBefore = owner.collectedStone(); lastHarvestStand = null;
         // Gathering wood, finishing its crown, collecting drops, returning and crafting are
         // real prerequisite stages. A single three-minute budget used to expire before mining began.
-        deadline = level.getGameTime() + 20 * (job == Job.COURSE ? CompanionCourse.LIMIT_SECONDS + 60 : job == Job.SCOUT ? CompanionScouting.WORK_SECONDS : job == Job.TRADE ? CompanionTrading.WORK_SECONDS : 600);
+        deadline = level.getGameTime() + 20 * (job == Job.COURSE ? CompanionCourse.LIMIT_SECONDS + 60 : job == Job.CHORE && chores.fishes() ? CompanionFishing.LIMIT_SECONDS + 60 : job == Job.SCOUT ? CompanionScouting.WORK_SECONDS : job == Job.TRADE ? CompanionTrading.WORK_SECONDS : 600);
         rejected.clear(); triedChests.clear(); stoneCandidates = null; stoneLootRetried = false;
         lots.clear(); triedFurnaces.clear(); heading = furnaceRoom = null; ownFurnaceFailed = furnacesShort = smokerTried = false; furnacesPlaced = 0; benchClimbs = 0;
         stoneSearch = null; quarrySoil.clear(); quarryTried = selectingStone = false; exitCell = null; stairs = 0;

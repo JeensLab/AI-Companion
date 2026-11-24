@@ -30,7 +30,7 @@ public final class CompanionPlanRunner {
     public static final int MAX_OBTAIN_STEPS = 32;
     /** Orders that the server rejects while another work order is still active. */
     public static final Set<String> WORK = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests",
-            "build_house", "craft_item", "place_block", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "scout_traders", "trade_items", "farm_crops", "harvest_crops", "use_bone_meal", "compost_meal", "fill_bucket", "mine_obsidian", "gather_block", "hunt_drop", "build_portal", "build_cobble_gen", "build_golem", "pick_up", "go_to_place", "disenchant_item", "compost_items", "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block", "nether_go", "nether_back");
+            "build_house", "craft_item", "place_block", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "scout_traders", "trade_items", "farm_crops", "harvest_crops", "use_bone_meal", "compost_meal", "fill_bucket", "mine_obsidian", "gather_block", "hunt_drop", "build_portal", "build_cobble_gen", "build_golem", "pick_up", "go_to_place", "disenchant_item", "compost_items", "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block", "nether_go", "nether_back", "fish");
     private static final Set<String> GATHER = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone");
     /** Steps that may run while a parked batch cooks, unless they produce its input (CompanionParkHold decides that). */
     private static final Set<String> RUN_AHEAD = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "mine_ore", "hunt_animals");
@@ -223,14 +223,15 @@ public final class CompanionPlanRunner {
             // so an obtain_item given up drops it too; each thing is got once for each count: the same shortage again stops the plan,
             // a larger one (another frame, the player walked off meanwhile) is got once more.
             var short_ = result.evidence();
-            // A cobble generator short of water fills his empty bucket the same way (CompanionCobbleGen), a golem gets its blocks and head (CompanionGolem).
+            // A cobble generator short of water fills his empty bucket the same way (CompanionCobbleGen), a golem gets its blocks and head (CompanionGolem),
+            // fishing its rod (CompanionFishing).
             if (!inObtain && !attempt.started() && result.status() == Status.SHORTAGE && ("build_portal".equals(action.type()) || "build_cobble_gen".equals(action.type())
-                    || "build_golem".equals(action.type())) && short_ != null
+                    || "build_golem".equals(action.type()) || "fish".equals(action.type())) && short_ != null
                     && run.gotForPortal.add(short_.item() + " " + short_.count())) {
                 PlannedAction obtain = new PlannedAction("obtain_item", 0, short_.count(), short_.item());
                 CompanionDiagnostics.event(port.trace(), "portal_to_obtain", "step", number, "action", action, "obtain", obtain);
-                // «Новый» or «здесь» said stays, and a golem's kind; else the step names what it lacked, so an obtain_item given up drops it.
-                String kept = "new".equals(action.item()) || "here".equals(action.item()) || "build_golem".equals(action.type()) ? action.item() : short_.item();
+                // «Новый» or «здесь» said stays, a golem's kind and the fish asked for; else the step names what it lacked, so an obtain_item given up drops it.
+                String kept = "new".equals(action.item()) || "here".equals(action.item()) || "build_golem".equals(action.type()) || "fish".equals(action.type()) ? action.item() : short_.item();
                 PlannedAction built = new PlannedAction(action.type(), 0, action.count(), kept);
                 run.plan.set(index, built);
                 run.builtAfter = built; run.builtFor = short_.item();

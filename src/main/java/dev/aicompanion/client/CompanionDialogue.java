@@ -116,6 +116,7 @@ public final class CompanionDialogue {
             case "repair_item" -> "Сейчас сложу две в одну.";
             case "disenchant_item" -> "Ага, сниму чары на точиле.";
             case "compost_items" -> "Ага, займусь компостером.";
+            case "fish" -> "Ага, пойду порыбачу.";
             case "pursue_goal" -> "Дело долгое. Прикину, докуда смогу дойти.";
             default -> "Окей.";
         };
@@ -212,6 +213,7 @@ public final class CompanionDialogue {
             case "nether_go" -> "сходить в Незер через портал у " + action.item();
             case "nether_back" -> "вернуться из Незера через портал";
             case "scoop_mob" -> "зачерпнуть ведром «" + itemName(action.item()) + "» (" + action.count() + " шт.)";
+            case "fish" -> "порыбачить" + (action.count() > 0 ? " (" + action.count() + " шт.)" : "");
             case "strip_log" -> "обтесать топором: «" + itemName(action.item()) + "» (" + action.count() + " шт.)";
             case "craft_item" -> "сделать «" + itemName(action.item()) + "»";
             case "place_block" -> "поставить «" + itemName(action.item()) + "»";

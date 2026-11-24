@@ -44,9 +44,9 @@ final class CompanionChests {
         return CompanionActionResult.failed("Бочки, шалкеры, печи, воронки и раздатчики выключены в настройках мода, я работаю только с сундуками.");
     }
 
-    /** 1 to 64; smelt_items, and store_items into a named container, also take ALL_CARRIED: everything, no number said. */
+    /** 1 to 64; smelt_items, fish, and store_items into a named container, also take ALL_CARRIED: everything (until «стоп»), no number said. */
     static boolean countOk(String action, int count, String location) {
-        boolean everything = "smelt_items".equals(action) || "compost_items".equals(action) || "store_items".equals(action) && kindFor(action, location) != null;
+        boolean everything = "smelt_items".equals(action) || "compost_items".equals(action) || "fish".equals(action) || "store_items".equals(action) && kindFor(action, location) != null;
         return count == CompanionWork.ALL_CARRIED && everything || count >= 1 && count <= ORDER_MAX;
     }
 
