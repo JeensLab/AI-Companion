@@ -63,6 +63,10 @@ final class CompanionExpeditionFight {
     boolean hold(ServerLevel level, boolean retreating) {
         if (retreating) {
             if (retreatSince < 0) retreatSince = owner.tickCount;
+            // The one that has caught him is the one to strike back, and the melee goal strikes its target only: a skeleton out of his reach
+            // whose arrow came last would else stay his target, not fought on the retreat, with a zombie on his way up striking at will.
+            LivingEntity by = owner.getLastHurtByMob();
+            if (caught() && by != owner.getTarget() && isFoe(by)) owner.setTarget(by);
             return false;
         }
         retreatSince = -1;
