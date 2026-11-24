@@ -46,17 +46,24 @@ import java.util.function.Predicate;
  */
 final class CompanionPicking {
     static final String FULL_BAG = "Сумка забита — некуда класть.";
-    /** Blocks above and below his feet that are looked at: the hill he stands on, not the cave under it. */
-    /** How far above and below him a target is looked for: the way's own height, so a block sixteen above is seen (PATH7). */
-    private static final int DEPTH = CompanionPillar.WAY_HEIGHT;
+    /**
+     * How far above and below him a target is looked for: as deep as the one search (CompanionWaySearch) looks, so a block it
+     * promised hanging in the air or lying under him is a block this gather can find (PATH7).
+     */
+    private static final int DEPTH = CompanionWaySearch.DEPTH;
     /** Ticks the drops are given to be picked up before another try, and then before they are counted lost. */
     private static final int SETTLE = 40;
     /** Walks to one block before it is passed over. */
     private static final int LEGS = 8;
     /** Ticks a search for the way may not come about (he is in the air, in running water) before the block is passed over. */
     private static final int WAIT = 100;
-    /** Ticks the last step into the cell is given: he is less than a block from its middle. */
+    /** Ticks the last step into the cell is given: he walks the last cells to it himself, as a player does. */
     private static final int LAST_STEP = 20;
+    /**
+     * How near the cell's middle counts as «the game's own last step»: its path counts a node reached from up to two blocks off
+     * (a walk to a column's foot ended two cells short and the walks ran out: the last cells are his own, within the ticks above).
+     */
+    private static final double LAST_STEP_REACH = 9.0D;
     /** Blocks of water over a block on the bed he dives for: half his breath down and up again, as the dive for a foe. */
     private static final int DEEP = 10;
     /** A player's reach, from the eyes to the middle of the block. */
@@ -164,29 +171,12 @@ final class CompanionPicking {
     }
 
     /**
-     * What the world about him really gives of the item by the one reach answer (CompanionReach): the blocks a hand takes it
-     * from that he can walk to, reach across, take from under his feet or climb to on a column of his soil — the pieces they
-     * yield, and the soil a column still asks. Null when no block gives it at all (a recipe's or an animal's item).
+     * Whether a block about him is his to take at all: not the player's building, not the stone the player set down, ripe,
+     * dry, not beside lava, off solid ground — the gather's own rule, for the one search (CompanionWaySearch) to ask.
      */
-    static CompanionReach.Available available(CompanionEntity c, ServerLevel level, Item item) {
-        List<CompanionPickable.Source> sources = allowed(level, CompanionPickable.sources(level, item));
-        // A block that is the item itself, though a recipe also makes it: what lies there is taken (PATH7).
-        if (sources.isEmpty()) sources = allowed(level, CompanionPickable.identity(level, item));
-        if (sources.isEmpty()) return null;
-        List<CompanionPickable.Source> giving = sources;
+    static Predicate<BlockPos> mine(CompanionEntity c, ServerLevel level) {
         Predicate<BlockPos> site = kept(c, level);
-        List<BlockPos> blocks = CompanionObsidian.all(c, level, DEPTH, state -> gives(giving, state) > 0, pos ->
-                c.errand.within(pos) && takes(level, pos, site) && grounded(c, level, pos) && !lavaBeside(level, pos));
-        int count = 0, steps = 0;
-        for (BlockPos block : blocks) {
-            CompanionReach.How how = CompanionReach.how(c, level, block, STAND_REACH, true, true, CompanionPillar.WAY_SUPPORTS);
-            if (!how.yes()) continue;
-            count += gives(sources, level.getBlockState(block));
-            if (how.up()) steps = Math.max(steps, how.steps());
-        }
-        int soil = Math.max(0, steps - c.temporaryPillar.soilCarried());
-        if (soil > 0 && !CompanionReach.soilAbout(c, level)) soil = 0;
-        return new CompanionReach.Available(count, soil);
+        return pos -> takes(level, pos, site) && grounded(c, level, pos) && !lavaBeside(level, pos);
     }
 
     /**
@@ -353,18 +343,18 @@ final class CompanionPicking {
     }
 
     /** What is taken in this dimension: the overworld's own, not the Nether's stone (put there by the player), in the Nether only that stone, nothing elsewhere. */
-    private static List<CompanionPickable.Source> allowed(ServerLevel level, List<CompanionPickable.Source> all) {
+    static List<CompanionPickable.Source> allowed(ServerLevel level, List<CompanionPickable.Source> all) {
         if (level.dimension() == Level.OVERWORLD) return all.stream().filter(source -> !CompanionPickable.nether(source.block())).toList();
         return level.dimension() == Level.NETHER ? all.stream().filter(source -> CompanionPickable.nether(source.block())).toList() : List.of();
     }
 
     /** The Nether's stone is taken only off solid ground, never the block he stands on: a floor over a cave or a lava lake stays shut. */
-    private static boolean grounded(CompanionEntity c, ServerLevel level, BlockPos pos) {
+    static boolean grounded(CompanionEntity c, ServerLevel level, BlockPos pos) {
         if (!CompanionPickable.nether(level.getBlockState(pos).getBlock())) return true;
         return !pos.equals(c.blockPosition().below()) && level.getBlockState(pos.below()).isFaceSturdy(level, pos.below(), Direction.UP);
     }
 
-    private static boolean lavaBeside(ServerLevel level, BlockPos pos) {
+    static boolean lavaBeside(ServerLevel level, BlockPos pos) {
         for (Direction side : Direction.values()) if (CompanionLava.at(level, pos.relative(side))) return true;
         return false;
     }
@@ -409,7 +399,7 @@ final class CompanionPicking {
     }
 
     /** A block of the kind he may take now: dry, not on a site of the player's (but the fruit of a stem, and leaves of any kind), ripe, and not the root of a growing column. */
-    private static boolean takes(ServerLevel level, BlockPos pos, Predicate<BlockPos> site) {
+    static boolean takes(ServerLevel level, BlockPos pos, Predicate<BlockPos> site) {
         BlockState state = level.getBlockState(pos);
         // Stone dug by name where a face of it shows, as a player sees it: one hidden in the ground is not dug for (the player 17.11);
         // nor one that holds a torch or a pond back, as gather_stone leaves them.
@@ -557,11 +547,12 @@ final class CompanionPicking {
     private boolean walk() {
         CompanionRoute route = w.route;
         if (path != null && !route.legOver()) return true;
-        // The game counts the last node reached from half a block off: at a trunk he stood a step short of the cell, and the walks
-        // ran out in eight ticks (the vine on the trunk in the test). That last step is his own.
-        if (path != null && route.done() && path.getEndNode() != null && stands.contains(path.getEndNode().asBlockPos())) {
+        // The game counts the last node reached from a block or two off: at a trunk he stood a step short of the cell, and the walks
+        // ran out in eight ticks (the vine on the trunk in the test). Stuck on the lip of the last cell counts as the same end: that
+        // last step is his own, walked straight to the cell's middle.
+        if (path != null && route.legOver() && path.getEndNode() != null && stands.contains(path.getEndNode().asBlockPos())) {
             Vec3 end = Vec3.atBottomCenterOf(path.getEndNode().asBlockPos());
-            if (c.distanceToSqr(end) < 1 && ++waited < LAST_STEP) { c.getMoveControl().setWantedPosition(end.x, end.y, end.z, .7); return true; }
+            if (c.distanceToSqr(end) < LAST_STEP_REACH && ++waited < LAST_STEP) { c.getMoveControl().setWantedPosition(end.x, end.y, end.z, .7); return true; }
         }
         if (stands.isEmpty() || ++legs > LEGS) return false;
         CompanionRoute.Reach reach = route.cells(stands, 0);
@@ -638,17 +629,20 @@ final class CompanionPicking {
         // The leg already being walked is the way there: searched again only when it is over, as a walk to a stand is. Asked
         // afresh every tick it barely moved him — eight ticks of a walk are not eight blocks (the stair he cannot climb, 18.11).
         if (path != null && !w.route.legOver()) return true;
-        // The last step into the cell, as walk() takes it: the game stops a node half a block off, and the column's foot is his own.
-        if (path != null && w.route.done() && path.getEndNode() != null && feet.contains(path.getEndNode().asBlockPos())) {
+        // The last step into the cell, as walk() takes it: the game stops a node a block or two off — or stuck on its lip — and the
+        // column's foot is his own.
+        if (path != null && w.route.legOver() && path.getEndNode() != null && feet.contains(path.getEndNode().asBlockPos())) {
             Vec3 end = Vec3.atBottomCenterOf(path.getEndNode().asBlockPos());
-            if (c.distanceToSqr(end) < 1 && ++waited < LAST_STEP) { c.getMoveControl().setWantedPosition(end.x, end.y, end.z, .7); return true; }
+            if (c.distanceToSqr(end) < LAST_STEP_REACH && ++waited < LAST_STEP) { c.getMoveControl().setWantedPosition(end.x, end.y, end.z, .7); return true; }
         }
         if (++legs > LEGS) return false;
         CompanionRoute.Reach reach = w.route.cells(feet, 0);
         if (reach.busy() || CompanionRoute.NOT_SEARCHED.equals(reach.reason())) { legs--; return ++waited < WAIT; }
         if (!reach.found()) return false;
         waited = 0;
-        w.route.walk(reach.path());
+        // The way there is kept, as walk() keeps it: the last step into the cell is walked from it when the leg is over.
+        path = reach.path();
+        w.route.walk(path);
         c.workStatus("Иду к стволу: " + name() + ".");
         return true;
     }

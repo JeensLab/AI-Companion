@@ -385,6 +385,24 @@ public final class CompanionObtain {
             default -> { }
         }
         Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(key));
+        // A block that makes the item lies about him or is already in his bag: the game's own recipe of one block — a lapis
+        // block is nine lapis, an iron block nine ingots — so the block is taken and crafted instead of an ore dug for or a
+        // furnace lit (PATH7: «лазурит» beside a lapis block hanging in the air, and «поищу руду» was said instead). The blocks
+        // are the one search's answer, never a list of names; what he already carries is made into it without digging.
+        Storage storage = storage(item);
+        if (storage != null) {
+            int blocks = ceil(count, storage.yield());
+            int have = carried(carried, storage.block());
+            if (have >= 1) {
+                if (need(key(storage.block()), Math.min(blocks, have), depth)) return add("craft_item", key(item), count);
+            } else if (reachable != null) {
+                CompanionReach.Available lying = reachable.apply(storage.block());
+                if (lying != null && lying.some()) {
+                    if (lying.soil() > 0) addSplit("gather_dirt", "", lying.soil(), 64);
+                    if (gather(storage.block(), key(storage.block()), blocks, depth)) return add("craft_item", key(item), count);
+                }
+            }
+        }
         // A stripped log inside a chain (a hanging sign takes six of its species): stripped of logs chopped by name.
         var grown = CompanionChores.unstripped(item);
         if (grown != null) { int lacking = count - carried(carried, item); return lacking <= 0 || strip(key, grown.asItem(), lacking, depth); }
@@ -446,6 +464,28 @@ public final class CompanionObtain {
         if (!CompanionPickable.sources(level, item).isEmpty()) { absent.add(name(item)); return refuse(ABSENT + ", где взять «" + name(item) + "»: отведи меня туда, где это есть."); }
         if (!prey.isEmpty()) { absent.add(name(item) + " (" + String.join(", ", prey) + ")"); return refuse(ABSENT + ", с кого добыть «" + name(item) + "» (" + String.join(", ", prey) + ")."); }
         return refuse("Не знаю, где взять «" + name(item) + "»: копать, охотиться, плавить и крафтить его я не умею" + (why == null ? "." : ". " + why));
+    }
+
+    /** A block that makes the item by the game's own recipe: the block and how much of the item one of it makes. */
+    private record Storage(Item block, int yield) { }
+
+    /**
+     * The block a recipe of one block makes this item of, or null: a storage block of the item's own material — a lapis block
+     * for nine lapis, an iron block for nine ingots, a wool block for four string. The game's own shapeless recipe of a single
+     * block, never a list of names.
+     */
+    private Storage storage(Item item) {
+        for (var holder : level.getRecipeManager().getAllRecipesFor(RecipeType.CRAFTING)) {
+            var recipe = holder.value();
+            ItemStack result = recipe.getResultItem(level.registryAccess());
+            if (result.isEmpty() || !result.is(item) || recipe.isSpecial()) continue;
+            var ingredients = recipe.getIngredients();
+            if (ingredients.size() != 1) continue;
+            ItemStack[] options = ingredients.getFirst().getItems();
+            if (options.length != 1 || !(options[0].getItem() instanceof net.minecraft.world.item.BlockItem block)) continue;
+            return new Storage(block, result.getCount());
+        }
+        return null;
     }
 
     /** gather_block with the tool the block wants: his shears, pickaxe or shovel, else one made by the whole chain first. */

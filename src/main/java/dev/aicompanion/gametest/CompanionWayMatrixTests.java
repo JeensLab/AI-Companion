@@ -1507,9 +1507,12 @@ public final class CompanionWayMatrixTests {
         });
     }
 
-    /** Four across is beyond the way's reach: an honest refusal, the block left, no column. */
-    @GameTest(template = "tall_tree", timeoutTicks = 800)
-    public static void aBlockTooFarAcrossIsRefused(GameTestHelper h) {
+    /**
+     * Five across, ten up: no stand cell reaches it, and the column stands at its own foot under the block — he walks there,
+     * builds up and takes it (PATH7: a block up and to the side is reached from the foot under it, as a player does).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 6000)
+    public static void aBlockFiveAcrossIsTakenFromAColumnAtItsFoot(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
         BlockPos target = new BlockPos(19, FEET + 10, 16);
         h.setBlock(target, Blocks.PUMPKIN);
@@ -1521,9 +1524,12 @@ public final class CompanionWayMatrixTests {
         var future = sayModel(h, c, "добудь тыкву", pumpkinPlan(1));
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
-            h.assertTrue(count(c, Items.PUMPKIN) == 0 && most[0] == 0 && count(c, Items.DIRT) == 20, "A column five across: " + future.join().report());
-            h.assertBlockPresent(Blocks.PUMPKIN, target);
-            assertRestored(h, before);
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.PUMPKIN) == 1, "The pumpkin five across is not in the bag: " + report);
+            h.assertTrue(most[0] > 0, "No column was raised for a block five across: " + report);
+            h.assertBlockPresent(Blocks.AIR, target);
+            h.assertTrue(count(c, Items.DIRT) == 20 && c.getTemporarySupportCount() == 0, "The soil of the column was lost: " + report);
+            assertRestored(h, before, target);
         });
     }
 
