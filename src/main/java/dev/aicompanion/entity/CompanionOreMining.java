@@ -247,14 +247,17 @@ final class CompanionOreMining {
             w.oreNoTunnel.add(candidate);
             if (lacked) lackedPlugs.add(candidate.immutable());
             if (fall) lavaFalls.add(candidate.immutable());
-            if (w.oreOffFoot.contains(candidate) || exposedOre(candidate)) {
+            boolean offFoot = w.oreOffFoot.contains(candidate);
+            if (offFoot || exposedOre(candidate)) {
                 // Neither on foot nor by a tunnel: a block in the air is still a way of its own — a column of his soil up to it
                 // or a floor across the gap before it, the same geometry answer as for any block (PATH7, #105). An ore closed in
-                // stone keeps the mine's own answer: a column would stand beside stone that hides it.
+                // stone keeps the mine's own answer: a column would stand beside stone that hides it. A plain walk is the mine's
+                // own answer too, already asked: the ore across a trench is not crossed for while one on his side is there.
                 CompanionReach.How way = CompanionReach.how(w.owner, level, candidate, 3.5D, true, true, CompanionPillar.WAY_SUPPORTS);
                 CompanionReach.decision(w.owner, candidate, way);
-                if (way.yes()) return chosenOre(candidate, null);
-                unreachable(candidate); w.oreRejected.add(candidate); w.oreCandidates.remove(candidate);
+                if (way.up() || way.bridge() || offFoot && way.yes()) return chosenOre(candidate, null);
+                // A plain walk is the mine's own answer, asked again once the ores nearer him are gone: the candidate stays.
+                if (!way.yes()) { unreachable(candidate); w.oreRejected.add(candidate); w.oreCandidates.remove(candidate); }
             }
         }
         return walk == null ? null : chosenOre(walk.block(), walk.path());
