@@ -298,26 +298,29 @@ public final class CompanionEndPortalTests {
     }
 
     /**
-     * A silverfish he fought away from lava bites him back; lava by it then, he lets it go and is free for the next monster: the
-     * game's «hit back whoever hurt me» must not hand it back to him every tick and keep a husk by the player off his hands.
+     * A silverfish that bit him, away from lava, is his to hit back; lava by it then, he lets it go and is free for the next
+     * monster: the game's «hit back whoever hurt me» must not hand it back to him every tick and keep a husk by the player off his
+     * hands. The silverfish stands still (no AI) and its bite is set, so it never runs off from the lava.
      */
     @GameTest(template = "large_search", skyAccess = true, timeoutTicks = 900)
     public static void aSilverfishThatBitHimIsLetGoByLavaAndTheNextMonsterIsMet(GameTestHelper h) {
         CompanionEntity companion = setup(h);
         var silverfish = h.spawn(net.minecraft.world.entity.EntityType.SILVERFISH, 54, 1, 62);
+        silverfish.setNoAi(true);
         silverfish.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH).setBaseValue(200);
         silverfish.setHealth(200);
         BlockPos lava = new BlockPos(60, 1, 62);
         for (Direction side : Direction.Plane.HORIZONTAL) h.setBlock(lava.relative(side), Blocks.BEDROCK);
+        h.runAfterDelay(5, () -> companion.setLastHurtByMob(silverfish));
         net.minecraft.world.entity.monster.Husk[] husk = {null};
         h.onEachTick(() -> {
-            if (husk[0] != null || companion.getLastHurtByMob() != silverfish) return;
+            if (husk[0] != null || silverfish.getHealth() == 200) return;
             h.setBlock(lava, Blocks.LAVA);
             husk[0] = h.spawn(net.minecraft.world.entity.EntityType.HUSK, 52, 1, 60);
             husk[0].setNoAi(true);
         });
         h.succeedWhen(() -> {
-            h.assertTrue(husk[0] != null, "The silverfish has not bitten him");
+            h.assertTrue(husk[0] != null, "The silverfish that bit him is not hit back");
             h.assertTrue(husk[0].getHealth() < husk[0].getMaxHealth(), "The husk by the player is not met: his target " + companion.getTarget());
         });
     }
