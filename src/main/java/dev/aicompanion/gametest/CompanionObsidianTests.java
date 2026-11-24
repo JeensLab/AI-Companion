@@ -428,16 +428,17 @@ public final class CompanionObsidianTests {
     /**
      * Lava where the player builds is his: no water poured over it and no block made of it. The obsidian standing there is taken
      * only because nothing free-standing is about — his building is protected while other obsidian exists
-     * (freeObsidianBesideTheSiteIsTakenFirst), and the blocks he set down himself are still minable when he asks for them.
+     * (freeObsidianBesideTheSiteIsTakenFirst), and the blocks he set down himself are still minable when he asks for them — blocks
+     * lying apart, not a wall: three and more touching are something he builds (aFrameHalfSetOnHisSiteIsLeftAndALoneBlockTaken).
      */
     @GameTest(template = "tall_tree", timeoutTicks = 1800)
     public static void lavaOnThePlayersSiteIsLeftAloneAndItsObsidianTakenOnlyWhenNothingElseIsAbout(GameTestHelper h) {
         ground(h);
         List<BlockPos> pond = lava(h, 18, 15, 3, 1);
         CompanionEntity c = spawn(h);
-        // A chest of his on the surface makes it a building of his (CompanionPlayerBuilds.HOME_SCORE), the obsidian wall is part of it.
+        // A chest of his on the surface makes it a building of his (CompanionPlayerBuilds.HOME_SCORE); three blocks he set down apart lie in it.
         placedByPlayer(h, c, new BlockPos(16, GROUND + 1, 22), Blocks.CHEST);
-        List<BlockPos> wall = List.of(new BlockPos(14, GROUND + 1, 20), new BlockPos(15, GROUND + 1, 20), new BlockPos(16, GROUND + 1, 20), new BlockPos(17, GROUND + 1, 20));
+        List<BlockPos> wall = List.of(new BlockPos(12, GROUND + 1, 20), new BlockPos(14, GROUND + 1, 20), new BlockPos(16, GROUND + 1, 20));
         for (BlockPos cell : wall) placedByPlayer(h, c, cell, Blocks.OBSIDIAN);
         c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
         c.setItem(1, new ItemStack(Items.WATER_BUCKET));
@@ -452,7 +453,7 @@ public final class CompanionObsidianTests {
             h.assertTrue(!report.contains("Рядом нечего копать"), "The old line over obsidian that stood there: " + report);
             // No more than the two asked for: the rest of the wall stands.
             long standing = wall.stream().filter(cell -> h.getLevel().getBlockState(h.absolutePos(cell)).is(Blocks.OBSIDIAN)).count();
-            h.assertTrue(standing == 2, standing + " of the wall stand: he took more or less than the two asked for");
+            h.assertTrue(standing == 1, standing + " of the three stand: he took more or less than the two asked for");
             // The lava of the site is not his: no water over it, none of it cooled, his water still in its bucket.
             h.assertTrue(count(c, Items.WATER_BUCKET) == 1 && count(c, Items.BUCKET) == 0, "He poured or made a bucket: " + report);
             for (BlockPos cell : pond) h.assertBlockPresent(Blocks.LAVA, cell);
@@ -925,6 +926,39 @@ public final class CompanionObsidianTests {
             String report = future.join().report();
             h.assertTrue(count(c, Items.OBSIDIAN) == 2, "Not two obsidian from his site: " + count(c, Items.OBSIDIAN) + ", " + report);
             for (BlockPos cell : site) h.assertBlockPresent(Blocks.AIR, cell);
+        });
+    }
+
+    /**
+     * A portal's frame the player is still setting on his site, nine of its ten blocks, is no obsidian lying about: it is not yet a
+     * whole frame, so the frame check does not see it, and the site's blocks were his to take — he took two of the frame (review in
+     * game 24.11). Three blocks and more touching, corners too, are something being built; a lone block of the site farther off is
+     * taken instead, and the frame stands.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1800, batch = CompanionPortalBuildTests.PORTALS)
+    public static void aFrameHalfSetOnHisSiteIsLeftAndALoneBlockTaken(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        placedByPlayer(h, c, new BlockPos(14, GROUND + 1, 20), Blocks.CHEST);
+        List<BlockPos> frame = new ArrayList<>();
+        for (int x = 9; x <= 12; x++) for (int y = GROUND + 1; y <= GROUND + 5; y++) {
+            boolean side = x == 9 || x == 12, edge = y == GROUND + 1 || y == GROUND + 5;
+            // No corners, and the last block of the top not set yet.
+            if (side == edge || x == 11 && y == GROUND + 5) continue;
+            placedByPlayer(h, c, new BlockPos(x, y, 21), Blocks.OBSIDIAN);
+            frame.add(new BlockPos(x, y, 21));
+        }
+        BlockPos lone = new BlockPos(20, GROUND + 1, 8);
+        placedByPlayer(h, c, lone, Blocks.OBSIDIAN);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            for (BlockPos cell : frame) h.assertBlockPresent(Blocks.OBSIDIAN, cell);
+            h.assertTrue(frame.size() == 9, "Not a frame of nine: " + frame.size());
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1, "Not the lone block: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertBlockPresent(Blocks.AIR, lone);
         });
     }
 

@@ -71,6 +71,8 @@ final class CompanionObsidian {
     private static final int HOLE_NEAR = 3;
     private static final float HOLE_HARDEST = 3;
     private static final int SET_TICKS = 60;
+    /** On a site of the player's, at most this many obsidian touching (corners too) are blocks lying about; more are something he builds. */
+    private static final int LOOSE = 2;
 
     private final CompanionWork w;
     private final CompanionEntity c;
@@ -416,14 +418,15 @@ final class CompanionObsidian {
 
     /**
      * Obsidian he may mine now: his own or lying about but no portal's, its drop safe from lava, and on a site of the player's only
-     * when {@code onSite} — nothing free-standing was found, so the blocks the player set down himself are his to take.
+     * when {@code onSite} — nothing free-standing was found, so the blocks the player set down himself are his to take, those lying
+     * about (loose), not a frame he is still setting.
      */
     private boolean minable(ServerLevel level, BlockPos pos, boolean onSite) {
         // The block under his feet is mined too, as a player mines it: its drop rests in the hole and he steps down into it.
         if (passed.contains(pos)) return false;
         // While his water is out, only what it sets: a walk to obsidian far off would leave the water behind him.
         if (water != null && !pos.closerThan(water, SPREAD + 1)) return false;
-        if (site.test(pos) && !onSite) return false;
+        if (site.test(pos) && (!onSite || !his.contains(pos) && !loose(level, pos))) return false;
         if (w.portal.laid(pos)) return false;
         if (!level.hasChunkAt(pos) || !level.getBlockState(pos).is(Blocks.OBSIDIAN)) return false;
         if (!his.contains(pos) && (portal(level, pos) || frame(level, pos))) return false;
@@ -432,8 +435,27 @@ final class CompanionObsidian {
 
     /** Whether the block at this cell is his to mine at all: no portal's frame, its drop safe from lava, and on a site only when {@code onSite}. */
     private static boolean free(ServerLevel level, BlockPos pos, Predicate<BlockPos> site, boolean onSite) {
-        return level.hasChunkAt(pos) && level.getBlockState(pos).is(Blocks.OBSIDIAN) && (onSite || !site.test(pos))
+        return level.hasChunkAt(pos) && level.getBlockState(pos).is(Blocks.OBSIDIAN) && (!site.test(pos) || onSite && loose(level, pos))
                 && !portal(level, pos) && !frame(level, pos) && safe(level, pos);
+    }
+
+    /**
+     * A block of the player's site that lies about rather than stands in something he builds: it and the obsidian touching it, corners
+     * too, are at most LOOSE. A portal's frame he is still setting is no whole frame for frame(), and two of its blocks were taken
+     * (review in game 24.11).
+     */
+    private static boolean loose(ServerLevel level, BlockPos pos) {
+        Set<BlockPos> group = new HashSet<>(List.of(pos.immutable()));
+        ArrayDeque<BlockPos> next = new ArrayDeque<>(group);
+        while (!next.isEmpty()) {
+            BlockPos at = next.poll();
+            for (BlockPos near : BlockPos.betweenClosed(at.offset(-1, -1, -1), at.offset(1, 1, 1))) {
+                if (!level.hasChunkAt(near) || !level.getBlockState(near).is(Blocks.OBSIDIAN) || !group.add(near.immutable())) continue;
+                if (group.size() > LOOSE) return false;
+                next.add(near.immutable());
+            }
+        }
+        return true;
     }
 
     /** Whether the drop of the block here rests where he can pick it up: under his water, or nowhere near lava. */
