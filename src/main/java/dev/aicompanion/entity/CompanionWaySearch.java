@@ -48,7 +48,7 @@ final class CompanionWaySearch {
      * The wider box asked only when the box holds nothing: whether a block of the item is there at all, just not seen here —
      * the widest the player's own setting allows, so a block just past the box is named as seen-outside, not as absent.
      */
-    private static final int BEYOND = 128;
+    private static final int BEYOND = 64;
     /** The rule the search itself keeps a cell by: outside the errand's bounds. */
     private static final String ERRAND = "поручение";
 

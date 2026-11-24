@@ -151,12 +151,12 @@ public final class CompanionWayPlayerBuildTests {
         flat(h, Blocks.GRASS_BLOCK);
         CompanionEntity c = spawn(h);
         base(h, c);
-        BlockPos target = new BlockPos(HOME_X + 12, FEET + 21, HOME_Z);
+        BlockPos target = new BlockPos(HOME_X + 12, FEET + 33, HOME_Z);
         hung(h, c, target, Blocks.PUMPKIN);
         var plan = c.obtainPlan("minecraft:pumpkin", 1);
-        h.assertTrue(plan.refused(), "The pumpkin 21 up is not refused: " + plan);
+        h.assertTrue(plan.refused(), "The pumpkin 33 up is not refused: " + plan);
         h.assertTrue(plan.refusal().contains("вижу, но не достать"), "The refusal does not say it saw the block: " + plan.refusal());
-        h.assertTrue(plan.refusal().contains("21 блок") && plan.refusal().contains("вверх"), "The refusal does not name the distance: " + plan.refusal());
+        h.assertTrue(plan.refusal().contains("33 блок") && plan.refusal().contains("вверх"), "The refusal does not name the distance: " + plan.refusal());
         h.assertTrue(!plan.refusal().contains("Рядом не вижу"), "The refusal says it did not see a block it names the distance of: " + plan.refusal());
         h.assertBlockPresent(Blocks.PUMPKIN, target);
         h.succeed();

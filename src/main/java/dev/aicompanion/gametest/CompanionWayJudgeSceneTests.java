@@ -92,17 +92,17 @@ public final class CompanionWayJudgeSceneTests {
         taken(h, Blocks.GLASS, Items.GLASS, "minecraft:glass", "добудь стекло", 20, 0, 16, true, silkPickaxe(h));
     }
 
-    /** A block seen but 21 up, past the way's height: the refusal names the distance, not a bare «подойти не смог». */
+    /** A block seen but 33 up, past the way's height: the refusal names the distance, not a bare «подойти не смог». */
     @GameTest(template = "way_far", timeoutTicks = 400)
     public static void aSeenBlockTwentyOneUpIsRefusedWithItsDistance(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
-        BlockPos target = new BlockPos(HOME_X + 12, FEET + 21, HOME_Z);
+        BlockPos target = new BlockPos(HOME_X + 12, FEET + 33, HOME_Z);
         h.setBlock(target, Blocks.PUMPKIN);
         CompanionEntity c = spawn(h);
         c.setItem(0, new ItemStack(Items.DIRT, 24));
         var plan = c.obtainPlan("minecraft:pumpkin", 1);
-        h.assertTrue(plan.refused(), "The pumpkin 21 up is not refused: " + plan);
-        h.assertTrue(plan.refusal().contains("21 блок") && plan.refusal().contains("вверх"),
+        h.assertTrue(plan.refused(), "The pumpkin 33 up is not refused: " + plan);
+        h.assertTrue(plan.refusal().contains("33 блок") && plan.refusal().contains("вверх"),
                 "The refusal does not name the distance: " + plan.refusal());
         var future = sayModel(h, c, "добудь тыкву", obtainPlan("minecraft:pumpkin"));
         h.succeedWhen(() -> {
