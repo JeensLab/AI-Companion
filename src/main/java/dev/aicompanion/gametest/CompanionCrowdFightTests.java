@@ -39,10 +39,12 @@ public final class CompanionCrowdFightTests {
     private static final float HURT = 12;
     /**
      * The horde: a hall east of the foot of his stairs, he this far into it, two zombies two cells beyond him and three pairs more from its
-     * far end, the first of them when the two are on him; how far from there the column stands at the least, and the blows eight of
-     * them may land on him in all (one that jumps at the column reaches him now and then).
+     * far end, the first of them when the two are on him; how far from there the column stands at the least, and the blows he may take
+     * from then until it is up (after that the fight is the one from a column: a zombie that jumps at it reaches him now and then).
      */
-    private static final int LONG = 14, SIDE = 3, INTO = 8, WAVE = 20, PAIRS = 4, HORDE_TICKS = 2400, CLEAR = 3, HORDE_BLOWS = 5;
+    private static final int LONG = 14, SIDE = 3, INTO = 8, WAVE = 20, PAIRS = 4, HORDE_TICKS = 2400, CLEAR = 3, RUN_BLOWS = 1;
+    /** How far from where the two were on him he is on the run for sure, and how long after an order no column may go up. */
+    private static final int ON_THE_RUN = 2, QUIET = 100;
     /** Where the five stand: across the hall from his corner. */
     private static final int[][] CROWD = {{6, 0}, {6, 2}, {7, 4}, {5, 5}, {8, 1}};
 
@@ -167,8 +169,8 @@ public final class CompanionCrowdFightTests {
     /**
      * A horde that comes two by two (series ta 20261031 d3 mobs: eight killed one after another, dead at the ninth): the first two are on
      * him when the next pair makes them a crowd, and a block does not go into a cell a mob stands in. He runs clear of them over the floor
-     * and raises the column there, not where they are on him: all eight die, he takes no more than {@link #HORDE_BLOWS} blows, and the
-     * blocks are back in his bag.
+     * and raises the column there, not where they are on him: it is up with no more than {@link #RUN_BLOWS} blow taken on the way, all
+     * eight die, and the blocks are back in his bag.
      */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void aHordeThatComesTwoByTwoIsOutrunAndKilledFromAColumn(GameTestHelper h) {
@@ -184,7 +186,7 @@ public final class CompanionCrowdFightTests {
         zombies.add(zombie(h, foot.offset(INTO + 2, 0, 1)));
         long begun = h.getTick();
         float[] last = {c.getHealth()};
-        int[] blows = {0}, pairs = {1}, column = {0};
+        int[] blows = {0}, pairs = {1}, column = {0}, crowded = {0}, raised = {-1};
         // Where he was when the next pair made them a crowd, and where his column went up.
         BlockPos[] at = {null, null};
         start(h, c, 1);
@@ -198,18 +200,58 @@ public final class CompanionCrowdFightTests {
             if (c.getHealth() < last[0]) blows[0]++;
             last[0] = c.getHealth();
             column[0] = Math.max(column[0], c.getTemporarySupportCount());
-            if (ticks == WAVE) at[0] = c.blockPosition();
-            if (at[1] == null && c.getTemporarySupportCount() >= COLUMN) at[1] = c.blockPosition();
+            if (ticks == WAVE) { at[0] = c.blockPosition(); crowded[0] = blows[0]; }
+            if (at[1] == null && c.getTemporarySupportCount() >= COLUMN) { at[1] = c.blockPosition(); raised[0] = blows[0] - crowded[0]; }
             for (Zombie zombie : zombies) if (zombie.isAlive() && zombie.getTarget() == null) zombie.setTarget(c);
             long alive = zombies.stream().filter(Zombie::isAlive).count();
-            String trace = " | zombies alive " + alive + " of " + zombies.size() + ", blows taken " + blows[0] + ", health " + c.getHealth() + ", he at " + rel(h, c.blockPosition()).toShortString()
+            String trace = " | zombies alive " + alive + " of " + zombies.size() + ", blows taken " + blows[0] + " (" + raised[0] + " from the crowd to the column), health " + c.getHealth() + ", he at " + rel(h, c.blockPosition()).toShortString()
                     + ", stood at " + rel(h, foot.offset(INTO, 0, 0)).toShortString() + ", supports " + c.getTemporarySupportCount() + " (most " + column[0] + "), stage " + c.expeditionStage() + " | " + report(c);
             h.assertTrue(c.isAlive(), "Died" + trace);
-            h.assertTrue(blows[0] <= HORDE_BLOWS, "The horde got at him" + trace);
+            h.assertTrue(raised[0] <= RUN_BLOWS, "The horde got at him before the column was up" + trace);
             h.assertTrue(at[0] == null || at[1] == null || Math.hypot(at[1].getX() - at[0].getX(), at[1].getZ() - at[0].getZ()) >= CLEAR,
                     "The column went up where the two were on him, at " + (at[1] == null ? "" : rel(h, at[1]).toShortString()) + trace);
             h.assertTrue(ticks < HORDE_TICKS, "The horde was not killed and the column taken down in time" + trace);
             if (pairs[0] == PAIRS && alive == 0 && column[0] >= COLUMN && c.getTemporarySupportCount() == 0 && !c.isRecoveringSupports() && count(c, Items.COBBLESTONE) >= stone) h.succeed();
+        });
+    }
+
+    /**
+     * An order of the player in the middle of the run ends it, as it takes a column down: under the guard order he stays on the ground,
+     * and no block is laid where the order stopped him.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aGuardOrderInTheMiddleOfTheRunLeavesNoColumn(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        BlockPos foot = stairs.get(stairs.size() - 1);
+        for (int dx = 1; dx <= LONG; dx++) for (int dz = -SIDE; dz <= SIDE; dz++) for (int dy = 0; dy < HIGH; dy++) h.getLevel().setBlock(foot.offset(dx, dy, dz), Blocks.AIR.defaultBlockState(), 2 | 16);
+        place(c, foot.offset(INTO, 0, 0));
+        List<Zombie> zombies = new ArrayList<>();
+        zombies.add(zombie(h, foot.offset(INTO + 2, 0, -1)));
+        zombies.add(zombie(h, foot.offset(INTO + 2, 0, 1)));
+        long begun = h.getTick();
+        BlockPos[] from = {null};
+        long[] ordered = {-1};
+        start(h, c, 1);
+        h.onEachTick(() -> {
+            long ticks = h.getTick() - begun;
+            if (ticks == WAVE) {
+                zombies.add(zombie(h, foot.offset(LONG, 0, -2)));
+                zombies.add(zombie(h, foot.offset(LONG, 0, 2)));
+                from[0] = c.blockPosition();
+            }
+            for (Zombie zombie : zombies) if (zombie.isAlive() && zombie.getTarget() == null) zombie.setTarget(c);
+            String trace = " | tick " + ticks + ", ordered at " + ordered[0] + ", health " + c.getHealth() + ", he at " + rel(h, c.blockPosition()).toShortString() + ", supports " + c.getTemporarySupportCount() + " | " + report(c);
+            if (ordered[0] < 0) {
+                h.assertTrue(ticks < COLUMN_TICKS, "He did not run clear of the two on him" + trace);
+                if (from[0] == null || c.getTemporarySupportCount() > 0 || Math.hypot(c.getX() - from[0].getX() - .5, c.getZ() - from[0].getZ() - .5) < ON_THE_RUN) return;
+                ordered[0] = ticks;
+                c.setProtecting(true);
+                return;
+            }
+            h.assertTrue(c.getTemporarySupportCount() == 0, "A column went up after the guard order" + trace);
+            if (ticks - ordered[0] >= QUIET) h.succeed();
         });
     }
 }

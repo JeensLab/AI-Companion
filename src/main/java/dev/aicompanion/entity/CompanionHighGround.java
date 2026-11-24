@@ -7,6 +7,7 @@ import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.monster.RangedAttackMob;
 import net.minecraft.world.item.ProjectileWeaponItem;
+import net.minecraft.world.level.pathfinder.Node;
 import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.Vec3;
 
@@ -73,7 +74,7 @@ final class CompanionHighGround extends Goal {
      * way was found the next is looked for: the searches are out of the share of the tick his fight finds its own steps with.
      */
     private static final int RUN = 9, LEAST_RUN_SQR = 4 * 4, PATH_TESTS = 3, RUN_TICKS = 80, LEDGE = 2, LOOK_EVERY = 40;
-    private static final double RUN_SPEED = 1.3;
+    private static final double RUN_SPEED = 1.3, ARRIVED_SQR = 2 * 2;
     private static final float RUN_RANGE = 16;
 
     private final CompanionEntity c;
@@ -219,19 +220,31 @@ final class CompanionHighGround extends Goal {
         Monster nearest = null;
         for (Monster foe : foes) if (nearest == null || c.distanceToSqr(foe) < c.distanceToSqr(nearest)) nearest = foe;
         switch (phase) {
-            case BREAK -> breakAway();
+            case BREAK -> breakAway(foes);
             case RAISE -> raise(nearest);
             case STAND -> stand(nearest);
         }
     }
 
-    /** The run is over where its way ends, or when it has taken too long: the column goes up there, or, with no room for it after all, the fight is on the ground. */
-    private void breakAway() {
+    /**
+     * The run is over where its way ends, and the column goes up there. Cut short (an order of the player stops his walk, a blow throws
+     * him off the way), longer than {@link #RUN_TICKS}, with more than one of them on him all the same, or with no room for a column
+     * after all, it gains none: the fight is on the ground, as before.
+     */
+    private void breakAway(List<Monster> foes) {
         c.work.expedition.fight.fightGoing();
-        if (!c.getNavigation().isDone() && ++ran < RUN_TICKS || !c.onGround()) return;
+        if (++ran < RUN_TICKS && !(c.getNavigation().isDone() && c.onGround())) return;
         c.getNavigation().stop();
+        Node end = run.getEndNode();
+        int touching = 0;
+        for (Monster foe : foes) if (c.distanceToSqr(foe) < TOUCH_SQR) touching++;
         height = c.temporaryPillar.canStandUp(TALL) ? TALL : LOW;
-        if (height == LOW && !c.temporaryPillar.canStandUp(LOW)) { retryAt = c.tickCount + RETRY_TICKS; over = true; return; }
+        if (ran >= RUN_TICKS || touching > 1 || end == null || c.distanceToSqr(end.x + .5, end.y, end.z + .5) > ARRIVED_SQR
+                || height == LOW && !c.temporaryPillar.canStandUp(LOW)) {
+            retryAt = c.tickCount + LOOK_EVERY;
+            over = true;
+            return;
+        }
         phase = Phase.RAISE;
     }
 
