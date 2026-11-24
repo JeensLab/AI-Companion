@@ -166,29 +166,24 @@ final class CompanionBag {
     }
 
     /**
-     * What the world about him really gives of the item by the one reach answer: the blocks he can work it from, walked to,
-     * across, up a column of his soil or from under his feet, and the soil a column still asks. Null where the answer is not
-     * about blocks (a recipe's or an animal's item), and for leaves, whose own chain sizes their column (CompanionLeaves).
+     * What the world about him really gives of the item by the one search and the one reach answer (CompanionWaySearch,
+     * CompanionReach): any block about him that is the item or gives it — hanging in the air as much as lying on the ground —
+     * walked to, taken from under his feet, up a column of his soil or across a floor, and the soil a column still asks. Null
+     * where the answer is not about blocks (a recipe's or an animal's item), and for leaves, whose own chain sizes their column
+     * (CompanionLeaves).
      */
     CompanionReach.Available available(ServerLevel level, net.minecraft.world.item.Item wanted) {
         if (wanted == net.minecraft.world.item.Items.OBSIDIAN) return CompanionObsidian.available(c, level, c.work.portal::laid);
         if (CompanionLeaves.isLeaf(BuiltInRegistries.ITEM.getKey(wanted).toString())) return null;
-        // What the blocks of the item give, and the blocks that are the item itself: one geometry answer for both (PATH7).
-        return CompanionReach.Available.sum(CompanionPicking.available(c, level, wanted), CompanionReach.lying(c, level, wanted));
+        return CompanionWaySearch.available(c, level, wanted, CompanionPicking.mine(c, level));
     }
 
     /**
-     * Why no block of this item is come at: the nearest one's distance from the one geometry answer — «в 6 блоках вверх и
-     * 3 вбок», the real reason, never the first thing that comes to mind.
+     * Why no block of this item is come at: the nearest one's distance from the one search — «в 6 блоках вверх и 3 вбок»,
+     * the real reason, never the first thing that comes to mind. The search itself journals the box it looked through.
      */
     String whyNot(ServerLevel level, net.minecraft.world.item.Item wanted) {
-        List<BlockPos> blocks = new java.util.ArrayList<>(CompanionObsidian.all(c, level, CompanionObsidian.DEPTH,
-                state -> state.getBlock().asItem() == wanted, pos -> true));
-        var sources = CompanionPickable.sources(level, wanted);
-        if (!sources.isEmpty()) blocks.addAll(CompanionObsidian.all(c, level, CompanionObsidian.DEPTH,
-                state -> sources.stream().anyMatch(source -> state.is(source.block())), pos -> true));
-        if (blocks.isEmpty()) return "";
-        BlockPos nearest = blocks.stream().min(java.util.Comparator.comparingDouble(pos -> c.distanceToSqr(pos.getCenter()))).orElse(null);
+        BlockPos nearest = CompanionWaySearch.nearestBlock(c, level, wanted, CompanionPicking.mine(c, level));
         if (nearest == null) return "";
         return CompanionReach.distance(c, nearest);
     }

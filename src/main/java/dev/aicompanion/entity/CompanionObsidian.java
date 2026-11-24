@@ -111,15 +111,15 @@ final class CompanionObsidian {
     }
 
     /**
-     * What the world about him really gives of obsidian by the one reach answer (CompanionReach): the blocks he can mine —
-     * walked to, across, up a column of his soil or under his feet — and no portal's, no site's, none beside lava — and one
-     * block for each bucket of lava of his that water can be had for (a bucket makes one).
+     * What the world about him really gives of obsidian by the one search and the one reach answer (CompanionWaySearch,
+     * CompanionReach): the blocks he can mine — walked to, across, up a column of his soil or under his feet — and no portal's,
+     * no site's, none beside lava — and one block for each bucket of lava of his that water can be had for (a bucket makes one).
+     * The buckets are the fallback after the blocks that lie there: what is in the world is taken first.
      */
     static CompanionReach.Available available(CompanionEntity c, ServerLevel level, Predicate<BlockPos> laid) {
         Predicate<BlockPos> site = CompanionPicking.sites(c, level);
-        List<BlockPos> blocks = all(c, level, DEPTH, state -> state.is(Blocks.OBSIDIAN), pos -> !laid.test(pos) && free(level, pos, site));
-        // A way up to obsidian stands on soil he carries — or on soil he digs about him, as the plan then digs it.
-        CompanionReach.Available found = CompanionReach.available(c, level, blocks, 3.5D, true, true, CompanionPillar.WAY_SUPPORTS);
+        CompanionReach.Available found = CompanionWaySearch.available(c, level, Items.OBSIDIAN,
+                pos -> !laid.test(pos) && free(level, pos, site));
         int lava = 0;
         boolean waterBucket = false;
         for (int slot = 0; slot < c.getContainerSize(); slot++) {

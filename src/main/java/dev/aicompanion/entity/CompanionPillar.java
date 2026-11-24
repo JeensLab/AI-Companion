@@ -41,6 +41,11 @@ public final class CompanionPillar {
     public static final int WAY_SUPPORTS = 16;
     /** How far above his feet a block may stand for a way up (PATH7). */
     public static final int WAY_HEIGHT = 16;
+    /**
+     * How far from him the foot of a column may stand, in blocks: the walk to it is his own, and a block up and to the side is
+     * reached from the foot under it (a pumpkin eight across, PATH7). Farther is another place's block, not this one's column.
+     */
+    public static final int COLUMN_WALK = 10;
     /** Blocks placed and broken by one way, per task (PATH7): the budget of slice S2 is counted against this number. */
     public static final int WAY_BUDGET = 64;
     private static final double REACH_SQR = 16.0D;
@@ -392,6 +397,25 @@ public final class CompanionPillar {
         return least == Integer.MAX_VALUE ? 0 : least;
     }
 
+    /**
+     * The fewest steps of a column whose foot he can walk to reaches this block, at most {@code limit}: the same feet the climb
+     * itself plans from (beside the block, level with him, within {@link #COLUMN_WALK}), so the answer is no promise the climb
+     * cannot keep. 0 when no such column reaches it.
+     */
+    public int leastStepsNear(BlockPos block, int limit) {
+        if (!(owner.level() instanceof ServerLevel level) || !level.hasChunkAt(block)) return 0;
+        BlockPos origin = owner.blockPosition();
+        int least = 0;
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = -2; dy <= 2; dy++) {
+            BlockPos feet = new BlockPos(block.getX() + dx, origin.getY() + dy, block.getZ() + dz);
+            if (feet.distSqr(origin) > (double) COLUMN_WALK * COLUMN_WALK || !safeFoundation(level, feet.below())) continue;
+            int steps = requiredSteps(block, feet);
+            if (steps <= 0 || steps > limit || !columnClearable(level, feet, steps)) continue;
+            if (least == 0 || steps < least) least = steps;
+        }
+        return least;
+    }
+
     /** The cells a column could stand at to this block, with a way of up to {@code limit} steps and this much soil. */
     public Set<BlockPos> buildCells(BlockPos block, int limit, int supply) {
         Set<BlockPos> cells = new HashSet<>();
@@ -445,7 +469,7 @@ public final class CompanionPillar {
         for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
             for (int dy = -2; dy <= 2; dy++) {
                 BlockPos feet = new BlockPos(log.getX() + dx, origin.getY() + dy, log.getZ() + dz);
-                if (feet.distSqr(origin) > 100.0D || !safeFoundation(level, feet.below())) continue;
+                if (feet.distSqr(origin) > (double) COLUMN_WALK * COLUMN_WALK || !safeFoundation(level, feet.below())) continue;
                 int steps = requiredSteps(log, feet);
                 if (steps > supply && steps <= limit) failureReason = "Для подъёма не хватает земли в сумке";
                 if (steps <= 0 || steps > limit || steps > supply || !columnClearable(level, feet, steps)) continue;

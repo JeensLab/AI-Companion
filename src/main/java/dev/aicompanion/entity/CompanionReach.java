@@ -134,20 +134,20 @@ public final class CompanionReach {
         return new How(Way.NONE, 0, 0, "up " + rise + ", across " + Math.round(across * 10) / 10D + (up.why().isEmpty() ? "" : ", " + up.why()));
     }
 
-    /** A column of his own soil to a block no stand cell reaches, or why there is none. Geometry only. */
+    /**
+     * A column of his own soil to a block no stand cell reaches, or why there is none. Geometry only: the column stands at its
+     * own foot, which he walks to — the block's distance from where he stands now is no reason to refuse it (a pumpkin eight to
+     * the side is reached from the foot under it, as a player builds up; the pillar's own walk budget bounds it).
+     */
     private static How up(CompanionEntity c, ServerLevel level, BlockPos block, boolean allowDugSoil, int maxSteps) {
         // The way up is the player's switch («Строить себе путь»): off, no column is raised.
         if (!c.buildWay()) return new How(Way.NONE, 0, 0, "switch off");
         int rise = block.getY() - c.blockPosition().getY();
         if (rise < 2 || rise > CompanionPillar.WAY_HEIGHT) return new How(Way.NONE, 0, 0, "rise " + rise);
-        // The way's budget across is four blocks from him: within it the feet of the column may stand anywhere the swing reaches
-        // (CompanionPillar.columns), and any offset there is the same question. A block farther is the walk's, not a column's.
-        double dx = block.getX() + .5D - c.getX(), dz = block.getZ() + .5D - c.getZ();
-        if (dx * dx + dz * dz > 16.0D) return new How(Way.NONE, 0, 0, "across " + Math.round(Math.sqrt(dx * dx + dz * dz) * 10) / 10D);
         int limit = Math.clamp(maxSteps, 1, CompanionPillar.WAY_SUPPORTS);
         int carried = c.temporaryPillar.soilCarried();
-        int least = c.temporaryPillar.leastSteps(block, limit);
-        if (least <= 0) return new How(Way.NONE, 0, 0, "no column");
+        int least = c.temporaryPillar.leastStepsNear(block, limit);
+        if (least <= 0) return new How(Way.NONE, 0, 0, "no column he can walk to");
         if (least <= carried) return new How(Way.UP, least);
         if (allowDugSoil && soilAbout(c, level)) return new How(Way.UP, least);
         return new How(Way.NONE, 0, 0, "short " + (least - carried) + " blocks");
@@ -244,35 +244,6 @@ public final class CompanionReach {
                 && level.getBlockState(cell.above()).getCollisionShape(level, cell.above()).isEmpty()
                 && level.noCollision(c, new AABB(cell.getX() + .2, cell.getY(), cell.getZ() + .2,
                         cell.getX() + .8, cell.getY() + c.getBbHeight(), cell.getZ() + .8));
-    }
-
-    /** How many of these blocks he can work by these ways, and the blocks a way still asks (dug blocks count when allowed). */
-    public static Available available(CompanionEntity c, ServerLevel level, List<BlockPos> blocks, double reach, boolean forTheDrop, boolean allowDugSoil, int maxSteps) {
-        int count = 0, soil = 0;
-        for (BlockPos block : blocks) {
-            How how = how(c, level, block, reach, forTheDrop, allowDugSoil, maxSteps);
-            if (!how.yes()) continue;
-            count++;
-            if (how.up()) soil = Math.max(soil, Math.max(0, how.steps() - c.temporaryPillar.soilCarried()));
-            if (how.bridge()) soil = Math.max(soil, Math.max(0, how.gap() - bridgeBlocks(c)));
-        }
-        if (soil > 0 && !(allowDugSoil && soilAbout(c, level))) soil = 0;
-        return new Available(count, soil);
-    }
-
-    /**
-     * The blocks that ARE this item about him — a planks block is planks, a lapis block is lapis — and how they are come at. The
-     * game's own block-to-item map, never a list of names: only a block that really gives this item counts (powder snow gives
-     * nothing to a hand, so it is no block of the item though it is the item's block).
-     */
-    public static Available lying(CompanionEntity c, ServerLevel level, Item item) {
-        List<CompanionPickable.Source> itself = CompanionPickable.identity(level, item);
-        if (itself.isEmpty()) return new Available(0, 0);
-        // Only blocks that are his to take: a flower bed or a wall of the player's is not gathered (CompanionPicking's own rule).
-        java.util.function.Predicate<BlockPos> mine = pos -> !CompanionPicking.kept(c, level).test(pos);
-        List<BlockPos> blocks = CompanionObsidian.all(c, level, CompanionObsidian.DEPTH,
-                state -> itself.stream().anyMatch(source -> state.is(source.block())), mine);
-        return available(c, level, blocks, 3.5D, true, true, CompanionPillar.WAY_SUPPORTS);
     }
 
     /** «5 блоков вверх и 3 вбок»: the geometry of a block, as a refusal names it. */
