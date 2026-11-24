@@ -125,7 +125,9 @@ final class CompanionOreMining {
             if (!w.oreLootRetried) { w.oreLootRetried = true; w.owner.retryHarvestPickup(); return; }
             climbOutOfOre(level); return;
         }
-        if (!w.owner.onGround() && !w.owner.isInWater()) return;
+        // The way's own climb is ticked every tick of its arc, the jump included: a body in the air is no reason to skip it.
+        if (!w.owner.onGround() && !w.owner.isInWater()
+                && !w.owner.temporaryPillar.isWayActive() && !w.owner.temporaryBridge.isActive()) return;
         if (w.oreCandidates == null) {
             if (w.oreSearch == null) {
                 w.oreSearch = new CompanionOre.Search(level, w.owner.blockPosition(), w.owner.getSearchRadius(), w.ore);
@@ -245,9 +247,10 @@ final class CompanionOreMining {
             w.oreNoTunnel.add(candidate);
             if (lacked) lackedPlugs.add(candidate.immutable());
             if (fall) lavaFalls.add(candidate.immutable());
-            if (w.oreOffFoot.contains(candidate)) {
+            if (w.oreOffFoot.contains(candidate) || exposedOre(candidate)) {
                 // Neither on foot nor by a tunnel: a block in the air is still a way of its own — a column of his soil up to it
-                // or a floor across the gap before it, the same geometry answer as for any block (PATH7, #105).
+                // or a floor across the gap before it, the same geometry answer as for any block (PATH7, #105). An ore closed in
+                // stone keeps the mine's own answer: a column would stand beside stone that hides it.
                 CompanionReach.How way = CompanionReach.how(w.owner, level, candidate, 3.5D, true, true, CompanionPillar.WAY_SUPPORTS);
                 CompanionReach.decision(w.owner, candidate, way);
                 if (way.yes()) return chosenOre(candidate, null);

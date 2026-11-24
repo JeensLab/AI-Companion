@@ -256,7 +256,10 @@ public final class CompanionRoute {
         double distance = w.owner.distanceToSqr(block.getCenter());
         if (distance <= 3.8D * 3.8D && CompanionMiningNavigation.visible(w.owner, w.owner.getEyePosition(), block)
                 && (!forTheDrop || CompanionMiningNavigation.dropCollectable(level, block, w.owner.blockPosition()))) { w.owner.getNavigation().stop(); told("ARRIVED", far ? "far" : "near"); return 1; }
-        w.breaking.reset();
+        // The way's own column stands where the block is in a swing: the swing goes on from it even where the drop lies below —
+        // the walk to the drop comes after the block is broken, never between two swings (PATH7, #105: an ore in the air was
+        // swung at one tick and reset the next, until the watchdog).
+        if (!(w.owner.temporaryPillar.isWayActive() && w.owner.temporaryPillar.inReach(block))) w.breaking.reset();
         if (distance + .05 < w.bestDistance) { w.bestDistance = distance; w.lastProgressTick = level.getGameTime(); }
         // A way of his own standing (a column being raised, a floor across a gap) is progress: the block comes closer step by
         // step, and between two steps nothing moves for a while.

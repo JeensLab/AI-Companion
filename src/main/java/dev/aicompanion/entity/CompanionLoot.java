@@ -274,8 +274,8 @@ final class CompanionLoot {
         }
     }
     boolean canChase() {
+        // A floor across a gap stands under his feet: the drops on the far bank are walked to over it (PATH7, #105).
         if (!hasPending() || !owner.canCollectItems() || owner.isRecoveringSupports() || owner.isRecoveringBridge() || owner.getTemporarySupportCount() > 0
-                || owner.getTemporaryBridgeCount() > 0
                 || owner.isSwingingAtBlock() || owner.creeperGuard.nearby(CREEPER_NEAR)) return false;
         if (owner.level() instanceof ServerLevel level) for (UUID id : pending) if (chaseable(level, id)) return true;
         return false;

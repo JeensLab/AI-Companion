@@ -9,6 +9,7 @@ import dev.aicompanion.client.CompanionReply;
 import dev.aicompanion.client.CompanionServerPlanPort;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
+import dev.aicompanion.entity.CompanionMarkers;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTest;
@@ -89,6 +90,36 @@ public final class CompanionWayAnyGeometryTests {
         sideAbove(h, 4, 0, 2, false);
     }
 
+    // ---- a block a chain also makes: taken as it lies, never made again ----
+
+    /**
+     * A gold block one to the side and four up, nothing under it. Nine ingots smelted and crafted make one, but the block itself
+     * lies there: the way takes what lies in the world before a chain of his own skills makes it (PATH7, #105). Before this, the
+     * order went to the mine for gold ore that was not there and ended with nothing.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 8000)
+    public static void aGoldBlockUpAndOneToTheSideIsTakenFromAColumn(GameTestHelper h) {
+        chainAbove(h, Blocks.GOLD_BLOCK, Items.GOLD_BLOCK, 1, 0, 4);
+    }
+
+    /** Two to the side, five up: the same block, the same geometry as any other. */
+    @GameTest(template = "tall_tree", timeoutTicks = 8000)
+    public static void aGoldBlockUpAndTwoToTheSideIsTakenFromAColumn(GameTestHelper h) {
+        chainAbove(h, Blocks.GOLD_BLOCK, Items.GOLD_BLOCK, 2, 0, 5);
+    }
+
+    /** Four to the side, six up: the whole sideways budget of the way, for a block a chain also makes. */
+    @GameTest(template = "tall_tree", timeoutTicks = 10000)
+    public static void aGoldBlockUpAndFourToTheSideIsTakenFromAColumn(GameTestHelper h) {
+        chainAbove(h, Blocks.GOLD_BLOCK, Items.GOLD_BLOCK, 4, 0, 6);
+    }
+
+    /** Planks are crafted of logs as well, and the block of them that lies there is planks: three to the side, five up. */
+    @GameTest(template = "tall_tree", timeoutTicks = 8000)
+    public static void planksUpAndThreeToTheSideAreTakenFromAColumn(GameTestHelper h) {
+        chainAbove(h, Blocks.OAK_PLANKS, Items.OAK_PLANKS, 3, 0, 5);
+    }
+
     // ---- a bridge across a gap: laid, crossed, and left standing ----
 
     /**
@@ -123,6 +154,22 @@ public final class CompanionWayAnyGeometryTests {
                     "No bridge decision in the journal: " + journal(c, "way_decision"));
             h.assertTrue(!report.contains("Полторы минуты") && !report.contains("не выполнено"), "A wrong end: " + report);
         });
+    }
+
+    /**
+     * The same four-block gap with a place of the player's remembered two blocks from the far bank: the floor is taken back when
+     * the work is done, so nobody's street is built over within 300 blocks of a remembered point (idea PATH7, #105). The planks
+     * come back to the bag or lie for the pickup; no cell of his own floor is left standing in the gap.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 8000)
+    public static void aBridgeByARememberedPlaceIsTakenBack(GameTestHelper h) {
+        bridgeByRememberedPlace(h, 2, true);
+    }
+
+    /** The same bridge with the remembered place four hundred blocks away: nothing of somebody's is near, the floor stays. */
+    @GameTest(template = "tall_tree", timeoutTicks = 8000)
+    public static void aBridgeFarFromAnyRememberedPlaceIsLeftStanding(GameTestHelper h) {
+        bridgeByRememberedPlace(h, 400, false);
     }
 
     // ---- nothing to build with: soil dug under himself ----
@@ -178,6 +225,53 @@ public final class CompanionWayAnyGeometryTests {
         });
     }
 
+    // ---- the diamond orders: what is refused, and why ----
+
+    /**
+     * «добудь алмаз» with the ore hanging in the air, nothing under it: no walk reaches the ore and no tunnel can climb to it, so
+     * the way's column is the answer — he raises it beside the ore, mines it and takes the diamond, as for any other block in the
+     * air (PATH7, #105). Before this the mine's own chooser never asked the way and ended with «не нашёл безопасного хода».
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 8000)
+    public static void aDiamondOreInTheAirIsMinedFromAColumn(GameTestHelper h) {
+        flat(h, Blocks.GRASS_BLOCK);
+        BlockPos ore = new BlockPos(HOME_X + 2, FEET + 5, HOME_Z);
+        h.setBlock(ore, Blocks.DIAMOND_ORE);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.IRON_PICKAXE));
+        c.setItem(1, new ItemStack(Items.DIRT, 20));
+        int[] most = {0};
+        h.onEachTick(() -> most[0] = Math.max(most[0], c.getTemporarySupportCount()));
+        var future = sayModel(h, c, "добудь алмаз", obtainPlan("minecraft:diamond"));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.DIAMOND) == 1, "The diamond of the ore in the air is not in the bag: " + report);
+            h.assertBlockPresent(Blocks.AIR, ore);
+            h.assertTrue(most[0] > 0, "No column was raised to the ore: " + report);
+            h.assertTrue(c.getTemporarySupportCount() == 0, "The column is still standing: " + c.getTemporarySupportCount());
+            h.assertTrue(!report.contains("Полторы минуты") && !report.contains("не выполнено") && !report.contains("не нашёл безопасного хода"), "A wrong end: " + report);
+        });
+    }
+
+    /**
+     * «добудь алмазная руда»: the ore block gives a diamond to any pickaxe, and no skill of his gives the block itself (only Silk
+     * Touch does, and no silk tool is made for an order). The chain refuses it outright before anything starts, and says so.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 200)
+    public static void aDiamondOreByNameIsRefused(GameTestHelper h) {
+        flat(h, Blocks.GRASS_BLOCK);
+        BlockPos ore = new BlockPos(HOME_X + 2, FEET + 5, HOME_Z);
+        h.setBlock(ore, Blocks.DIAMOND_ORE);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        var plan = c.obtainPlan("minecraft:diamond_ore", 1);
+        h.assertTrue(plan.refused() && plan.steps().isEmpty(), "The ore by name is not refused outright: " + plan);
+        h.assertTrue(plan.refusal().contains("Не знаю, где взять") && plan.refusal().contains("копать, охотиться, плавить и крафтить его я не умею"),
+                "Not the honest line: " + plan.refusal());
+        h.succeed();
+    }
+
     // ---- the generated sample of the game's own blocks ----
 
     /**
@@ -225,6 +319,78 @@ public final class CompanionWayAnyGeometryTests {
             h.assertTrue(column ? most[0] > 0 : most[0] == 0, "The column for " + height + " up is wrong: " + most[0] + ", " + report);
             h.assertTrue(c.getTemporarySupportCount() == 0, "The column is still standing: " + c.getTemporarySupportCount());
             h.assertTrue(!report.contains("Полторы минуты") && !report.contains("не выполнено"), "A wrong end: " + report);
+        });
+    }
+
+    /**
+     * A block a chain also makes — a gold block of nine ingots, a block of planks of logs — {@code dx}, {@code dz} to the side and
+     * {@code height} above his feet, nothing under it: taken as it lies from a column of his own soil, never made again.
+     */
+    private static void chainAbove(GameTestHelper h, Block block, Item item, int dx, int dz, int height) {
+        flat(h, Blocks.GRASS_BLOCK);
+        BlockPos target = new BlockPos(HOME_X + dx, FEET + height, HOME_Z + dz);
+        h.setBlock(target, block);
+        CompanionEntity c = spawn(h);
+        // A gold block gives nothing to a hand: his own pickaxe takes it. The soil is the way's.
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.DIRT, 20));
+        int[] before = snapshot(h);
+        int[] most = {0};
+        h.onEachTick(() -> most[0] = Math.max(most[0], c.getTemporarySupportCount()));
+        String id = BuiltInRegistries.ITEM.getKey(item).toString();
+        var future = sayModel(h, c, "добудь " + new ItemStack(item).getHoverName().getString(), obtainPlan(id));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, item) == 1, "The block " + dx + "," + dz + " to the side and " + height + " up is not in the bag: " + report);
+            h.assertBlockPresent(Blocks.AIR, target);
+            assertRestored(h, before, target);
+            h.assertTrue(count(c, Items.DIRT) == 20, "The soil of the column was lost: " + count(c, Items.DIRT) + ", " + report);
+            h.assertTrue(most[0] > 0, "No column was raised for " + height + " up: " + most[0] + ", " + report);
+            h.assertTrue(c.getTemporarySupportCount() == 0, "The column is still standing: " + c.getTemporarySupportCount());
+            h.assertTrue(!report.contains("Полторы минуты") && !report.contains("не выполнено"), "A wrong end: " + report);
+        });
+    }
+
+    /**
+     * The four-block gap of the bridge scene, with a place of the player's remembered {@code away} blocks from the bridge: taken back
+     * when it is somebody's place within 300 blocks, left standing otherwise.
+     */
+    private static void bridgeByRememberedPlace(GameTestHelper h, int away, boolean takenBack) {
+        flat(h, Blocks.GRASS_BLOCK);
+        for (int x = 18; x <= 21; x++) for (int z = 1; z <= SIDE - 2; z++) for (int y = 1; y <= GROUND; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        BlockPos target = new BlockPos(22, FEET, 16);
+        h.setBlock(target, Blocks.PUMPKIN);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.OAK_PLANKS, 6));
+        CompanionMarkers store = CompanionMarkers.get(h.getLevel().getServer());
+        // The mock player is the same in every test of the batch: any marker a failed test left is cleared before this one's.
+        for (CompanionMarkers.Marker stale : store.all(c.getOwnerId())) store.remove(c.getOwnerId(), stale.id());
+        CompanionMarkers.Added added = store.add(c.getOwnerId(), "дача", h.getLevel().dimension(),
+                h.absolutePos(new BlockPos(HOME_X + away, FEET, HOME_Z)), 1);
+        int[] bridge = {0};
+        h.onEachTick(() -> bridge[0] = Math.max(bridge[0], c.getTemporaryBridgeCount()));
+        var future = sayModel(h, c, "добудь тыкву", obtainPlan("minecraft:pumpkin"));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.PUMPKIN) == 1, "The pumpkin across the gap is not in the bag: " + report);
+            h.assertTrue(bridge[0] > 0, "No floor was laid: " + report);
+            h.assertBlockPresent(Blocks.AIR, target);
+            int laid = 0;
+            for (int x = 18; x <= 21; x++) if (h.getBlockState(new BlockPos(x, GROUND, 16)).is(Blocks.OAK_PLANKS)) laid++;
+            if (takenBack) {
+                h.assertTrue(laid == 0, "The floor by the remembered place was left standing: " + laid + " planks, " + report);
+                h.assertTrue(c.getTemporaryBridgeCount() == 0 && !c.isRecoveringBridge(), "The bridge is still his: " + c.getTemporaryBridgeCount() + ", " + report);
+                h.assertTrue(count(c, Items.OAK_PLANKS) + loose(h, Items.OAK_PLANKS) >= 3, "The planks of the floor were lost: "
+                        + count(c, Items.OAK_PLANKS) + " in the bag and " + loose(h, Items.OAK_PLANKS) + " on the ground, " + report);
+            } else {
+                h.assertTrue(laid >= 3, "The floor was taken back with no place of somebody's near: " + laid + " planks left, " + report);
+            }
+            h.assertTrue(!report.contains("Полторы минуты") && !report.contains("не выполнено"), "A wrong end: " + report);
+            // The marker is the mock player's, and that player is the same in every test of the batch: it is taken back here, or the
+            // next bridge would be laid by a remembered place it never had.
+            if (added.marker() != null) store.remove(c.getOwnerId(), added.marker().id());
         });
     }
 
@@ -373,10 +539,15 @@ public final class CompanionWayAnyGeometryTests {
 
     /** Dirt lying as a drop in the test: the soil of his own column comes back to the bag through the ground. */
     private static int looseDirt(GameTestHelper h) {
+        return loose(h, Items.DIRT);
+    }
+
+    /** What lies as a drop in the test of this item: the floor he took back, or the soil of his own column. */
+    private static int loose(GameTestHelper h, Item item) {
         var box = new net.minecraft.world.phys.AABB(h.absolutePos(new BlockPos(1, 1, 1))).minmax(
                 new net.minecraft.world.phys.AABB(h.absolutePos(new BlockPos(SIDE - 2, TOP - 1, SIDE - 2))));
-        return h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, box, item -> item.getItem().is(Items.DIRT))
-                .stream().mapToInt(item -> item.getItem().getCount()).sum();
+        return h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, box, drop -> drop.getItem().is(item))
+                .stream().mapToInt(drop -> drop.getItem().getCount()).sum();
     }
 
     private static int dirtAboveGround(GameTestHelper h) {

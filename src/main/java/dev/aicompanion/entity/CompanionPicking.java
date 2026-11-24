@@ -656,6 +656,8 @@ final class CompanionPicking {
     /** His own column is taken back before the drops on the ground are walked to: the pickup waits while it stands. */
     private boolean down() {
         if (c.temporaryBridge.isActive() || c.temporaryBridge.isRecovering()) {
+            // A floor across a gap is the walk to the drops it was laid for: it comes back only once they are in his bag.
+            if (!c.temporaryBridge.isRecovering() && waitingForHisDrop()) return false;
             c.temporaryBridge.requestCleanup();
             return c.temporaryBridge.hasSupports();
         }
@@ -686,7 +688,12 @@ final class CompanionPicking {
 
     void tick(ServerLevel level) {
         int got = got();
-        if (got >= wanted) { end(true, "Собрал: «" + name() + "», " + got + " шт."); return; }
+        if (got >= wanted) {
+            // The floor across the gap is taken back once the drops are in his bag: it was his walk to them (PATH7, #105).
+            if (down()) return;
+            end(true, "Собрал: «" + name() + "», " + got + " шт.");
+            return;
+        }
         if (due >= wanted) { down(); collect(level, got); return; }
         Predicate<BlockPos> site = kept(c, level);
         if (target != null && (gives(sources, level.getBlockState(target)) == 0 || !takes(level, target, site) || lavaBeside(level, target))) release();
@@ -820,7 +827,8 @@ final class CompanionPicking {
         long now = level.getGameTime();
         // His own column is taken back first (down), and the pickup walks to nothing while it stands or comes down: the drops
         // that fell below wait for the ground, so their settle clock starts when he is down, not on top of it (PATH7, 19.11).
-        if (c.temporaryPillar.isActive() || c.temporaryPillar.isRecovering() || c.temporaryBridge.isActive() || c.temporaryBridge.isRecovering()) { settleAt = 0; return; }
+        // A floor across a gap is different: it is a walk, so the drops on the far bank are taken over it before it comes back.
+        if (c.temporaryPillar.isActive() || c.temporaryPillar.isRecovering() || c.temporaryBridge.isRecovering()) { settleAt = 0; return; }
         if (settleAt == 0) { settleAt = now + SETTLE; return; }
         if (now < settleAt) return;
         if (!retried) { retried = true; settleAt = now + SETTLE; c.retryHarvestPickup(); return; }
