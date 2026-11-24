@@ -478,6 +478,159 @@ public final class CompanionPortalBuildTests {
     }
 
     /**
+     * «Построй портал» with no obsidian in his bag and none in the world, no lava about: the ten obsidian lie in a chest two steps
+     * away. He walks to it, opens it, takes exactly the ten the frame lacks, shuts the lid, and builds and lights the portal — no
+     * pickaxe, no lava, no order for obsidian (the owner's world, idea CHST9, issue #105).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400, batch = PORTALS)
+    public static void anOrderTakesTheObsidianItNeedsFromAChestNearby(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.FLINT_AND_STEEL));
+        BlockPos chest = new BlockPos(11, GROUND + 1, 12);
+        placedByPlayer(h, c, chest, Blocks.CHEST);
+        fillChest(h, chest, Items.OBSIDIAN, 10);
+        boolean[] lidWasOpen = {false};
+        tickLid(h, chest, lidWasOpen);
+        var future = run(h, c, "[{\"action\":\"build_portal\"}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Портал готов."), "Not built: " + report);
+            h.assertTrue(blocks(h, Blocks.NETHER_PORTAL).size() == 6 && blocks(h, Blocks.OBSIDIAN).size() == 10, "Not a lit frame: " + report);
+            h.assertTrue(count(c, Items.OBSIDIAN) == 0, "The obsidian is still in his bag: " + c.getStoredItemsSummary());
+            h.assertTrue(chestCount(h, chest, Items.OBSIDIAN) == 0, "The chest was not emptied by ten: " + chestCount(h, chest, Items.OBSIDIAN));
+            h.assertTrue(lidWasOpen[0], "The lid was never opened while he took the obsidian");
+            h.assertTrue(lidOpen(h, chest) == 0F, "The lid is left open: " + lidOpen(h, chest));
+            // Nothing doubled and nothing vanished: the ten of the chest are the ten of the frame.
+            h.assertTrue(blocks(h, Blocks.OBSIDIAN).size() + count(c, Items.OBSIDIAN) + chestCount(h, chest, Items.OBSIDIAN) == 10,
+                    "Obsidian was lost or doubled: frame " + blocks(h, Blocks.OBSIDIAN).size() + ", bag " + count(c, Items.OBSIDIAN) + ", chest " + chestCount(h, chest, Items.OBSIDIAN));
+            putOut(h);
+        });
+    }
+
+    /**
+     * A chest near the frame holds more obsidian than the frame needs: he takes the ten it lacks and leaves the rest — the whole
+     * stack is not carried away (idea CHST9, issue #105).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400, batch = PORTALS)
+    public static void aChestWithMoreObsidianThanTheFrameNeedsKeepsTheRest(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.FLINT_AND_STEEL));
+        BlockPos chest = new BlockPos(11, GROUND + 1, 12);
+        placedByPlayer(h, c, chest, Blocks.CHEST);
+        fillChest(h, chest, Items.OBSIDIAN, 16);
+        boolean[] lidWasOpen = {false};
+        tickLid(h, chest, lidWasOpen);
+        var future = run(h, c, "[{\"action\":\"build_portal\"}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Портал готов."), "Not built: " + report);
+            h.assertTrue(blocks(h, Blocks.NETHER_PORTAL).size() == 6 && blocks(h, Blocks.OBSIDIAN).size() == 10, "Not a lit frame: " + report);
+            h.assertTrue(chestCount(h, chest, Items.OBSIDIAN) == 6, "Not exactly ten taken: " + chestCount(h, chest, Items.OBSIDIAN) + " left");
+            h.assertTrue(count(c, Items.OBSIDIAN) == 0, "The rest is in his bag: " + c.getStoredItemsSummary());
+            h.assertTrue(lidWasOpen[0] && lidOpen(h, chest) == 0F, "The lid is left open: " + lidOpen(h, chest));
+            putOut(h);
+        });
+    }
+
+    /**
+     * The only obsidian in the world lies in a chest farther than sixteen blocks from the frame (seventeen above it), and a chest
+     * near the frame is empty: the far chest is not counted, and the shortage is named — no portal, nothing taken from either chest.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void obsidianInAChestFartherThanSixteenIsNotCountedAndTheShortageIsSaid(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.FLINT_AND_STEEL));
+        BlockPos near = new BlockPos(11, GROUND + 1, 12);
+        placedByPlayer(h, c, near, Blocks.CHEST);
+        BlockPos far = new BlockPos(11, GROUND + 21, 12);
+        placedByPlayer(h, c, far, Blocks.CHEST);
+        fillChest(h, far, Items.OBSIDIAN, 10);
+        boolean[] nearLidWasOpen = {false};
+        tickLid(h, near, nearLidWasOpen);
+        var future = run(h, c, "[{\"action\":\"build_portal\"}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Рядом нечего копать: ни обсидиана, ни лавы"), "Not the shortage: " + report);
+            h.assertTrue(!report.contains("Портал готов.") && blocks(h, Blocks.NETHER_PORTAL).isEmpty(), "He built: " + report);
+            h.assertTrue(blocks(h, Blocks.OBSIDIAN).isEmpty() && count(c, Items.OBSIDIAN) == 0, "He set or took something: " + report);
+            h.assertTrue(chestCount(h, far, Items.OBSIDIAN) == 10 && chestCount(h, near, Items.OBSIDIAN) == 0, "A chest was emptied: far " + chestCount(h, far, Items.OBSIDIAN));
+            h.assertTrue(!nearLidWasOpen[0], "The empty chest was opened");
+        });
+    }
+
+    /**
+     * The chest near the frame holds five of the ten: he takes those five and the plan gets the other five where they lie, then
+     * builds and lights the portal — the chest emptied by exactly five, the frame ten (idea CHST9, issue #105).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400, batch = PORTALS)
+    public static void aChestShortOfTheTenIsTakenAndTheRestIsGotWhereItLies(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.FLINT_AND_STEEL));
+        BlockPos chest = new BlockPos(11, GROUND + 1, 12);
+        placedByPlayer(h, c, chest, Blocks.CHEST);
+        fillChest(h, chest, Items.OBSIDIAN, 5);
+        // Five obsidian standing apart, free of every frame the build may choose and off the chest's site: within his search radius.
+        for (int x : new int[]{10, 12, 14, 16, 18}) h.setBlock(new BlockPos(x, GROUND + 1, 29), Blocks.OBSIDIAN);
+        boolean[] lidWasOpen = {false};
+        tickLid(h, chest, lidWasOpen);
+        var future = run(h, c, "[{\"action\":\"build_portal\"}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Портал готов."), "Not built: " + report);
+            h.assertTrue(blocks(h, Blocks.NETHER_PORTAL).size() == 6 && blocks(h, Blocks.OBSIDIAN).size() == 10, "Not a lit frame: " + report);
+            h.assertTrue(chestCount(h, chest, Items.OBSIDIAN) == 0, "The chest was not emptied by five: " + chestCount(h, chest, Items.OBSIDIAN));
+            h.assertTrue(count(c, Items.OBSIDIAN) == 0, "The obsidian is still in his bag: " + c.getStoredItemsSummary());
+            h.assertTrue(lidWasOpen[0] && lidOpen(h, chest) == 0F, "The lid is left open: " + lidOpen(h, chest));
+            putOut(h);
+        });
+    }
+
+    /**
+     * A double chest near the frame holds five of the ten: the two halves are one container and counted once, so the plan gets
+     * the other five and he builds — the double chest emptied by exactly five, no half counted twice (idea CHST9, issue #105).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400, batch = PORTALS)
+    public static void aDoubleChestShortOfTheTenIsCountedOnceAndTheRestIsGot(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.FLINT_AND_STEEL));
+        BlockPos left = new BlockPos(11, GROUND + 1, 12);
+        BlockPos right = new BlockPos(12, GROUND + 1, 12);
+        h.setBlock(left, Blocks.CHEST.defaultBlockState().setValue(net.minecraft.world.level.block.ChestBlock.FACING, net.minecraft.core.Direction.NORTH)
+                .setValue(net.minecraft.world.level.block.ChestBlock.TYPE, net.minecraft.world.level.block.state.properties.ChestType.LEFT));
+        h.setBlock(right, Blocks.CHEST.defaultBlockState().setValue(net.minecraft.world.level.block.ChestBlock.FACING, net.minecraft.core.Direction.NORTH)
+                .setValue(net.minecraft.world.level.block.ChestBlock.TYPE, net.minecraft.world.level.block.state.properties.ChestType.RIGHT));
+        fillChest(h, left, Items.OBSIDIAN, 5);
+        for (int x : new int[]{10, 12, 14, 16, 18}) h.setBlock(new BlockPos(x, GROUND + 1, 29), Blocks.OBSIDIAN);
+        boolean[] lidWasOpen = {false};
+        tickLid(h, left, lidWasOpen);
+        tickLid(h, right, lidWasOpen);
+        var future = run(h, c, "[{\"action\":\"build_portal\"}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Портал готов."), "Not built: " + report);
+            h.assertTrue(blocks(h, Blocks.NETHER_PORTAL).size() == 6 && blocks(h, Blocks.OBSIDIAN).size() == 10, "Not a lit frame: " + report);
+            h.assertTrue(chestCount(h, left, Items.OBSIDIAN) == 0 && chestCount(h, right, Items.OBSIDIAN) == 0, "The double chest was not emptied by five: "
+                    + chestCount(h, left, Items.OBSIDIAN) + " and " + chestCount(h, right, Items.OBSIDIAN));
+            h.assertTrue(count(c, Items.OBSIDIAN) == 0, "The obsidian is still in his bag: " + c.getStoredItemsSummary());
+            h.assertTrue(lidWasOpen[0] && lidOpen(h, left) == 0F, "The lid is left open: " + lidOpen(h, left));
+            putOut(h);
+        });
+    }
+
+    /**
      * A lit portal as a player leaves it, across x from {@code x}, its frame from {@code y}, at {@code z} (relative): the fire makes the
      * portal blocks and the game's record of them.
      */
@@ -486,6 +639,24 @@ public final class CompanionPortalBuildTests {
             h.setBlock(new BlockPos(x + dx, y + dy, z), dx == 0 || dx == 3 || dy == 0 || dy == 4 ? Blocks.OBSIDIAN : Blocks.AIR);
         h.setBlock(new BlockPos(x + 1, y + 1, z), Blocks.FIRE);
         h.assertBlockPresent(Blocks.NETHER_PORTAL, new BlockPos(x + 2, y + 3, z));
+    }
+
+    private static void fillChest(GameTestHelper h, BlockPos rel, Item item, int count) {
+        if (h.getLevel().getBlockEntity(h.absolutePos(rel)) instanceof net.minecraft.world.Container container)
+            container.setItem(0, new ItemStack(item, count));
+    }
+
+    /**
+     * The lid of the chest at {@code rel} ticked as a client ticks it: the game keeps it in its own controller, which only a client
+     * ticks, so the test ticks it here and records that it was opened while he took what he came for.
+     */
+    private static void tickLid(GameTestHelper h, BlockPos rel, boolean[] wasOpen) {
+        h.onEachTick(() -> {
+            var be = h.getLevel().getBlockEntity(h.absolutePos(rel));
+            if (!(be instanceof net.minecraft.world.level.block.entity.ChestBlockEntity lid)) return;
+            net.minecraft.world.level.block.entity.ChestBlockEntity.lidAnimateTick(h.getLevel(), h.absolutePos(rel), h.getBlockState(rel), lid);
+            if (lid.getOpenNess(1F) > 0F) wasOpen[0] = true;
+        });
     }
 
     /** The portals of a test put out: the world outlives it, and a lit portal is a way for the tests beside (CompanionDeathRecoveryTests). */
