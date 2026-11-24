@@ -73,6 +73,27 @@ public final class CompanionEyeCourseTests {
         });
     }
 
+    /** «Стоп» while his eye is in the air: it is still his, and he picks it up where it falls (four in five do). */
+    @GameTest(template = "large_search", skyAccess = true, timeoutTicks = 800)
+    public static void hisEyeInTheAirAtStopIsPickedUpAllTheSame(GameTestHelper h) {
+        CompanionEntity c = arena(h);
+        ServerPlayer player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        c.setItem(0, new ItemStack(Items.ENDER_EYE));
+        h.assertTrue(CompanionEvents.executeAction(player, "walk_heading", "stronghold", 0).success(), "Not accepted: " + c.getLastTaskResult());
+        boolean[] stopped = {false};
+        h.onEachTick(() -> {
+            if (stopped[0] || h.getLevel().getEntitiesOfClass(EyeOfEnder.class, c.getBoundingBox().inflate(40), eye -> eye.tickCount > 20).isEmpty()) return;
+            stopped[0] = true;
+            CompanionEvents.executeAction(player, "stop", "", 1);
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(stopped[0] && !c.isWorking(), "Not stopped yet: " + c.getLastTaskResult());
+            h.assertTrue(h.getLevel().getEntitiesOfClass(EyeOfEnder.class, c.getBoundingBox().inflate(40)).isEmpty(), "The eye is still in the air");
+            h.assertTrue(h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, c.getBoundingBox().inflate(100), item -> item.getItem().is(Items.ENDER_EYE)).isEmpty(),
+                    "His eye was left lying after «стоп»");
+        });
+    }
+
     /** A stone floor over bedrock with a bedrock border; he stands at (START_X, 2, LINE), the player behind him; the stronghold is FAR blocks east of where it is asked for. */
     private static CompanionEntity arena(GameTestHelper h) {
         CompanionCourse.stronghold = (level, from) -> level.dimension() == Level.OVERWORLD ? from.offset(FAR, 0, 0) : null;

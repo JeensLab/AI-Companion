@@ -231,6 +231,13 @@ public final class CompanionCourseTests {
             String routed = CompanionLocalCommands.route(other, "Олег");
             h.assertTrue(routed == null || !routed.contains("walk_heading"), "«" + other + "» routed as " + routed);
         }
+        // «Веди к крепости» is the eye's walk only while no marker bears that name: the player's own «крепость» is walked to.
+        var noMarker = dev.aicompanion.client.CompanionPlaceSpeech.parse("Олег, веди к крепости", "Олег", java.util.List.of("дача"), true);
+        h.assertTrue(noMarker.kind() == dev.aicompanion.client.CompanionPlaceSpeech.Kind.NONE, "Asked about a marker: " + noMarker.question());
+        var marker = dev.aicompanion.client.CompanionPlaceSpeech.parse("Олег, веди к крепости", "Олег", java.util.List.of("крепость"), true);
+        h.assertTrue(marker.kind() == dev.aicompanion.client.CompanionPlaceSpeech.Kind.GO, "The marker «крепость» is not walked to: " + marker.kind());
+        String toMarker = CompanionLocalCommands.route("Олег, веди к крепости", "Олег", java.util.List.of("крепость"), true);
+        h.assertTrue(toMarker != null && toMarker.startsWith("companion place go"), "With a marker «крепость» routed as " + toMarker);
         var walk = CompanionPlanCodec.decode(message("{\"action\":\"walk_heading\",\"item\":\"northeast\"}")).actions();
         h.assertTrue(walk.size() == 1 && walk.getFirst().count() == 0 && "northeast".equals(walk.getFirst().item()), "Decoded " + walk);
         h.assertTrue(CompanionPlanCodec.decode(message("{\"action\":\"walk_heading\",\"item\":\"west:village\",\"count\":500}")).actions().getFirst().count() == 500, "500 blocks refused");

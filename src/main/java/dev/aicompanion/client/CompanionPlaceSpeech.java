@@ -179,6 +179,8 @@ public final class CompanionPlaceSpeech {
         // A trade errand («сходи купи шлем у кузнеца», «сходи в деревню, проверь торговцев») or the village itself, with no marker of
         // that name, is the model's: it knows the traders and the way (game 18.11; review round 3 — the verb stands before the «у/в»).
         if (CompanionTradeWords.about(said) || words.getFirst().startsWith("деревн")) return Result.none();
+        // «Веди к крепости» with no marker of that name is the walk where his eye of ender flies (CompanionHeadingCommands).
+        if (words.getFirst().startsWith("крепост")) return Result.none();
         return new Result(Kind.UNKNOWN, target, unknown(target, knownNames));
     }
 

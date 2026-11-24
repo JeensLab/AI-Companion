@@ -819,7 +819,7 @@ public final class CompanionWork {
         }
     }
 
-    void watchChase() { hunting.watchChase(); drops.watch(); }
+    void watchChase() { hunting.watchChase(); drops.watch(); course.watch(); }
     static final java.util.UUID NO_ID = new java.util.UUID(0, 0);
 
     /**
