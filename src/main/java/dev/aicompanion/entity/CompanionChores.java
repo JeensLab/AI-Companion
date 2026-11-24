@@ -52,6 +52,7 @@ import java.util.function.Predicate;
  * scoop_mob (a fish under open water scooped alive into his bucket of water, as a player does; one let out of somebody's
  * bucket or named is not his, a pufferfish only while he is well enough for its sting) and scoop_block (lava's own source or
  * powder snow into an empty bucket of his, from the firm ground beside it: he never steps into either; in the Nether too).
+ * fish is a rod's work of its own (CompanionFishing): its order, its ticks and its end pass through here.
  */
 final class CompanionChores {
     private enum Mode { SHEAR, MILK, EGGS, STRIP, HIVE, SCOOP, FILL }
@@ -118,7 +119,13 @@ final class CompanionChores {
     private final Set<BlockPos> skipped = new HashSet<>();
     private String missed;
 
-    CompanionChores(CompanionWork w) { this.w = w; }
+    private final CompanionFishing fishing;
+    private boolean fishes;
+
+    CompanionChores(CompanionWork w) { this.w = w; fishing = new CompanionFishing(w); }
+
+    /** The order is fish: it has its own bound of time (CompanionFishing.LIMIT_SECONDS). */
+    boolean fishes() { return fishes; }
 
     /** The colour of a wool block, null for anything else. */
     static DyeColor fleece(Item item) {
@@ -260,6 +267,8 @@ final class CompanionChores {
     /** {@code count} more of the item in his bag. Null when the work may start, else why not. */
     CompanionActionResult begin(String action, String id, int count) {
         c = w.owner;
+        fishes = "fish".equals(action);
+        if (fishes) return fishing.begin(id, count);
         ResourceLocation key = ResourceLocation.tryParse(id == null ? "" : id);
         Item asked = key == null ? null : BuiltInRegistries.ITEM.getOptional(key).orElse(null);
         Mode chosen = switch (action) { case "shear_sheep" -> Mode.SHEAR; case "milk_animal" -> Mode.MILK; case "collect_eggs" -> Mode.EGGS; case "harvest_hive" -> Mode.HIVE; case "scoop_mob" -> Mode.SCOOP; case "scoop_block" -> Mode.FILL; default -> Mode.STRIP; };
@@ -286,6 +295,7 @@ final class CompanionChores {
     }
 
     String jobName() {
+        if (fishes) return fishing.jobName();
         String what = switch (mode) {
             case SHEAR -> "стрижка овец";
             case MILK -> "дойка";
@@ -303,6 +313,7 @@ final class CompanionChores {
     private int got() { return Math.max(0, w.items.countCarried(item) - before); }
 
     void tick(ServerLevel level) {
+        if (fishes) { fishing.tick(level); return; }
         int got = got();
         if (got >= wanted) { end(CompanionActionResult.ok("Добыл: «" + name() + "», " + got + " шт." + (lit ? LEFT : ""))); return; }
         // ponytail: room is asked for before the bucket or the log leaves its slot, so a bag full but for that one slot refuses.
@@ -639,7 +650,7 @@ final class CompanionChores {
     private void release() { target = null; path = null; nextPath = 0; hive = null; pool = null; standsOf = null; stands = Set.of(); legs = waited = crowded = 0; reached = false; }
 
     /** The order is called off: his log is not left standing. */
-    void cancel() { takeBack(); }
+    void cancel() { takeBack(); fishing.cancel(); }
 
     /** His log still stands (the axe broke, the bag is full, the order was called off): taken back at once with the tool of the log, its drop his to pick up. */
     private void takeBack() {

@@ -91,7 +91,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     public long ownedWorkId() { return ownedWorkId; }
 
     /** Whether a step of this kind is waited for by its own work id (the plan must not report it before the walk ends). */
-    public static boolean tracksWork(String action) { return TRACKED_WORK.contains(action); }
+    public static boolean tracksWork(String action) { return TRACKED_WORK.contains(action) || "fish".equals(action); }
 
     @Override public void progress(java.util.List<PlannedAction> plan, int index) { this.plan = List.copyOf(plan); progress.accept(plan, index); }
 
@@ -217,7 +217,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             CompanionActionResult result = dispatch.result();
             if (!result.success()) return CompletableFuture.completedFuture(new Attempt(result, false));
             CompletableFuture<CompanionActionResult> verified;
-            if (dispatch.workId() > 0 && TRACKED_WORK.contains(action.type())) verified = waitForWork(dispatch.workId(), dispatch.tick(), limitSeconds(action));
+            if (dispatch.workId() > 0 && tracksWork(action.type())) verified = waitForWork(dispatch.workId(), dispatch.tick(), limitSeconds(action));
             else if ("gather_wood".equals(action.type())) verified = waitForGathering(dispatch.workId(), dispatch.tick());
             else if ("wait".equals(action.type())) verified = waitSeconds(action.seconds(), result);
             else verified = CompletableFuture.completedFuture(result);
@@ -352,6 +352,8 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
         if ("collect_smelt".equals(action.type())) return WORK_LIMIT_SECONDS + 10 * 64 + 120 + 180;
         // A walk until «стоп» ends on the server by its own bound (CompanionCourse.LIMIT_SECONDS).
         if ("walk_heading".equals(action.type())) return dev.aicompanion.entity.CompanionCourse.LIMIT_SECONDS + 120;
+        // Fishing until «стоп» the same (CompanionFishing.LIMIT_SECONDS).
+        if ("fish".equals(action.type())) return dev.aicompanion.entity.CompanionFishing.LIMIT_SECONDS + 120;
         // A scout of a remembered village: the walk there has its own eight minutes on the server, the round three more (CompanionScouting).
         if ("scout_traders".equals(action.type())) return 8 * 60 + 3 * 60 + 120;
         // A far trade: up to two remembered traders, each an eight-minute walk and a three-minute approach, on the server's deadline (CompanionTrading).

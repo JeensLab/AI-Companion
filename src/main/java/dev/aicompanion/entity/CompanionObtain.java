@@ -383,6 +383,11 @@ public final class CompanionObtain {
         List<String> prey = CompanionMobDrops.names(level, item);
         // Not with bare hands (in game 12.11: five spiders, one killed, and he was dead): a wooden sword first, unless he carries a blade.
         if (hunted(item)) return (armed() || need("minecraft:wooden_sword", 1, depth + 1)) && addSplit("hunt_drop", key, count, 64);
+        // A cod or a salmon none of which swims about him: fished out of the water about him with his rod, one made first unless he
+        // has it (CompanionFishing). The water is asked of the rod, as the smoke of a hive is asked of a campfire.
+        if ((item == Items.COD || item == Items.SALMON) && about(Items.FISHING_ROD))
+            return (bag.getOrDefault(CompanionFishing.ROD, 0) > 0 || steps.stream().anyMatch(step -> step.type().equals("craft_item") && step.item().equals(CompanionFishing.ROD))
+                    || need(CompanionFishing.ROD, 1, depth + 1)) && addSplit("fish", key, count, 64);
         if (!CompanionPickable.sources(level, item).isEmpty()) { absent.add(name(item)); return refuse(ABSENT + ", где взять «" + name(item) + "»: отведи меня туда, где это есть."); }
         if (!prey.isEmpty()) { absent.add(name(item) + " (" + String.join(", ", prey) + ")"); return refuse(ABSENT + ", с кого добыть «" + name(item) + "» (" + String.join(", ", prey) + ")."); }
         return refuse("Не знаю, где взять «" + name(item) + "»: копать, охотиться, плавить и крафтить его я не умею" + (why == null ? "." : ". " + why));
