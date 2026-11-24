@@ -71,10 +71,12 @@ final class CompanionHighGround extends Goal {
     /**
      * The run clear of them: how far a cell for the column is looked for, the least run that gains the time a column takes, how many
      * ways are searched, the pace, how long the run may take, how near a ledge is one a mob reaches him from, and how long after no
-     * way was found the next is looked for: the searches are out of the share of the tick his fight finds its own steps with.
+     * way was found the next is looked for: the searches are out of the share of the tick his fight finds its own steps with. And how
+     * near one of them a step of the way is a step into its reach, and how near the line to it (the square of the cosine: sixty
+     * degrees) a step toward it.
      */
     private static final int RUN = 9, LEAST_RUN_SQR = 4 * 4, PATH_TESTS = 3, RUN_TICKS = 80, LEDGE = 2, LOOK_EVERY = 40;
-    private static final double RUN_SPEED = 1.3, ARRIVED_SQR = 2 * 2;
+    private static final double RUN_SPEED = 1.3, ARRIVED_SQR = 2 * 2, REACH_SQR = 2 * 2, TOWARD_SQR = .5 * .5;
     private static final float RUN_RANGE = 16;
 
     private final CompanionEntity c;
@@ -119,8 +121,8 @@ final class CompanionHighGround extends Goal {
 
     /**
      * The way to a cell clear of them where a column stands: a cell of the floor about him, a step up or down at most, farther from the
-     * middle of the crowd than he is, the farthest from the nearest of them first, and none with a ledge beside it. Null with no such
-     * cell in reach.
+     * middle of the crowd than he is, those on his side of it before those beyond it, the farthest from the nearest of them first, and
+     * none with a ledge beside it. Null with no such cell in reach by a way that does not lead through them.
      */
     private Path clearOf(ServerLevel level, List<Monster> foes) {
         Vec3 crowd = Vec3.ZERO;
@@ -132,15 +134,36 @@ final class CompanionHighGround extends Goal {
             BlockPos cell = feet.offset(dx, dy, dz);
             if (dx * dx + dz * dz >= LEAST_RUN_SQR && crowd.distanceToSqr(cell.getX() + .5, cell.getY(), cell.getZ() + .5) > now) cells.add(cell);
         }
-        cells.sort(Comparator.comparingDouble(cell -> -gap(cell, foes)));
+        // The cells beyond the crowd are many where the open ground is there, their ways lead through it, and they would take all of the few searches.
+        Vec3 middle = crowd;
+        cells.sort(Comparator.comparing((BlockPos cell) -> (cell.getX() + .5 - c.getX()) * (middle.x - c.getX()) + (cell.getZ() + .5 - c.getZ()) * (middle.z - c.getZ()) > 0)
+                .thenComparingDouble(cell -> -gap(cell, foes)));
         int searched = 0;
         for (BlockPos cell : cells) {
             if (!c.temporaryPillar.standsAt(cell, LOW) || overlooked(level, cell)) continue;
             Path path = ((CompanionNavigation) c.getNavigation()).search(Set.of(cell), 0, RUN_RANGE, true);
-            if (path != null && path.canReach()) return path;
+            if (path != null && path.canReach() && !through(path, foes)) return path;
             if (++searched == PATH_TESTS) break;
         }
         return null;
+    }
+
+    /**
+     * The way leads through them: a step of it is in the reach of one of them and toward it, within sixty degrees of the line from him
+     * to it. The cell it ends in is clear of them and the way to it is not (series te 20261031 n1 mobs: hurt, two zombies on him on a
+     * ledge, the cells for a column beyond them; he walked into them for forty ticks, three blows taken and none dealt, and died). A
+     * step beside one of them, or away from it, is none into it, however near it presses on him.
+     */
+    private boolean through(Path path, List<Monster> foes) {
+        for (int step = 1; step < path.getNodeCount(); step++) {
+            Node node = path.getNode(step);
+            double dx = node.x + .5 - c.getX(), dz = node.z + .5 - c.getZ();
+            for (Monster foe : foes) {
+                double fx = foe.getX() - c.getX(), fz = foe.getZ() - c.getZ(), toward = dx * fx + dz * fz;
+                if (toward > 0 && toward * toward > TOWARD_SQR * (dx * dx + dz * dz) * (fx * fx + fz * fz) && foe.distanceToSqr(node.x + .5, node.y, node.z + .5) < REACH_SQR) return true;
+            }
+        }
+        return false;
     }
 
     /**

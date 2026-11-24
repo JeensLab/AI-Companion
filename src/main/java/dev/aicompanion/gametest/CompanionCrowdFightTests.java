@@ -45,6 +45,13 @@ public final class CompanionCrowdFightTests {
     private static final int LONG = 14, SIDE = 3, INTO = 8, WAVE = 20, PAIRS = 4, HORDE_TICKS = 2400, CLEAR = 3, RUN_BLOWS = 1;
     /** How far from where the two were on him he is on the run for sure, how near its end the order comes, and how long after it no column may go up. */
     private static final int ON_THE_RUN = 2, NEAR_THE_END = 2, QUIET = 100;
+    /**
+     * The passage: how far from the foot of his stairs it opens into a hall, he at its mouth; how far into the hall the nearer of the
+     * two stands, and how far the hall runs on and to the side beyond them.
+     */
+    private static final int MOUTH = 8, ON = 2, BEYOND = 12, ASIDE = 7;
+    /** The passage closed behind him: how far from the foot of his stairs he stands in it, the two as far on, the rest of it beyond them. */
+    private static final int CLOSED = 2;
     /** Where the five stand: across the hall from his corner. */
     private static final int[][] CROWD = {{6, 0}, {6, 2}, {7, 4}, {5, 5}, {8, 1}};
 
@@ -254,6 +261,57 @@ public final class CompanionCrowdFightTests {
             }
             h.assertTrue(c.getTemporarySupportCount() == 0, "A column went up after the guard order" + trace);
             if (ticks - ordered[0] >= QUIET) h.succeed();
+        });
+    }
+
+    /**
+     * The run clear of them does not lead through them (series te 20261031 n1 mobs: hurt, two zombies on him on a ledge, the open cave
+     * beyond them; he walked into them for forty ticks, three blows taken and none dealt, and died). In a passage closed behind him,
+     * the two between him and the rest of it, he stays on his side of them and the column goes up where he stands.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void theRunClearOfThemDoesNotLeadThroughThem(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        BlockPos foot = stairs.get(stairs.size() - 1);
+        for (int dx = 1; dx <= LONG; dx++) for (int dy = 0; dy < HIGH; dy++) h.getLevel().setBlock(foot.offset(dx, dy, 0), Blocks.AIR.defaultBlockState(), 2 | 16);
+        betweenHimAndTheOpenGround(h, c, foot, CLOSED, 0);
+    }
+
+    /**
+     * And it is looked for behind him before beyond them: at the mouth of a passage, the two between him and a hall with every far cell
+     * for a column, the few searches are not spent on the ways through them, and he runs back down the passage to a column there.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void theRunClearOfThemIsLookedForBehindHimFirst(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        BlockPos foot = stairs.get(stairs.size() - 1);
+        for (int dx = 1; dx <= MOUTH + BEYOND; dx++) for (int dz = dx > MOUTH ? -SIDE : 0; dz <= (dx > MOUTH ? ASIDE : 0); dz++) for (int dy = 0; dy < HIGH; dy++) {
+            h.getLevel().setBlock(foot.offset(dx, dy, dz), Blocks.AIR.defaultBlockState(), 2 | 16);
+        }
+        betweenHimAndTheOpenGround(h, c, foot, MOUTH, CLEAR);
+    }
+
+    /** Hurt, he stands this far along the passage with two zombies next beyond him: he never gets past one of them, and his column goes up at least this far back. */
+    private static void betweenHimAndTheOpenGround(GameTestHelper h, CompanionEntity c, BlockPos foot, int stand, int back) {
+        place(c, foot.offset(stand, 0, 0));
+        c.setHealth(HURT);
+        List<Zombie> zombies = List.of(zombie(h, foot.offset(stand + ON, 0, 0)), zombie(h, foot.offset(stand + ON + 1, 0, 0)));
+        long begun = h.getTick();
+        start(h, c, 1);
+        h.onEachTick(() -> {
+            for (Zombie zombie : zombies) if (zombie.isAlive() && zombie.getTarget() == null) zombie.setTarget(c);
+            String trace = " | tick " + (h.getTick() - begun) + ", health " + c.getHealth() + ", he at " + rel(h, c.blockPosition()).toShortString() + ", stood at " + rel(h, foot.offset(stand, 0, 0)).toShortString()
+                    + ", supports " + c.getTemporarySupportCount() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            for (Zombie zombie : zombies) h.assertTrue(!zombie.isAlive() || c.getX() < zombie.getX(), "He ran into the two on him" + trace);
+            h.assertTrue(h.getTick() - begun < COLUMN_TICKS, "No column was raised clear of the two" + trace);
+            if (c.getTemporarySupportCount() < COLUMN) return;
+            h.assertTrue(c.getX() <= foot.getX() + .5 + stand - back, "The column went up where the two were on him" + trace);
+            h.succeed();
         });
     }
 }
