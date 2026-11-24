@@ -46,9 +46,11 @@ final class CompanionEndPortal {
         if (!(c.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Не могу без загруженного мира.");
         ring = ringNear(level, c.blockPosition());
         if (ring.isEmpty()) return CompanionActionResult.failed("Не вижу рядом рамки портала Края: подведи меня к ней.");
-        if (open(level) || empty(level).isEmpty()) return CompanionActionResult.ok("Портал Края уже открыт.");
-        if (w.items.countCarried(Items.ENDER_EYE) == 0) return CompanionActionResult.failed("Нет ока Края: дай мне или скажи сделать.");
-        return null;
+        CompanionActionResult answer = open(level) || empty(level).isEmpty() ? CompanionActionResult.ok("Портал Края уже открыт.")
+                : w.items.countCarried(Items.ENDER_EYE) == 0 ? CompanionActionResult.failed("Нет ока Края: дай мне или скажи сделать.") : null;
+        // No work of his begins: the ring is not kept, or the next portal built for the Nether would be taken for this one (active()).
+        if (answer != null) ring = List.of();
+        return answer;
     }
 
     /** The work in hand is his (CompanionWork tells it from the Nether portal's build by this). */
