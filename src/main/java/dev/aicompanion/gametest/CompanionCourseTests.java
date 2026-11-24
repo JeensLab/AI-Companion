@@ -120,6 +120,25 @@ public final class CompanionCourseTests {
         });
     }
 
+    /**
+     * Game 24.11 (AgentTest, «пройди 200 блоков на запад» from 1993 72 1297): a ravine across the way, a waterfall from the lake in
+     * the north running down it. Pressed by the current against a birch at its edge (1883 62 1299, where he starts here), he bobbed
+     * in the water for a minute and said «не пройти: обойти не вышло». The template is that piece of the world as it is,
+     * x 1826..1897, y 36..75, z 1280..1318. The route on the line fails; a point aside leads across.
+     */
+    @GameTest(template = "heading_waterfall", timeoutTicks = 4000, skyAccess = true)
+    public static void crossesTheRavineOfTheWaterfall(GameTestHelper h) {
+        CompanionEntity companion = spawn(h, new BlockPos(57, 26, 19), new BlockPos(61, 27, 19));
+        ServerPlayer player = owner(h, companion);
+        h.assertTrue(CompanionEvents.executeAction(player, "walk_heading", "west", 40).success(), "Walk not accepted: " + companion.getLastTaskResult());
+        long id = companion.activeWorkId();
+        h.onEachTick(() -> player.teleportTo(companion.getX() + 3, companion.getY(), companion.getZ()));
+        h.succeedWhen(() -> {
+            CompanionActionResult result = finished(h, companion, id);
+            h.assertTrue(result.success() && at(h, companion).getX() <= 20, result.message() + " at " + at(h, companion).toShortString());
+        });
+    }
+
     @GameTest(template = "large_search", timeoutTicks = 2400, skyAccess = true)
     public static void offersAWayRoundALake(GameTestHelper h) {
         CompanionEntity companion = arena(h, null);
@@ -247,9 +266,14 @@ public final class CompanionCourseTests {
             h.setBlock(new BlockPos(x, 1, z), border ? Blocks.BEDROCK.defaultBlockState() : water != null && x >= 40 ? water : Blocks.STONE.defaultBlockState());
             if (border) for (int y = 2; y <= 4; y++) h.setBlock(new BlockPos(x, y, z), Blocks.BEDROCK);
         }
-        CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), START_X, 2, LINE);
+        return spawn(h, new BlockPos(START_X, 2, LINE), new BlockPos(START_X - 3, 2, LINE));
+    }
+
+    /** He at {@code at}, his player at {@code player} (relative), owning him. */
+    private static CompanionEntity spawn(GameTestHelper h, BlockPos at, BlockPos player) {
+        CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), at.getX(), at.getY(), at.getZ());
         var owner = h.makeMockServerPlayerInLevel();
-        BlockPos stand = h.absolutePos(new BlockPos(START_X - 3, 2, LINE));
+        BlockPos stand = h.absolutePos(player);
         owner.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
         companion.setOwnerId(owner.getUUID());
         owner.getPersistentData().putUUID("aicompanion:canonical_companion", companion.getUUID());
