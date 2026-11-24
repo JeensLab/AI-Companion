@@ -570,6 +570,8 @@ final class CompanionLoot {
     /** Drops left lying until the given game time (a creeper that will not leave them): not chased, and the work does not wait for them. */
     private final Map<UUID, Long> shunned = new HashMap<>();
     void shun(long until) { for (UUID id : pending) shunned.put(id, until); pause(); }
+    /** One drop of his left lying until the given game time; the others are his pickup as before. */
+    void shun(UUID id, long until) { shunned.put(id, until); }
     void beginCollection() { collecting = true; shunned.clear(); leavesCleared.clear(); unreachable.clear(); unreachableFrom.clear(); attempts.clear(); retryAt.clear(); }
     void resumeCollection() { collecting = true; }
     void cancel() { collecting = false; shunned.clear(); leavesCleared.clear(); pending.clear(); unreachable.clear(); unreachableFrom.clear(); born.clear(); attempts.clear(); retryAt.clear(); sites.clear(); rescanUntil = 0; pause(); }

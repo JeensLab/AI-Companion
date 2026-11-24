@@ -1108,6 +1108,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         swimming.climbOutOfWater();
         pushOutOfBlocks();
         meals.tickEating();
+        // His eye of ender in the air, and the one that fell: every tick, whatever has his legs (CompanionCourse.watch).
+        work.course.watch();
         loot.tickNearby();
         if (level() instanceof ServerLevel serverLevel) playersThings.tick(serverLevel);
         recovery.observe();
