@@ -10,7 +10,6 @@ import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.loot.LootParams;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParamSets;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
@@ -35,8 +34,8 @@ import java.util.UUID;
  * he does not wait for the night nor go down a cave for them.
  *
  * Only what falls often enough to count on (a witch's odds and ends are not), his kill being his player's (CompanionKillCredit:
- * a spider's eye); only the overworld, on land; never a named mob (somebody's), a piglin (the whole group rises) or
- * the warden. Of what lives in the water only
+ * a spider's eye, a blaze's rod); on land; never a named mob (somebody's), a piglin (the whole group rises), a ghast or
+ * the warden. Under the Nether's roof no surface is known, so there only one in his sight is about. Of what lives in the water only
  * a fish and a squid (cod, salmon, ink): fought in the water, as for a drowned (CompanionSwimming dives with a blade in hand); a
  * dolphin, an axolotl, a turtle and a guardian never.
  */
@@ -113,13 +112,13 @@ final class CompanionMobDrops {
 
     /**
      * Kinds never hunted for a drop: the warden and the wither are no game, a piglin struck raises its group, a guardian lives under
-     * water, a breeze turns his arrows back at him, and a blaze is of the Nether, where this order is not followed yet.
+     * water, a breeze turns his arrows back at him, and a ghast hangs over the lava its drops fall into.
      */
     private static boolean spared(Mob mob) {
         return mob instanceof net.minecraft.world.entity.monster.warden.Warden || mob instanceof net.minecraft.world.entity.boss.wither.WitherBoss
                 || mob instanceof net.minecraft.world.entity.monster.piglin.AbstractPiglin || mob instanceof net.minecraft.world.entity.monster.ZombifiedPiglin
                 || mob instanceof net.minecraft.world.entity.monster.Guardian || mob instanceof net.minecraft.world.entity.monster.breeze.Breeze
-                || mob instanceof net.minecraft.world.entity.monster.Blaze;
+                || mob instanceof net.minecraft.world.entity.monster.Ghast;
     }
 
     /** What is fished for its drop: a fish (a tadpole drops nothing) or a squid, glowing or not. */
@@ -142,7 +141,7 @@ final class CompanionMobDrops {
      * spiders had gone round the trees while he made his sword) or is in his sight: not the cave under the hill.
      */
     private static List<Mob> targets(CompanionEntity c, ServerLevel level, List<EntityType<?>> kinds, Set<UUID> passed, Set<UUID> engaged) {
-        if (kinds.isEmpty() || level.dimension() != Level.OVERWORLD) return List.of();
+        if (kinds.isEmpty()) return List.of();
         return level.getEntitiesOfClass(Mob.class, around(c), mob -> !passed.contains(mob.getUUID()) && fought(c, kinds, mob)
                 // Under the hill only a fish or a squid of the sea about him (or one struck, gone under a ledge), never the cave.
                 && (mob.getBlockY() < c.getBlockY() - DEPTH ? swims(mob) && (engaged.contains(mob.getUUID()) || open(level, mob))
@@ -206,7 +205,7 @@ final class CompanionMobDrops {
         c = w.owner;
         ResourceLocation key = ResourceLocation.tryParse(id == null ? "" : id);
         Item asked = key == null ? null : BuiltInRegistries.ITEM.getOptional(key).orElse(null);
-        kinds = asked == null || !(c.level() instanceof ServerLevel level) || level.dimension() != Level.OVERWORLD ? List.of() : sources(level, asked);
+        kinds = asked == null || !(c.level() instanceof ServerLevel level) ? List.of() : sources(level, asked);
         if (kinds.isEmpty()) return CompanionActionResult.failed("Такое я с монстров не добываю: " + id + ".");
         if (c.getHealth() <= CompanionCreeperGuard.FIGHT_HEALTH) return CompanionActionResult.blocked("Я ранен: в бой за «" + new ItemStack(asked).getHoverName().getString() + "» сейчас не пойду. Поем — тогда.");
         item = asked; wanted = count; before = w.items.countCarried(item);

@@ -616,8 +616,9 @@ public final class CompanionObtain {
         return key != null && BuiltInRegistries.ITEM.getOptional(key).map(item -> new ItemStack(item).is(kind)).orElse(false);
     }
 
+    /** Not alone in the Nether on his errand: what only his player's kill brings does not fall there, and the rest of the plan is made at home. */
     private boolean hunted(Item item) {
-        return roams != null && !CompanionMobDrops.sources(level, item).isEmpty() && roamed.computeIfAbsent(item, roams::test);
+        return roams != null && (trip == null || !trip.away()) && !CompanionMobDrops.sources(level, item).isEmpty() && roamed.computeIfAbsent(item, roams::test);
     }
 
     /** A family, an ore's drop, an animal's, a block's that stands here or the wool of a sheep he has shears for: one of his skills gets it, whatever the bag holds. */
