@@ -150,6 +150,11 @@ public final class CompanionWorkCommands {
             return new PlannedAction("build_portal", 0, 1,
                     value.matches(".*(?:новый|другой|еще один|не хочу|не пойду|не надо).*") ? "new"
                             : value.matches(".*(?:здесь|тут|возле меня|рядом со мной).*") ? "here" : "");
+        // «Открой портал Края», «вставь очи» (decided 24.11): his eyes of ender into the empty frames near him. A bare «открой портал»
+        // is the model's: an unlit frame of the Nether's may stand by.
+        if (value.matches("^(?:открой|активируй|зажги|запусти|включи)(?: мне| нам)? портал (?:края|в край|в энд|в эндер|энда)$"
+                + "|^(?:вставь|поставь|вложи|положи)(?: свои| все)? (?:очи|око|глаза)(?: края| эндера)?(?: в (?:портал|рамки|рамку|рамки портала)(?: края)?)?$"))
+            return new PlannedAction("open_end_portal", 0, 1);
         // «Сделай генератор булыжника»: lava, stone and water set in a dug channel from his buckets; the buckets are not got by it.
         if (value.matches("^(?:построй|сделай|сооруди)(?: мне| нам| себе)? (?:(?:каменный|булыжниковый) генератор|генератор (?:булыжника|булыжников|булыжник|камня|камней))"
                 + "(?: рядом| здесь| тут)?$"))

@@ -16,7 +16,7 @@ public final class CompanionPlanCodec {
     /** How many times one walking route may be walked: the written steps stay capped at {@link #MAX_STEPS}. */
     public static final int MAX_REPEAT = 100;
     public static final int WOOD_STEP = 16;
-    public static final Set<String> ACTIONS = Set.of("follow", "wait", "come", "protect", "stop_protect", "wander", "stop", "enter_portal",
+    public static final Set<String> ACTIONS = Set.of("follow", "wait", "come", "protect", "stop_protect", "wander", "stop", "enter_portal", "open_end_portal",
             "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "scout_traders", "trade_items", "farm_crops", "harvest_crops", "use_bone_meal", "obtain_item", "pursue_goal", "walk_heading", "set_home", "build_portal", "build_cobble_gen", "build_golem", "pick_up", "remember_place", "go_to_place", "repair_item", "disenchant_item", "compost_items", "campfire_song", "fish");
     /** Flint is dug out of gravel, which drops it rarely: one step asks for at most this much. */
     static final String FLINT = "minecraft:flint";
@@ -195,7 +195,7 @@ public final class CompanionPlanCodec {
                 if ("compost_items".equals(type) && !step.has("count")) count = PlannedAction.ALL_CARRIED;
                 // «Порыбачь» names no number: until he is stopped (CompanionFishing).
                 if ("fish".equals(type) && !step.has("count")) count = PlannedAction.ALL_CARRIED;
-                if (("build_house".equals(type) || "sort_chests".equals(type) || "set_home".equals(type) || "build_portal".equals(type) || "build_cobble_gen".equals(type) || "build_golem".equals(type) || "campfire_song".equals(type)) && count != 1) throw invalid();
+                if (("build_house".equals(type) || "sort_chests".equals(type) || "set_home".equals(type) || "build_portal".equals(type) || "open_end_portal".equals(type) || "build_cobble_gen".equals(type) || "build_golem".equals(type) || "campfire_song".equals(type)) && count != 1) throw invalid();
                 if ("wait".equals(type) && (seconds < 1 || seconds > 30)) throw invalid();
                 String item = step.has("item") ? step.get("item").getAsString().trim() : "";
                 // gather_stone digs any stone: granite, tuff or cobbled deepslate named there is obtain_item's, dug by name where it shows
