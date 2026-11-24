@@ -15,6 +15,7 @@ import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.CocoaBlock;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
@@ -184,34 +185,27 @@ final class CompanionPicking {
         return find(c, level, here, site, Set.of(), new HashSet<>(), true, false, false) != null && soilAbout(c, level);
     }
 
-    /**
-     * Whether a block about him is his to take at all: not the player's building, not the stone the player set down, ripe,
-     * dry, not beside lava, off solid ground — the gather's own rule, for the one search (CompanionWaySearch) to ask.
-     */
-    static Predicate<BlockPos> mine(CompanionEntity c, ServerLevel level) {
-        Predicate<BlockPos> site = kept(c, level);
-        return pos -> takes(level, pos, site) && grounded(c, level, pos) && !lavaBeside(level, pos);
-    }
-
     /** No cell is the player's own: the rule of an order that named the block itself (see {@link #requested}). */
     private static final Predicate<BlockPos> NOTHING_KEPT = pos -> false;
 
     /**
-     * Whether the block is the item's own: it IS the item (a pumpkin, a lapis block, the cobblestone he hung) or a block a recipe
+     * The blocks that are the item's own: they ARE the item (a pumpkin, a lapis block, the cobblestone he hung) or a block a recipe
      * of one makes it of (a lapis block for nine lapis, an iron block for ingots). Such a block is the order's target wherever it
      * stands, the player's own build or not. A block that merely gives the item when broken — the poppy for red dye, the clay for
      * clay balls — is a source, and the flowers by the player's chest stay his (the owner, 18.11).
      */
-    static boolean ownBlock(ServerLevel level, Item item, BlockState state) {
-        for (CompanionPickable.Source source : CompanionPickable.identity(level, item)) if (state.is(source.block())) return true;
-        for (CompanionPickable.Source source : CompanionPickable.storage(level, item)) if (state.is(source.block())) return true;
-        return false;
+    static Set<Block> ownBlocks(ServerLevel level, Item item) {
+        Set<Block> blocks = new HashSet<>();
+        for (CompanionPickable.Source source : CompanionPickable.identity(level, item)) blocks.add(source.block());
+        for (CompanionPickable.Source source : CompanionPickable.storage(level, item)) blocks.add(source.block());
+        return blocks;
     }
 
     /** What the player's own build keeps: his site and his stone — but never a block of the item itself. */
     private static Predicate<BlockPos> keptUnlessOwn(CompanionEntity c, ServerLevel level, Item item) {
         Predicate<BlockPos> kept = kept(c, level);
-        return pos -> kept.test(pos) && !ownBlock(level, item, level.getBlockState(pos));
+        Set<Block> own = ownBlocks(level, item);
+        return pos -> kept.test(pos) && !own.contains(level.getBlockState(pos).getBlock());
     }
 
     /**
