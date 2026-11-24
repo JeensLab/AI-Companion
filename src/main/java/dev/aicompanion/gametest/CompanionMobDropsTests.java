@@ -34,11 +34,12 @@ import java.util.concurrent.CompletableFuture;
 public final class CompanionMobDropsTests {
     private static final int GROUND = 5;
 
-    /** Plan only: what a monster about him drops is fought for; what only a player's kill, a witch's luck or the water gives is not. */
+    /** Plan only: what a monster about him drops is fought for, a player's kill being his too (CompanionKillCredit); what a witch's luck or the water gives is not. */
     @GameTest(template = "empty", timeoutTicks = 40)
     public static void whatAMonsterDropsIsPlannedAsAHunt(GameTestHelper h) {
         var level = h.getLevel();
-        for (String item : List.of("minecraft:string", "minecraft:bone", "minecraft:gunpowder", "minecraft:ender_pearl", "minecraft:slime_ball", "minecraft:rotten_flesh")) {
+        for (String item : List.of("minecraft:string", "minecraft:bone", "minecraft:gunpowder", "minecraft:ender_pearl", "minecraft:slime_ball", "minecraft:rotten_flesh",
+                "minecraft:spider_eye", "minecraft:phantom_membrane")) {
             var plan = CompanionObtain.plan(level, List.of(new ItemStack(Items.STONE_AXE)), false, item, 3, thing -> false, thing -> true);
             h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("hunt_drop", item, 3))), item + ": " + plan);
         }
@@ -60,9 +61,8 @@ public final class CompanionMobDropsTests {
         // Cod is the fish's own: neither a dolphin, nor a polar bear, nor a guardian is named for it.
         var nobody = CompanionObtain.plan(level, List.of(), false, "minecraft:cod", 1, thing -> false, thing -> false);
         h.assertTrue(nobody.refused() && nobody.refusal().contains("Cod") && !nobody.refusal().contains("Dolphin") && !nobody.refusal().contains("Polar") && !nobody.refusal().contains("Guardian"), "Cod: " + nobody);
-        // A player's kill only (spider eye, blaze rod), a witch's odds and ends, a guardian's, a piglin's: no monster is fought for them.
-        for (String item : List.of("minecraft:spider_eye", "minecraft:blaze_rod", "minecraft:glowstone_dust", "minecraft:glass_bottle",
-                "minecraft:prismarine_shard", "minecraft:gold_nugget", "minecraft:nether_star")) {
+        // A witch's odds and ends, a guardian's, a piglin's, a blaze's (the Nether) and a breeze's (it turns arrows back): no monster is fought for them.
+        for (String item : List.of("minecraft:blaze_rod", "minecraft:breeze_rod", "minecraft:glowstone_dust", "minecraft:glass_bottle", "minecraft:prismarine_shard", "minecraft:gold_nugget", "minecraft:nether_star")) {
             var plan = CompanionObtain.plan(level, List.of(), true, item, 1, thing -> true, thing -> true);
             h.assertTrue(plan.steps().stream().noneMatch(step -> step.type().equals("hunt_drop")), item + " is not hunted for: " + plan);
         }
