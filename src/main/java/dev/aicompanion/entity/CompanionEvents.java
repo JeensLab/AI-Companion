@@ -368,6 +368,7 @@ public final class CompanionEvents {
             case "follow" -> { companion.setFollowing(true); yield CompanionActionResult.ok("Следую за тобой."); }
             case "wait" -> { companion.setFollowing(false); yield CompanionActionResult.ok("Остановился и жду."); }
             case "wander" -> { companion.startRoaming(); yield CompanionActionResult.ok("Осмотрюсь вокруг."); }
+            case "open_end_portal" -> companion.startWork(action, item, count, location);
             case "enter_portal" -> companion.portals.enter((ServerLevel) companion.level());
             case "stop" -> { companion.stopGatheringForPlayer(); yield CompanionActionResult.ok(wasPlaying ? "Ладно, убираю гитару." : "Ладно, остановился."); }
             // By a lit fire near the player, or by his own one set down from the bag: he sits down and plays (CompanionCampfire).

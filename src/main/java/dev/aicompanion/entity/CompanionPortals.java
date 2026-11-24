@@ -29,6 +29,8 @@ final class CompanionPortals {
     private static final int WALKS_FROM = 64, PATIENCE_TICKS = 20 * 60, RETRY_TICKS = 20;
     /** From this close to the place before the portal he walks straight in, past the end of any route: a portal is no place a route stands on. */
     private static final double STEP_IN_FROM = 2.5, BEFORE_THE_PLANE = 1.5;
+    /** An End portal this near at «зайди в портал» with no Nether portal about: the order is answered about the End. */
+    private static final int END_NEAR = 12;
 
     private final CompanionEntity c;
     private BlockPos playerSeen, portal, entry, lastHere;
@@ -55,7 +57,9 @@ final class CompanionPortals {
     /** The player's order: the nearest Nether portal, whoever lit it. What he works on ends here, as on «иди за мной». */
     CompanionActionResult enter(ServerLevel level) {
         BlockPos found = litNear(level, c.blockPosition(), WALKS_FROM);
-        if (found == null) return CompanionActionResult.failed("Рядом нет портала в Незер.");
+        // An order into the Nether is an errand he comes back from; from the End there is no way back while the dragon lives.
+        if (found == null) return CompanionActionResult.failed(level.dimension() != net.minecraft.world.level.Level.END && CompanionEndPortal.openNear(level, c.blockPosition(), END_NEAR)
+                ? "В Край первым не пойду: оттуда не вернуться, пока жив дракон. Иди — я за тобой." : "Рядом нет портала в Незер.");
         c.setFollowing(true);
         goTo(level, found);
         return CompanionActionResult.ok("Иду к порталу.");

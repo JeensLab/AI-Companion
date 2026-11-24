@@ -80,7 +80,7 @@ public final class CompanionPlanRunner {
     private CompanionPlanRunner() { }
 
     /** {@link #WORK}, and fish: a rod's work is such an order too. */
-    private static boolean isWork(String type) { return WORK.contains(type) || "fish".equals(type); }
+    private static boolean isWork(String type) { return WORK.contains(type) || "fish".equals(type) || "open_end_portal".equals(type); }
 
     public static Verdict decide(PlannedAction action, Attempt attempt, State before, State after, List<PlannedAction> later,
                                  boolean retried, int recoveries, boolean cancelled) {
