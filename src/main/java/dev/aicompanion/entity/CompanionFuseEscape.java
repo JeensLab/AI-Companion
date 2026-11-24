@@ -18,7 +18,7 @@ import java.util.Map;
 
 /**
  * The way out of a lit fuse, over the floor as it is: a breadth-first walk over the cells he can stand on (four neighbours, a rise of one
- * block, a drop of up to three, which hurts nothing) to a dozen steps, that never goes towards a creeper nor past one with a lit fuse. The cell it ends at is the one the
+ * block, a drop of up to three, which hurts nothing) to a dozen steps, that never goes towards a creeper nor past one that is lit or in his sight. The cell it ends at is the one the
  * fuse cannot see (a fuse goes out without a line of sight, and a blast does not reach round a corner), then the farthest from the nearest
  * creeper up to the gap beyond which the fuse goes out anyway, then the nearest to walk to. With no such way, the cells of a wall between
  * him and the creeper.
@@ -130,6 +130,7 @@ final class CompanionFuseEscape {
         for (int i = 0; i < floors.length; i++) {
             floors[i] = Math.max(MIN_CLEAR, Math.min(owner.position().distanceTo(threats.get(i).position()), CompanionCreeperGuard.SAFE_GAP) - TOLERANCE);
         }
+        List<Creeper> sided = threats.stream().filter(creeper -> CompanionCreeperGuard.lit(creeper) || owner.hasLineOfSight(creeper)).toList();
         Map<BlockPos, BlockPos> from = new HashMap<>();
         Map<BlockPos, Integer> steps = new HashMap<>();
         ArrayDeque<BlockPos> queue = new ArrayDeque<>();
@@ -145,7 +146,7 @@ final class CompanionFuseEscape {
             for (Direction side : SIDES) {
                 BlockPos next = move(level, cell, side);
                 Vec3 foot = next == null ? null : Vec3.atBottomCenterOf(next);
-                if (next == null || steps.containsKey(next) || !keepsOff(foot, threats, floors) || past(owner.position(), foot, threats)) continue;
+                if (next == null || steps.containsKey(next) || !keepsOff(foot, threats, floors) || past(owner.position(), foot, sided)) continue;
                 from.put(next, cell);
                 steps.put(next, taken + 1);
                 queue.add(next);
@@ -184,14 +185,15 @@ final class CompanionFuseEscape {
     }
 
     /**
-     * The point lies beyond a creeper with a lit fuse from where he stands, within the gap of that fuse: the way never leads past one. A blow
-     * of his throws it that way, a drop there keeps them abreast, and a fall burns its fuse faster (run ta20261031-d2 void-4: he struck one a
-     * ledge below him and ran on down the same slope, 18 ticks within two blocks of it, dead at full health). A creeper whose fuse is not lit
-     * has no far side: one shut in the rock under his stairs would take the stairs from him, and the way keeps off it as it is.
+     * The point lies beyond one of these creepers from where he stands, within the gap of its fuse: the way never leads past one. A blow of
+     * his throws it that way, a drop there keeps them abreast, and a fall burns its fuse faster (run ta20261031-d2 void-4: he struck one a
+     * ledge below him and ran on down the same slope, 18 ticks within two blocks of it, dead at full health). The creepers with a far side
+     * are those whose fuse is lit and those he sees: the way is judged before the fuse as it will be run after it, or he would go to fight
+     * one with no way out of its blast. One shut in the rock under his stairs has none (it would take the stairs from him), and the way
+     * keeps off it as it is.
      */
-    private static boolean past(Vec3 from, Vec3 point, List<Creeper> threats) {
-        for (Creeper creeper : threats) {
-            if (!CompanionCreeperGuard.lit(creeper)) continue;
+    private static boolean past(Vec3 from, Vec3 point, List<Creeper> sided) {
+        for (Creeper creeper : sided) {
             Vec3 at = creeper.position();
             double dx = at.x - from.x, dz = at.z - from.z;
             if (Math.hypot(dx, dz) >= ABREAST && (point.x - at.x) * dx + (point.z - at.z) * dz > 0 && point.distanceTo(at) < CompanionCreeperGuard.SAFE_GAP) return true;

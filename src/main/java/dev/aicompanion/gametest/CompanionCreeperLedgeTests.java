@@ -5,10 +5,13 @@ import dev.aicompanion.entity.CompanionSeal;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -32,7 +35,7 @@ import static dev.aicompanion.gametest.CompanionMineFightTests.place;
 public final class CompanionCreeperLedgeTests {
     /** The slope by the height at which he stands on each ledge, west to east, as the run's by its row z -47: a landing, steps of one, then drops of three, one, two, two. */
     private static final int[] FEET = {15, 15, 15, 14, 13, 12, 11, 8, 7, 5, 3, 2, 2, 2, 2, 2, 2};
-    private static final int WEST = 28, NORTH = 30, WIDTH = 7, ROOF = 18, HIS_LEDGE = 5, ITS_LEDGE = 6, MIDDLE = 3, WATCH_TICKS = 200;
+    private static final int WEST = 28, NORTH = 30, WIDTH = 7, ROOF = 18, HIS_LEDGE = 5, ITS_LEDGE = 6, MIDDLE = 3, WATCH_TICKS = 200, NO_LANDING = 3, WIDER = 2, BESIDE = 2;
     private static final float KEPT = 10, AS_IN_THE_RUN = 15;
     private static final double STEP_DOWN = .5;
 
@@ -48,6 +51,42 @@ public final class CompanionCreeperLedgeTests {
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void aLitCreeperOnTheLedgeBelowAndNoBlockForAWallLeavesHimHalfHisHealth(GameTestHelper h) {
         watch(h, false);
+    }
+
+    /**
+     * Review of the far side that only a lit creeper had: before the fuse is lit the guard judges whether he has a way out, and it must judge
+     * as the run will find it. No landing behind him here, the slope is wide enough to pass the creeper, and the creeper stands still three
+     * ledges below him, after him, too far for its fuse: the only way out that gets clear is past it, so that is no way out, he has no room
+     * to fight it and does not go down to meet it (the player is beside him, as he meets a creeper outside a mine only by the player). Its
+     * fuse is never lit.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void anUnlitCreeperBelowWithNoWayOutButPastItIsNotGoneDownTo(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_SWORD));
+        for (int i = NO_LANDING; i < FEET.length; i++) for (int dz = -WIDER; dz < WIDTH + WIDER; dz++) for (int y = FEET[i]; y <= ROOF; y++) {
+            h.getLevel().setBlock(h.absolutePos(new BlockPos(WEST + i, y, NORTH + dz)), Blocks.AIR.defaultBlockState(), 2 | 16);
+        }
+        BlockPos top = h.absolutePos(new BlockPos(WEST + NO_LANDING, FEET[NO_LANDING], NORTH + MIDDLE));
+        place(c, top);
+        // The player beside him: outside a mine he meets a creeper only by the player. In creative the creeper hunts him, not the player.
+        ServerPlayer player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        player.setGameMode(GameType.CREATIVE);
+        BlockPos beside = top.offset(top.subtract(h.absolutePos(new BlockPos(WEST + NO_LANDING, FEET[NO_LANDING], NORTH + MIDDLE - BESIDE))));
+        player.teleportTo(beside.getX() + .5, beside.getY(), beside.getZ() + .5);
+        Creeper creeper = creeper(h, h.absolutePos(new BlockPos(WEST + ITS_LEDGE, FEET[ITS_LEDGE], NORTH + MIDDLE)));
+        creeper.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        creeper.setTarget(c);
+        long begun = h.getTick();
+        h.onEachTick(() -> {
+            if (creeper.isAlive() && creeper.getTarget() == null) creeper.setTarget(c);
+            String trace = " | tick " + (h.getTick() - begun) + ", he at " + rel(h, c.blockPosition()).toShortString() + ", health " + c.getHealth() + ", creeper "
+                    + (creeper.isAlive() ? "gap " + String.format("%.1f", c.distanceTo(creeper)) + ", health " + creeper.getHealth() : "gone") + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            h.assertTrue(creeper.isAlive() && creeper.getSwellDir() <= 0, "He went down to a creeper with no way out but past it, and its fuse was lit" + trace);
+            if (h.getTick() - begun >= WATCH_TICKS) h.succeed();
+        });
     }
 
     private static void watch(GameTestHelper h, boolean blocks) {
