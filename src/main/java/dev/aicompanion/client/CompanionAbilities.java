@@ -12,8 +12,8 @@ import java.util.Set;
 /**
  * The closed list of what the player can ask him to do, kept honest by the code's own closed lists: every ability names
  * plan actions the codec accepts or deeds the autonomy can take up, and every accepted action and every deed belongs to
- * an ability. A new plan action or deed without a phrase fails this class at load and the abilities GameTest, naming the
- * constant; a phrase about something the code has no action or deed for fails the same way, so the list cannot drift
+ * an ability. A new plan action or deed without a phrase fails the abilities GameTest, naming the constant (in the game
+ * it is only logged); a phrase about something the code has no action or deed for fails the same way, so the list cannot drift
  * from the code. «Что ты умеешь» and «расскажи 10 умений» are answered from it without a model request, as a random
  * selection drawn without repeats, so two asks do not read back the same five (idea 4NTZD, issue #105).
  *
@@ -57,13 +57,15 @@ public final class CompanionAbilities {
             new Ability("запоминаю места и твой дом, вожу тебя туда", List.of("remember_place", "go_to_place", "set_home"), List.of()),
             new Ability("строю портал, генератор булыжника и голема", List.of("build_portal", "build_cobble_gen", "build_golem"), List.of()),
             new Ability("иду в нужную сторону и захожу в портал", List.of("walk_heading", "enter_portal"), List.of()),
+            new Ability("веду к крепости Края по оку и вставляю очи в портал", List.of("walk_heading", "open_end_portal"), List.of()),
+            new Ability("рыбачу удочкой", List.of("fish"), List.of()),
             new Ability("надеваю снаряжение, чиню вещи и снимаю чары", List.of("equip_item", "unequip_item", "repair_item", "disenchant_item"), List.of()),
             new Ability("даю тебе вещи и ставлю сундук", List.of("give_items", "give_wood", "place_block"), List.of()),
             new Ability("ищу торговцев и торгую с ними", List.of("scout_traders", "trade_items"), List.of()),
             new Ability("берусь за долгую цель и иду к ней, докуда смогу дойти", List.of("pursue_goal"), List.of()),
             new Ability("играю на гитаре у костра", List.of("campfire_song"), List.of()));
 
-    private static final List<Ability> ALL = verify(DECLARED);
+    private static final List<Ability> ALL = loaded(DECLARED);
 
     /** The source of an answer the player did not seed: the same ask twice must not read back the same five. */
     private static final Random RANDOM = new Random();
@@ -127,9 +129,22 @@ public final class CompanionAbilities {
     }
 
     /**
+     * The registry as the game loads it: a mismatch with the code is written to the log, and the list stays as written. A
+     * throw here failed the class, and «что ты умеешь» took the game down (review 24.11: fish merged without its phrase).
+     */
+    public static List<Ability> loaded(List<Ability> declared) {
+        try {
+            return verify(declared);
+        } catch (IllegalStateException mismatch) {
+            dev.aicompanion.AICompanionMod.LOGGER.error("AI Companion: {}", mismatch.getMessage());
+            return List.copyOf(declared);
+        }
+    }
+
+    /**
      * Both directions against the code: a phrase without a real plan action or deed, an action the codec does not accept,
-     * or a deed the autonomy does not have, is a bug of this file, not a plan the codec would refuse later. It fails at
-     * class load, before any answer is built; the GameTest calls it again on the shipped list and on probe lists.
+     * or a deed the autonomy does not have, is a bug of this file, not a plan the codec would refuse later. The abilities
+     * GameTest runs it on the shipped list and on probe lists and fails naming the constant; the game only logs it (loaded).
      */
     public static List<Ability> verify(List<Ability> declared) {
         Set<String> claimedActions = new HashSet<>();

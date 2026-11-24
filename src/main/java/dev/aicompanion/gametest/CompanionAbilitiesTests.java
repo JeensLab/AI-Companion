@@ -234,6 +234,18 @@ public final class CompanionAbilitiesTests {
         h.succeed();
     }
 
+    /**
+     * A forgotten phrase is this test's failure, not the player's crash: with the fishing PR merged and no phrase for fish, the class
+     * failed to load and «что ты умеешь» took the game down (review 24.11). At load the registry is kept as written.
+     */
+    @GameTest(template = "empty")
+    public static void aForgottenPhraseAtLoadStillLeavesAnAnswer(GameTestHelper h) {
+        List<CompanionAbilities.Ability> probe = withoutAction(CompanionAbilities.all(), "store_items");
+        List<CompanionAbilities.Ability> loaded = CompanionAbilities.loaded(probe);
+        h.assertTrue(loaded.equals(probe), "The registry at load is not the one written: " + loaded.size() + " of " + probe.size());
+        h.succeed();
+    }
+
     /** The registry with one deed taken out of every ability that names it, as a new deed without a phrase would look. */
     private static List<CompanionAbilities.Ability> withoutDeed(List<CompanionAbilities.Ability> abilities, String deed) {
         List<CompanionAbilities.Ability> probe = new ArrayList<>();
