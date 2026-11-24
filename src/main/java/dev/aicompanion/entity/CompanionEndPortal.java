@@ -225,7 +225,7 @@ final class CompanionEndPortal {
         c.setChanged();
         c.refreshInventorySummary();
         put++;
-        dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "end_portal_eye", "entity", c.getUUID(), "frame", frame, "put", put, "opened", whole != null);
+        dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "end_portal_eye", "entity", c.getUUID(), "frame", frame, "at", c.blockPosition(), "put", put, "opened", whole != null);
         c.workStatus("Вставляю очи в рамки портала Края: " + put + ".");
         frame = null;
     }
