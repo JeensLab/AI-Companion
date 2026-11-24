@@ -30,7 +30,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     public static final int WORK_LIMIT_SECONDS = 660;
     public static final int GATHER_LIMIT_SECONDS = 185;
     private static final Set<String> TRACKED_WORK = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests",
-            "build_house", "craft_item", "place_block", "come", "hunt_mobs", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "collect_smelt", "build_pen", "breed_animals", "scout_traders", "trade_items", "farm_crops", "harvest_crops", "use_bone_meal", "compost_meal", "walk_heading", "fill_bucket", "mine_obsidian", "gather_block", "hunt_drop", "build_portal", "build_cobble_gen", "build_golem", "pick_up", "go_to_place", "disenchant_item", "compost_items", "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block", "nether_go", "nether_back", "fish");
+            "build_house", "craft_item", "place_block", "come", "hunt_mobs", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "collect_smelt", "build_pen", "breed_animals", "scout_traders", "trade_items", "farm_crops", "harvest_crops", "use_bone_meal", "compost_meal", "walk_heading", "fill_bucket", "mine_obsidian", "gather_block", "hunt_drop", "build_portal", "build_cobble_gen", "build_golem", "pick_up", "go_to_place", "disenchant_item", "compost_items", "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block", "nether_go", "nether_back");
     private static final Set<String> PARKABLE_WORK = Set.of("smelt_items", "collect_smelt");
     /** A leaf order's refusals: no leaf of any tree he can come at, a crown above him that only soil would let him reach, or one too high for even a full column. */
     private static final String NO_LEAVES = "Рядом листвы не вижу.";
@@ -91,7 +91,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     public long ownedWorkId() { return ownedWorkId; }
 
     /** Whether a step of this kind is waited for by its own work id (the plan must not report it before the walk ends). */
-    public static boolean tracksWork(String action) { return TRACKED_WORK.contains(action); }
+    public static boolean tracksWork(String action) { return TRACKED_WORK.contains(action) || "fish".equals(action); }
 
     @Override public void progress(java.util.List<PlannedAction> plan, int index) { this.plan = List.copyOf(plan); progress.accept(plan, index); }
 
@@ -217,7 +217,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             CompanionActionResult result = dispatch.result();
             if (!result.success()) return CompletableFuture.completedFuture(new Attempt(result, false));
             CompletableFuture<CompanionActionResult> verified;
-            if (dispatch.workId() > 0 && TRACKED_WORK.contains(action.type())) verified = waitForWork(dispatch.workId(), dispatch.tick(), limitSeconds(action));
+            if (dispatch.workId() > 0 && tracksWork(action.type())) verified = waitForWork(dispatch.workId(), dispatch.tick(), limitSeconds(action));
             else if ("gather_wood".equals(action.type())) verified = waitForGathering(dispatch.workId(), dispatch.tick());
             else if ("wait".equals(action.type())) verified = waitSeconds(action.seconds(), result);
             else verified = CompletableFuture.completedFuture(result);
