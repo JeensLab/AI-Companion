@@ -77,6 +77,8 @@ public final class CompanionMineRetreatFightTests {
             aimed[0] |= c.getTarget() == skeleton;
             float left = 0;
             for (Zombie zombie : zombies) left += zombie.isAlive() ? zombie.getHealth() : 0;
+            boolean blow = shot[0] && c.isAlive() && c.getHealth() < health[0];
+            h.assertTrue(!blow || "RETREAT".equals(c.expeditionStage()), "A zombie's blow came outside the retreat, where the fight takes the one on him anyway: stage " + c.expeditionStage());
             if (c.getHealth() < health[0] && unanswered[0] < 0) unanswered[0] = h.getTick();
             if (left < theirs[0] && unanswered[0] >= 0) { unanswered[0] = -1; answers[0]++; }
             health[0] = c.getHealth();

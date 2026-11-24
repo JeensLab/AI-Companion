@@ -38,6 +38,8 @@ public final class CompanionCreeperLedgeTests {
     private static final int WEST = 28, NORTH = 30, WIDTH = 7, ROOF = 18, HIS_LEDGE = 5, ITS_LEDGE = 6, MIDDLE = 3, WATCH_TICKS = 200, NO_LANDING = 3, WIDER = 2, BESIDE = 2;
     private static final float KEPT = 10, AS_IN_THE_RUN = 15;
     private static final double STEP_DOWN = .5;
+    /** What he says when he steps away from a creeper he does not fight. */
+    private static final String WARY = "Рядом крипер";
 
     private CompanionCreeperLedgeTests() { }
 
@@ -79,13 +81,17 @@ public final class CompanionCreeperLedgeTests {
         creeper.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
         creeper.setTarget(c);
         long begun = h.getTick();
+        boolean[] wary = {false};
         h.onEachTick(() -> {
             if (creeper.isAlive() && creeper.getTarget() == null) creeper.setTarget(c);
             String trace = " | tick " + (h.getTick() - begun) + ", he at " + rel(h, c.blockPosition()).toShortString() + ", health " + c.getHealth() + ", creeper "
                     + (creeper.isAlive() ? "gap " + String.format("%.1f", c.distanceTo(creeper)) + ", health " + creeper.getHealth() : "gone") + " | " + report(c);
             h.assertTrue(c.isAlive(), "Died" + trace);
             h.assertTrue(creeper.isAlive() && creeper.getSwellDir() <= 0, "He went down to a creeper with no way out but past it, and its fuse was lit" + trace);
-            if (h.getTick() - begun >= WATCH_TICKS) h.succeed();
+            wary[0] |= c.getLastTaskResult().contains(WARY);
+            if (h.getTick() - begun < WATCH_TICKS) return;
+            h.assertTrue(wary[0], "He took no notice of the creeper at all" + trace);
+            h.succeed();
         });
     }
 

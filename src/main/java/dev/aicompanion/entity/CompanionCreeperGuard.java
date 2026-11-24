@@ -163,7 +163,7 @@ final class CompanionCreeperGuard {
         lookAtFuse(creeper, now);
         if (creeper != null && now >= nextProbe && owner.getHealth() > FIGHT_HEALTH) {
             nextProbe = now + PLAN_EVERY;
-            probe.plan(level, threats(level));
+            probe.plan(level, threats(level), creeper);
             room = probe.clears();
         }
         shielded = creeper != null && burns(creeper) && shield.covers(level, creeper);
@@ -220,7 +220,7 @@ final class CompanionCreeperGuard {
         if (fighting || dashing) {
             owner.work.expedition.fight.fightBegan();
             owner.selectWeaponForCombat();
-            path = escape.plan((ServerLevel) owner.level(), threats((ServerLevel) owner.level()));
+            path = escape.plan((ServerLevel) owner.level(), threats((ServerLevel) owner.level()), watched);
         }
         // The blow first only with a way out of the blast after it, and not by the house unless walking it off has failed: the melee goal
         // fights it there then too.
@@ -436,7 +436,7 @@ final class CompanionCreeperGuard {
      */
     private void retreat(ServerLevel level, Creeper creeper) {
         if (finishes(creeper)) { finish(creeper); return; }
-        Vec3 step = escape.step(level, threats(level));
+        Vec3 step = escape.step(level, threats(level), creeper);
         if (step != null && !escape.holding() && stalled(creeper) && !byTheHouse() && escape.shut(level, creeper)) { mention("wall", creeper, null); return; }
         if (step != null) {
             mention(escape.holding() ? "hold" : "path", creeper, escape.goal());
@@ -527,7 +527,7 @@ final class CompanionCreeperGuard {
         if (!owner.combat.swingReady()) return true;
         mayStrike = false;
         // The way out was judged where the fuse was seen; the step in may have left it behind.
-        if (escape.plan(level, threats(level)) < 0 || !escape.clears()) { event("strike_cornered", creeper, -1); return false; }
+        if (escape.plan(level, threats(level), creeper) < 0 || !escape.clears()) { event("strike_cornered", creeper, -1); return false; }
         boolean landed = strike(creeper);
         if (landed) landed();
         event("struck", creeper, -1, "landed", landed);

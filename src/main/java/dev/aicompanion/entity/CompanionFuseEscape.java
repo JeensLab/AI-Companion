@@ -18,7 +18,7 @@ import java.util.Map;
 
 /**
  * The way out of a lit fuse, over the floor as it is: a breadth-first walk over the cells he can stand on (four neighbours, a rise of one
- * block, a drop of up to three, which hurts nothing) to a dozen steps, that never goes towards a creeper nor past one that is lit or in his sight. The cell it ends at is the one the
+ * block, a drop of up to three, which hurts nothing) to a dozen steps, that never goes towards a creeper nor past the one he runs from or one that is lit. The cell it ends at is the one the
  * fuse cannot see (a fuse goes out without a line of sight, and a blast does not reach round a corner), then the farthest from the nearest
  * creeper up to the gap beyond which the fuse goes out anyway, then the nearest to walk to. With no such way, the cells of a wall between
  * him and the creeper.
@@ -58,9 +58,9 @@ final class CompanionFuseEscape {
 
     int length() { return path.size() - index; }
 
-    /** Builds the way now; its length, or -1 where he has none. */
-    int plan(ServerLevel level, List<Creeper> threats) {
-        build(level, threats);
+    /** Builds the way now, out of this creeper's blast; its length, or -1 where he has none. */
+    int plan(ServerLevel level, List<Creeper> threats, Creeper judged) {
+        build(level, threats, judged);
         builtAt = level.getGameTime();
         return holding ? 0 : path.isEmpty() ? -1 : path.size();
     }
@@ -69,9 +69,9 @@ final class CompanionFuseEscape {
      * The point to push him to now: the next cell of the way, built again every few ticks and where he has left it; where he stands when he is
      * out of the fuse's sight already; null when there is no way.
      */
-    Vec3 step(ServerLevel level, List<Creeper> threats) {
+    Vec3 step(ServerLevel level, List<Creeper> threats, Creeper judged) {
         long now = level.getGameTime();
-        if (now - builtAt >= REPLAN_TICKS || derailed() || arrived()) { build(level, threats); builtAt = now; }
+        if (now - builtAt >= REPLAN_TICKS || derailed() || arrived()) { build(level, threats, judged); builtAt = now; }
         if (holding) return owner.position();
         if (path.isEmpty()) return null;
         while (index < path.size() - 1 && reached(path.get(index))) index++;
@@ -124,13 +124,13 @@ final class CompanionFuseEscape {
         }
     }
 
-    private void build(ServerLevel level, List<Creeper> threats) {
+    private void build(ServerLevel level, List<Creeper> threats, Creeper judged) {
         BlockPos start = owner.blockPosition();
         double[] floors = new double[threats.size()];
         for (int i = 0; i < floors.length; i++) {
             floors[i] = Math.max(MIN_CLEAR, Math.min(owner.position().distanceTo(threats.get(i).position()), CompanionCreeperGuard.SAFE_GAP) - TOLERANCE);
         }
-        List<Creeper> sided = threats.stream().filter(creeper -> CompanionCreeperGuard.lit(creeper) || owner.hasLineOfSight(creeper)).toList();
+        List<Creeper> sided = threats.stream().filter(creeper -> creeper == judged || CompanionCreeperGuard.lit(creeper)).toList();
         Map<BlockPos, BlockPos> from = new HashMap<>();
         Map<BlockPos, Integer> steps = new HashMap<>();
         ArrayDeque<BlockPos> queue = new ArrayDeque<>();
@@ -188,9 +188,9 @@ final class CompanionFuseEscape {
      * The point lies beyond one of these creepers from where he stands, within the gap of its fuse: the way never leads past one. A blow of
      * his throws it that way, a drop there keeps them abreast, and a fall burns its fuse faster (run ta20261031-d2 void-4: he struck one a
      * ledge below him and ran on down the same slope, 18 ticks within two blocks of it, dead at full health). The creepers with a far side
-     * are those whose fuse is lit and those he sees: the way is judged before the fuse as it will be run after it, or he would go to fight
-     * one with no way out of its blast. One shut in the rock under his stairs has none (it would take the stairs from him), and the way
-     * keeps off it as it is.
+     * are the one the way is built for (the one the guard judges before its fuse, and runs from after: the two must agree, or he would go
+     * to fight one with no way out of its blast) and any whose fuse is lit. Another one, seen or not, has none: under his stairs or on a
+     * shelf across a gap it would take the stairs from him, and the way keeps off it by the distance as it is.
      */
     private static boolean past(Vec3 from, Vec3 point, List<Creeper> sided) {
         for (Creeper creeper : sided) {

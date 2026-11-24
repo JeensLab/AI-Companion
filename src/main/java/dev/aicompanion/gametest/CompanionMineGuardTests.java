@@ -44,7 +44,8 @@ public final class CompanionMineGuardTests {
     private static final double CLOSER = 1.5;
     private static final int ROOM_FROM = 4, ROOM_TO = 16, ROOM_SIDE = 6, RUN_TICKS = 20, CLIFF_DEPTH = 6, DEAD_END_LENGTH = 3;
     private static final double RUN_GAP = 4, FALL = .5;
-    private static final int UP_THE_STAIRS = 5, SHUT_UNDER = 4;
+    private static final int UP_THE_STAIRS = 5, SHUT_UNDER = 4, PIT = 2;
+    private static final double TOWARDS_HIM = .3;
 
     private CompanionMineGuardTests() { }
 
@@ -104,14 +105,35 @@ public final class CompanionMineGuardTests {
      */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void anUnlitCreeperShutInTheRockUnderTheStairsDoesNotTakeTheWayUpFromALitOne(GameTestHelper h) {
+        struckFirstWithAnotherBy(h, false);
+    }
+
+    /**
+     * Review of the far side for every creeper in his sight: only the creeper he runs from, and a lit one, has it. The same stairs and lit
+     * creeper, and the second one, its fuse not lit, stands at the bottom of a pit beside the step above him, open to his stand: he sees it,
+     * it cannot climb to him, and it takes no way up from him either.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void anUnlitCreeperInSightInAPitByTheStairsDoesNotTakeTheWayUpFromALitOne(GameTestHelper h) {
+        struckFirstWithAnotherBy(h, true);
+    }
+
+    private static void struckFirstWithAnotherBy(GameTestHelper h, boolean seen) {
         mountain(h, false);
         CompanionEntity c = armed(h);
         List<BlockPos> stairs = carveMine(h, c, 0);
         int at = stairs.size() - 1 - UP_THE_STAIRS;
-        place(c, stairs.get(at));
+        BlockPos stand = stairs.get(at), pit = stand.west().south().below(PIT);
+        place(c, stand);
+        // The stairs go down to the north: south of his stand is the step above him.
+        if (seen) for (BlockPos column : List.of(stand.west(), stand.west().south())) for (int dy = -PIT; dy <= 1; dy++) {
+            h.getLevel().setBlock(column.above(dy), Blocks.AIR.defaultBlockState(), 2 | 16);
+        }
         BlockPos pocket = stairs.get(at - 1).below(SHUT_UNDER);
-        for (int dy = 0; dy < 2; dy++) h.getLevel().setBlock(pocket.above(dy), Blocks.AIR.defaultBlockState(), 2 | 16);
-        creeper(h, pocket).getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        if (!seen) for (int dy = 0; dy < 2; dy++) h.getLevel().setBlock(pocket.above(dy), Blocks.AIR.defaultBlockState(), 2 | 16);
+        Creeper other = seen ? creeperAt(h, pit, .5, -TOWARDS_HIM) : creeper(h, pocket);
+        other.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        h.assertTrue(c.hasLineOfSight(other) == seen, "The second creeper is " + (seen ? "not in his sight" : "in his sight") + ": the test is no longer about that");
         Creeper lit = creeper(h, stairs.get(at + 1));
         lit.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
         lit.ignite();
@@ -126,7 +148,7 @@ public final class CompanionMineGuardTests {
                 h.assertTrue(h.getTick() - begun < FUSE_TICKS, "The lit creeper never blew" + trace);
                 return;
             }
-            h.assertTrue(struck[0], "He did not strike the lit creeper first: the one shut in the rock took his way up" + trace);
+            h.assertTrue(struck[0], "He did not strike the lit creeper first: the other one took his way up" + trace);
             h.assertTrue(c.getHealth() >= KEPT, "The blast took him below half his health" + trace);
             h.succeed();
         });
