@@ -46,6 +46,48 @@ public final class CompanionWorkCommands {
         return "companion work obtain_item " + count + " minecraft:obsidian";
     }
 
+    /**
+     * The verbs of an order for a thing by name: «добудь тыкву», «сорви блок тыквы», «принеси мне 2 тыквы», «достань бочку».
+     * The thing is one or two words — «блок тыквы», «золотой блок» — and the words after it are the ones that only say where
+     * to look. Anything else in the phrase («и вернись», «потом домой») is no plain order of one thing: the model's.
+     */
+    private static final Pattern ANY_ORDER = Pattern.compile("^(?:(?<verb>(?:до|да)будь(?:ка)?|накопай|выкопай|собери|сорви|нарви|набери|принеси|дай|достань|поищи|найди))"
+            + "(?: мне| нам| себе)?\\s+(?:(?<measure>блоков|блока|блок|штук|штуки|шт)\\s+)?(?<thing>\\p{L}+(?: \\p{L}+)?)"
+            + "(?:\\s+(?:рядом|поблизости|с земли|с дерева|тут|здесь))?$", Pattern.UNICODE_CHARACTER_CLASS);
+
+    /** «Принеси», «дай»: the thing is for the player, not only for his bag. */
+    private static final java.util.Set<String> GIVING = java.util.Set.of("принеси", "дай");
+
+    /**
+     * «Добудь тыкву», «сорви блок тыквы», «принеси мне 2 тыквы» (owner, 24.11): the thing by the name the game shows,
+     * whatever it is — the registry answers ({@link dev.aicompanion.entity.CompanionItemLookup}), never a list here, so a
+     * mod's own thing answers to its own name too. The order is the same obtain path obsidian and the ore take (obtain_item),
+     * never a sentence of the model that leaves nothing done. Null when the verb is none of these or the registry cannot name
+     * the thing («кура», «тухлое мясо»): then the model decides, as for every name it knows better.
+     */
+    public static String itemOrder(String text, String name, java.util.function.Function<net.minecraft.world.item.Item, String> names) {
+        String value = plain(text, name).replaceAll("\\s+", " ").trim();
+        var said = CompanionNumbers.parse(value);
+        if (said.count() == CompanionNumbers.UNCLEAR) return null;
+        var order = ANY_ORDER.matcher(said.rest());
+        if (!order.matches()) return null;
+        String measure = order.group("measure");
+        String thing = order.group("thing");
+        String id;
+        // «Блок лазурита» is the lapis block, not the lapis its own break gives: the measure word asks for the block of the
+        // thing, and only when no block answers the name is the thing itself the answer («блок тыквы» is the pumpkin).
+        if (measure != null && measure.startsWith("блок")) {
+            id = dev.aicompanion.entity.CompanionItemLookup.blockFor(thing, names);
+            if (id == null) id = dev.aicompanion.entity.CompanionItemLookup.itemFor(thing, names);
+        } else id = dev.aicompanion.entity.CompanionItemLookup.itemFor(thing, names);
+        if (id == null) return null;
+        // One when no number is said, a stack for «сколько сможешь», a few for «побольше»; more than a stack is the model's,
+        // which splits it into steps of a stack each.
+        int count = amount(said.count(), 1, 64, 8);
+        if (count < 1 || count > 64) return null;
+        return "companion work obtain_item " + count + " " + id + (GIVING.contains(order.group("verb")) ? " give" : "");
+    }
+
     /** Lower case, ё as е, without his name in front and the full stop or «!» at the end. */
     private static final Pattern REPAIR = Pattern.compile("^(?:почини|почини-ка|подлатай)(?: свою| свои| твою| твои)? (.+)$");
     private static final Pattern DISENCHANT = Pattern.compile("^(?:сними|снимай|убери|счисти)(?: все)? чары (?:с|со) (всех )?(.+)$");

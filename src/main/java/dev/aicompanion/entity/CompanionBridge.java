@@ -56,12 +56,21 @@ final class CompanionBridge {
     String failureReason() { return failureReason; }
 
     /** One tick toward a block no walk reaches: to the bank, the floor laid, across, and the block in reach. */
-    Outcome tickToward(BlockPos block) {
+    Outcome tickToward(BlockPos block) { return tickToward(block, false); }
+
+    /**
+     * One tick toward a cell a drop lies in, no walk reaching it (PATH7, #105: a drop beyond a gap is the same way): to the
+     * bank, the floor laid, across, and the drop in touch.
+     */
+    Outcome tickTowardCell(BlockPos cell) { return tickToward(cell, true); }
+
+    private Outcome tickToward(BlockPos block, boolean forTheDrop) {
         if (!(owner.level() instanceof ServerLevel level) || recovering) return Outcome.FAILED;
-        if (!level.hasChunkAt(block) || level.getBlockState(block).isAir()) return Outcome.FAILED;
-        if (inReach(level, block)) { stalledTicks = 0; return Outcome.READY; }
+        if (!level.hasChunkAt(block) || !forTheDrop && level.getBlockState(block).isAir()) return Outcome.FAILED;
+        if (inReach(level, block, forTheDrop)) { stalledTicks = 0; return Outcome.READY; }
         if (plan == null || !block.equals(target)) {
-            CompanionReach.BridgePlan found = CompanionReach.bridge(owner, level, block, 3.5D, true, CompanionPillar.WAY_SUPPORTS, false);
+            CompanionReach.BridgePlan found = forTheDrop ? CompanionReach.bridgeToCell(owner, level, block)
+                    : CompanionReach.bridge(owner, level, block, 3.5D, true, CompanionPillar.WAY_SUPPORTS, false);
             if (found == null) return fail("негде класть мост");
             plan = found;
             target = block.immutable();
@@ -97,7 +106,7 @@ final class CompanionBridge {
             return Outcome.WORKING;
         }
         owner.getNavigation().stop();
-        if (inReach(level, block)) return Outcome.READY;
+        if (inReach(level, block, forTheDrop)) return Outcome.READY;
         // He stands where the geometry said the block is in reach: the world changed (a block was set there since).
         if (owner.distanceToSqr(block.getCenter()) < best - .04D) { best = owner.distanceToSqr(block.getCenter()); stalledTicks = 0; }
         else if (++stalledTicks > 60) return fail("мост проложен, а блок не в руках");
@@ -170,7 +179,8 @@ final class CompanionBridge {
         return false;
     }
 
-    private boolean inReach(ServerLevel level, BlockPos block) {
+    private boolean inReach(ServerLevel level, BlockPos block, boolean forTheDrop) {
+        if (forTheDrop) return CompanionMiningNavigation.touchesCell(owner, owner.position(), block);
         return owner.distanceToSqr(block.getCenter()) <= 16.0D
                 && CompanionMiningNavigation.visible(owner, owner.getEyePosition(), block);
     }

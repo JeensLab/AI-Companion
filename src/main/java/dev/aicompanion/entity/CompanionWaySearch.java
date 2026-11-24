@@ -34,17 +34,21 @@ import java.util.function.Predicate;
 final class CompanionWaySearch {
     /**
      * The box searched: this many blocks across — never more than the leash and scan his own work is set to — and this many
-     * above and below him. A block farther is another place's, not this order's.
+     * above and below him, a cylinder measured flat, not a sphere. Sixty-four is the owner's own world (24.11: thirty-two was
+     * too small for his base); a block farther is another place's, not this order's.
      */
-    static final int RADIUS = 32, DEPTH = 32;
+    static final int RADIUS = 64, DEPTH = 64;
     /** How many of the nearest blocks the way is asked about: a few dozen is every order's, and a scan of all is not. */
     private static final int LOOK = 24;
     /** How many of the nearest are named in the line: enough to read why each was refused, few enough for one line. */
     private static final int SHOWN = 3;
     /** The reach a block is worked from, as the one geometry answer's own (CompanionReach). */
     private static final double REACH = 3.5D;
-    /** The wider box asked only when the box holds nothing: whether a block of the item is there at all, just not seen here. */
-    private static final int BEYOND = 64;
+    /**
+     * The wider box asked only when the box holds nothing: whether a block of the item is there at all, just not seen here —
+     * the widest the player's own setting allows, so a block just past the box is named as seen-outside, not as absent.
+     */
+    private static final int BEYOND = 128;
     /** The rule the search itself keeps a cell by: outside the errand's bounds. */
     private static final String ERRAND = "поручение";
 

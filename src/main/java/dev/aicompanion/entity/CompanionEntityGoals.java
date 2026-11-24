@@ -40,7 +40,8 @@ final class CompanionEntityGoals {
 
     static final class PickupLootGoal extends Goal {
         final CompanionEntity c;
-        PickupLootGoal(CompanionEntity c) { this.c = c; setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK)); }
+        // The jump flag is the column's own: a way raised to a drop is climbed with the same jumps the mining's way uses.
+        PickupLootGoal(CompanionEntity c) { this.c = c; setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK, Flag.JUMP)); }
         @Override public boolean canUse() { return c.loot.canChase(); }
         @Override public boolean canContinueToUse() { return canUse(); }
         @Override public boolean requiresUpdateEveryTick() { return true; }

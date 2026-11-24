@@ -134,7 +134,7 @@ public final class CompanionWayPlayerBuildTests {
             String line = lines.stream().filter(entry -> entry.contains("\"item\":\"minecraft:pumpkin\"")
                     && entry.contains("\"chosen\":\"")).findFirst().orElse(null);
             h.assertTrue(line != null, "No way_search line naming the chosen pumpkin: " + lines);
-            h.assertTrue(line.contains("коробка 32 вбок, 32 вверх и 32 вниз"), "The line does not say the box in words: " + line);
+            h.assertTrue(line.contains("коробка 32 вбок, 64 вверх и 64 вниз (урезана моим поиском 32)"), "The line does not say the box in words: " + line);
             h.assertTrue(line.contains("видов ") && line.contains("клеток "), "The line does not say how many kinds and cells it saw: " + line);
             h.assertTrue(line.contains("своих "), "The line does not say how many of the blocks were the player's own: " + line);
             h.assertTrue(line.contains("\"kinds\":") && line.contains("\"cells\":") && line.contains("\"own\":"), "The fields of the stages are missing: " + line);
