@@ -218,6 +218,10 @@ public final class CompanionCourseTests {
                 {"давай пошли в сторону севера", "companion work walk_heading 0 north"},
                 {"веди на юг, пока не найдем деревню", "companion work walk_heading 0 south:village"},
                 {"веди на север, пока не скажу стоп", "companion work walk_heading 0 north"},
+                {"Олег, веди к крепости", "companion work walk_heading 0 stronghold"},
+                {"отведи меня к крепости края", "companion work walk_heading 0 stronghold"},
+                {"брось око", "companion work walk_heading 0 stronghold"},
+                {"кинь око края", "companion work walk_heading 0 stronghold"},
                 {"стоп", "companion stop"}};
         for (String[] pair : said) {
             String routed = CompanionLocalCommands.route(pair[0], "Олег");
@@ -230,7 +234,8 @@ public final class CompanionCourseTests {
         var walk = CompanionPlanCodec.decode(message("{\"action\":\"walk_heading\",\"item\":\"northeast\"}")).actions();
         h.assertTrue(walk.size() == 1 && walk.getFirst().count() == 0 && "northeast".equals(walk.getFirst().item()), "Decoded " + walk);
         h.assertTrue(CompanionPlanCodec.decode(message("{\"action\":\"walk_heading\",\"item\":\"west:village\",\"count\":500}")).actions().getFirst().count() == 500, "500 blocks refused");
-        for (String bad : new String[]{"{\"action\":\"walk_heading\",\"item\":\"up\"}", "{\"action\":\"walk_heading\",\"item\":\"east:dragon\"}",
+        h.assertTrue("stronghold".equals(CompanionPlanCodec.decode(message("{\"action\":\"walk_heading\",\"item\":\"stronghold\"}")).actions().getFirst().item()), "The eye's walk refused");
+        for (String bad : new String[]{"{\"action\":\"walk_heading\",\"item\":\"up\"}", "{\"action\":\"walk_heading\",\"item\":\"east:dragon\"}", "{\"action\":\"walk_heading\",\"item\":\"stronghold:village\"}",
                 "{\"action\":\"walk_heading\",\"item\":\"east\",\"count\":501}"})
             h.assertTrue(rejects(() -> CompanionPlanCodec.decode(message(bad))), "Decoded " + bad);
         h.succeed();

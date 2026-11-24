@@ -2,11 +2,20 @@ package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.tags.StructureTags;
+import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.animal.Animal;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.npc.Villager;
+import net.minecraft.world.entity.projectile.EyeOfEnder;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.AABB;
 
@@ -20,6 +29,11 @@ import java.util.Map;
  * when no point is fit, he stops and says why; before wide water he names the nearer way round it. He waits for a player left
  * behind and hurries him on, and stops after the blocks asked, at the thing looked for, or at «стоп». The moments of the walk
  * are said by the model in his own words (the urgent remark of CompanionSocial); the work status keeps the plain line.
+ *
+ * «Веди к крепости» (item «stronghold»): the heading is where an eye of ender of his flies. He throws one as a player does
+ * (the game's own entity, one eye spent; four in five fall back and he picks his up), walks where it flew, throws a second some
+ * two hundred blocks on, as a player who finds the place by two throws, walks to that place and throws the last over it: that
+ * one goes down. The game names the place at the first throw; he walks as one who learns it by the second. He does not dig down.
  */
 public final class CompanionCourse {
     public static final int MAX_BLOCKS = 500;
@@ -56,6 +70,19 @@ public final class CompanionCourse {
     /** Without coming on along the line for this long, the way is closed. */
     private static final int STUCK_TICKS = 20 * 60;
     private static final int SCAN_RADIUS = 24;
+    private static final String STRONGHOLD = "stronghold";
+    /** This near the place the last eye is thrown: within a dozen blocks an eye flies down into it. */
+    private static final int OVER = 8;
+    /** His fallen eye is gone for at most this long before he walks on without it (it fell into water, up a tree). */
+    private static final int PICK_TICKS = 20 * 15;
+    /**
+     * Where an eye of ender thrown here flies: the game's own search (EnderEyeItem.use). A GameTest, whose flat world has no
+     * stronghold, puts its point here.
+     */
+    static java.util.function.BiFunction<ServerLevel, BlockPos, BlockPos> stronghold =
+            (level, from) -> level.findNearestMapStructure(StructureTags.EYE_OF_ENDER_LOCATED, from, 100, false);
+    /** Blocks walked where the first eye flew before the second is thrown; fewer in a GameTest's arena. */
+    static int secondThrow = 192;
 
     private record Heading(int x, int z, String name) { }
     /** A heading the way was closed on: where and when, and by what («большая вода», «лава», «нет прохода»). */
@@ -77,6 +104,12 @@ public final class CompanionCourse {
     private int blocks, aside;
     private BlockPos point;
     private long began, lastAdvance, waitingSince, nextScan;
+    /** The eye's walk: where it flies, eyes thrown so far, the one in the air, when it fell, whether it was thrown over the place. */
+    private BlockPos goal;
+    private int thrown;
+    private EyeOfEnder flying;
+    private long fell;
+    private boolean over;
     private int urged;
     private String closed;
 
@@ -85,13 +118,15 @@ public final class CompanionCourse {
     /** «east», «east:village», «east:cow»: a heading and, after a colon, what to look for on the way. */
     public static boolean valid(String item) {
         if (item == null) return false;
+        if (STRONGHOLD.equals(item.trim().toLowerCase(Locale.ROOT))) return true;
         String[] parts = item.trim().toLowerCase(Locale.ROOT).split(":", -1);
         if (parts.length > 2 || !HEADINGS.containsKey(parts[0])) return false;
         return parts.length == 1 || TARGETS.containsKey(parts[1]) || CompanionGame.Kind.of(parts[1]) != null;
     }
 
-    /** «на северо-восток» for the dialogue; empty for an unknown heading. */
+    /** «на северо-восток», «к крепости Края» for the dialogue; empty for an unknown heading. */
     public static String where(String item) {
+        if (item != null && STRONGHOLD.equals(item.trim().toLowerCase(Locale.ROOT))) return "к крепости Края";
         Heading heading = item == null ? null : HEADINGS.get(item.trim().toLowerCase(Locale.ROOT).split(":")[0]);
         return heading == null ? "" : "на " + heading.name;
     }
@@ -101,6 +136,8 @@ public final class CompanionCourse {
         if (!valid(item)) return CompanionActionResult.failed("Не понял направление: север, юг, запад, восток или между ними.");
         if (count < 0 || count > MAX_BLOCKS) return CompanionActionResult.failed("За раз веду не дальше " + MAX_BLOCKS + " блоков.");
         String[] parts = item.trim().toLowerCase(Locale.ROOT).split(":");
+        goal = null; flying = null;
+        if (STRONGHOLD.equals(parts[0])) return beginEye();
         heading = HEADINGS.get(parts[0]);
         target = parts.length > 1 ? parts[1] : null;
         animal = target == null ? null : CompanionGame.Kind.of(target);
@@ -123,15 +160,101 @@ public final class CompanionCourse {
         return null;
     }
 
-    void cancel() { heading = null; point = null; }
+    void cancel() { heading = null; point = null; goal = null; flying = null; }
 
-    String jobName() { return heading == null ? "путь" : "путь на " + heading.name; }
+    String jobName() { return goal != null ? "путь к крепости Края" : heading == null ? "путь" : "путь на " + heading.name; }
+
+    /** The first eye is thrown on the first tick of the walk, not at the order: an order refused after this would have spent it. */
+    private CompanionActionResult beginEye() {
+        if (!(w.owner.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Сейчас не могу.");
+        if (w.items.countCarried(Items.ENDER_EYE) == 0) return CompanionActionResult.failed("Нет ока Края: дай мне или скажи сделать.");
+        // The Nether and the End have no stronghold: the game's search finds none there, and a player's eye does not fly either.
+        goal = stronghold.apply(level, w.owner.blockPosition());
+        if (goal == null) return CompanionActionResult.failed("Здесь око не полетит: крепости Края отсюда не найти.");
+        target = null; animal = null; thrown = 0; over = false;
+        began = nextScan = level.getGameTime(); waitingSince = -1;
+        aim(began);
+        return null;
+    }
+
+    /** The line from where he stands to the place: walked whole once two eyes have shown it, till then only to where the second is thrown. */
+    private void aim(long now) {
+        double dx = goal.getX() + .5 - w.owner.getX(), dz = goal.getZ() + .5 - w.owner.getZ(), far = Math.hypot(dx, dz);
+        startX = w.owner.getX(); startZ = w.owner.getZ();
+        dirX = far < 1 ? 1 : dx / far; dirZ = far < 1 ? 0 : dz / far;
+        heading = byVector((int) Math.round(dirX), (int) Math.round(dirZ));
+        blocks = (int) Math.max(1, Math.round(thrown < 2 ? Math.min(far, secondThrow) : far));
+        best = 0; aside = 0; point = null; closed = null; lastAdvance = now;
+    }
+
+    /** An eye of his thrown as a player throws one (EnderEyeItem.use): it flies a dozen blocks toward the stronghold, or down into it. */
+    private boolean throwEye(ServerLevel level) {
+        var owner = w.owner;
+        if (!owner.getMainHandItem().is(Items.ENDER_EYE) && !owner.equipForWork("minecraft:ender_eye").success()) return false;
+        ItemStack held = owner.getMainHandItem();
+        if (!held.is(Items.ENDER_EYE)) return false;
+        EyeOfEnder eye = new EyeOfEnder(level, owner.getX(), owner.getY(.5), owner.getZ());
+        eye.setItem(held);
+        eye.signalTo(goal);
+        level.gameEvent(GameEvent.PROJECTILE_SHOOT, eye.position(), GameEvent.Context.of(owner));
+        level.addFreshEntity(eye);
+        level.playSound(null, owner.getX(), owner.getY(), owner.getZ(), SoundEvents.ENDER_EYE_LAUNCH, SoundSource.NEUTRAL, 1F, Mth.lerp(level.random.nextFloat(), .33F, .5F));
+        held.shrink(1);
+        owner.setChanged();
+        owner.swing(InteractionHand.MAIN_HAND);
+        owner.refreshInventorySummary();
+        w.route.stop(); owner.travel().reset(); point = null;
+        flying = eye; thrown++;
+        return true;
+    }
+
+    /** The eye's part of a tick; true when it took the tick (an eye in the air, his fallen one being picked up, a throw, the end). */
+    private boolean eyeTick(ServerLevel level, long now, double along) {
+        var owner = w.owner;
+        if (flying != null) {
+            // He watches it, as a player does: four seconds, then it falls or breaks.
+            if (flying.isAlive()) { owner.getLookControl().setLookAt(flying, 30, 30); lastAdvance = now; return true; }
+            var fallen = level.getEntitiesOfClass(ItemEntity.class, flying.getBoundingBox().inflate(2), item -> item.getItem().is(Items.ENDER_EYE));
+            owner.claimDrops(fallen);
+            flying = null; fell = lastAdvance = now;
+            if (over) w.finish(true, "Крепость под нами: око ушло в землю.");
+            // The place is not known by one throw: with none left he stops, and says where it flew.
+            else if (fallen.isEmpty() && thrown < 2 && w.items.countCarried(Items.ENDER_EYE) == 0) w.finish(false, "Око разбилось, больше нет. Летело на " + heading.name + ".");
+            return true;
+        }
+        if (thrown == 0) {
+            // Asked for over the place itself: this one goes down.
+            over = Math.hypot(goal.getX() + .5 - owner.getX(), goal.getZ() + .5 - owner.getZ()) <= OVER;
+            if (throwEye(level)) owner.workStatus("Бросил око Края: летит на " + heading.name + ".");
+            else w.finish(false, "Не могу взять око в руку: в сумке нет места.");
+            return true;
+        }
+        // His eye that fell is picked up before he walks on.
+        if (owner.hasPendingLoot() && now - fell <= PICK_TICKS) { lastAdvance = now; return true; }
+        if (along < blocks - .5) return false;
+        int far = (int) Math.round(Math.hypot(goal.getX() + .5 - owner.getX(), goal.getZ() + .5 - owner.getZ()));
+        boolean eye = w.items.countCarried(Items.ENDER_EYE) > 0;
+        if (far > OVER && thrown >= 2) { aim(now); return true; }
+        if (!eye) {
+            if (thrown >= 2) w.finish(true, "По двум броскам крепость должна быть под нами. Проверить нечем: очи кончились.");
+            else w.finish(false, "Очей больше нет: первое летело на " + heading.name + ", второе бросить нечем.");
+            return true;
+        }
+        over = far <= OVER;
+        if (!throwEye(level)) { w.finish(false, "Не могу взять око в руку: в сумке нет места."); return true; }
+        if (over) { owner.workStatus("Бросил око над крепостью."); return true; }
+        aim(now);
+        say("Бросил второе око Края и по двум броскам понял, где крепость: ещё " + far + " " + blocksWord(far) + " на " + heading.name
+                + ". Веду товарища туда.", "Крепость в " + far + " " + blocksWord(far) + " на " + heading.name + ".");
+        return true;
+    }
 
     void tick(ServerLevel level) {
         var owner = w.owner;
         long now = level.getGameTime();
         double along = along(owner.getX(), owner.getZ());
         if (along > best + 1) { best = along; lastAdvance = now; }
+        if (goal != null && eyeTick(level, now, along)) return;
         if (blocks > 0 && along >= blocks - .5) { w.finish(true, "Прошли " + blocks + " " + blocksWord(blocks) + " на " + heading.name + "."); return; }
         if (now - began >= LIMIT_SECONDS * 20L) { w.finish(true, "Идём на " + heading.name + " уже двадцать минут, остановился передохнуть."); return; }
         // What was in sight at the start is not what was looked for: «пока не найдём воду» by a pond means another water.
