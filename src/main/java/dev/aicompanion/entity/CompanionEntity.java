@@ -725,7 +725,11 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public void setFenceGates(boolean on) { fenceGatesOn = on; }
     /** Whether he builds a way up to a block no walk reaches (the player can turn it off in the settings). */
     public boolean buildWay() { return buildWayOn; }
-    public void setBuildWay(boolean on) { buildWayOn = on; }
+    public void setBuildWay(boolean on) {
+        // The way is on again: the drops given up for want of it are looked at once more (a bridge or a column may reach them now).
+        if (on && !buildWayOn) loot.beginCollection();
+        buildWayOn = on;
+    }
     /** Whether «подбери» takes what lies on the ground around him, and how far the scan goes (the player's setting). */
     public boolean pickUpNearby() { return pickUpNearby; }
     public int pickUpRadius() { return pickUpRadius; }
@@ -1128,6 +1132,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         pushOutOfBlocks();
         meals.tickEating();
         loot.tickNearby();
+        // A floor held for the drops it was the walk to comes back once they are in his bag.
+        temporaryBridge.tickHeld();
         if (level() instanceof ServerLevel serverLevel) playersThings.tick(serverLevel);
         recovery.observe();
         work.watchChase();

@@ -45,12 +45,18 @@ final class CompanionBridge {
     private int legs, waited, cooldown, ticks, cleanupTicks, stalledTicks;
     private double best;
     private boolean recovering;
+    /** A cleanup asked while the drops the floor was the walk to are still not in his bag: it goes once they are. */
+    private boolean held;
     private String failureReason = "";
 
     CompanionBridge(CompanionEntity owner) { this.owner = owner; this.breaking = new CompanionBlockBreaking(owner); }
 
     boolean isActive() { return plan != null || !placed.isEmpty(); }
     boolean isRecovering() { return recovering; }
+    /** Whether the floor is laid from bank to bank: a walk across the gap, not one still being laid. */
+    boolean isWalk() { return !recovering && plan != null && placed.size() >= plan.cells().size(); }
+    /** Whether the floor stands on because a drop it was the walk to is not in his bag yet. */
+    boolean isHeld() { return held; }
     boolean hasSupports() { return !placed.isEmpty(); }
     int supportCount() { return placed.size(); }
     String failureReason() { return failureReason; }
@@ -118,6 +124,11 @@ final class CompanionBridge {
         breaking.reset();
         if (recovering) return;
         if (!isActive()) { clear(); return; }
+        // A floor across a gap is the walk to the drops it was laid for: while one of them is not in his bag, the floor stays
+        // under it and the pickup walks over it to take it — the cleanup asked for goes on once they are in (the owner, 24.11:
+        // the drop behind a bridge taken back before it was picked up).
+        if (isWalk() && owner.hasPendingLoot()) { held = true; return; }
+        held = false;
         // A bridge is a way, not a scaffold: it stays standing where he made it — in a village or at a place the player remembers
         // within 300 blocks it is taken back, so nobody's street is left built over (idea PATH7, #105). The Nether is the same:
         // no village, and his floor may stay unless a remembered point is there.
@@ -136,6 +147,11 @@ final class CompanionBridge {
         for (CompanionMarkers.Marker marker : CompanionMarkers.get(level.getServer()).all(owner.getOwnerId()))
             if (marker.dimension().equals(level.dimension()) && marker.pos().distSqr(here) <= PLACE * PLACE) return true;
         return false;
+    }
+
+    /** Called every tick: a floor held for the drops it was the walk to comes back as soon as the pickup has them. */
+    void tickHeld() {
+        if (held && !owner.hasPendingLoot()) requestCleanup();
     }
 
     /** Called every tick by the recovery goal: true once the last of his own floor is back in his bag or left standing. */
@@ -265,6 +281,7 @@ final class CompanionBridge {
         legs = waited = cooldown = ticks = cleanupTicks = stalledTicks = 0;
         best = 0;
         recovering = false;
+        held = false;
     }
 
     /** What the bridge holds, for the journal of a save and a reload. */

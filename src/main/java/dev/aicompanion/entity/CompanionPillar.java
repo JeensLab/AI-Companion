@@ -32,7 +32,7 @@ import java.util.Set;
 /**
  * A short, inventory-backed dirt pillar. Movement and falling use normal entity physics.
  * The steps are a per-climb limit: a leaf crown's column keeps its six, a way up to a block he cannot walk to (PATH7, #105)
- * may take twenty — a block twenty blocks above his feet asks seventeen steps, the height the owner's blocks hung at.
+ * may take thirty-two — a block thirty-two blocks above his feet asks twenty-nine steps, the height the owner's blocks hung at.
  */
 public final class CompanionPillar {
     /** The steps a leaf crown's column may take: a crown stands close over the trunk. */

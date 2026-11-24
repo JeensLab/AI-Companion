@@ -906,6 +906,10 @@ final class CompanionPicking {
         if (settleAt == 0) { settleAt = now + SETTLE; return; }
         if (now < settleAt) return;
         if (!retried) { retried = true; settleAt = now + SETTLE; c.retryHarvestPickup(); return; }
+        // The drop is still with the pickup — on its way over a floor across a gap, up a column, or waiting for the soil it digs:
+        // what he broke is not lost, and the count of it stays until the pickup has it or gives it up. Forgetting it here is what
+        // took a bridge back before the drop was in his bag (the owner, 24.11).
+        if (c.loot.hasPending()) { settleAt = now + SETTLE; return; }
         due = got; settleAt = 0; retried = false;
     }
 

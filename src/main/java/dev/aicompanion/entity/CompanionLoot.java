@@ -114,6 +114,11 @@ final class CompanionLoot {
     }
     void tickNearby() {
         if (!(owner.level() instanceof ServerLevel level) || !owner.canCollectItems()) return;
+        // The soil for the column is dug: the pickup waits for it, and the wood gather the dig interrupted goes on after it.
+        if (diggingForWay && !owner.gatheringDirt) {
+            diggingForWay = false;
+            if (woodWasRunning) { owner.gatheringLogs = true; owner.requestedLogs = woodRequested; owner.logsRemaining = woodRemaining; woodWasRunning = false; }
+        }
         // A way raised for a drop that is already in his bag (or gone) comes down at once, whichever goal runs.
         if (wayFor != null && (!pending.contains(wayFor)
                 || level.getEntity(wayFor) instanceof ItemEntity found && !found.blockPosition().equals(wayCell))) finishWay();
@@ -253,6 +258,10 @@ final class CompanionLoot {
     private long wayAt;
     /** Ticks a way to one drop may take before it is given up, and how many ways one drop may be given (a column that came short). */
     private static final int WAY_PATIENCE = 600, WAY_TRIES = 3;
+    /** The soil for the column is being dug: the pickup waits for it, and what the dig interrupted comes back after it. */
+    private boolean diggingForWay;
+    private boolean woodWasRunning;
+    private int woodRequested, woodRemaining;
 
     /** Whether the pickup itself is raising a column or a floor to a drop: the chase goes on while it stands (canChase). */
     boolean raisingWay() { return wayFor != null; }
@@ -293,7 +302,10 @@ final class CompanionLoot {
         // A column the pickup itself raised for a drop is no reason to stop the chase: it is the way to it (owner, 24.11).
         boolean ownWay = raisingWay();
         if (!hasPending() || !owner.canCollectItems() || owner.isRecoveringSupports() || owner.isRecoveringBridge()
-                || !ownWay && (owner.temporaryPillar.isActive() || owner.temporaryBridge.isActive())
+                || diggingForWay
+                // A floor laid from bank to bank is a walk to the drops on the far side: the chase goes over it. A column, or a
+                // floor still being laid, is another work's way: the chase waits (the drop is waited for, not given up).
+                || !ownWay && (owner.temporaryPillar.isActive() || owner.temporaryBridge.isActive() && !owner.temporaryBridge.isWalk())
                 || owner.isSwingingAtBlock() || owner.creeperGuard.nearby(CREEPER_NEAR)) return false;
         if (owner.level() instanceof ServerLevel level) for (UUID id : pending) if (chaseable(level, id)) return true;
         return false;
@@ -417,15 +429,22 @@ final class CompanionLoot {
      */
     private boolean raiseWay(ServerLevel level, ItemEntity item) {
         BlockPos cell = item.blockPosition();
+        // The player's own switch («Строить себе путь»): off, no column and no floor is raised for a drop either, and the drop
+        // is given up with that reason in the log once, not a line per tick.
+        if (!owner.buildWay()) {
+            if (wayTries++ == 0) sayWay(cell, "none", 0, 0, "switch off");
+            return false;
+        }
         if (wayFor != null) {
             if (wayCell.equals(cell)) return tickWay(level, cell);
             // The drop drifted to another cell: the way it stands is no way to it any more, and is taken back.
             finishWay();
         }
-        // A column or a floor of another work's stands: it is no way to this drop, and the drop is waited for, not given up —
-        // the way is raised once that one is down (canChase keeps the chase off while it stands).
+        // A column of another work's stands, or a floor still being laid: it is no way to this drop, and the drop is waited for,
+        // not given up — the way is raised once that one is down (canChase keeps the chase off while it stands). A floor laid
+        // from bank to bank is a walk, and the drop over it is walked to.
         if (owner.temporaryPillar.isActive() || owner.temporaryPillar.isRecovering()
-                || owner.temporaryBridge.isActive() || owner.temporaryBridge.isRecovering()) return true;
+                || owner.temporaryBridge.isActive() && !owner.temporaryBridge.isWalk() || owner.temporaryBridge.isRecovering()) return true;
         if (wayTries >= WAY_TRIES) return false;
         int steps = owner.temporaryPillar.leastStepsNearCell(cell, CompanionPillar.WAY_SUPPORTS);
         boolean soil = steps > 0 && steps <= owner.temporaryPillar.soilCarried();
@@ -436,6 +455,17 @@ final class CompanionLoot {
             return tickWay(level, cell);
         }
         if (steps > 0) {
+            // The column asks more soil than he carries: he digs it about him, as the way digs it for a block, and the column is
+            // raised once the soil is in his bag — never a refusal over ground he can dig (the owner, 24.11: «не хватает земли»
+            // over the soil under his feet).
+            if (!soil && !diggingForWay) {
+                int lacks = steps - owner.temporaryPillar.soilCarried();
+                if (digSoilForWay(level, lacks)) {
+                    sayWay(cell, "column", steps, 0, "нет земли, копаю " + lacks);
+                    return true;
+                }
+            }
+            if (diggingForWay) return true;
             wayFor = item.getUUID(); wayCell = cell.immutable(); wayBridge = false; wayAt = level.getGameTime(); wayTries++;
             sayWay(item, "column", steps, 0, "");
             return tickWay(level, cell);
@@ -464,6 +494,19 @@ final class CompanionLoot {
             return false;
         }
         owner.workStatus("Поднимаюсь к выпавшему.");
+        return true;
+    }
+
+    /**
+     * The soil the column lacks, dug about him as the way digs it for a block (the dig's own rule, thick ground only): the pickup
+     * waits for the dig, and the column is raised with the soil in his bag. False when there is no soil to dig about him, and the
+     * column is tried and fails with the soil named, as before.
+     */
+    private boolean digSoilForWay(ServerLevel level, int lacks) {
+        if (!CompanionReach.soilAbout(owner, level) || !CompanionDigGoal.thickSoilNear(owner)) return false;
+        woodWasRunning = owner.gatheringLogs; woodRequested = owner.requestedLogs; woodRemaining = owner.logsRemaining;
+        diggingForWay = true;
+        owner.startGatheringDirtForWork(Math.max(1, lacks));
         return true;
     }
 
@@ -703,5 +746,5 @@ final class CompanionLoot {
     void shun(long until) { for (UUID id : pending) shunned.put(id, until); pause(); }
     void beginCollection() { collecting = true; shunned.clear(); leavesCleared.clear(); unreachable.clear(); unreachableFrom.clear(); attempts.clear(); retryAt.clear(); wayTries = 0; }
     void resumeCollection() { collecting = true; }
-    void cancel() { collecting = false; shunned.clear(); leavesCleared.clear(); pending.clear(); unreachable.clear(); unreachableFrom.clear(); born.clear(); attempts.clear(); retryAt.clear(); sites.clear(); rescanUntil = 0; wayTries = 0; finishWay(); pause(); }
+    void cancel() { collecting = false; shunned.clear(); leavesCleared.clear(); pending.clear(); unreachable.clear(); unreachableFrom.clear(); born.clear(); attempts.clear(); retryAt.clear(); sites.clear(); rescanUntil = 0; wayTries = 0; diggingForWay = false; finishWay(); pause(); }
 }
