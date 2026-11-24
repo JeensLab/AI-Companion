@@ -29,19 +29,12 @@ final class CompanionCombat {
         final CompanionEntity c;
         PlayerPaceAttackGoal(CompanionEntity c) { super(c, 1.15D, true); this.c = c; }
         /** At range the bow has him, when he has one (CompanionArchery). */
-        @Override public boolean canUse() { return letGo() && !c.archery.wants(c.getTarget()) && super.canUse(); }
-        @Override public boolean canContinueToUse() { return letGo() && !c.archery.wants(c.getTarget()) && super.canContinueToUse(); }
-        /** A target taken before lava was by it is let go: the target goals do not ask fairTarget again while they hold it. */
-        private boolean letGo() {
-            if (!wakesLava(c.getTarget())) return true;
-            c.setTarget(null);
-            return false;
-        }
+        @Override public boolean canUse() { return !c.archery.wants(c.getTarget()) && super.canUse(); }
+        @Override public boolean canContinueToUse() { return !c.archery.wants(c.getTarget()) && super.canContinueToUse(); }
         /** The best weapon before the first swing, not after the ten-tick check: otherwise the first blow goes with the digging pickaxe. */
         @Override public void start() { super.start(); c.selectWeaponForCombat(); }
         @Override protected void checkAndPerformAttack(LivingEntity target) {
-            // The goal's own checks run every other tick, this one every tick: lava come by it in between stops the blow too.
-            if (!c.combat.swingReady() || !c.isWithinMeleeAttackRange(target) || !c.getSensing().hasLineOfSight(target) || wakesLava(target)) return;
+            if (!c.combat.swingReady() || !c.isWithinMeleeAttackRange(target) || !c.getSensing().hasLineOfSight(target)) return;
             c.combat.swung();
             c.swing(InteractionHand.MAIN_HAND);
             if (c.doHurtTarget(target) && target instanceof net.minecraft.world.entity.monster.Creeper) c.creeperGuard.landed();
@@ -86,7 +79,7 @@ final class CompanionCombat {
         @Override public boolean canContinueToUse() {
             var player = c.getOwnerPlayer();
             return player != null && attacker != null && attacker.isAlive() && c.getTarget() == attacker
-                    && c.distanceToSqr(player) <= 24 * 24 && attacker.distanceToSqr(player) <= 18 * 18;
+                    && c.distanceToSqr(player) <= 24 * 24 && attacker.distanceToSqr(player) <= 18 * 18 && !wakesLava(attacker);
         }
         @Override public void stop() { if (c.getTarget() == attacker) c.setTarget(null); attacker = null; }
     }

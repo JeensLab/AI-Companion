@@ -438,8 +438,6 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         // Review 22.10, В1: vanilla «hit back whoever hurt me» also hit back the player after a stray blow.
         this.targetSelector.addGoal(1, new HurtByTargetGoal(this) {
             @Override public boolean canUse() { return super.canUse() && fairTarget(getLastHurtByMob(), true); }
-            // The game's goal hands its mob back as the target every tick it holds it: a silverfish come by lava is given up here.
-            @Override public boolean canContinueToUse() { return super.canContinueToUse() && fairTarget(getTarget(), true); }
         });
         this.targetSelector.addGoal(1, new CompanionCombat.OwnerDefenseGoal(this));
         this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, net.minecraft.world.entity.Mob.class, 10,
@@ -1316,6 +1314,12 @@ public final class CompanionEntity extends PathfinderMob implements Container {
 
     /** The game tells every mob to leave a ghast alone; who may be fought is decided in fairTarget, and a ghast is for the bow. */
     @Override public boolean canAttackType(net.minecraft.world.entity.EntityType<?> type) { return true; }
+
+    /**
+     * A silverfish come by lava is let go by every goal of the game that holds a target: they ask this every tick they keep one
+     * (TargetGoal.canContinueToUse), and the hit-back goal would else hand it back each tick and keep all others off (CompanionCombat.wakesLava).
+     */
+    @Override public boolean canAttack(LivingEntity target) { return super.canAttack(target) && !CompanionCombat.wakesLava(target); }
 
     /** A last guard: whatever goal picked them, the player and his pets are never a target. */
     @Override public void setTarget(LivingEntity target) {
