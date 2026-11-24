@@ -159,20 +159,37 @@ public final class CompanionReach {
      * is his. Null when no line is there.
      */
     public static BridgePlan bridge(CompanionEntity c, ServerLevel level, BlockPos block, double reach, boolean forTheDrop, int maxGap, boolean allowDugSoil) {
+        return bridge(c, level, block, reach, end -> {
+            if (!airForBody(c, level, end)) return false;
+            Vec3 eye = Vec3.atBottomCenterOf(end).add(0, c.getEyeHeight(), 0);
+            if (!CompanionMiningNavigation.visible(c, eye, block)) return false;
+            return !forTheDrop || CompanionMiningNavigation.dropCollectable(level, block, end);
+        }, maxGap, allowDugSoil);
+    }
+
+    /**
+     * A floor across the gap to a cell a drop is taken from (PATH7, #105: the same way, for a drop beyond a gap): the cells
+     * whose body touches the drop, the bank he walks to, and the cells of floor to lay between them. Null when no line is there.
+     */
+    public static BridgePlan bridgeToCell(CompanionEntity c, ServerLevel level, BlockPos cell) {
+        return bridge(c, level, cell, 3.5D, end -> airForBody(c, level, end)
+                && CompanionMiningNavigation.pickupStand(c, end)
+                && CompanionMiningNavigation.touchesCell(c, Vec3.atBottomCenterOf(end), cell), CompanionPillar.WAY_SUPPORTS, false);
+    }
+
+    private static BridgePlan bridge(CompanionEntity c, ServerLevel level, BlockPos block, double reach, java.util.function.Predicate<BlockPos> endOk,
+                                     int maxGap, boolean allowDugSoil) {
         if (!c.buildWay()) return null;
         int limit = Math.clamp(maxGap, 1, CompanionPillar.WAY_SUPPORTS);
         int material = bridgeBlocks(c);
         boolean dig = allowDugSoil && soilAbout(c, level);
-        // The cells he can work the block from, nearest him first: air for a body, in reach and in sight, the drop collectable there.
+        // The cells he can take it from, nearest him first: air for a body, in reach, and the drop collectable there.
         List<BlockPos> ends = new ArrayList<>();
         for (int dy = -1; dy <= 1; dy++) for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) {
             if (dx * dx + dz * dz > 9) continue;
             BlockPos end = block.offset(dx, dy, dz);
             if (Vec3.atBottomCenterOf(end).distanceToSqr(block.getCenter()) > reach * reach) continue;
-            if (!airForBody(c, level, end)) continue;
-            Vec3 eye = Vec3.atBottomCenterOf(end).add(0, c.getEyeHeight(), 0);
-            if (!CompanionMiningNavigation.visible(c, eye, block)) continue;
-            if (forTheDrop && !CompanionMiningNavigation.dropCollectable(level, block, end)) continue;
+            if (!endOk.test(end)) continue;
             ends.add(end.immutable());
         }
         ends.sort(java.util.Comparator.comparingDouble(end -> end.distSqr(c.blockPosition())));

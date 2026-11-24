@@ -114,6 +114,9 @@ final class CompanionLoot {
     }
     void tickNearby() {
         if (!(owner.level() instanceof ServerLevel level) || !owner.canCollectItems()) return;
+        // A way raised for a drop that is already in his bag (or gone) comes down at once, whichever goal runs.
+        if (wayFor != null && (!pending.contains(wayFor)
+                || level.getEntity(wayFor) instanceof ItemEntity found && !found.blockPosition().equals(wayCell))) finishWay();
         // gather_block and mine_obsidian take the drop of what they broke after stepping down their own column, dismantling it
         // behind them (PATH7): the chase walks to nothing while the column stands or comes down (canChase), so a drop below him
         // waits for the ground. What lies at his own level is taken from where he stands: a crown's leaf that fell on the trunk's
@@ -242,6 +245,18 @@ final class CompanionLoot {
     private static final int SETTLE = 40;
     /** Where he stood when a drop was found out of reach: from four blocks away it gets another try. */
     private final Map<UUID, BlockPos> unreachableFrom = new HashMap<>();
+    /** The drop a way is being raised for and its cell, the shape of that way, and how many ways this drop has already been given. */
+    private UUID wayFor;
+    private BlockPos wayCell;
+    private boolean wayBridge;
+    private int wayTries;
+    private long wayAt;
+    /** Ticks a way to one drop may take before it is given up, and how many ways one drop may be given (a column that came short). */
+    private static final int WAY_PATIENCE = 600, WAY_TRIES = 3;
+
+    /** Whether the pickup itself is raising a column or a floor to a drop: the chase goes on while it stands (canChase). */
+    boolean raisingWay() { return wayFor != null; }
+
     private void giveUpFromHere(ServerLevel level, UUID id) {
         unreachable.add(id); unreachableFrom.put(id, owner.blockPosition());
         // The drop is no destination any more: a self-rescue must not dig towards it.
@@ -275,7 +290,10 @@ final class CompanionLoot {
     }
     boolean canChase() {
         // A floor across a gap stands under his feet: the drops on the far bank are walked to over it (PATH7, #105).
-        if (!hasPending() || !owner.canCollectItems() || owner.isRecoveringSupports() || owner.isRecoveringBridge() || owner.getTemporarySupportCount() > 0
+        // A column the pickup itself raised for a drop is no reason to stop the chase: it is the way to it (owner, 24.11).
+        boolean ownWay = raisingWay();
+        if (!hasPending() || !owner.canCollectItems() || owner.isRecoveringSupports() || owner.isRecoveringBridge()
+                || !ownWay && (owner.temporaryPillar.isActive() || owner.temporaryBridge.isActive())
                 || owner.isSwingingAtBlock() || owner.creeperGuard.nearby(CREEPER_NEAR)) return false;
         if (owner.level() instanceof ServerLevel level) for (UUID id : pending) if (chaseable(level, id)) return true;
         return false;
@@ -290,6 +308,8 @@ final class CompanionLoot {
             dropLeaf();
         }
         if (target == null) return;
+        // The drop the way was raised for is in his bag (or gone): the column comes down and the soil with it.
+        if (wayFor != null && !pending.contains(wayFor)) finishWay();
         // The column of loose blocks above a dug cell is still coming down: whoever walks in for the drop is buried in it,
         // and so is whoever cuts across that cell on his way to a drop pushed out beside it. He waits where he stands.
         if (holdForFall(level)) { owner.work.route.stop(); lastProgress = level.getGameTime(); return; }
@@ -376,6 +396,10 @@ final class CompanionLoot {
                     leafBest = owner.distanceToSqr(leaf.getCenter()); leafProgress = level.getGameTime();
                     path = null; owner.work.route.stop(); return;
                 }
+                // A drop no walk reaches is come at by the same way a block is (PATH7, #105): a column of his soil up to it, or
+                // a floor across the gap — never left lying where it fell (owner, 24.11: the lapis on his own pumpkin).
+                // The way walks with the one route: stopping it here would stop the column's own approach every tick.
+                if (raiseWay(level, target)) { path = null; pickupPoint = null; return; }
                 giveUpFromHere(level, target.getUUID());
                 target = null; path = null; owner.work.route.stop(); return;
             }
@@ -383,6 +407,91 @@ final class CompanionLoot {
         if (path != null && path.canReach()) owner.work.route.walk(path);
     }
     void pause() { target = null; path = null; pickupPoint = null; dropLeaf(); }
+
+    /**
+     * A drop no walk reaches is come at by the same way a block is (PATH7, #105): a column of his own soil whose top puts his
+     * body level with the drop's cell, or a floor laid across the gap to the cell he touches it from — the way's own classes
+     * walk, jump and lay it, this only asks which of them is there. False when neither is, and the drop is given up as before
+     * with the reason in the log: no way is no silent drop. A drop resting on a block above, or on the far bank of a gap, is
+     * no exception — that is what the owner's lapis on his pumpkin was.
+     */
+    private boolean raiseWay(ServerLevel level, ItemEntity item) {
+        BlockPos cell = item.blockPosition();
+        if (wayFor != null) {
+            if (wayCell.equals(cell)) return tickWay(level, cell);
+            // The drop drifted to another cell: the way it stands is no way to it any more, and is taken back.
+            finishWay();
+        }
+        // A column or a floor of another work's stands: it is no way to this drop, and the drop is waited for, not given up —
+        // the way is raised once that one is down (canChase keeps the chase off while it stands).
+        if (owner.temporaryPillar.isActive() || owner.temporaryPillar.isRecovering()
+                || owner.temporaryBridge.isActive() || owner.temporaryBridge.isRecovering()) return true;
+        if (wayTries >= WAY_TRIES) return false;
+        int steps = owner.temporaryPillar.leastStepsNearCell(cell, CompanionPillar.WAY_SUPPORTS);
+        boolean soil = steps > 0 && steps <= owner.temporaryPillar.soilCarried();
+        CompanionReach.BridgePlan bridge = soil ? null : CompanionReach.bridgeToCell(owner, level, cell);
+        if (bridge != null) {
+            wayFor = item.getUUID(); wayCell = cell.immutable(); wayBridge = true; wayAt = level.getGameTime(); wayTries++;
+            sayWay(item, "bridge", 0, bridge.length(), "");
+            return tickWay(level, cell);
+        }
+        if (steps > 0) {
+            wayFor = item.getUUID(); wayCell = cell.immutable(); wayBridge = false; wayAt = level.getGameTime(); wayTries++;
+            sayWay(item, "column", steps, 0, "");
+            return tickWay(level, cell);
+        }
+        sayWay(item, "none", 0, 0, "ни столба, ни моста");
+        return false;
+    }
+
+    /** One tick of the way to the drop: the column raised, or the floor laid and crossed, until his body touches the drop. */
+    private boolean tickWay(ServerLevel level, BlockPos cell) {
+        if (level.getGameTime() - wayAt > WAY_PATIENCE) { sayWay(cell, "none", 0, 0, "не успел за " + WAY_PATIENCE + " тактов"); finishWay(); return false; }
+        if (wayBridge) {
+            CompanionBridge.Outcome outcome = owner.temporaryBridge.tickTowardCell(cell);
+            if (outcome == CompanionBridge.Outcome.FAILED) {
+                sayWay(cell, "none", 0, 0, owner.temporaryBridge.failureReason());
+                finishWay();
+                return false;
+            }
+            owner.workStatus("Мостю провал к выпавшему.");
+            return true;
+        }
+        CompanionPillar.Outcome outcome = owner.temporaryPillar.tickTowardCell(cell, CompanionPillar.WAY_SUPPORTS);
+        if (outcome == CompanionPillar.Outcome.FAILED) {
+            sayWay(cell, "none", 0, 0, owner.temporaryPillar.failureReason());
+            finishWay();
+            return false;
+        }
+        owner.workStatus("Поднимаюсь к выпавшему.");
+        return true;
+    }
+
+    /** The way to a drop is over: the column or the floor comes back, the soil with it, as a block's way does. */
+    private void finishWay() {
+        if (wayFor == null) return;
+        wayFor = null; wayCell = null; wayBridge = false; wayAt = 0;
+        if (owner.temporaryPillar.isActive()) owner.temporaryPillar.requestCleanup();
+        if (owner.temporaryBridge.isActive()) owner.temporaryBridge.requestCleanup();
+    }
+
+    private void sayWay(ItemEntity item, String shape, int steps, int gap, String why) { sayWay(item.blockPosition(), shape, steps, gap, why); }
+
+    /** One line per way to a drop, in the game log as well as the journal: the thing, where it lies, how far up and across, the shape of the way and what it asks. */
+    private void sayWay(BlockPos cell, String shape, int steps, int gap, String why) {
+        ItemEntity item = owner.level() instanceof ServerLevel level && level.getEntity(wayFor) instanceof ItemEntity found ? found : target;
+        String id = item == null ? "" : net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item.getItem().getItem()).toString();
+        BlockPos feet = owner.blockPosition();
+        int rise = cell.getY() - feet.getY();
+        double across = Math.hypot(cell.getX() + .5D - owner.getX(), cell.getZ() + .5D - owner.getZ());
+        String text = "«" + id + "»: выпавшее " + cell.toShortString() + " " + (rise >= 0 ? "+" + rise : String.valueOf(rise))
+                + " вверх/" + Math.round(across * 10) / 10D + " вбок → " + shape
+                + (steps > 0 ? ", " + steps + " шагов земли" : gap > 0 ? ", " + gap + " клеток пола" : "")
+                + (why.isEmpty() ? "" : "; почему: " + why);
+        dev.aicompanion.CompanionDiagnostics.say(owner.diagnosticTrace(), "pickup_way", text, "entity", owner.getUUID(),
+                "item", id, "drop", cell.toShortString(), "rise", rise, "across", Math.round(across * 100) / 100D,
+                "shape", shape, "steps", steps, "gap", gap, "why", why);
+    }
     /** Only a leaf really under way is let go: the reset also clears the mining look the other work may be showing, and the hand the tool replaced comes back. */
     private void dropLeaf() { if (leaf != null) { leaf = null; leafBreaking.reset(); owner.putToolAway(); } }
 
@@ -592,7 +701,7 @@ final class CompanionLoot {
     /** Drops left lying until the given game time (a creeper that will not leave them): not chased, and the work does not wait for them. */
     private final Map<UUID, Long> shunned = new HashMap<>();
     void shun(long until) { for (UUID id : pending) shunned.put(id, until); pause(); }
-    void beginCollection() { collecting = true; shunned.clear(); leavesCleared.clear(); unreachable.clear(); unreachableFrom.clear(); attempts.clear(); retryAt.clear(); }
+    void beginCollection() { collecting = true; shunned.clear(); leavesCleared.clear(); unreachable.clear(); unreachableFrom.clear(); attempts.clear(); retryAt.clear(); wayTries = 0; }
     void resumeCollection() { collecting = true; }
-    void cancel() { collecting = false; shunned.clear(); leavesCleared.clear(); pending.clear(); unreachable.clear(); unreachableFrom.clear(); born.clear(); attempts.clear(); retryAt.clear(); sites.clear(); rescanUntil = 0; pause(); }
+    void cancel() { collecting = false; shunned.clear(); leavesCleared.clear(); pending.clear(); unreachable.clear(); unreachableFrom.clear(); born.clear(); attempts.clear(); retryAt.clear(); sites.clear(); rescanUntil = 0; wayTries = 0; finishWay(); pause(); }
 }

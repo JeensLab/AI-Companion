@@ -251,6 +251,15 @@ final class CompanionMiningNavigation {
         return level.noCollision(owner, new AABB(pos.getX() + .2, pos.getY(), pos.getZ() + .2, pos.getX() + .8, pos.getY() + owner.getBbHeight(), pos.getZ() + .8));
     }
 
+    /**
+     * The body of a player standing at {@code at}, widened as the game's own pickup is (a block sideways, half a block up and
+     * down), against a cell: a drop lying there is taken from it. The same box {@code CompanionLoot.touches} uses, so a way
+     * that promises a cell promises a pickup.
+     */
+    static boolean touchesCell(CompanionEntity owner, Vec3 at, BlockPos cell) {
+        return owner.getBoundingBox().move(at.subtract(owner.position())).inflate(1, .5, 1).intersects(new AABB(cell));
+    }
+
     static void walk(CompanionEntity owner, Path path) { walk(owner, path, 1D); }
 
     static void walk(CompanionEntity owner, Path path, double speed) {
