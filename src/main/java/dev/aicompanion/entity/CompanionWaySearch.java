@@ -58,6 +58,12 @@ final class CompanionWaySearch {
         boolean some() { return count > 0; }
     }
 
+    /** The last search line said for a companion: a search asked again with the same answer is one line, not one per tick. */
+    private static final Map<java.util.UUID, String> SAID = java.util.Collections.synchronizedMap(
+            new LinkedHashMap<java.util.UUID, String>(64, .75F, true) {
+                @Override protected boolean removeEldestEntry(Map.Entry<java.util.UUID, String> eldest) { return size() > 64; }
+            });
+
     private CompanionWaySearch() { }
 
     /**
@@ -196,7 +202,9 @@ final class CompanionWaySearch {
                 "chosen", nearest == null ? "" : nearest.pos().toShortString(),
                 "id", nearest == null ? "" : BuiltInRegistries.BLOCK.getKey(level.getBlockState(nearest.pos()).getBlock()),
                 "shape", nearest == null ? "none" : nearest.how().shape(), "why", why};
-        dev.aicompanion.CompanionDiagnostics.say(c.diagnosticTrace(), "way_search", text.toString(), fields);
+        String key = id + "|" + radius + "|" + candidates + "|" + count + "|" + soil + "|"
+                + (nearest == null ? "" : nearest.pos().toShortString()) + "|" + why;
+        sayOnce(c, "way_search", key, text.toString(), fields);
         if (!beyond.isEmpty()) {
             BlockPos first = beyond.getFirst();
             String out = "«" + id + "»: за коробкой " + radius + " вбок есть " + beyond.size() + ", ближайший "
@@ -208,6 +216,14 @@ final class CompanionWaySearch {
                     "outAcross", Math.round(Math.hypot(first.getX() + .5D - c.getX(), first.getZ() + .5D - c.getZ()) * 10) / 10D);
         }
         return new Result(candidates, Math.min(candidates, LOOK), count, soil, nearest);
+    }
+
+    /** One line per search, once: the same search asked again with the same answer is no new line (a plan asks many times a tick). */
+    private static void sayOnce(CompanionEntity c, String event, String key, String text, Object... fields) {
+        String previous = SAID.get(c.getUUID());
+        if (key.equals(previous)) return;
+        SAID.put(c.getUUID(), key);
+        dev.aicompanion.CompanionDiagnostics.say(c.diagnosticTrace(), event, text, fields);
     }
 
     /** «(20, 11, 16) +10 вверх/20.0 вбок → column 7 шагов земли»: where a block lies and what the way answered, as one reads it. */

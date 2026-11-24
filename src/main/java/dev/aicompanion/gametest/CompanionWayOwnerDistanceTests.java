@@ -213,6 +213,27 @@ public final class CompanionWayOwnerDistanceTests {
         h.succeed();
     }
 
+    /** «Лазурит» with the lapis block hanging twenty across and twelve up: the block is mined and made into lapis, as the owner asked. */
+    @GameTest(template = "way_far", timeoutTicks = 24000)
+    public static void lapisLazuliComesFromTheBlockTwentyAcross(GameTestHelper h) {
+        flat(h, Blocks.GRASS_BLOCK);
+        BlockPos target = new BlockPos(HOME_X + 20, FEET + 12, HOME_Z);
+        h.setBlock(target, Blocks.LAPIS_BLOCK);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.DIRT, 24));
+        int[] before = snapshot(h);
+        var future = sayModel(h, c, "добудь лазурит", obtainPlan("minecraft:lapis_lazuli"));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.LAPIS_LAZULI) >= 1, "No lapis lazuli from the block twenty across: " + report);
+            h.assertTrue(!report.contains("лазуритовая руда"), "The ore was dug for instead of the block: " + report);
+            h.assertBlockPresent(Blocks.AIR, target);
+            assertRestored(h, before, target);
+        });
+    }
+
     /** A pumpkin thirty across with his search at twenty-four: it is not claimed, and the line says a block exists outside the box. */
     @GameTest(template = "way_far", timeoutTicks = 400)
     public static void aBlockOutsideTheBoxIsSaidAsOutside(GameTestHelper h) {

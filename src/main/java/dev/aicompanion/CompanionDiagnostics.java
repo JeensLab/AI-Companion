@@ -87,7 +87,9 @@ public final class CompanionDiagnostics {
         all[fields.length] = "line";
         all[fields.length + 1] = text;
         event(trace, event, all);
-        AICompanionMod.LOGGER.debug("[{}] {}", event, text);
+        // INFO, not DEBUG: these are the decisions the player has to be able to read in latest.log, and latest.log keeps
+        // INFO and above (the console shows DEBUG, the file does not).
+        AICompanionMod.LOGGER.info("[{}] {}", event, text);
     }
 
     public static void failure(String trace, String stage, Throwable error) {
