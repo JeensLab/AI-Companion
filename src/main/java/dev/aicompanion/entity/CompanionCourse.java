@@ -220,7 +220,7 @@ public final class CompanionCourse {
     }
 
     /**
-     * Every tick, also while a fight or the pickup has his legs and after «стоп»: the eye in the air is his until it breaks or
+     * Every tick (CompanionEntity), also while a fight or the pickup has his legs and after «стоп»: the eye in the air is his until it breaks or
      * falls, and the fallen one is found the tick it falls (a tick of the walk that came late found none where it had hung and
      * called it broken). It is taken only where it came to lie at hand: not out of water, not off a tree, not from a pit (game
      * 24.11: he went down a cave after one, thirty blocks, and the walk was over). The one thrown over the place goes into the
