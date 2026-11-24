@@ -46,21 +46,21 @@ public final class CompanionWayReachMatrixTests {
     }
 
     /** The gourd: a pumpkin, the order the owner gave. */
-    @GameTest(template = "way_wide", timeoutTicks = 20000)
+    @GameTest(template = "way_wide", timeoutTicks = 6000)
     public static void everyGourdOfTheMatrixIsGot(GameTestHelper h) {
         rows(h, "добудь тыкву", "minecraft:pumpkin", Items.PUMPKIN, Blocks.PUMPKIN, List.of(
                 new int[]{3, 2, 0, 0}, new int[]{16, 12, 1, 1}, new int[]{48, 20, 1, 0}, new int[]{64, 32, 0, 1}));
     }
 
     /** A storage block, made of the lapis it gives: the chain gathers the drop and crafts the block. */
-    @GameTest(template = "way_wide", timeoutTicks = 20000)
+    @GameTest(template = "way_wide", timeoutTicks = 6000)
     public static void everyStorageBlockOfTheMatrixIsGot(GameTestHelper h) {
         rows(h, "добудь блок лазурита", "minecraft:lapis_block", Items.LAPIS_BLOCK, Blocks.LAPIS_BLOCK, List.of(
                 new int[]{8, 6, 1, 1}, new int[]{32, 20, 0, 0}, new int[]{64, 12, 1, 1}));
     }
 
     /** Plain wool and planks: a block that is its own item, at the far corner and high up. */
-    @GameTest(template = "way_wide", timeoutTicks = 20000)
+    @GameTest(template = "way_wide", timeoutTicks = 6000)
     public static void everyPlainBlockOfTheMatrixIsGot(GameTestHelper h) {
         rows(h, "добудь белую шерсть", "minecraft:white_wool", Items.WHITE_WOOL, Blocks.WHITE_WOOL, List.of(
                 new int[]{3, 32, 0, 0}, new int[]{16, 6, 1, 1}, new int[]{64, 2, 0, 1}));
@@ -69,7 +69,7 @@ public final class CompanionWayReachMatrixTests {
     }
 
     /** A plant: a poppy is picked, not mined — the same way to it, the same column and the same soil back. */
-    @GameTest(template = "way_wide", timeoutTicks = 20000)
+    @GameTest(template = "way_wide", timeoutTicks = 6000)
     public static void everyPlantOfTheMatrixIsGot(GameTestHelper h) {
         rows(h, "сорви мак", "minecraft:poppy", Items.POPPY, Blocks.POPPY, List.of(
                 new int[]{3, 2, 0, 1}, new int[]{32, 6, 1, 0}, new int[]{16, 20, 0, 1}, new int[]{48, 12, 1, 1}));

@@ -33,7 +33,7 @@ public final class CompanionWayRadiusTests {
     private static final int GROUND = 5, FEET = GROUND + 1, HOME = 68, SIDE = 136, TOP = 48;
 
     /** A pumpkin forty-eight across and twenty-five up is in the owner's box, and the way reaches it. */
-    @GameTest(template = "way_wide", timeoutTicks = 12000)
+    @GameTest(template = "way_wide", timeoutTicks = 4000)
     public static void theBoxIsTheOwnersSixtyFour(GameTestHelper h) {
         flat(h);
         CompanionEntity c = spawn(h);
@@ -57,7 +57,7 @@ public final class CompanionWayRadiusTests {
     }
 
     /** A pumpkin eighty across is outside the box, and the line says it exists just outside — not that nothing is there. */
-    @GameTest(template = "way_wide", timeoutTicks = 12000)
+    @GameTest(template = "way_wide", timeoutTicks = 4000)
     public static void aBlockOutsideTheBoxIsSaidOutside(GameTestHelper h) {
         flat(h);
         CompanionEntity c = spawn(h);
@@ -70,10 +70,11 @@ public final class CompanionWayRadiusTests {
         h.assertTrue(outside != null, "No «за коробкой» line for the pumpkin 80 across: " + lines);
         h.assertTrue(outside.contains("за коробкой 64 вбок есть 1"), "The line does not say the block is just outside the box: " + outside);
         h.assertBlockPresent(Blocks.PUMPKIN, far);
+        h.succeed();
     }
 
     /** His own smaller setting cuts the box, and the line says so — never a silent shrink back to thirty-two. */
-    @GameTest(template = "way_wide", timeoutTicks = 12000)
+    @GameTest(template = "way_wide", timeoutTicks = 4000)
     public static void hisOwnSmallerRadiusCutsTheBoxAndSaysSo(GameTestHelper h) {
         flat(h);
         CompanionEntity c = spawn(h);
@@ -88,6 +89,7 @@ public final class CompanionWayRadiusTests {
         h.assertTrue(line.contains("блоков не нашёл"), "The pumpkin 20 across was found in a sixteen box: " + line);
         String outside = lines.stream().filter(entry -> entry.contains("\"outside\":")).findFirst().orElse(null);
         h.assertTrue(outside != null && outside.contains("за коробкой 16 вбок"), "The block just outside the cut box is not said: " + lines);
+        h.succeed();
     }
 
     /** The radius and the way's switch are kept in the save across a reload; the radius is clamped to the setting's own range. */
@@ -114,7 +116,7 @@ public final class CompanionWayRadiusTests {
     }
 
     /** The way's switch off: a block up the column is refused, and the line says why — «switch off», never a silent nothing. */
-    @GameTest(template = "way_wide", timeoutTicks = 12000)
+    @GameTest(template = "way_wide", timeoutTicks = 4000)
     public static void theWaySwitchOffRefusesAndSaysSo(GameTestHelper h) {
         flat(h);
         CompanionEntity c = spawn(h);
