@@ -26,112 +26,150 @@ import java.util.function.Function;
 
 /**
  * The drop comes to him by the same way the block did (owner, 24.11: the lapis block was mined up a column, its lapis fell onto
- * the pumpkin hanging over his base, and he stood there and said «С этим пока не справился»). A drop no walk reaches is raised
- * to with a column of his own soil or a floor across the gap — PATH7's way, for a drop as for a block — and then the column
- * comes down with the soil in his bag. Every row here is the player's own phrase through his own router; none calls the pickup.
+ * the pumpkin hanging over his base, and he stood there and said «С этим пока не справился»). A drop no walk reaches is raised to
+ * with a column of his own soil or a floor across the gap — PATH7's way, for a drop as for a block — and then the column comes
+ * down with the soil in his bag. Every row here is the player's own phrase through his own router, and every row proves its way:
+ * once the block is broken and the mining's own column or floor is down, the pickup's way is switched off («Строить себе путь:
+ * выкл.») — the drop stays where it lies and the pickup says the way was off — and only that way turned on brings it into the bag,
+ * by the column or the floor the row names.
  */
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionPickupWayTests {
     private static final int SIDE = 48, TOP = 32, GROUND = 5, FEET = GROUND + 1;
     private static final int HOME_X = 20, HOME_Z = 16;
+    /** The trench's banks: the near one he stands on, the far one the drop lies on. */
+    private static final int TRENCH_FROM = 21, TRENCH_TO = 22;
 
     /**
-     * A wool block two above a pumpkin he hung four up: mined up his column, the wool falls onto the pumpkin, and the pickup
-     * climbs its own column to it — the column comes down, the soil comes back to the bag.
+     * A wool block on a stone block four above the ground, nothing walkable beside the drop: the block is mined up a column of one
+     * (the pillar's own, not the pickup's), the wool falls onto the stone, and four above the ground is out of a walk's touch. The
+     * bag holds one soil where the pickup's column asks four: it digs the other three about him, raises the column, takes the wool
+     * and brings the soil back.
      */
     @GameTest(template = "way_far", timeoutTicks = 2400)
     public static void aDropRestingOnABlockAboveIsClimbedFor(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
-        CompanionEntity c = spawn(h);
-        BlockPos pumpkin = new BlockPos(HOME_X + 2, FEET + 6, HOME_Z);
-        h.setBlock(pumpkin, Blocks.PUMPKIN);
-        h.assertBlockPresent(Blocks.AIR, pumpkin.below());
-        h.setBlock(pumpkin.above(6), Blocks.WHITE_WOOL);
+        BlockPos pedestal = new BlockPos(HOME_X + 2, FEET + 3, HOME_Z);
+        h.setBlock(pedestal, Blocks.STONE);
+        h.setBlock(pedestal.above(), Blocks.WHITE_WOOL);
+        h.assertBlockPresent(Blocks.AIR, pedestal.above(2));
+        CompanionEntity c = spawn(h, HOME_X, HOME_Z);
         c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
-        c.setItem(1, new ItemStack(Items.DIRT, 32));
-        var future = say(h, c, "добудь белую шерсть");
+        c.setItem(1, new ItemStack(Items.DIRT, 1));
+        int[] most = {0};
+        boolean[] control = {false};
+        int[] stage = {0};
+        h.onEachTick(() -> most[0] = Math.max(most[0], c.getTemporarySupportCount()));
+        var future = sayWithControl(h, c, "добудь белую шерсть", "minecraft:white_wool", Items.WHITE_WOOL, control, stage);
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
-            String report = future.join().report();
-            h.assertTrue(count(c, Items.WHITE_WOOL) >= 1, "The wool that fell on the pumpkin is not in the bag: " + report);
+            h.assertTrue(control[0], "The wool came with the way off (stage " + stage[0] + "): " + journal(c, "pickup_way"));
+            h.assertTrue(count(c, Items.WHITE_WOOL) >= 1, "The wool on the stone is not in the bag: " + future.join().report());
+            h.assertTrue(most[0] > 0, "No column was raised to the wool: " + most[0]);
+            h.assertTrue(columnLine(c, "minecraft:white_wool", 4), "No column of four was planned to the wool: " + journal(c, "pickup_way"));
             h.assertTrue(c.getTemporarySupportCount() == 0 && !c.isRecoveringSupports(), "The column still stands: " + c.getTemporarySupportCount());
-            h.assertTrue(count(c, Items.DIRT) >= 32, "The soil did not come back to the bag: " + count(c, Items.DIRT));
-            String line = way(c, "minecraft:white_wool");
-
+            // The soil the column lacked was dug about him: one carried, three dug, and the column's four came back.
+            h.assertTrue(count(c, Items.DIRT) == 4, "The dug soil is not in the bag: " + count(c, Items.DIRT));
+            h.assertTrue(journal(c, "pickup_way").stream().anyMatch(line -> line.contains("\"item\":\"minecraft:white_wool\"")
+                    && line.contains("копаю 3")), "The dig for the column is not said: " + journal(c, "pickup_way"));
+            h.assertBlockPresent(Blocks.AIR, pedestal.above());
         });
     }
 
     /**
-     * The owner's own scene: a lapis block two above the pumpkin he hung — «добудь блок лазурита» mines it up a column, the
-     * lapis falls onto the pumpkin, and the pickup climbs for it. The block is then made of the lapis it brought, so the bag
-     * holds both the drop and the ordered block.
+     * The owner's own scene: a lapis block on the pumpkin he hung four above the ground. The block is mined up a column, its drop
+     * comes to rest on the pumpkin, and nothing walkable reaches it — the pickup climbs its own column of four for it, and the
+     * column comes down with the soil in his bag.
      */
     @GameTest(template = "way_far", timeoutTicks = 2400)
     public static void theLapisOnHisPumpkinIsPickedUp(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
-        CompanionEntity c = spawn(h);
-        BlockPos pumpkin = new BlockPos(HOME_X + 2, FEET + 6, HOME_Z);
+        BlockPos pumpkin = new BlockPos(HOME_X + 2, FEET + 3, HOME_Z);
         h.setBlock(pumpkin, Blocks.PUMPKIN);
-        h.assertBlockPresent(Blocks.AIR, pumpkin.below());
-        h.setBlock(pumpkin.above(6), Blocks.LAPIS_BLOCK);
+        h.setBlock(pumpkin.above(), Blocks.LAPIS_BLOCK);
+        h.assertBlockPresent(Blocks.AIR, pumpkin.above(2));
+        CompanionEntity c = spawn(h, HOME_X, HOME_Z);
         c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
         c.setItem(1, new ItemStack(Items.DIRT, 32));
-        c.setItem(2, new ItemStack(Items.CRAFTING_TABLE));
-        var future = say(h, c, "добудь блок лазурита");
+        int[] most = {0};
+        boolean[] control = {false};
+        int[] stage = {0};
+        h.onEachTick(() -> most[0] = Math.max(most[0], c.getTemporarySupportCount()));
+        var future = sayWithControl(h, c, "добудь блок лазурита", "minecraft:lapis_block", Items.LAPIS_BLOCK, control, stage);
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
-            String report = future.join().report();
-            h.assertTrue(count(c, Items.LAPIS_BLOCK) >= 1, "The lapis block was not made of it: " + report);
+            h.assertTrue(control[0], "The lapis came with the way off (stage " + stage[0] + "): " + journal(c, "pickup_way"));
+            h.assertTrue(count(c, Items.LAPIS_BLOCK) >= 1, "The lapis block on the pumpkin is not in the bag: " + future.join().report());
+            h.assertTrue(most[0] > 0, "No column was raised to the lapis: " + most[0]);
+            h.assertTrue(columnLine(c, "minecraft:lapis_block", 4), "No column of four was planned to the lapis: " + journal(c, "pickup_way"));
             h.assertTrue(c.getTemporarySupportCount() == 0, "The column still stands: " + c.getTemporarySupportCount());
             h.assertTrue(count(c, Items.DIRT) >= 32, "The soil did not come back to the bag: " + count(c, Items.DIRT));
-
         });
     }
 
     /**
-     * A wool block mined up a column over a two-wide chasm four deep: its drop falls onto a stone block standing in the chasm,
-     * two across and one up from the bank — no walk (the pit is too deep to jump), no column (no foot beside it), so the pickup
-     * lays a floor across the gap and takes it. The floor is a way, not a scaffold: it stays where he laid it.
+     * A real trench: its floor is air from bank to bank, five deep, so no walk crosses it and the cells at the walking level have
+     * nothing under them. A wool block five above the far bank's edge is mined up a column of his own (the pillar's, not the
+     * pickup's), and its drop comes to rest on a stone block standing in the trench. The soil the mining's column gives back is
+     * three, short of the five the pickup's column would ask: it lays a floor over the cells that were air and takes the wool. The
+     * floor is a way, not a scaffold, and stays where he laid it.
      */
     @GameTest(template = "way_far", timeoutTicks = 2400)
     public static void aDropBeyondAGapIsBridged(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
-        for (int x = HOME_X + 1; x <= HOME_X + 2; x++) for (int y = GROUND - 4; y < GROUND; y++) h.setBlock(new BlockPos(x, y, HOME_Z), Blocks.AIR);
-        h.setBlock(new BlockPos(HOME_X + 2, GROUND, HOME_Z), Blocks.STONE);
-        h.setBlock(new BlockPos(HOME_X + 2, FEET + 5, HOME_Z), Blocks.WHITE_WOOL);
-        CompanionEntity c = spawn(h);
+        for (int x = TRENCH_FROM; x <= TRENCH_TO; x++) for (int z = 1; z <= SIDE - 2; z++)
+            for (int y = 1; y <= GROUND; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        BlockPos stone = new BlockPos(TRENCH_TO, GROUND, HOME_Z);
+        h.setBlock(stone, Blocks.STONE);
+        BlockPos drop = new BlockPos(TRENCH_TO, FEET, HOME_Z);
+        BlockPos wool = new BlockPos(TRENCH_TO, FEET + 4, HOME_Z);
+        h.setBlock(wool, Blocks.WHITE_WOOL);
+        h.assertBlockPresent(Blocks.AIR, new BlockPos(TRENCH_FROM, GROUND, HOME_Z));
+        h.assertBlockPresent(Blocks.AIR, new BlockPos(TRENCH_FROM, FEET, HOME_Z));
+        h.assertBlockPresent(Blocks.AIR, drop);
+        CompanionEntity c = spawn(h, HOME_X, HOME_Z);
         c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
-        c.setItem(1, new ItemStack(Items.DIRT, 32));
-        var future = say(h, c, "добудь белую шерсть");
+        c.setItem(1, new ItemStack(Items.OAK_PLANKS, 6));
+        c.setItem(2, new ItemStack(Items.DIRT, 3));
+        int[] bridge = {0};
+        boolean[] control = {false};
+        int[] stage = {0};
+        h.onEachTick(() -> bridge[0] = Math.max(bridge[0], c.getTemporaryBridgeCount()));
+        var future = sayWithControl(h, c, "добудь белую шерсть", "minecraft:white_wool", Items.WHITE_WOOL, control, stage);
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
-            String report = future.join().report();
-            h.assertTrue(count(c, Items.WHITE_WOOL) >= 1, "The wool across the chasm is not in the bag: " + report);
-
-            // The floor of his own is laid: the cells under the walk across the chasm are no air any more.
-            h.assertTrue(!h.getBlockState(new BlockPos(HOME_X + 1, GROUND, HOME_Z)).isAir(), "The floor across the chasm was not laid");
+            h.assertTrue(control[0], "The wool came with the way off (stage " + stage[0] + "): " + journal(c, "pickup_way"));
+            h.assertTrue(count(c, Items.WHITE_WOOL) >= 1, "The wool across the trench is not in the bag: " + future.join().report());
+            h.assertTrue(bridge[0] > 0, "No floor was laid: " + bridge[0]);
+            h.assertBlockPresent(Blocks.AIR, drop);
+            // The cell under the walk across the trench was air before the way and holds the floor of his own after it.
+            h.assertBlockPresent(Blocks.OAK_PLANKS, new BlockPos(TRENCH_FROM, GROUND, HOME_Z));
+            h.assertTrue(count(c, Items.OAK_PLANKS) == 5, "The planks of the floor were lost: " + count(c, Items.OAK_PLANKS));
         });
     }
 
     /**
-     * A drop no column and no floor reaches — the bag has the three soil the mining's own column needs and no more — is given up
-     * honestly: the pickup_way line names the drop, how far up and across it lies, and the soil it lacks, never a silent
-     * «С этим пока не справился».
+     * A drop no column and no floor reaches — the ground is stone, the bag holds the one soil the mining's own column used, and no
+     * plank is there to lay — is given up honestly: the pickup_way line names the drop, how far up it lies and the soil he lacks,
+     * never a silent «С этим пока не справился». With the way off the same drop says the way was switched off, so the line is the
+     * way's own answer.
      */
     @GameTest(template = "way_far", timeoutTicks = 2400)
     public static void aDropWithNoWaySaysWhy(GameTestHelper h) {
         flat(h, Blocks.STONE);
-        CompanionEntity c = spawn(h);
-        BlockPos pumpkin = new BlockPos(HOME_X + 2, FEET + 3, HOME_Z);
-        h.setBlock(pumpkin, Blocks.PUMPKIN);
-        h.setBlock(pumpkin.above(), Blocks.WHITE_WOOL);
+        BlockPos pedestal = new BlockPos(HOME_X + 2, FEET + 3, HOME_Z);
+        h.setBlock(pedestal, Blocks.STONE);
+        h.setBlock(pedestal.above(), Blocks.WHITE_WOOL);
+        CompanionEntity c = spawn(h, HOME_X, HOME_Z);
         c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
-        // One soil: enough for the one-step column the mining itself needs, not for the four the pickup's own column asks.
         c.setItem(1, new ItemStack(Items.DIRT, 1));
-        var future = say(h, c, "добудь белую шерсть");
+        boolean[] control = {false};
+        int[] stage = {0};
+        var future = sayWithControl(h, c, "добудь белую шерсть", "minecraft:white_wool", Items.WHITE_WOOL, control, stage);
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
+            h.assertTrue(control[0], "The way-off line is not the one the control ran on (stage " + stage[0] + "): " + journal(c, "pickup_way"));
             String line = way(c, "minecraft:white_wool");
             h.assertTrue(line != null, "No pickup_way line for the wool: " + journal(c, "pickup_way"));
             h.assertTrue(line.contains("\"shape\":\"none\""), "The way that is no way is not said as none: " + line);
@@ -142,6 +180,49 @@ public final class CompanionPickupWayTests {
 
     // ---- helpers ----
 
+    /**
+     * The phrase through the player's own router, with the pickup's way switched off once the block is mined and the mining's own
+     * column or floor is down — the moment the drop is left to the pickup's way and nothing else — and switched on again once the
+     * pickup has said the way was off. The record of the control is whether the drop was still out of the bag then: that is what
+     * proves the way fetches the drop, for with it off nothing else does.
+     */
+    private static CompletableFuture<CompanionPlanRunner.Outcome> sayWithControl(GameTestHelper h, CompanionEntity c, String phrase,
+                                                                                String id, Item item, boolean[] control, int[] stage) {
+        var future = say(h, c, phrase);
+        h.onEachTick(() -> {
+            if (stage[0] == 0) {
+                // The block is broken and its drop has come to rest: what lies out of a walk now is the pickup's way's. The mining's
+                // own column or floor is no way to the drop (it is taken down, and the descent never touches it), so the switch is
+                // turned off the moment the drop lies there.
+                if (!dropAtRest(h, c, item)) return;
+                c.setBuildWay(false);
+                stage[0] = 1;
+                return;
+            }
+            if (stage[0] == 1) {
+                String line = way(c, id);
+                if (line == null || !line.contains("\"why\":\"switch off\"")) return;
+                control[0] = count(c, item) == 0;
+                c.setBuildWay(true);
+                stage[0] = 2;
+            }
+        });
+        return future;
+    }
+
+    /** Whether the pickup planned a column of this many steps to the item: the way it said it would raise. */
+    private static boolean columnLine(CompanionEntity c, String item, int steps) {
+        return journal(c, "pickup_way").stream().anyMatch(line -> line.contains("\"item\":\"" + item + "\"")
+                && line.contains("\"shape\":\"column\"") && line.contains("\"steps\":" + steps));
+    }
+
+    /** Whether a drop of this item has come to rest about him: what the pickup is left with once the block is broken. */
+    private static boolean dropAtRest(GameTestHelper h, CompanionEntity c, Item item) {
+        var box = new net.minecraft.world.phys.AABB(c.blockPosition()).inflate(8, 6, 8);
+        return h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, box,
+                found -> found.getItem().is(item) && found.onGround()).stream().findFirst().isPresent();
+    }
+
     private static CompletableFuture<CompanionPlanRunner.Outcome> say(GameTestHelper h, CompanionEntity c, String phrase) {
         String command = CompanionLocalCommands.route(phrase, "Олег", RU);
         h.assertTrue(command != null, "«" + phrase + "» went to the model");
@@ -149,10 +230,10 @@ public final class CompanionPickupWayTests {
                 new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-pickup-way", () -> false));
     }
 
-    private static CompanionEntity spawn(GameTestHelper h) {
-        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), HOME_X, FEET, HOME_Z);
+    private static CompanionEntity spawn(GameTestHelper h, int x, int z) {
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), x, FEET, z);
         var owner = h.makeMockServerPlayerInLevel();
-        BlockPos stand = h.absolutePos(new BlockPos(HOME_X - 2, FEET, HOME_Z));
+        BlockPos stand = h.absolutePos(new BlockPos(x - 2, FEET, z));
         owner.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
         owner.setInvulnerable(true);
         c.setOwnerId(owner.getUUID());
