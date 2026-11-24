@@ -30,7 +30,9 @@ final class CompanionHunting {
                     : "С выбранными ближайшими монстрами закончил. Моих добивающих ударов: " + w.huntKills + "."); return;
         }
         if (w.orderHasStalled(level, 200)) { w.finish(false, "Не смог добраться до оставшихся монстров. Убил: " + w.huntKills + "."); return; }
-        var target = remaining.stream().min(Comparator.comparingDouble(w.owner::distanceToSqr)).orElseThrow();
+        // A silverfish by lava is not struck (CompanionCombat.wakesLava): it would let the lava out.
+        var target = remaining.stream().filter(mob -> !CompanionCombat.wakesLava(mob)).min(Comparator.comparingDouble(w.owner::distanceToSqr)).orElse(null);
+        if (target == null) { w.finish(false, "Остались чешуйницы у лавы: ударю — выпустят её на пол. Убил: " + w.huntKills + "."); return; }
         w.owner.selectWeaponForCombat(); w.owner.setTarget(target); w.owner.movementIntent(target.blockPosition());
         w.owner.workStatus("Разбираюсь с ближайшими монстрами, осталось целей: " + remaining.size() + ".");
         // In legs, as far as the way goes; on a leg that fails the stall check above ends the order.

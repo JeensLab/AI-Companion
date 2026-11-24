@@ -71,7 +71,7 @@ final class CompanionArchery {
     }
 
     private boolean aiming(LivingEntity target) {
-        if (target == null || !target.isAlive() || !(target instanceof Enemy) || c.tickCount < bladeUntil || !armed()) return false;
+        if (target == null || !target.isAlive() || !(target instanceof Enemy) || c.tickCount < bladeUntil || !armed() || CompanionCombat.wakesLava(target)) return false;
         // An enderman teleports away from every arrow and takes none of it (EnderMan.hurt): the sword, however far off it is.
         if (target instanceof net.minecraft.world.entity.monster.EnderMan) return false;
         double distance = c.distanceTo(target);
@@ -98,7 +98,7 @@ final class CompanionArchery {
         else c.getNavigation().stop();
         ItemStack bow = c.getMainHandItem();
         if (!(bow.getItem() instanceof BowItem)) { c.selectWeaponForCombat(); return; }
-        if (!drawn()) return;
+        if (!drawn() || CompanionCombat.wakesLava(target)) return;
         Vec3 aim = aim(target);
         if (loose(target, aim, List.of(c.getEyePosition(), aim))) held = 0;
         else if (++held >= HOLD_FIRE_TICKS) { bladeUntil = c.tickCount + BLADE_AFTER_HOLD_TICKS; held = 0; }

@@ -79,7 +79,7 @@ final class CompanionCombat {
         @Override public boolean canContinueToUse() {
             var player = c.getOwnerPlayer();
             return player != null && attacker != null && attacker.isAlive() && c.getTarget() == attacker
-                    && c.distanceToSqr(player) <= 24 * 24 && attacker.distanceToSqr(player) <= 18 * 18;
+                    && c.distanceToSqr(player) <= 24 * 24 && attacker.distanceToSqr(player) <= 18 * 18 && !wakesLava(attacker);
         }
         @Override public void stop() { if (c.getTarget() == attacker) c.setTarget(null); attacker = null; }
     }
@@ -99,9 +99,36 @@ final class CompanionCombat {
         if (entity instanceof net.minecraft.world.entity.monster.warden.Warden) return false;
         // Nobody but a player hurts the dragon (EnderDragon.hurt): a blade or an arrow of his is spent for nothing; its crystals are his part.
         if (entity instanceof net.minecraft.world.entity.boss.enderdragon.EnderDragon) return false;
+        if (wakesLava(entity)) return false;
         boolean neutral = entity instanceof net.minecraft.world.entity.NeutralMob || entity instanceof net.minecraft.world.entity.monster.piglin.AbstractPiglin
                 || entity instanceof net.minecraft.world.entity.monster.Spider;
         return !neutral || provoked;
+    }
+
+    /**
+     * A silverfish with lava near: a hit one wakes the infested blocks round it (ten blocks across, five up and down, where it stands
+     * a second later, a few blocks on) and they crumble (Silverfish.SilverfishWakeUpFriendsGoal); one beside lava lets it out — in a stronghold's portal
+     * room on the floor by the pool, twice his death in game (24.11). It goes for no one who did not hit it. Asked often, so a part of
+     * a chunk whose palette has no lava is not looked through, and a chunk not loaded is not loaded for it.
+     */
+    static boolean wakesLava(net.minecraft.world.entity.Entity entity) {
+        if (!(entity instanceof net.minecraft.world.entity.monster.Silverfish)) return false;
+        net.minecraft.core.BlockPos from = entity.blockPosition().offset(-14, -7, -14), to = entity.blockPosition().offset(14, 7, 14);
+        java.util.function.Predicate<net.minecraft.world.level.block.state.BlockState> lava = state -> state.getFluidState().is(net.minecraft.tags.FluidTags.LAVA);
+        for (int cx = from.getX() >> 4; cx <= to.getX() >> 4; cx++) for (int cz = from.getZ() >> 4; cz <= to.getZ() >> 4; cz++) {
+            var chunk = entity.level().getChunkSource().getChunkNow(cx, cz);
+            if (chunk == null) continue;
+            for (int sy = from.getY() >> 4; sy <= to.getY() >> 4; sy++) {
+                int index = chunk.getSectionIndexFromSectionY(sy);
+                if (index < 0 || index >= chunk.getSectionsCount()) continue;
+                var section = chunk.getSection(index);
+                if (section.hasOnlyAir() || !section.maybeHas(lava)) continue;
+                for (net.minecraft.core.BlockPos pos : net.minecraft.core.BlockPos.betweenClosed(Math.max(from.getX(), cx << 4), Math.max(from.getY(), sy << 4), Math.max(from.getZ(), cz << 4),
+                        Math.min(to.getX(), (cx << 4) + 15), Math.min(to.getY(), (sy << 4) + 15), Math.min(to.getZ(), (cz << 4) + 15)))
+                    if (section.getFluidState(pos.getX() & 15, pos.getY() & 15, pos.getZ() & 15).is(net.minecraft.tags.FluidTags.LAVA)) return true;
+            }
+        }
+        return false;
     }
 
     /** The neutral mob is going for the player or for Oleg himself. */

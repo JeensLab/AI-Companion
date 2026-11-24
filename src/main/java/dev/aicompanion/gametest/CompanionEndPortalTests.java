@@ -53,6 +53,83 @@ public final class CompanionEndPortalTests {
     }
 
     /**
+     * A stronghold's spawner stands on the top step before the ring, two blocks off its frames: as long as a player is near, it lets
+     * out silverfish. He breaks it with the pickaxe of his bag before the first eye, then opens the portal; the experience it
+     * drops for a pickaxe lies by it (the player is away: a spawner near him would let silverfish out into the test).
+     */
+    @GameTest(template = "large_search", skyAccess = true, timeoutTicks = 2400)
+    public static void theSpawnerBeforeTheRingIsBrokenFirst(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        List<BlockPos> frames = ring(h, 3, true);
+        BlockPos spawner = spawner(h, 3);
+        away(h, companion);
+        companion.setItem(0, new ItemStack(Items.ENDER_EYE, 12));
+        companion.setItem(1, new ItemStack(Items.IRON_PICKAXE));
+        h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "open_end_portal", "", 1).success(), "Order refused: " + companion.getLastTaskResult());
+        h.onEachTick(() -> h.assertTrue(eyes(h, frames) == 0 || !h.getBlockState(spawner).is(Blocks.SPAWNER), "An eye was put in with the spawner standing"));
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(companion.didLastTaskSucceed() && companion.getLastTaskResult().contains("Сломал спаунер") && companion.getLastTaskResult().contains("Портал Края открыт"), companion.getLastTaskResult());
+            h.assertTrue(h.getBlockState(spawner).isAir() && eyes(h, frames) == 12 && portal(h, 3) == 9, "Spawner " + h.getBlockState(spawner) + ", eyes in the frames " + eyes(h, frames));
+            h.assertTrue(experience(h) >= 15, "Experience by the spawner: " + experience(h));
+        });
+    }
+
+    /**
+     * No pickaxe: the spawner is broken by hand, as slowly as a player breaks it (25 seconds), and drops no experience, as for a
+     * player. A spawner of another mob nearer the ring (a dungeon's under a stronghold) is not his to break.
+     */
+    @GameTest(template = "large_search", skyAccess = true, timeoutTicks = 2400)
+    public static void withNoPickaxeTheSpawnerIsBrokenByHand(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        List<BlockPos> frames = ring(h, 1, false);
+        BlockPos spawner = spawner(h, 1), other = new BlockPos(X + 2, 1, Z + 5);
+        h.setBlock(other, Blocks.SPAWNER);
+        if (h.getBlockEntity(other) instanceof net.minecraft.world.level.block.entity.SpawnerBlockEntity block)
+            block.setEntityId(net.minecraft.world.entity.EntityType.ZOMBIE, h.getLevel().random);
+        away(h, companion);
+        companion.setItem(0, new ItemStack(Items.ENDER_EYE, 12));
+        h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "open_end_portal", "", 1).success(), "Order refused: " + companion.getLastTaskResult());
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(companion.didLastTaskSucceed() && companion.getLastTaskResult().contains("Сломал спаунер") && companion.getLastTaskResult().contains("Портал Края открыт"), companion.getLastTaskResult());
+            h.assertTrue(h.getBlockState(spawner).isAir() && eyes(h, frames) == 12 && portal(h, 1) == 9, "Spawner " + h.getBlockState(spawner) + ", eyes in the frames " + eyes(h, frames));
+            h.assertTrue(h.getBlockState(other).is(Blocks.SPAWNER) && experience(h) == 0, "The other spawner " + h.getBlockState(other) + ", experience " + experience(h));
+        });
+    }
+
+    /**
+     * Lava let out on the floor by the ring's south side: he stands on no cell with lava in it or beside it. Every frame he can come
+     * to from a dry cell gets its eye, the east, west and north ones at least; the rest are left and he says why (in game 24.11 he
+     * gave up at the first frame he could not come to, the others empty).
+     */
+    @GameTest(template = "large_search", skyAccess = true, timeoutTicks = 2400)
+    public static void lavaOnTheFloorItsSideIsLeftAndTheOthersAreFilled(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        List<BlockPos> frames = ring(h, 1, false);
+        for (int x = 1; x <= 3; x++) h.setBlock(new BlockPos(X + x, 1, Z + 6), Blocks.LAVA);
+        companion.setItem(0, new ItemStack(Items.ENDER_EYE, 12));
+        int[] seen = {0};
+        h.onEachTick(() -> {
+            BlockPos feet = companion.blockPosition();
+            boolean wet = companion.level().getFluidState(feet).is(net.minecraft.tags.FluidTags.LAVA);
+            for (Direction side : Direction.Plane.HORIZONTAL) wet |= companion.level().getFluidState(feet.relative(side)).is(net.minecraft.tags.FluidTags.LAVA);
+            h.assertTrue(eyes(h, frames) == seen[0] || !wet, "An eye was put in from a cell by lava: " + feet);
+            seen[0] = eyes(h, frames);
+        });
+        // The lava runs its three blocks first.
+        h.runAfterDelay(100, () -> h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "open_end_portal", "", 1).success(), "Order refused: " + companion.getLastTaskResult()));
+        h.succeedWhen(() -> {
+            h.assertTrue(seen[0] > 0, "Not begun");
+            done(h, companion);
+            int in = eyes(h, frames);
+            h.assertTrue(in >= 9 && in < 12 && count(companion) == 12 - in, "Eyes in the frames " + in + ", in the bag " + count(companion));
+            h.assertTrue(!companion.didLastTaskSucceed() && companion.getLastTaskResult().contains("У рамки лава — не подойти. Вставил " + in + " ")
+                    && companion.getLastTaskResult().contains("пустых рамок ещё " + (12 - in)), companion.getLastTaskResult());
+        });
+    }
+
+    /**
      * A ring a player set on the ground, two eyes in it already; five in his bag: he puts in the five and says how many are
      * missing. Given five more and told again he goes on with the empty ones. The order finds him standing in the ring: he
      * steps out of it first and puts no eye in from there, or the portal that opens in the ring would take him to the End.
@@ -188,6 +265,67 @@ public final class CompanionEndPortalTests {
     }
 
     /**
+     * A hit silverfish wakes the infested blocks round it (ten blocks across, five up and down) and they crumble: in a stronghold's
+     * portal room that lets the pool's lava out on the floor (twice his death in game, 24.11). By the player, with lava six blocks
+     * off, he leaves it alone (it goes for no one who did not hit it); the lava gone, he meets it as any monster at the player's side;
+     * lava by it again in the fight, he strikes no more and lets it go.
+     */
+    @GameTest(template = "large_search", skyAccess = true, timeoutTicks = 600)
+    public static void aSilverfishByLavaIsLeftAloneAndOneAwayFromItIsFought(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        var silverfish = h.spawn(net.minecraft.world.entity.EntityType.SILVERFISH, 54, 1, 62);
+        silverfish.setNoAi(true);
+        BlockPos lava = new BlockPos(60, 1, 62);
+        h.setBlock(lava, Blocks.LAVA);
+        for (Direction side : Direction.Plane.HORIZONTAL) h.setBlock(lava.relative(side), Blocks.BEDROCK);
+        // Not killed in the blows of the fight before the lava comes back.
+        float whole = 200;
+        silverfish.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH).setBaseValue(whole);
+        silverfish.setHealth(whole);
+        float[] hit = {0};
+        long[] back = {0};
+        h.onEachTick(() -> {
+            if (back[0] == 0 && h.getBlockState(lava).is(Blocks.LAVA))
+                h.assertTrue(companion.getTarget() != silverfish && silverfish.getHealth() == whole, "A silverfish by lava was fought: health " + silverfish.getHealth());
+            if (back[0] == 0 && silverfish.getHealth() < whole) { hit[0] = silverfish.getHealth(); back[0] = h.getTick(); h.setBlock(lava, Blocks.LAVA); }
+            if (back[0] != 0) h.assertTrue(silverfish.getHealth() == hit[0], "Struck again with lava by it: health " + silverfish.getHealth() + " after " + hit[0]);
+        });
+        h.runAfterDelay(120, () -> h.setBlock(lava, Blocks.BEDROCK));
+        h.succeedWhen(() -> {
+            h.assertTrue(back[0] != 0, "The silverfish with no lava near is not fought");
+            h.assertTrue(h.getTick() > back[0] + 60 && companion.getTarget() != silverfish, "Still his target with lava by it");
+        });
+    }
+
+    /**
+     * A silverfish that bit him, away from lava, is his to hit back; lava by it then, he lets it go and is free for the next
+     * monster: the game's «hit back whoever hurt me» must not hand it back to him every tick and keep a husk by the player off his
+     * hands. The silverfish stands still (no AI) and its bite is set, so it never runs off from the lava.
+     */
+    @GameTest(template = "large_search", skyAccess = true, timeoutTicks = 900)
+    public static void aSilverfishThatBitHimIsLetGoByLavaAndTheNextMonsterIsMet(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        var silverfish = h.spawn(net.minecraft.world.entity.EntityType.SILVERFISH, 54, 1, 62);
+        silverfish.setNoAi(true);
+        silverfish.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH).setBaseValue(200);
+        silverfish.setHealth(200);
+        BlockPos lava = new BlockPos(60, 1, 62);
+        for (Direction side : Direction.Plane.HORIZONTAL) h.setBlock(lava.relative(side), Blocks.BEDROCK);
+        h.runAfterDelay(5, () -> companion.setLastHurtByMob(silverfish));
+        net.minecraft.world.entity.monster.Husk[] husk = {null};
+        h.onEachTick(() -> {
+            if (husk[0] != null || silverfish.getHealth() == 200) return;
+            h.setBlock(lava, Blocks.LAVA);
+            husk[0] = h.spawn(net.minecraft.world.entity.EntityType.HUSK, 52, 1, 60);
+            husk[0].setNoAi(true);
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(husk[0] != null, "The silverfish that bit him is not hit back");
+            h.assertTrue(husk[0].getHealth() < husk[0].getMaxHealth(), "The husk by the player is not met: his target " + companion.getTarget());
+        });
+    }
+
+    /**
      * The twelve frames at this height, turned inward as a player sets them, none with an eye. Over lava they are a stronghold's:
      * a ring of stone with a pool in it on the floor, the frames two blocks over it. On the ground the floor under the ring is whole.
      */
@@ -200,6 +338,27 @@ public final class CompanionEndPortalTests {
         if (lava) for (int x = 0; x <= 4; x++) for (int z = 0; z <= 4; z++)
             h.setBlock(new BlockPos(X + x, 1, Z + z), x == 0 || x == 4 || z == 0 || z == 4 ? Blocks.STONE_BRICKS : Blocks.LAVA);
         return frames;
+    }
+
+    /** A silverfish spawner where a stronghold has it: in the middle before the ring's north side, two blocks off, at the frames' height, on stone. */
+    private static BlockPos spawner(GameTestHelper h, int y) {
+        BlockPos spawner = new BlockPos(X + 2, y, Z - 2);
+        for (int below = 1; below < y; below++) h.setBlock(spawner.atY(below), Blocks.STONE_BRICKS);
+        h.setBlock(spawner, Blocks.SPAWNER);
+        if (h.getBlockEntity(spawner) instanceof net.minecraft.world.level.block.entity.SpawnerBlockEntity block)
+            block.setEntityId(net.minecraft.world.entity.EntityType.SILVERFISH, h.getLevel().random);
+        return spawner;
+    }
+
+    /** The player farther than 16 blocks from the spawner: it lets no silverfish out, the experience is not picked up. */
+    private static void away(GameTestHelper h, CompanionEntity companion) {
+        BlockPos corner = h.absolutePos(new BlockPos(45, 1, 45));
+        owner(h, companion).teleportTo(corner.getX() + .5, corner.getY(), corner.getZ() + .5);
+    }
+
+    private static int experience(GameTestHelper h) {
+        return h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.ExperienceOrb.class, new net.minecraft.world.phys.AABB(h.absolutePos(new BlockPos(44, 0, 44))).inflate(40))
+                .stream().mapToInt(net.minecraft.world.entity.ExperienceOrb::getValue).sum();
     }
 
     private static BlockPos frame(GameTestHelper h, int x, int y, int z, Direction facing) {

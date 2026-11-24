@@ -1319,6 +1319,12 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** The game tells every mob to leave a ghast alone; who may be fought is decided in fairTarget, and a ghast is for the bow. */
     @Override public boolean canAttackType(net.minecraft.world.entity.EntityType<?> type) { return true; }
 
+    /**
+     * A silverfish come by lava is let go by every goal of the game that holds a target: they ask this every tick they keep one
+     * (TargetGoal.canContinueToUse), and the hit-back goal would else hand it back each tick and keep all others off (CompanionCombat.wakesLava).
+     */
+    @Override public boolean canAttack(LivingEntity target) { return super.canAttack(target) && !CompanionCombat.wakesLava(target); }
+
     /** A last guard: whatever goal picked them, the player and his pets are never a target. */
     @Override public void setTarget(LivingEntity target) {
         if (target != null && !level().isClientSide && (target instanceof Player || target instanceof CompanionEntity
