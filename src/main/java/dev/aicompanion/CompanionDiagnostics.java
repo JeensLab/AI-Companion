@@ -77,6 +77,19 @@ public final class CompanionDiagnostics {
         }
     }
 
+    /**
+     * The same event, also said in the game log: one readable line the player can read in {@code logs/latest.log} beside the
+     * JSON row of the journal. Decisions the player must be able to follow (the way's search and its answer) are written here,
+     * never only into the file under {@code logs/aicompanion}.
+     */
+    public static void say(String trace, String event, String text, Object... fields) {
+        Object[] all = java.util.Arrays.copyOf(fields, fields.length + 2);
+        all[fields.length] = "line";
+        all[fields.length + 1] = text;
+        event(trace, event, all);
+        AICompanionMod.LOGGER.debug("[{}] {}", event, text);
+    }
+
     public static void failure(String trace, String stage, Throwable error) {
         Throwable cause = error;
         while (cause.getCause() != null && cause.getCause() != cause) cause = cause.getCause();

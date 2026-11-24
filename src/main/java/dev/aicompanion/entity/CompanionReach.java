@@ -255,7 +255,7 @@ public final class CompanionReach {
         return vertical + (across < .6D ? "" : " и " + Math.round(across) + " вбок");
     }
 
-    /** One line of the journal per decision: the block, where it is, how far up and across, the answer, the shape, and why not. */
+    /** One line per decision, in the game log as well as the journal: the block, where it is, how far up and across, the answer, the shape, and why not. */
     public static void decision(CompanionEntity c, BlockPos block, How how) {
         if (!(c.level() instanceof ServerLevel level) || !level.hasChunkAt(block)) return;
         BlockPos feet = c.blockPosition();
@@ -265,9 +265,15 @@ public final class CompanionReach {
         String line = block.toShortString() + "|" + answer + "|" + how.steps() + "|" + how.gap() + "|" + how.why();
         if (line.equals(SAID.get(c.getUUID()))) return;
         SAID.put(c.getUUID(), line);
-        dev.aicompanion.CompanionDiagnostics.event(c.diagnosticTrace(), "way_decision", "entity", c.getUUID(),
-                "block", block.toShortString(), "id", BuiltInRegistries.BLOCK.getKey(level.getBlockState(block).getBlock()),
-                "rise", block.getY() - feet.getY(), "across", Math.round(across * 100) / 100D,
+        int rise = block.getY() - feet.getY();
+        String id = BuiltInRegistries.BLOCK.getKey(level.getBlockState(block).getBlock()).toString();
+        String text = block.toShortString() + " «" + id + "»: " + (rise >= 0 ? "+" + rise : String.valueOf(rise)) + " вверх/"
+                + Math.round(across * 10) / 10D + " вбок → " + answer + " (" + how.shape() + ")"
+                + (how.steps() > 0 ? ", " + how.steps() + " шагов земли" : how.gap() > 0 ? ", " + how.gap() + " клеток пола" : "")
+                + (how.why().isEmpty() ? "" : "; почему: " + how.why());
+        dev.aicompanion.CompanionDiagnostics.say(c.diagnosticTrace(), "way_decision", text, "entity", c.getUUID(),
+                "block", block.toShortString(), "id", id,
+                "rise", rise, "across", Math.round(across * 100) / 100D,
                 "answer", answer, "shape", how.shape(),
                 "steps", how.steps(), "gap", how.gap(), "why", how.why());
     }

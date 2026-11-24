@@ -349,11 +349,13 @@ public final class CompanionRoute {
     private int noWay(BlockPos block, String why) {
         if (!why.equals(wayRefusal)) {
             wayRefusal = why;
-            // The refusal names the block and its real distance, not the first thing that came to mind (PATH7, #105).
-            dev.aicompanion.CompanionDiagnostics.event(w.owner.diagnosticTrace(), "way_refused", "entity", w.owner.getUUID(),
-                    "why", why, "block", block, "position", w.owner.blockPosition(),
-                    "id", net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(w.owner.level().getBlockState(block).getBlock()),
-                    "rise", block.getY() - w.owner.blockPosition().getY(), "distance", CompanionReach.distance(w.owner, block));
+            // The refusal names the block and its real distance, not the first thing that came to mind (PATH7, #105), and is
+            // said in the game log: a refusal the player cannot read is a refusal he cannot check.
+            String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(w.owner.level().getBlockState(block).getBlock()).toString();
+            String text = "не иду к " + block.toShortString() + " «" + id + "»: " + CompanionReach.distance(w.owner, block) + " — " + why;
+            dev.aicompanion.CompanionDiagnostics.say(w.owner.diagnosticTrace(), "way_refused", text,
+                    "entity", w.owner.getUUID(), "why", why, "block", block, "position", w.owner.blockPosition(),
+                    "id", id, "rise", block.getY() - w.owner.blockPosition().getY(), "distance", CompanionReach.distance(w.owner, block));
         }
         return -1;
     }
