@@ -162,7 +162,7 @@ final class CompanionBag {
                         || CompanionPicking.near(c, serverLevel, CompanionPickable.sources(serverLevel, wanted)) || CompanionFarming.reapableNear(c, serverLevel, wanted)
                         || CompanionChores.about(c, serverLevel, wanted), wanted -> CompanionMobDrops.near(c, serverLevel, wanted),
                 new CompanionObtain.Trip(serverLevel.dimension() == net.minecraft.world.level.Level.OVERWORLD ? CompanionPortals.litNear(serverLevel, c.blockPosition()) : null, c.errand.away(), CompanionErrand.holdsChunks(c, serverLevel)),
-                stack -> !c.carriedForPlayer(stack), wanted -> available(serverLevel, wanted));
+                stack -> !c.carriedForPlayer(stack), wanted -> available(serverLevel, wanted), wanted -> whyNot(serverLevel, wanted));
     }
 
     /**
@@ -183,7 +183,11 @@ final class CompanionBag {
      * the real reason, never the first thing that comes to mind. The search itself journals the box it looked through.
      */
     String whyNot(ServerLevel level, net.minecraft.world.item.Item wanted) {
-        BlockPos nearest = CompanionWaySearch.nearestBlock(c, level, wanted, CompanionPicking.mine(c, level));
+        // Obsidian is his only where it may be mined: never a portal's frame, never a site of the player's, never beside lava.
+        java.util.function.Predicate<BlockPos> mine = wanted == net.minecraft.world.item.Items.OBSIDIAN
+                ? pos -> CompanionObsidian.free(level, pos, CompanionPicking.sites(c, level))
+                : CompanionPicking.mine(c, level);
+        BlockPos nearest = CompanionWaySearch.nearestBlock(c, level, wanted, mine);
         if (nearest == null) return "";
         return CompanionReach.distance(c, nearest);
     }

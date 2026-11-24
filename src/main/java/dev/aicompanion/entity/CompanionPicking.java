@@ -117,6 +117,8 @@ final class CompanionPicking {
     private boolean soilAbout, soilAboutKnown;
     /** Blocks left alone this order, for the report: lava stands beside them (source or running, any of the six sides). */
     private final Set<BlockPos> lavaKept = new HashSet<>();
+    /** The target whose column decision is already in the log: one decision per block, not one per tick. */
+    private BlockPos decided;
 
     CompanionPicking(CompanionWork w) { this.w = w; }
 
@@ -153,6 +155,12 @@ final class CompanionPicking {
     String jobName() { return "сбор: «" + name() + "» (" + got() + " из " + wanted + ")"; }
 
     private String name() { return leafOrder ? "Листва" : new ItemStack(item).getHoverName().getString(); }
+
+    /** «5 блоков вверх и 6 вбок»: the nearest block he saw and no way came at — the real reason of a refusal, never a name. */
+    private String seenAt() {
+        return passed.stream().min(java.util.Comparator.comparingDouble(pos -> c.distanceToSqr(pos.getCenter())))
+                .map(pos -> CompanionReach.distance(c, pos)).orElse("");
+    }
 
     /** What the order has brought: for a leaf order every kind of leaf in the bag counts, as the order itself counts them. */
     private int got() { return Math.max(0, (leafOrder ? CompanionLeaves.carried(c) : w.items.countCarried(item)) - before); }
@@ -573,6 +581,13 @@ final class CompanionPicking {
      * up's sixteen steps (PATH7). False when he cannot build up to it at all: no soil, a ceiling, or a block too high.
      */
     private boolean climb(ServerLevel level) {
+        // Every climb is a decision of the way, and the player reads it in the game log: the block, how far up and across,
+        // and the answer — a column, a floor or none with its reason — once for this target, never one line per tick.
+        if (!target.equals(decided)) {
+            decided = target.immutable();
+            CompanionReach.decision(c, target, CompanionReach.how(c, level, target, STAND_REACH, true, false,
+                    level.getBlockState(target).is(BlockTags.LEAVES) ? CompanionPillar.LEAF_SUPPORTS : CompanionPillar.WAY_SUPPORTS));
+        }
         // A floor across the gap already being laid is ticked before anything else: its plan is kept while it stands, and the
         // material of its cells is already in the world (no plan is made anew for a floor that is laid).
         if (c.temporaryBridge.isActive() || c.temporaryBridge.isRecovering()) return bridge(level);
@@ -713,15 +728,16 @@ final class CompanionPicking {
             if (down()) return;
             // What he broke and has not picked up yet is picked up before he says how far he got.
             if (due > got) { collect(level, got); return; }
-            String rest = passed.isEmpty() ? "больше рядом нет" : "до остального не добрался";
+            String rest = passed.isEmpty() ? "больше рядом нет" : "до остального (" + seenAt() + ") не добрался";
             String lava = lavaKept.isEmpty() ? "" : " Рядом с лавой " + CompanionWorkItems.blocks(lavaKept.size()) + " — не трогал.";
             // Some gathered: obtain_item plans the rest again (red dye goes on with the tulips once the poppies are out). None: it ends here.
             if (got > 0) { release(); w.finish(CompanionActionResult.failed("Собрал «" + name() + "»: " + got + " из " + wanted + ", " + rest + "." + lava)); return; }
             // The stone's ask in one line short enough to be spoken whole with the longest name (CompanionDialogue).
-            if (stone) end(false, (!passed.isEmpty() ? "«" + name() + "» вижу, но подойти не смог" : !lavaKept.isEmpty() ? "«" + name() + "» вижу только у лавы, не трогал"
+            // The refusal names the distance of the block he saw, never only that he saw one: «5 блоков вверх и 6 вбок».
+            if (stone) end(false, (!passed.isEmpty() ? "«" + name() + "» вижу — " + seenAt() + ", но подойти не смог" : !lavaKept.isEmpty() ? "«" + name() + "» вижу только у лавы, не трогал"
                     : "Рядом не нашёл, где взять «" + name() + "»") + ": отведи меня к склону или в пещеру.");
             else {
-                String why = (passed.isEmpty() ? "Рядом не нашёл, где взять «" + name() + "»." : "Вижу, где взять «" + name() + "», но подойти не смог.") + lava;
+                String why = (passed.isEmpty() ? "Рядом не нашёл, где взять «" + name() + "»." : "Вижу, где взять «" + name() + "» — " + seenAt() + ", но подойти не смог.") + lava;
                 // Leaves he saw but could not come at, with the soil for a column lying about him: the chain is planned again and
                 // digs that soil first (the plan made from where he stood could not see the way to the stair). A blocked end would
                 // give the order up on the spot (the stair he cannot climb, 18.11).

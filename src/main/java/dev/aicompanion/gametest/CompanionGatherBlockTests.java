@@ -770,7 +770,8 @@ public final class CompanionGatherBlockTests {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
             String report = future.join().report();
             h.assertTrue(count(c, Items.GRANITE) == 2, "Not two granite: " + count(c, Items.GRANITE) + ", " + report);
-            h.assertTrue(count(c, Items.TUFF) == 0 && report.contains("подойти не смог") && report.contains("склону"), "Tuff in a sealed hollow: " + report);
+            h.assertTrue(count(c, Items.TUFF) == 0 && report.contains("подойти не смог") && report.contains("склону") && report.contains("вбок"),
+                    "Tuff in a sealed hollow is not told of with its distance: " + report);
             for (BlockPos cell : shown) h.assertBlockNotPresent(Blocks.GRANITE, cell);
             for (BlockPos cell : List.of(hidden, path, lit, shore)) h.assertBlockPresent(Blocks.GRANITE, cell);
             h.assertBlockPresent(Blocks.WALL_TORCH, torch);

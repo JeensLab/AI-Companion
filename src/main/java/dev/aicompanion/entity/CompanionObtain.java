@@ -86,6 +86,10 @@ public final class CompanionObtain {
     private final java.util.function.Function<Item, CompanionReach.Available> reachable;
     /** Why no block of an item is come at: its distance, «5 блоков вверх и 3 вбок» (the refusal names the real reason). */
     private final java.util.function.Function<Item, String> whyNot;
+    /** The distance of the nearest block of the item that he sees but no way reaches: said in the refusal, never an ore's name. */
+    private String near;
+    /** The item the player asked for, by its name: a chain's refusal names it, not the ore or the log it fell back to. */
+    private String ordered;
     /** A step of the chain is Nether-only and is fetched through the portal; and why the trip cannot be made (no portal, no chunk loading: said instead of any other refusal). */
     private boolean viaNether;
     private String errandRefusal;
@@ -165,6 +169,7 @@ public final class CompanionObtain {
         Item item = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
         if (item == null || item == Items.AIR) return new Plan(List.of(), "Не понял, какой предмет нужен.");
         CompanionObtain planner = new CompanionObtain(level, carried, benchNearby || carried.stream().anyMatch(stack -> stack.is(Items.CRAFTING_TABLE)), grows, roams, trip, his, reachable, whyNot);
+        planner.ordered = planner.name(item);
         // What lies about him of this very item is taken by the one geometry way before anything is made of it — a planks
         // block, a lapis block, a pumpkin in the air, a stripped block as it lies: the same rule for every block, no names
         // (PATH7, #105). It comes before a chain of his own skills: what is already in the world is no work to make.
@@ -175,6 +180,7 @@ public final class CompanionObtain {
         CompanionReach.Available lying = reachable == null || item == Items.OBSIDIAN
                 || CompanionCrops.Kind.yielding(item) != null
                 || CompanionLeaves.isLeaf(BuiltInRegistries.ITEM.getKey(item).toString()) ? null : reachable.apply(item);
+        planner.noteSeen(item, lying);
         if (lying != null && lying.some() && lying.count() >= count) {
             if (lying.soil() > 0) planner.addSplit("gather_dirt", "", lying.soil(), 64);
             if (!planner.gather(item, id.toString(), count, 0)) return new Plan(List.of(), planner.why);
@@ -315,6 +321,7 @@ public final class CompanionObtain {
                 String refusal = CompanionObsidian.refusal(level, carried);
                 if (refusal != null) return refuse(refusal);
                 CompanionReach.Available found = reachable == null ? null : reachable.apply(Items.OBSIDIAN);
+                noteSeen(Items.OBSIDIAN, found);
                 if (found != null) {
                     // Only what the world really gives is promised: a portal frame's ten from one block above him is one (PATH7).
                     if (found.some()) {
@@ -413,7 +420,13 @@ public final class CompanionObtain {
         if (CompanionPickable.stone(level, item)) return stone(item, key, count, depth);
         if (viaPortal(item)) return nether(item, count, depth);
         for (CompanionOre.Kind ore : CompanionOre.Kind.values())
-            if (ore.drop == item) return addSplit("mine_ore", "minecraft:" + ore.key() + "_ore", ceil(count, perOre(ore)), CompanionWork.MAX_ORE);
+            if (ore.drop == item) {
+                // No ore of it about, and the block the player asked for is seen but no way reaches it: the refusal names that
+                // block's distance, never the ore's name («золотой блок вижу в 21 блоке вверх, но пути нет, а руды рядом нет»).
+                if (grows != null && !about(item) && near != null && ordered != null)
+                    return refuse("«" + ordered + "» вижу — " + near + ", но пути к нему нет, а руды для него рядом тоже нет.");
+                return addSplit("mine_ore", "minecraft:" + ore.key() + "_ore", ceil(count, perOre(ore)), CompanionWork.MAX_ORE);
+            }
         CompanionGame.Kind game = animalFor(item);
         if (game != null) return addSplit("hunt_animals", "minecraft:" + game.key, perAnimal(item, count), CompanionWork.MAX_GAME);
         // A furnace makes it (ingots, cooked meat, charcoal, glass, smooth stone): its raw material first.
@@ -447,6 +460,7 @@ public final class CompanionObtain {
         // under his feet — and only as much as those blocks really yield (PATH7: a pumpkin hanging ten blocks above).
         CompanionReach.Available found = reachable == null || CompanionLeaves.isLeaf(BuiltInRegistries.ITEM.getKey(item).toString())
                 ? null : reachable.apply(item);
+        noteSeen(item, found);
         if (found == null ? picked(item) : found.some()) {
             if (silked(item) && !carriesSilk(item)) return refuse("Для «" + name(item) + "» нужен инструмент с «Шёлковым касанием»: в сумке такого нет.");
             if (found != null && found.soil() > 0) {
@@ -753,7 +767,20 @@ public final class CompanionObtain {
         for (int left = count; left > 0; left -= most) steps.add(new Step(type, item, Math.min(most, left)));
         return true;
     }
-    private boolean refuse(String reason) { if (why == null) why = reason; return false; }
+    private boolean refuse(String reason) {
+        if (why == null) why = near == null || reason.contains(near) ? reason : reason + " Ближайший — " + near + ".";
+        return false;
+    }
+
+    /**
+     * The item's own blocks are about him, yet no way reaches one: its distance is kept for the refusal, so a chain of his
+     * skills that names an ore or a log says the real reason instead — «блок вижу в 20 блоках вверх, но пути к нему нет».
+     */
+    private void noteSeen(Item item, CompanionReach.Available answer) {
+        if (near != null || answer == null || answer.some() || whyNot == null) return;
+        String distance = whyNot.apply(item);
+        if (distance != null && !distance.isBlank()) near = distance;
+    }
     private int cost() {
         int cost = 0;
         for (Step step : steps) cost += switch (step.type()) { case "craft_item" -> 1; case "smelt_items" -> 2; default -> 3; };

@@ -162,6 +162,57 @@ public final class CompanionWayOwnerDistanceTests {
         });
     }
 
+    /**
+     * A pumpkin twenty-one above, past the way's height: seen by the search, no way reaches it. The refusal names the distance
+     * — «21 блок вверх» — and the line of the search says why: never only «Рядом не вижу».
+     */
+    @GameTest(template = "way_far", timeoutTicks = 400)
+    public static void aSeenButUnreachableBlockIsRefusedWithItsDistance(GameTestHelper h) {
+        flat(h, Blocks.GRASS_BLOCK);
+        BlockPos target = new BlockPos(HOME_X, FEET + 21, HOME_Z);
+        h.setBlock(target, Blocks.PUMPKIN);
+        CompanionEntity c = spawn(h);
+        c.setItem(1, new ItemStack(Items.DIRT, 24));
+        var plan = c.obtainPlan("minecraft:pumpkin", 1);
+        h.assertTrue(plan.refused(), "The pumpkin twenty-one above is not refused: " + plan);
+        h.assertTrue(plan.refusal().contains("21 блок") && plan.refusal().contains("вверх"),
+                "The refusal does not name the distance: " + plan.refusal());
+        var future = sayModel(h, c, "добудь тыкву", obtainPlan("minecraft:pumpkin"));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
+            List<String> lines = journal(c, "way_search");
+            String line = lines.stream().filter(entry -> entry.contains("\"item\":\"minecraft:pumpkin\"")
+                    && entry.contains("+21 вверх/")).findFirst().orElse(null);
+            h.assertTrue(line != null, "The search does not say the pumpkin is 21 up: " + lines);
+            h.assertTrue(line.contains("rise 21") || line.contains("up 21"), "The search does not say why no way is there: " + line);
+            h.assertBlockPresent(Blocks.PUMPKIN, target);
+        });
+    }
+
+    /**
+     * A gold block twenty-one above with no gold ore about: the chain would fall back to the ore and name it, but the block
+     * itself is what the player asked for and it is seen — the refusal names the block and its distance, never «Руды … не нашёл».
+     */
+    @GameTest(template = "way_far", timeoutTicks = 400)
+    public static void aChainFallbackRefusalNamesTheBlockNotTheOre(GameTestHelper h) {
+        flat(h, Blocks.GRASS_BLOCK);
+        BlockPos target = new BlockPos(HOME_X, FEET + 21, HOME_Z);
+        h.setBlock(target, Blocks.GOLD_BLOCK);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.DIRT, 24));
+        var plan = c.obtainPlan("minecraft:gold_block", 1);
+        h.assertTrue(plan.refused(), "The gold block twenty-one above is not refused: " + plan);
+        // The name is the game's own («Block of Gold» in the test's locale, «Золотой блок» for the player): what matters is
+        // that the refusal names the block's distance and not the ore the chain fell back to.
+        h.assertTrue(plan.refusal().contains("21 блок") && plan.refusal().contains("вверх"),
+                "The refusal does not name the distance: " + plan.refusal());
+        h.assertTrue(!plan.refusal().contains("Руды") && !plan.refusal().contains("gold_ore"),
+                "The refusal names the ore: " + plan.refusal());
+        h.assertBlockPresent(Blocks.GOLD_BLOCK, target);
+        h.succeed();
+    }
+
     /** A pumpkin thirty across with his search at twenty-four: it is not claimed, and the line says a block exists outside the box. */
     @GameTest(template = "way_far", timeoutTicks = 400)
     public static void aBlockOutsideTheBoxIsSaidAsOutside(GameTestHelper h) {
