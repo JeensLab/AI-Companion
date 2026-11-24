@@ -88,6 +88,37 @@ public final class CompanionEndPortalTests {
     }
 
     /**
+     * Lava let out on the floor by the ring's south side: he stands on no cell with lava in it or beside it. Every frame he can come
+     * to from a dry cell gets its eye, the east, west and north ones at least; the rest are left and he says why (in game 24.11 he
+     * gave up at the first frame he could not come to, the others empty).
+     */
+    @GameTest(template = "large_search", skyAccess = true, timeoutTicks = 2400)
+    public static void lavaOnTheFloorItsSideIsLeftAndTheOthersAreFilled(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        List<BlockPos> frames = ring(h, 1, false);
+        for (int x = 1; x <= 3; x++) h.setBlock(new BlockPos(X + x, 1, Z + 6), Blocks.LAVA);
+        companion.setItem(0, new ItemStack(Items.ENDER_EYE, 12));
+        int[] seen = {0};
+        h.onEachTick(() -> {
+            BlockPos feet = companion.blockPosition();
+            boolean wet = companion.level().getFluidState(feet).is(net.minecraft.tags.FluidTags.LAVA);
+            for (Direction side : Direction.Plane.HORIZONTAL) wet |= companion.level().getFluidState(feet.relative(side)).is(net.minecraft.tags.FluidTags.LAVA);
+            h.assertTrue(eyes(h, frames) == seen[0] || !wet, "An eye was put in from a cell by lava: " + feet);
+            seen[0] = eyes(h, frames);
+        });
+        // The lava runs its three blocks first.
+        h.runAfterDelay(100, () -> h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "open_end_portal", "", 1).success(), "Order refused: " + companion.getLastTaskResult()));
+        h.succeedWhen(() -> {
+            h.assertTrue(seen[0] > 0, "Not begun");
+            done(h, companion);
+            int in = eyes(h, frames);
+            h.assertTrue(in >= 9 && in < 12 && count(companion) == 12 - in, "Eyes in the frames " + in + ", in the bag " + count(companion));
+            h.assertTrue(!companion.didLastTaskSucceed() && companion.getLastTaskResult().contains("У рамки лава — не подойти. Вставил " + in + " ")
+                    && companion.getLastTaskResult().contains("пустых рамок ещё " + (12 - in)), companion.getLastTaskResult());
+        });
+    }
+
+    /**
      * A ring a player set on the ground, two eyes in it already; five in his bag: he puts in the five and says how many are
      * missing. Given five more and told again he goes on with the empty ones. The order finds him standing in the ring: he
      * steps out of it first and puts no eye in from there, or the portal that opens in the ring would take him to the End.

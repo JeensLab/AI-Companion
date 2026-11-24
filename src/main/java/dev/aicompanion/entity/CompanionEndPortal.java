@@ -47,8 +47,10 @@ final class CompanionEndPortal {
     /** The spawner to break before the first eye; null once broken or left. */
     private BlockPos spawner;
     private boolean broke, missed;
-    /** A cell to stand on by a frame was refused for lava in it or beside it. */
-    private boolean wet;
+    /** A cell to stand on by the frame he goes to was refused for lava in it or beside it; so it was by a frame he could not come to. */
+    private boolean wet, byLava;
+    /** Frames he could not come to: the others are filled before he says so. */
+    private final List<BlockPos> unreached = new ArrayList<>();
 
     /** Made with the work, before its owner is set: the owner is read when used. */
     CompanionEndPortal(CompanionWork w) { this.w = w; }
@@ -56,7 +58,8 @@ final class CompanionEndPortal {
     /** null when the work may start, else the answer: why not, or that the portal is open already. */
     CompanionActionResult begin() {
         CompanionEntity c = w.owner;
-        ring = List.of(); frame = null; put = 0; nextAt = 0; spawner = null; broke = false; missed = false; wet = false;
+        ring = List.of(); frame = null; put = 0; nextAt = 0; spawner = null; broke = false; missed = false; wet = false; byLava = false;
+        unreached.clear();
         if (!(c.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Не могу без загруженного мира.");
         ring = ringNear(level, c.blockPosition());
         if (ring.isEmpty()) return CompanionActionResult.failed("Не вижу рядом рамки портала Края: подведи меня к ней.");
@@ -151,15 +154,23 @@ final class CompanionEndPortal {
             end(false, (put > 0 ? "Вставил " + eyes(put) + ", осталось" : "Осталось") + " последнее око. Выйди из кольца портала и скажи ещё раз: портал откроется прямо под тобой.");
             return;
         }
-        if (frame == null || !left.contains(frame)) frame = left.stream().min(Comparator.comparingDouble(pos -> pos.distSqr(c.blockPosition()))).orElseThrow();
+        List<BlockPos> open = left.stream().filter(pos -> !unreached.contains(pos)).toList();
+        if (open.isEmpty()) {
+            String did = put > 0 ? " Вставил " + eyes(put) + ", пустых рамок ещё " + left.size() + "." : "";
+            end(false, (byLava ? "У рамки лава — не подойти." : "Не смог подойти к рамке портала Края на " + unreached.getFirst().toShortString() + ".") + did);
+            return;
+        }
+        if (frame == null || !open.contains(frame)) frame = open.stream().min(Comparator.comparingDouble(pos -> pos.distSqr(c.blockPosition()))).orElseThrow();
         if (outside(c.blockPosition()) && dry(level, c.blockPosition()) && c.placement.reaches(frame, Blocks.END_PORTAL_FRAME)) { put(level); return; }
         // In the air no way is searched (as to a bench); in water he goes on.
         if (!c.onGround() && !c.isInWater()) return;
-        if (!frame.equals(w.heading)) { w.heading = frame; w.resetApproach(); }
+        if (!frame.equals(w.heading)) { w.heading = frame; w.resetApproach(); wet = false; }
         c.movementIntent(frame);
         if (w.approach(level, frame, REACH, feet -> stands(level, feet))) { c.workStatus("Иду к рамке портала Края."); return; }
-        String did = put > 0 ? " Вставил " + eyes(put) + ", пустых рамок ещё " + left.size() + "." : "";
-        end(false, (wet ? "У рамки лава — не подойти." : "Не смог подойти к рамке портала Края на " + frame.toShortString() + ".") + did);
+        // Not come to: the frames left are tried before he says so.
+        unreached.add(frame);
+        byLava |= wet;
+        frame = null;
     }
 
     /** The spawner, broken as he breaks a block (CompanionBlockBreaking): the swings, the cracks, a player's time; what it drops is experience. */
