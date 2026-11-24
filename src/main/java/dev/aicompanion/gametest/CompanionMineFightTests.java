@@ -46,7 +46,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionMineFightTests {
-    private static final int SHELF_DROP = 3, SHELF_GAP = 4, SHELF_TICKS = 300, SHELF_CREEPERS = 5, SHELF_HIT_AT = 40, SHELF_ZOMBIE_HEALTH = 11;
+    private static final int SHELF_DROP = 3, SHELF_GAP = 4, SHELF_TICKS = 300, SHELF_CREEPERS = 5, SHELF_NEAR = 1, BOW_SLOT = 7, SHELF_HIT_AT = 40, SHELF_ZOMBIE_HEALTH = 11;
     private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 4, OPEN_CAVE_STAND = 3, KILL_TICKS = 1200, FUSE_TICKS = 200, CRAFT_TICKS = 1200, BRIDGE_FROM = 4, BRIDGE_TO = 10, BRIDGE_SIDE = 5, CAVERN_DEPTH = 7, PASSAGE_LENGTH = 4, PASSAGE_OFFSET = 2, PASSAGE_HEIGHT = 2, STRIKE_TICKS = 60, FIGHT_TICKS = 100, FAR_STAND = 10;
     private static final float SURVIVES = 1, HURT = 12, TWO_BLOWS = 9, HALF = 10;
     private static final double THROWN = 0.6, REACHED = 3;
@@ -266,13 +266,31 @@ public final class CompanionMineFightTests {
      */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void creepersOnAShelfAcrossAGapDoNotHoldHimOnTheBridge(GameTestHelper h) {
+        notHeldByTheShelf(h, false);
+    }
+
+    /**
+     * Review of that fix: with a bow and arrows in the bag every foe was left to the bow, but the bow is drawn only from six blocks, and
+     * the creepers of the run stood nearer. One creeper on the stand of the shelf that is under six blocks from every stand of the bridge:
+     * the bow does not take it, and it does not hold him either.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aCreeperAcrossAGapNearerThanTheBowIsDrawnAtDoesNotHoldHimWithABow(GameTestHelper h) {
+        notHeldByTheShelf(h, true);
+    }
+
+    private static void notHeldByTheShelf(GameTestHelper h, boolean bow) {
         mountain(h);
         CompanionEntity c = armed(h);
+        if (bow) {
+            c.setItem(BOW_SLOT, new ItemStack(Items.BOW));
+            c.setItem(BOW_SLOT + 1, new ItemStack(Items.ARROW, 16));
+        }
         List<BlockPos> stairs = carveMine(h, c, 0);
         List<BlockPos> shelf = shelfAcrossAGap(h, c, stairs);
         BlockPos bottom = stairs.get(BRIDGE_TO);
         List<Creeper> creepers = new ArrayList<>();
-        for (BlockPos stand : shelf.subList(0, SHELF_CREEPERS)) creepers.add(still(creeper(h, stand)));
+        for (BlockPos stand : bow ? shelf.subList(SHELF_NEAR, SHELF_NEAR + 1) : shelf.subList(0, SHELF_CREEPERS)) creepers.add(still(creeper(h, stand)));
         long[] id = {0}, begun = {0};
         h.onEachTick(() -> {
             if (id[0] == 0) {

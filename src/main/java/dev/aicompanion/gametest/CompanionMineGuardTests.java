@@ -44,6 +44,7 @@ public final class CompanionMineGuardTests {
     private static final double CLOSER = 1.5;
     private static final int ROOM_FROM = 4, ROOM_TO = 16, ROOM_SIDE = 6, RUN_TICKS = 20, CLIFF_DEPTH = 6, DEAD_END_LENGTH = 3;
     private static final double RUN_GAP = 4, FALL = .5;
+    private static final int UP_THE_STAIRS = 5, SHUT_UNDER = 4;
 
     private CompanionMineGuardTests() { }
 
@@ -93,6 +94,42 @@ public final class CompanionMineGuardTests {
         place(c, stairs.get(stairs.size() - 2));
         Creeper creeper = creeper(h, stairs.get(stairs.size() - 1));
         watchRun(h, c, creeper, false);
+    }
+
+    /**
+     * Review of the way that never leads past a creeper: only a lit one has a far side. The fuse is lit on the step below him, halfway up the
+     * stairs, and a second creeper, its fuse not lit, is shut in the rock three blocks under the stairs, one step up from him: it is neither
+     * in sight nor on any way, and it does not take the way up from him. So he has a way out, strikes the lit one first as on any stairs, and
+     * the blast leaves him more than half his health.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void anUnlitCreeperShutInTheRockUnderTheStairsDoesNotTakeTheWayUpFromALitOne(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        int at = stairs.size() - 1 - UP_THE_STAIRS;
+        place(c, stairs.get(at));
+        BlockPos pocket = stairs.get(at - 1).below(SHUT_UNDER);
+        for (int dy = 0; dy < 2; dy++) h.getLevel().setBlock(pocket.above(dy), Blocks.AIR.defaultBlockState(), 2 | 16);
+        creeper(h, pocket).getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        Creeper lit = creeper(h, stairs.get(at + 1));
+        lit.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        lit.ignite();
+        start(h, c, 1);
+        long begun = h.getTick();
+        boolean[] struck = {false};
+        h.onEachTick(() -> {
+            String trace = " | tick " + (h.getTick() - begun) + ", he at " + rel(h, c.blockPosition()).toShortString() + ", health " + c.getHealth() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            if (lit.isAlive()) {
+                struck[0] |= lit.getHealth() < lit.getMaxHealth();
+                h.assertTrue(h.getTick() - begun < FUSE_TICKS, "The lit creeper never blew" + trace);
+                return;
+            }
+            h.assertTrue(struck[0], "He did not strike the lit creeper first: the one shut in the rock took his way up" + trace);
+            h.assertTrue(c.getHealth() >= KEPT, "The blast took him below half his health" + trace);
+            h.succeed();
+        });
     }
 
     /**

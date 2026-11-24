@@ -66,9 +66,12 @@ final class CompanionArchery {
 
     /** This target is for the bow now. Only enemies: the hunt's animals are taken by hand, their drops counted where they fall. */
     boolean wants(LivingEntity target) {
-        aiming = aiming(target);
+        aiming = takes(target);
         return aiming;
     }
+
+    /** The bow would take this target now; asking does not take it. */
+    boolean takes(LivingEntity target) { return aiming(target); }
 
     private boolean aiming(LivingEntity target) {
         if (target == null || !target.isAlive() || !(target instanceof Enemy) || c.tickCount < bladeUntil || !armed()) return false;

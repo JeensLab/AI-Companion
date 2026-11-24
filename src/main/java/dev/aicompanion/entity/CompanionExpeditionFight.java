@@ -159,10 +159,11 @@ final class CompanionExpeditionFight {
      * A foe in sight, out of his reach, that has not struck him and that no walk of his leads to (across a chasm, on a shelf or a pillar): the last
      * search said so, and it is made again every {@link #WAY_EVERY} ticks. Where no search can be made (he is in the air, as on every step of his
      * stairs) what was known stands, and a foe not yet looked at is a foe: one that comes for him is met with no wait for the ground.
-     * With a bow and an arrow no walk is needed: the foe is the bow's.
+     * A foe the bow takes now needs no walk: it is the bow's. One the bow does not take (nearer than it is drawn at, or while the blade is out
+     * for someone on the line) is the sword's, and needs one.
      */
     private boolean noWayTo(LivingEntity foe) {
-        if (owner.isWithinMeleeAttackRange(foe) || struckBy(foe) || owner.archery.armed()) return false;
+        if (owner.isWithinMeleeAttackRange(foe) || struckBy(foe) || owner.archery.takes(foe)) return false;
         long now = owner.level().getGameTime();
         Way known = ways.get(foe.getUUID());
         if (known != null && now - known.at() < WAY_EVERY) return known.none();
@@ -189,9 +190,10 @@ final class CompanionExpeditionFight {
         if (!owner.combat.fairTarget(monster, owner.combat.provokes(monster))) return false;
         // As anywhere: a creeper only when he fights it and it goes for him or the player; a blow wakes one that does not to a blast beside him.
         if (monster instanceof Creeper && (!owner.creeperGuard.fights() || !owner.combat.provokes(monster))) return false;
-        if (w.expedition.shuns(monster) || below(monster)) return false;
+        // The distance before the walk to it: a search for one costs the navigation its cells of the tick, and is not made for a mob too far to be a foe.
         double distance = owner.distanceTo(monster);
-        return owner.hasLineOfSight(monster) && (monster.getTarget() == owner && distance <= AWARE || distance <= ENGAGE);
+        if (!(monster.getTarget() == owner && distance <= AWARE || distance <= ENGAGE) || !owner.hasLineOfSight(monster)) return false;
+        return !w.expedition.shuns(monster) && !below(monster);
     }
 
     /**
