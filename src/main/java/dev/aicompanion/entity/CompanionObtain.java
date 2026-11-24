@@ -38,7 +38,7 @@ import java.util.Set;
  * lava and powder snow into an empty one. What only the Nether has (quartz, netherrack, basalt) is fetched there through a lit portal
  * (CompanionErrand): the preparation at home, nether_go, the digging at the exit portal, nether_back, and the rest of the chain at home.
  * What none of the skills can get
- * (an ink sac, a blaze rod…) is said before anything starts.
+ * (a nether star, a ghast's tear…) is said before anything starts.
  */
 public final class CompanionObtain {
     /** One step of the chain: an allowlisted action, its item and count. */

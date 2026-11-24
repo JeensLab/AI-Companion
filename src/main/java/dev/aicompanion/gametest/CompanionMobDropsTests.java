@@ -150,7 +150,7 @@ public final class CompanionMobDropsTests {
 
     /**
      * Plan only: a blaze about him is fought for its rod, and an eye of ender is made of that rod and a pearl he carries. Alone in the
-     * Nether on his errand he hunts none: the rod falls only with his player there, and the rest of such a plan is made at home.
+     * Nether on his errand he hunts none: the rod falls only with his player there, and the rest of such a plan is made at home. Nor in the End.
      */
     @GameTest(template = "empty", timeoutTicks = 40)
     public static void aBlazeRodIsPlannedAsAHuntButNotOnHisErrand(GameTestHelper h) {
@@ -164,6 +164,11 @@ public final class CompanionMobDropsTests {
                 new CompanionObtain.Step("craft_item", "minecraft:ender_eye", 2))), "Eyes of ender: " + eyes);
         var alone = CompanionObtain.plan(nether, sword, false, "minecraft:blaze_rod", 3, thing -> false, thing -> true, new CompanionObtain.Trip(null, true));
         h.assertTrue(alone.refused() && alone.steps().isEmpty() && alone.refusal().contains("Blaze"), "Rods on his errand: " + alone);
+        // The End is not hunted in yet: an enderman's pearl there is no order of his (over the void his bag would be lost with him).
+        var end = h.getLevel().getServer().getLevel(Level.END);
+        h.assertTrue(end != null, "No End to test with");
+        var pearl = new CompanionEntity(AICompanionMod.COMPANION.get(), end).startWork("hunt_drop", "minecraft:ender_pearl", 1);
+        h.assertTrue(!pearl.success() && pearl.message().contains("не добываю"), "A pearl in the End: " + pearl.message());
         h.succeed();
     }
 
