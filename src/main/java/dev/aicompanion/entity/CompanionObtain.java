@@ -82,6 +82,12 @@ public final class CompanionObtain {
     private final Trip trip;
     /** Whether a stack he carries is his to use now: what he carries for the player (a sort) is not. */
     private final java.util.function.Predicate<ItemStack> his;
+    /**
+     * What of the item lies on the ground about him as far as it is his to take: how many his hand reaches, and whether any lie
+     * further off in his sight. Null when the ground about him is not known: only what he carries counts then.
+     */
+    private final java.util.function.Function<Item, CompanionObsidian.Loose> loose;
+    private final Map<Item, CompanionObsidian.Loose> loosened = new HashMap<>();
     /** A step of the chain is Nether-only and is fetched through the portal; and why the trip cannot be made (no portal, no chunk loading: said instead of any other refusal). */
     private boolean viaNether;
     private String errandRefusal;
@@ -98,8 +104,8 @@ public final class CompanionObtain {
     private static final double SPARE = 1.25;
 
     private CompanionObtain(ServerLevel level, List<ItemStack> carried, boolean bench, java.util.function.Predicate<Item> grows, java.util.function.Predicate<Item> roams, Trip trip,
-                            java.util.function.Predicate<ItemStack> his) {
-        this.level = level; this.carried = carried; this.bench = bench; this.grows = grows; this.roams = roams; this.trip = trip; this.his = his;
+                            java.util.function.Predicate<ItemStack> his, java.util.function.Function<Item, CompanionObsidian.Loose> loose) {
+        this.level = level; this.carried = carried; this.bench = bench; this.grows = grows; this.roams = roams; this.trip = trip; this.his = his; this.loose = loose;
         blade = carried.stream().anyMatch(stack -> stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES));
         for (ItemStack stack : carried) if (!stack.isEmpty()) bag.merge(key(stack.getItem()), stack.getCount(), Integer::sum);
     }
@@ -131,16 +137,27 @@ public final class CompanionObtain {
      */
     public static Plan plan(ServerLevel level, List<ItemStack> carried, boolean benchNearby, String requested, int count, java.util.function.Predicate<Item> grows,
                             java.util.function.Predicate<Item> roams, Trip trip, java.util.function.Predicate<ItemStack> his) {
+        return plan(level, carried, benchNearby, requested, count, grows, roams, trip, his, item -> CompanionObsidian.Loose.NONE);
+    }
+
+    /**
+     * {@code loose}: what of the item lies on the ground about him within his hand, and whether any lie further off in his sight — a
+     * bucket of lava or water dropped beside him is a source for the obsidian as much as one in his bag.
+     */
+    public static Plan plan(ServerLevel level, List<ItemStack> carried, boolean benchNearby, String requested, int count, java.util.function.Predicate<Item> grows,
+                            java.util.function.Predicate<Item> roams, Trip trip, java.util.function.Predicate<ItemStack> his,
+                            java.util.function.Function<Item, CompanionObsidian.Loose> loose) {
         boolean[] viaNether = {false};
-        return errand(planned(level, carried, benchNearby, requested, count, grows, roams, trip, viaNether, his), level, trip, viaNether[0]);
+        return errand(planned(level, carried, benchNearby, requested, count, grows, roams, trip, viaNether, his, loose), level, trip, viaNether[0]);
     }
 
     private static Plan planned(ServerLevel level, List<ItemStack> carried, boolean benchNearby, String requested, int count, java.util.function.Predicate<Item> grows,
-                                java.util.function.Predicate<Item> roams, Trip trip, boolean[] viaNether, java.util.function.Predicate<ItemStack> his) {
+                                java.util.function.Predicate<Item> roams, Trip trip, boolean[] viaNether, java.util.function.Predicate<ItemStack> his,
+                                java.util.function.Function<Item, CompanionObsidian.Loose> loose) {
         var id = ResourceLocation.tryParse(requested == null ? "" : requested.trim());
         Item item = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
         if (item == null || item == Items.AIR) return new Plan(List.of(), "Не понял, какой предмет нужен.");
-        CompanionObtain planner = new CompanionObtain(level, carried, benchNearby || carried.stream().anyMatch(stack -> stack.is(Items.CRAFTING_TABLE)), grows, roams, trip, his);
+        CompanionObtain planner = new CompanionObtain(level, carried, benchNearby || carried.stream().anyMatch(stack -> stack.is(Items.CRAFTING_TABLE)), grows, roams, trip, his, loose);
         // Logs the player asked for by name are that species, wherever the plan goes on; inside a chain wood stays a family (key).
         var species = CompanionWoodKind.of(id.toString());
         if (species != null && plainLog(id.getPath())) {
@@ -271,13 +288,21 @@ public final class CompanionObtain {
             // Obsidian lying about him is mined where it lies (CompanionObsidian): no lava to cool, so no bucket, no iron and no
             // smelting for one. Else lava about him is cooled with his bucket of water. With neither, his own bucket of lava makes
             // it: poured into a hole he digs, his water over it (the player 19.11: two buckets of lava in the bag, no lava in the
-            // world, and the order was refused as if there were nothing to dig — the bag was never asked).
+            // world, and the order was refused as if there were nothing to dig — the bag was never asked). A bucket dropped on the
+            // ground within his hand is a source just the same: he takes it up when the work starts (CompanionObsidian.begin).
+            // One lying further off within his sight and a cell to take it from is walked to and taken up as the work goes
+            // (CompanionObsidian.fetchLoose), so the plan counts it too.
             case "minecraft:obsidian" -> {
                 String refusal = CompanionObsidian.refusal(level, carried);
                 if (refusal != null) return refuse(refusal);
                 if (grows != null && about(Items.OBSIDIAN)) return add("mine_obsidian", key, count);
-                int buckets = bag.getOrDefault("minecraft:lava_bucket", 0);
-                if (grows != null && !about(Items.LAVA_BUCKET) && buckets == 0) {
+                CompanionObsidian.Loose lavaLying = lying(Items.LAVA_BUCKET), waterLying = lying(Items.WATER_BUCKET);
+                boolean lavaAbout = grows != null && about(Items.LAVA_BUCKET);
+                int buckets = bag.getOrDefault("minecraft:lava_bucket", 0) + lavaLying.reach() + lavaLying.fetch();
+                if (grows != null && !lavaAbout && buckets == 0) {
+                    // The buckets lie there and no way leads to them: said plainly, never «нечего копать» (the player 20.11:
+                    // four buckets at his feet and a line about nothing to dig).
+                    if (lavaLying.sight() || waterLying.sight()) return refuse(CompanionObsidian.unreached(lavaLying.sight(), waterLying.sight()));
                     // After the blocks his own buckets made, the old line said there was nothing about to dig over a bag that already
                     // held them (the player 19.11: one of two made, then «Рядом нечего копать: ни обсидиана, ни лавы»).
                     int have = carried(carried, Items.OBSIDIAN);
@@ -287,8 +312,10 @@ public final class CompanionObtain {
                 }
                 // With no obsidian lying about and no lava to cool, his own buckets are the only source: one bucket of lava makes one
                 // block, so no more is promised than they can give (the rest is planned again after, the player 19.11).
-                if (grows != null && !about(Items.LAVA_BUCKET)) count = Math.min(count, buckets);
-                return need("minecraft:water_bucket", 1, depth + 1) && add("mine_obsidian", key, count);
+                if (grows != null && !lavaAbout) count = Math.min(count, buckets);
+                int water = bag.getOrDefault("minecraft:water_bucket", 0) + waterLying.reach() + waterLying.fetch();
+                if (water == 0 && !need("minecraft:water_bucket", 1, depth + 1)) return false;
+                return add("mine_obsidian", key, count);
             }
             // An empty bucket of his (or one made now) under a cow, a mooshroom or a goat about him (CompanionChores).
             case "minecraft:milk_bucket" -> {
@@ -539,6 +566,11 @@ public final class CompanionObtain {
 
     private boolean about(Item item) {
         return grows != null && grown.computeIfAbsent(item, grows::test);
+    }
+
+    /** What of the item lies on the ground about him as far as it is his to take; none when the ground is not known. */
+    private CompanionObsidian.Loose lying(Item item) {
+        return loose == null ? CompanionObsidian.Loose.NONE : loosened.computeIfAbsent(item, loose);
     }
 
     /**
