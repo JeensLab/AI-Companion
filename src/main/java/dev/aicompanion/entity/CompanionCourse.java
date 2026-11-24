@@ -53,7 +53,12 @@ public final class CompanionCourse {
      * water, and so on): the way on is over water, which he fears, and a boat he cannot steer yet.
      */
     private static final String AFRAID = "Похоже, дальше отсюда только через большую воду. Её я побаиваюсь, а лодкой править пока не умею.";
-    /** Without coming on along the line for this long, the way is closed. */
+    /**
+     * Without coming on along the line for this long, the way is closed. A route that failed restarts the count, at most as many
+     * times as there are points to try (ASIDE) since he last came on, so a way round is still tried after one that failed (the
+     * ravine of a waterfall, game 24.11: on the line he failed, a point aside led across). Points reached aside without coming on
+     * get no more restarts.
+     */
     private static final int STUCK_TICKS = 20 * 60;
     private static final int SCAN_RADIUS = 24;
 
@@ -74,7 +79,7 @@ public final class CompanionCourse {
     private String target;
     private CompanionGame.Kind animal;
     private double startX, startZ, dirX, dirZ, best;
-    private int blocks, aside;
+    private int blocks, aside, failed;
     private BlockPos point;
     private long began, lastAdvance, waitingSince, nextScan;
     private int urged;
@@ -118,7 +123,7 @@ public final class CompanionCourse {
         double length = Math.hypot(heading.x, heading.z);
         dirX = heading.x / length; dirZ = heading.z / length;
         startX = w.owner.getX(); startZ = w.owner.getZ();
-        blocks = count; best = 0; aside = 0; point = null; closed = null;
+        blocks = count; best = 0; aside = 0; failed = 0; point = null; closed = null;
         began = lastAdvance = nextScan = w.owner.level().getGameTime(); waitingSince = -1;
         return null;
     }
@@ -131,6 +136,7 @@ public final class CompanionCourse {
         var owner = w.owner;
         long now = level.getGameTime();
         double along = along(owner.getX(), owner.getZ());
+        if (along > best + 1) failed = 0;
         if (along > best + 1) { best = along; lastAdvance = now; }
         if (blocks > 0 && along >= blocks - .5) { w.finish(true, "Прошли " + blocks + " " + blocksWord(blocks) + " на " + heading.name + "."); return; }
         if (now - began >= LIMIT_SECONDS * 20L) { w.finish(true, "Идём на " + heading.name + " уже двадцать минут, остановился передохнуть."); return; }
@@ -167,7 +173,7 @@ public final class CompanionCourse {
             }
         }
         var step = w.route.legs(point, 2);
-        if (step == CompanionTravel.Step.FAILED) { w.route.legsEnd(false); point = null; aside++; return; }
+        if (step == CompanionTravel.Step.FAILED) { w.route.legsEnd(false); point = null; aside++; if (++failed <= ASIDE.length) lastAdvance = now; return; }
         if (step == CompanionTravel.Step.NEAR || Math.hypot(point.getX() + .5 - owner.getX(), point.getZ() + .5 - owner.getZ()) <= NEXT_AT) {
             if (step == CompanionTravel.Step.NEAR) w.route.legsEnd(true);
             point = null; aside = 0; closed = null;

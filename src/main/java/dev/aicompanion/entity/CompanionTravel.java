@@ -131,7 +131,11 @@ final class CompanionTravel {
         if (distance + PROGRESS <= best) { best = distance; lastProgress = now; turn = 0; }
         // Along a whole route that winds away from the goal (a mine, a tunnel) the straight distance first grows: walking counts.
         // Only on a leg that arrives (its end within the search's accuracy of the goal), not on side steps and parts that only head that way.
-        if (leg != null && leg.canReach() && endDistance(leg) <= near + 2 && now < walkUntil && (legMoved == null || owner.position().distanceToSqr(legMoved) > .7 * .7)) { legMoved = owner.position(); lastProgress = now; }
+        // Across the ground and as far as the goal's own progress: jumping on the spot or tossing in a current is no walking (game 24.11:
+        // pressed by a current against a trunk, he bobbed a block and a half up and down in the water for a minute; in the falling water
+        // of a ravine he was tossed about a block to and fro; the walk never failed, and nothing else was tried).
+        if (leg != null && leg.canReach() && endDistance(leg) <= near + 2 && now < walkUntil
+                && (legMoved == null || Math.hypot(owner.getX() - legMoved.x, owner.getZ() - legMoved.z) >= PROGRESS)) { legMoved = owner.position(); lastProgress = now; }
         if (now - lastProgress > PATIENCE) { owner.getNavigation().stop(); told("FAILED", "no progress for half a minute"); return Step.FAILED; }
         if (!owner.onGround() && !owner.isInWater()) return Step.WALKING;
         boolean over = leg == null || owner.getNavigation().isDone() || owner.getNavigation().isStuck();
