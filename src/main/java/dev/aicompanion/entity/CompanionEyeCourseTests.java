@@ -94,6 +94,30 @@ public final class CompanionEyeCourseTests {
         });
     }
 
+    /** «Стоп» while his eye is in the air and another order at once (he walks north, away from it): the eye is his all the same. */
+    @GameTest(template = "large_search", skyAccess = true, timeoutTicks = 800)
+    public static void hisEyeInTheAirAtStopAndANewOrderIsPickedUpAllTheSame(GameTestHelper h) {
+        CompanionEntity c = arena(h);
+        ServerPlayer player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        c.setItem(0, new ItemStack(Items.ENDER_EYE));
+        h.assertTrue(CompanionEvents.executeAction(player, "walk_heading", "stronghold", 0).success(), "Not accepted: " + c.getLastTaskResult());
+        long[] walk = {0};
+        h.onEachTick(() -> {
+            player.teleportTo(c.getX() - 3, c.getY(), c.getZ());
+            if (walk[0] != 0 || h.getLevel().getEntitiesOfClass(EyeOfEnder.class, c.getBoundingBox().inflate(40), eye -> eye.tickCount > 20).isEmpty()) return;
+            CompanionEvents.executeAction(player, "stop", "", 1);
+            var north = CompanionEvents.executeAction(player, "walk_heading", "north", 30);
+            h.assertTrue(north.success(), "The walk north is not accepted: " + north.message());
+            walk[0] = c.activeWorkId();
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(walk[0] != 0 && c.workResult(walk[0]) != null && !c.isWorking(), "Still walking: " + c.getLastTaskResult());
+            h.assertTrue(h.getLevel().getEntitiesOfClass(EyeOfEnder.class, c.getBoundingBox().inflate(60)).isEmpty(), "The eye is still in the air");
+            h.assertTrue(h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, c.getBoundingBox().inflate(100), item -> item.getItem().is(Items.ENDER_EYE)).isEmpty(),
+                    "His eye was left lying after «стоп» and a new order");
+        });
+    }
+
     /**
      * His only eye falls on the leaves of a tree, six blocks over his head: he does not go up for it (nor into water, nor down a pit:
      * in game he went down a cave after one), it is not claimed as his pickup, and he says he could not take it.

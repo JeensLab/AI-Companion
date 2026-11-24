@@ -225,7 +225,8 @@ public final class CompanionCourse {
      * called it broken). It is taken only where it came to lie at hand: not out of water, not off a tree, not from a pit (game
      * 24.11: he went down a cave after one, thirty blocks, and the walk was over). The one thrown over the place goes into the
      * ground and is left there. One he still cannot get to is given up (that one only: what else he has to pick up is his as
-     * before), so the pickup does not turn him back for it again and again. Told to stand («стой», «жди») he does not go for it.
+     * before), so the pickup does not turn him back for it again and again. Told to stand («стой», «жди») he does not go for it;
+     * at another work begun after «стоп» he does.
      */
     void watch() {
         if (!(w.owner.level() instanceof ServerLevel level)) return;
@@ -239,7 +240,7 @@ public final class CompanionCourse {
         if (!claimed) {
             if (lying.isAlive() && !lying.onGround() && !lying.isInWater() && now - fell <= LAND_TICKS) return;
             claimed = lying.isAlive() && lying.onGround() && !lying.isInWater() && Math.abs(lying.getY() - w.owner.getY()) <= AT_HAND
-                    && (goal != null || w.owner.isFollowing());
+                    && (goal != null || w.isActive() || w.owner.isFollowing());
             if (claimed) w.owner.claimDrops(java.util.List.of(lying));
         } else if (lying.isAlive() && now - fell > PICK_TICKS) { w.owner.loot.shun(lying.getUUID(), now + 20 * 300); claimed = false; }
         // In his bag, left where it lies, or given up.
