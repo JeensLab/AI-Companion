@@ -71,7 +71,7 @@ final class CompanionArchery {
     }
 
     private boolean aiming(LivingEntity target) {
-        if (target == null || !target.isAlive() || !(target instanceof Enemy) || c.tickCount < bladeUntil || !armed()) return false;
+        if (target == null || !target.isAlive() || !(target instanceof Enemy) || c.tickCount < bladeUntil || !armed() || CompanionCombat.wakesLava(target)) return false;
         // An enderman teleports away from every arrow and takes none of it (EnderMan.hurt): the sword, however far off it is.
         if (target instanceof net.minecraft.world.entity.monster.EnderMan) return false;
         double distance = c.distanceTo(target);

@@ -54,13 +54,15 @@ public final class CompanionEndPortalTests {
 
     /**
      * A stronghold's spawner stands on the top step before the ring, two blocks off its frames: as long as a player is near, it lets
-     * out silverfish. He breaks it with the pickaxe of his bag before the first eye, then opens the portal.
+     * out silverfish. He breaks it with the pickaxe of his bag before the first eye, then opens the portal; the experience it
+     * drops for a pickaxe lies by it (the player is away: a spawner near him would let silverfish out into the test).
      */
     @GameTest(template = "large_search", skyAccess = true, timeoutTicks = 2400)
     public static void theSpawnerBeforeTheRingIsBrokenFirst(GameTestHelper h) {
         CompanionEntity companion = setup(h);
         List<BlockPos> frames = ring(h, 3, true);
         BlockPos spawner = spawner(h, 3);
+        away(h, companion);
         companion.setItem(0, new ItemStack(Items.ENDER_EYE, 12));
         companion.setItem(1, new ItemStack(Items.IRON_PICKAXE));
         h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "open_end_portal", "", 1).success(), "Order refused: " + companion.getLastTaskResult());
@@ -69,21 +71,28 @@ public final class CompanionEndPortalTests {
             done(h, companion);
             h.assertTrue(companion.didLastTaskSucceed() && companion.getLastTaskResult().contains("Сломал спаунер") && companion.getLastTaskResult().contains("Портал Края открыт"), companion.getLastTaskResult());
             h.assertTrue(h.getBlockState(spawner).isAir() && eyes(h, frames) == 12 && portal(h, 3) == 9, "Spawner " + h.getBlockState(spawner) + ", eyes in the frames " + eyes(h, frames));
+            h.assertTrue(experience(h) >= 15, "Experience by the spawner: " + experience(h));
         });
     }
 
-    /** No pickaxe: the spawner is broken by hand, as slowly as a player breaks it (25 seconds). */
+    /**
+     * No pickaxe: the spawner is broken by hand, as slowly as a player breaks it (25 seconds), and drops no experience, as for a
+     * player. A spawner of another mob nearer the ring (a dungeon's under a stronghold) is not his to break.
+     */
     @GameTest(template = "large_search", skyAccess = true, timeoutTicks = 2400)
     public static void withNoPickaxeTheSpawnerIsBrokenByHand(GameTestHelper h) {
         CompanionEntity companion = setup(h);
         List<BlockPos> frames = ring(h, 1, false);
-        BlockPos spawner = spawner(h, 1);
+        BlockPos spawner = spawner(h, 1), other = new BlockPos(X + 2, 1, Z + 5);
+        h.setBlock(other, Blocks.SPAWNER);
+        away(h, companion);
         companion.setItem(0, new ItemStack(Items.ENDER_EYE, 12));
         h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "open_end_portal", "", 1).success(), "Order refused: " + companion.getLastTaskResult());
         h.succeedWhen(() -> {
             done(h, companion);
             h.assertTrue(companion.didLastTaskSucceed() && companion.getLastTaskResult().contains("Сломал спаунер") && companion.getLastTaskResult().contains("Портал Края открыт"), companion.getLastTaskResult());
             h.assertTrue(h.getBlockState(spawner).isAir() && eyes(h, frames) == 12 && portal(h, 1) == 9, "Spawner " + h.getBlockState(spawner) + ", eyes in the frames " + eyes(h, frames));
+            h.assertTrue(h.getBlockState(other).is(Blocks.SPAWNER) && experience(h) == 0, "The other spawner " + h.getBlockState(other) + ", experience " + experience(h));
         });
     }
 
@@ -256,7 +265,8 @@ public final class CompanionEndPortalTests {
     /**
      * A hit silverfish wakes the infested blocks round it (ten blocks across, five up and down) and they crumble: in a stronghold's
      * portal room that lets the pool's lava out on the floor (twice his death in game, 24.11). By the player, with lava six blocks
-     * off, he leaves it alone (it goes for no one who did not hit it); the lava gone, he meets it as any monster at the player's side.
+     * off, he leaves it alone (it goes for no one who did not hit it); the lava gone, he meets it as any monster at the player's side;
+     * lava by it again in the fight, he strikes no more and lets it go.
      */
     @GameTest(template = "large_search", skyAccess = true, timeoutTicks = 600)
     public static void aSilverfishByLavaIsLeftAloneAndOneAwayFromItIsFought(GameTestHelper h) {
@@ -266,13 +276,23 @@ public final class CompanionEndPortalTests {
         BlockPos lava = new BlockPos(60, 1, 62);
         h.setBlock(lava, Blocks.LAVA);
         for (Direction side : Direction.Plane.HORIZONTAL) h.setBlock(lava.relative(side), Blocks.BEDROCK);
-        float whole = silverfish.getMaxHealth();
+        // Not killed in the blows of the fight before the lava comes back.
+        float whole = 200;
+        silverfish.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH).setBaseValue(whole);
+        silverfish.setHealth(whole);
+        float[] hit = {0};
+        long[] back = {0};
         h.onEachTick(() -> {
-            if (h.getBlockState(lava).is(Blocks.LAVA))
+            if (back[0] == 0 && h.getBlockState(lava).is(Blocks.LAVA))
                 h.assertTrue(companion.getTarget() != silverfish && silverfish.getHealth() == whole, "A silverfish by lava was fought: health " + silverfish.getHealth());
+            if (back[0] == 0 && silverfish.getHealth() < whole) { hit[0] = silverfish.getHealth(); back[0] = h.getTick(); h.setBlock(lava, Blocks.LAVA); }
+            if (back[0] != 0) h.assertTrue(silverfish.getHealth() == hit[0], "Struck again with lava by it: health " + silverfish.getHealth() + " after " + hit[0]);
         });
         h.runAfterDelay(120, () -> h.setBlock(lava, Blocks.BEDROCK));
-        h.succeedWhen(() -> h.assertTrue(!silverfish.isAlive() || silverfish.getHealth() < whole, "The silverfish with no lava near is not fought"));
+        h.succeedWhen(() -> {
+            h.assertTrue(back[0] != 0, "The silverfish with no lava near is not fought");
+            h.assertTrue(h.getTick() > back[0] + 60 && companion.getTarget() != silverfish, "Still his target with lava by it");
+        });
     }
 
     /**
@@ -290,12 +310,25 @@ public final class CompanionEndPortalTests {
         return frames;
     }
 
-    /** A spawner where a stronghold has it: in the middle before the ring's north side, two blocks off, at the frames' height, on stone. */
+    /** A silverfish spawner where a stronghold has it: in the middle before the ring's north side, two blocks off, at the frames' height, on stone. */
     private static BlockPos spawner(GameTestHelper h, int y) {
         BlockPos spawner = new BlockPos(X + 2, y, Z - 2);
         for (int below = 1; below < y; below++) h.setBlock(spawner.atY(below), Blocks.STONE_BRICKS);
         h.setBlock(spawner, Blocks.SPAWNER);
+        if (h.getBlockEntity(spawner) instanceof net.minecraft.world.level.block.entity.SpawnerBlockEntity block)
+            block.setEntityId(net.minecraft.world.entity.EntityType.SILVERFISH, h.getLevel().random);
         return spawner;
+    }
+
+    /** The player farther than 16 blocks from the spawner: it lets no silverfish out, the experience is not picked up. */
+    private static void away(GameTestHelper h, CompanionEntity companion) {
+        BlockPos corner = h.absolutePos(new BlockPos(45, 1, 45));
+        owner(h, companion).teleportTo(corner.getX() + .5, corner.getY(), corner.getZ() + .5);
+    }
+
+    private static int experience(GameTestHelper h) {
+        return h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.ExperienceOrb.class, new net.minecraft.world.phys.AABB(h.absolutePos(new BlockPos(44, 0, 44))).inflate(40))
+                .stream().mapToInt(net.minecraft.world.entity.ExperienceOrb::getValue).sum();
     }
 
     private static BlockPos frame(GameTestHelper h, int x, int y, int z, Direction facing) {

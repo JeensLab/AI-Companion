@@ -3,12 +3,12 @@ package dev.aicompanion.entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.EndPortalFrameBlock;
+import net.minecraft.world.level.block.entity.SpawnerBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
@@ -98,14 +98,19 @@ final class CompanionEndPortal {
         return frames;
     }
 
-    /** The spawner nearest to the ring within reach of it, if any. */
+    /** The silverfish spawner nearest to the ring within reach of it, if any: one of another mob (a dungeon's by it) is not his to break. */
     private BlockPos spawnerNear(ServerLevel level) {
         int y = ring.getFirst().getY();
         Vec3 middle = new Vec3((minX() + maxX()) / 2D + .5, y, (minZ() + maxZ()) / 2D + .5);
         BlockPos nearest = null;
         for (BlockPos pos : BlockPos.betweenClosed(minX() - SPAWNER_NEAR, y - SPAWNER_NEAR_Y, minZ() - SPAWNER_NEAR, maxX() + SPAWNER_NEAR, y + SPAWNER_NEAR_Y, maxZ() + SPAWNER_NEAR))
-            if (level.hasChunkAt(pos) && level.getBlockState(pos).is(Blocks.SPAWNER) && (nearest == null || pos.getCenter().distanceToSqr(middle) < nearest.getCenter().distanceToSqr(middle))) nearest = pos.immutable();
+            if (level.hasChunkAt(pos) && level.getBlockState(pos).is(Blocks.SPAWNER) && silverfish(level, pos) && (nearest == null || pos.getCenter().distanceToSqr(middle) < nearest.getCenter().distanceToSqr(middle))) nearest = pos.immutable();
         return nearest;
+    }
+
+    private static boolean silverfish(ServerLevel level, BlockPos pos) {
+        return level.getBlockEntity(pos) instanceof SpawnerBlockEntity block
+                && "minecraft:silverfish".equals(block.getSpawner().save(new net.minecraft.nbt.CompoundTag()).getCompound("SpawnData").getCompound("entity").getString("id"));
     }
 
     private List<BlockPos> empty(ServerLevel level) {
@@ -145,7 +150,8 @@ final class CompanionEndPortal {
 
     void tick(ServerLevel level) {
         CompanionEntity c = w.owner;
-        if (spawner != null && !level.getBlockState(spawner).is(Blocks.SPAWNER)) spawner = null;
+        // Broken by the player while he swung at it: the cracks and the pickaxe go too.
+        if (spawner != null && !level.getBlockState(spawner).is(Blocks.SPAWNER)) { spawner = null; w.breaking.reset(); c.putToolAway(); }
         if (spawner != null) { breakSpawner(level); return; }
         List<BlockPos> left = empty(level);
         if (left.isEmpty() || w.items.countCarried(Items.ENDER_EYE) == 0) { finish(level, left.size()); return; }
@@ -156,7 +162,7 @@ final class CompanionEndPortal {
         }
         List<BlockPos> open = left.stream().filter(pos -> !unreached.contains(pos)).toList();
         if (open.isEmpty()) {
-            String did = put > 0 ? " Вставил " + eyes(put) + ", пустых рамок ещё " + left.size() + "." : "";
+            String did = (put > 0 ? " Вставил " + eyes(put) + "," : " Очей не вставил,") + " пустых рамок ещё " + left.size() + ".";
             end(false, (byLava ? "У рамки лава — не подойти." : "Не смог подойти к рамке портала Края на " + unreached.getFirst().toShortString() + ".") + did);
             return;
         }
@@ -179,14 +185,18 @@ final class CompanionEndPortal {
         BlockPos feet = c.blockPosition();
         if (outside(feet) && dry(level, feet) && c.placement.reaches(spawner, Blocks.SPAWNER)) {
             BlockState state = level.getBlockState(spawner);
+            // A slow break by hand is no lack of progress of the walk: pushed out of reach he walks back to it.
+            w.resetApproach();
             c.takeToolForBlock(state);
-            c.workStatus("Ломаю спаунер.");
+            c.workStatus("Ломаю спаунер чешуйниц.");
             if (!w.breaking.tick(level, spawner)) return;
             ItemStack tool = c.getMainHandItem();
-            int experience = state.getExpDrop(level, spawner, null, c, tool);
+            // Experience only for the tool that harvests it, as a player gets it (no harvest by hand, no drops: ServerPlayerGameMode, BlockDropsEvent).
+            int experience = !state.requiresCorrectToolForDrops() || tool.isCorrectToolForDrops(state)
+                    ? net.minecraft.world.item.enchantment.EnchantmentHelper.processBlockExperience(level, tool, state.getExpDrop(level, spawner, null, c, tool)) : 0;
             if (level.destroyBlock(spawner, false, c, 512)) {
                 CompanionTools.wearOnBreak(tool, level, state, spawner, c);
-                ExperienceOrb.award(level, Vec3.atCenterOf(spawner), experience);
+                if (experience > 0) state.getBlock().popExperience(level, spawner, experience);
                 broke = true;
                 dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "end_portal_spawner", "entity", c.getUUID(), "spawner", spawner, "broken", true);
             }
