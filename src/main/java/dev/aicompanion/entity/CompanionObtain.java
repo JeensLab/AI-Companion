@@ -184,6 +184,9 @@ public final class CompanionObtain {
         if (reachable != null) {
             if (item == Items.OBSIDIAN) CompanionWaySearch.skipped("", item, "обсидиан — своя работа (mine_obsidian), её блоки считает тот же поиск");
             else if (CompanionLeaves.isLeaf(BuiltInRegistries.ITEM.getKey(item).toString())) CompanionWaySearch.skipped("", item, "листва — своё дело листвы (CompanionLeaves)");
+            // A field crop is the farm's own: the ripe ones about him are reaped and sown again, never gathered as a block (a
+            // carrot crop is a carrot, but the farm knows the field — the picking would mine a young one and leave no seed).
+            else if (CompanionCrops.Kind.yielding(item) != null) CompanionWaySearch.skipped("", item, "грядка — своё дело поля (harvest_crops)");
             else lying = reachable.apply(item);
         }
         planner.noteSeen(item, lying);
