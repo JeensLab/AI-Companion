@@ -126,13 +126,18 @@ public final class CompanionWayMatrixTests {
     }
 
     /**
-     * The top of the way, and the only scenario at its bounds: sixteen above his feet is the height the search may see
-     * ({@code CompanionPicking.DEPTH}) and thirteen steps is the most the column may take ({@code CompanionPillar.WAY_SUPPORTS}),
-     * every one of the thirteen back in the bag.
+     * Sixteen above his feet: a block at the height the owner's scene hung at, thirteen steps of the column and every one of
+     * them back in the bag.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 10000)
     public static void pumpkinSixteenAboveIsMinedFromAColumnThatComesDown(GameTestHelper h) {
         gourdAbove(h, 16, Blocks.PUMPKIN, Items.PUMPKIN, 1);
+    }
+
+    /** Seventeen above: past the height the old way stopped at, now inside it — the owner's blocks hung this high. */
+    @GameTest(template = "tall_tree", timeoutTicks = 12000)
+    public static void pumpkinSeventeenAboveIsMinedFromAColumnThatComesDown(GameTestHelper h) {
+        gourdAbove(h, 17, Blocks.PUMPKIN, Items.PUMPKIN, 1);
     }
 
     @GameTest(template = "tall_tree", timeoutTicks = 6000)
@@ -291,14 +296,14 @@ public final class CompanionWayMatrixTests {
         });
     }
 
-    /** The first height past the way's bound, and the only scenario at it: seventeen above is refused honestly, the block left and no column started. */
+    /** The first height past the way's bound: twenty-one above is refused honestly, the block left and no column started. */
     @GameTest(template = "tall_tree", timeoutTicks = 800)
-    public static void aBlockSeventeenAboveIsRefusedHonestly(GameTestHelper h) {
+    public static void aBlockTwentyOneAboveIsRefusedHonestly(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
-        BlockPos target = new BlockPos(16, FEET + 17, 16);
+        BlockPos target = new BlockPos(16, FEET + 21, 16);
         h.setBlock(target, Blocks.PUMPKIN);
         CompanionEntity c = spawn(h);
-        c.setItem(1, new ItemStack(Items.DIRT, 20));
+        c.setItem(1, new ItemStack(Items.DIRT, 24));
         int[] before = snapshot(h);
         int[] most = {0};
         h.onEachTick(() -> most[0] = Math.max(most[0], c.getTemporarySupportCount()));
@@ -306,9 +311,9 @@ public final class CompanionWayMatrixTests {
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
             String report = future.join().report();
-            h.assertTrue(count(c, Items.PUMPKIN) == 0 && most[0] == 0, "Seventeen above was taken: " + report);
+            h.assertTrue(count(c, Items.PUMPKIN) == 0 && most[0] == 0, "Twenty-one above was taken: " + report);
             h.assertBlockPresent(Blocks.PUMPKIN, target);
-            h.assertTrue(count(c, Items.DIRT) == 20, "The soil was spent on a refusal: " + report);
+            h.assertTrue(count(c, Items.DIRT) == 24, "The soil was spent on a refusal: " + report);
             h.assertTrue(!report.contains("Полторы минуты") && !report.contains("не выполнено"), "A wrong end: " + report);
             assertRestored(h, before);
         });

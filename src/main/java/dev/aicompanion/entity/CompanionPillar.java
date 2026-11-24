@@ -32,20 +32,21 @@ import java.util.Set;
 /**
  * A short, inventory-backed dirt pillar. Movement and falling use normal entity physics.
  * The steps are a per-climb limit: a leaf crown's column keeps its six, a way up to a block he cannot walk to (PATH7, #105)
- * may take sixteen — a block ten blocks above his feet asks seven steps, sixteen asks thirteen.
+ * may take twenty — a block twenty blocks above his feet asks seventeen steps, the height the owner's blocks hung at.
  */
 public final class CompanionPillar {
     /** The steps a leaf crown's column may take: a crown stands close over the trunk. */
     public static final int LEAF_SUPPORTS = 6;
-    /** The most steps a way up may take (PATH7): enough for a block sixteen blocks above his feet. */
-    public static final int WAY_SUPPORTS = 16;
-    /** How far above his feet a block may stand for a way up (PATH7). */
-    public static final int WAY_HEIGHT = 16;
+    /** The most steps a way up may take (PATH7): enough for a block twenty blocks above his feet. */
+    public static final int WAY_SUPPORTS = 20;
+    /** How far above his feet a block may stand for a way up (PATH7): the owner's blocks hung up to twenty above him. */
+    public static final int WAY_HEIGHT = 20;
     /**
-     * How far from him the foot of a column may stand, in blocks: the walk to it is his own, and a block up and to the side is
-     * reached from the foot under it (a pumpkin eight across, PATH7). Farther is another place's block, not this one's column.
+     * How far from him the foot of a column may stand, in blocks: the walk to it is his own legs (CompanionTravel), and a
+     * block up and to the side is reached from the foot under it (a pumpkin eight across, PATH7). Ten blocks stopped the owner's
+     * column short of a block twenty-five to the side; the foot may stand anywhere in the way's own box across.
      */
-    public static final int COLUMN_WALK = 10;
+    public static final int COLUMN_WALK = 32;
     /** Blocks placed and broken by one way, per task (PATH7): the budget of slice S2 is counted against this number. */
     public static final int WAY_BUDGET = 64;
     private static final double REACH_SQR = 16.0D;
