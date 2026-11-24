@@ -12,6 +12,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Marker;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.block.Block;
@@ -122,12 +123,27 @@ final class CompanionPickable {
             if (ingredients.size() != 1) continue;
             ItemStack[] options = ingredients.getFirst().getItems();
             if (options.length != 1 || !(options[0].getItem() instanceof net.minecraft.world.item.BlockItem block)) continue;
+            // A storage block, not a flower that merely makes the dye: the block itself is crafted OF the item (nine lapis make a
+            // lapis block, four wool a wool block). A poppy makes a red dye and no red dye makes a poppy, so the poppy is no
+            // storage of it.
+            if (!madeOf(level, block.asItem(), item)) continue;
             boolean known = false;
             for (Source source : all) if (source.block() == block.getBlock()) { known = true; break; }
             if (known) continue;
             all.add(new Source(block.getBlock(), result.getCount(), false, false));
         }
         return all;
+    }
+
+    /** Whether the item is crafted of this ingredient, as a storage block is of the material it holds. */
+    private static boolean madeOf(ServerLevel level, Item result, Item ingredient) {
+        for (var holder : level.getRecipeManager().getAllRecipesFor(net.minecraft.world.item.crafting.RecipeType.CRAFTING)) {
+            var recipe = holder.value();
+            if (recipe.isSpecial() || !recipe.getResultItem(level.registryAccess()).is(result)) continue;
+            for (Ingredient accepts : recipe.getIngredients())
+                for (ItemStack option : accepts.getItems()) if (option.is(ingredient)) return true;
+        }
+        return false;
     }
 
     /** Whether the item is had with shears only: no block gives it to a hand. */

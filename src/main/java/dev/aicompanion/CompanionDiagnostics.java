@@ -132,9 +132,12 @@ public final class CompanionDiagnostics {
         }
     }
 
-    /** Bounded drain when a server stops; keep the writer reusable for the next world. */
+    /**
+     * Bounded drain when a server stops; keep the writer reusable for the next world. Ten seconds, not two: a full suite queues
+     * thousands of rows, and a test that reads the journal straight after a search saw an empty file and read it as «no line».
+     */
     public static void flush() {
-        try { WRITER.submit(() -> { }).get(2, TimeUnit.SECONDS); }
+        try { WRITER.submit(() -> { }).get(10, TimeUnit.SECONDS); }
         catch (Exception ignored) { }
     }
 }

@@ -170,13 +170,15 @@ public final class CompanionWayPlayerBuildTests {
     public static void theOutsideLineIsSaidOnceForOneAnswer(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
         CompanionEntity c = spawn(h);
-        BlockPos far = new BlockPos(HOME_X + 30, FEET + 4, HOME_Z);
+        BlockPos far = new BlockPos(HOME_X, FEET + 4, HOME_Z + 20);
         h.setBlock(far, Blocks.PUMPKIN);
-        c.setSearchRadius(24);
+        c.setSearchRadius(16);
         for (int look = 0; look < 20; look++) c.obtainAvailable("minecraft:pumpkin");
-        List<String> lines = journal(c, "way_search").stream()
-                .filter(entry -> entry.contains("\"item\":\"minecraft:pumpkin\"") && entry.contains("\"outside\":1")).toList();
+        List<String> all = journal(c, "way_search").stream().filter(entry -> entry.contains("\"item\":\"minecraft:pumpkin\"")).toList();
+        List<String> lines = all.stream().filter(entry -> entry.contains("\"outside\":")).toList();
+        List<String> searches = all.stream().filter(entry -> entry.contains("\"candidates\":")).toList();
         h.assertTrue(lines.size() == 1, "The outside line was said " + lines.size() + " times for one answer: " + lines);
+        h.assertTrue(searches.size() == 1, "The search line was said " + searches.size() + " times for one answer: " + searches);
         h.assertBlockPresent(Blocks.PUMPKIN, far);
         h.succeed();
     }

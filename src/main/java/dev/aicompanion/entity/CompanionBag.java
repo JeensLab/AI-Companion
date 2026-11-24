@@ -3,6 +3,7 @@ package dev.aicompanion.entity;
 import dev.aicompanion.inventory.CompanionEquipmentContainer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -11,7 +12,9 @@ import net.minecraft.world.level.block.Block;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 final class CompanionBag {
     /** On every item that fell from him at death: the owner's UUID, so the goal that outlives him can fetch its own things (CompanionAgenda.died). */
@@ -156,13 +159,29 @@ final class CompanionBag {
     /** obtain_item: the chain of his own skills that gets the item, planned from what he carries now (CompanionObtain). */
     public CompanionObtain.Plan obtainPlan(String item, int count) {
         if (!(c.level() instanceof ServerLevel serverLevel)) return new CompanionObtain.Plan(List.of(), "Для этого нужен загруженный мир.");
+        var ordered = ResourceLocation.tryParse(item == null ? "" : item.trim());
+        net.minecraft.world.item.Item wanted0 = ordered == null ? null : BuiltInRegistries.ITEM.getOptional(ordered).orElse(null);
         return CompanionObtain.plan(serverLevel, carriedForPlan(), c.hasCraftingTableNearby() || c.hasKnownCraftingTableWithin(16), item, count,
                 wanted -> wanted == net.minecraft.world.item.Items.COMPOSTER ? CompanionComposting.find(c, true) != null
                         : (wanted == net.minecraft.world.item.Items.OBSIDIAN && CompanionObsidian.liesAbout(c, serverLevel, c.work.portal::laid))
-                        || CompanionPicking.near(c, serverLevel, CompanionPickable.sources(serverLevel, wanted)) || CompanionFarming.reapableNear(c, serverLevel, wanted)
+                        || CompanionPicking.near(c, serverLevel, CompanionPickable.sources(serverLevel, wanted)) || CompanionOre.liesAbout(c, serverLevel, wanted)
+                        || CompanionFarming.reapableNear(c, serverLevel, wanted)
                         || CompanionChores.about(c, serverLevel, wanted), wanted -> CompanionMobDrops.near(c, serverLevel, wanted),
                 new CompanionObtain.Trip(serverLevel.dimension() == net.minecraft.world.level.Level.OVERWORLD ? CompanionPortals.litNear(serverLevel, c.blockPosition()) : null, c.errand.away(), CompanionErrand.holdsChunks(c, serverLevel)),
-                stack -> !c.carriedForPlayer(stack), wanted -> available(serverLevel, wanted), wanted -> whyNot(serverLevel, wanted));
+                stack -> !c.carriedForPlayer(stack), wanted -> available(serverLevel, wanted, ownItems(serverLevel, wanted0).contains(wanted)),
+                wanted -> whyNot(serverLevel, wanted, ownItems(serverLevel, wanted0).contains(wanted)));
+    }
+
+    /**
+     * The items an order takes even where the player set them down: the item asked for, and the block that makes it (a lapis block
+     * for lapis). Everything else the chain passes through is a source, and the player's own build keeps it (CompanionPicking).
+     */
+    private static Set<net.minecraft.world.item.Item> ownItems(ServerLevel level, net.minecraft.world.item.Item ordered) {
+        Set<net.minecraft.world.item.Item> own = new HashSet<>();
+        if (ordered == null) return own;
+        own.add(ordered);
+        for (CompanionPickable.Source source : CompanionPickable.storage(level, ordered)) own.add(source.block().asItem());
+        return own;
     }
 
     /**
@@ -173,12 +192,17 @@ final class CompanionBag {
      * (CompanionLeaves).
      */
     CompanionReach.Available available(ServerLevel level, net.minecraft.world.item.Item wanted) {
+        return available(level, wanted, true);
+    }
+
+    /** The same, {@code own} false for an item the chain only passes through: the player's own build keeps its blocks. */
+    CompanionReach.Available available(ServerLevel level, net.minecraft.world.item.Item wanted, boolean own) {
         if (wanted == net.minecraft.world.item.Items.OBSIDIAN) return CompanionObsidian.available(c, level, c.work.portal::laid);
         if (CompanionLeaves.isLeaf(BuiltInRegistries.ITEM.getKey(wanted).toString())) {
             CompanionWaySearch.skipped(c.diagnosticTrace(), wanted, "листва — своё дело листвы (CompanionLeaves)");
             return null;
         }
-        return CompanionWaySearch.available(c, level, wanted, CompanionPicking.requested(c, level));
+        return CompanionWaySearch.available(c, level, wanted, CompanionPicking.requested(c, level, wanted, own));
     }
 
     /**
@@ -186,11 +210,16 @@ final class CompanionBag {
      * the real reason, never the first thing that comes to mind. The search itself journals the box it looked through.
      */
     String whyNot(ServerLevel level, net.minecraft.world.item.Item wanted) {
+        return whyNot(level, wanted, true);
+    }
+
+    /** The same, with the rule of an item the chain only passes through ({@code own} false). */
+    String whyNot(ServerLevel level, net.minecraft.world.item.Item wanted, boolean own) {
         // Obsidian is his only where it may be mined: never a portal's frame, never beside lava — and a block the player set down
         // himself is his, the order named it.
         CompanionWaySearch.Mine mine = wanted == net.minecraft.world.item.Items.OBSIDIAN
                 ? CompanionObsidian.requested(c, level, c.work.portal::laid)
-                : CompanionPicking.requested(c, level);
+                : CompanionPicking.requested(c, level, wanted, own);
         BlockPos nearest = CompanionWaySearch.nearestBlock(c, level, wanted, mine);
         if (nearest == null) return "";
         return CompanionReach.distance(c, nearest);

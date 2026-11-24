@@ -832,7 +832,10 @@ public final class CompanionWayMatrixTests {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
             String report = future.join().report();
             h.assertTrue(count(c, Items.PUMPKIN) == 0 && most[0] == 0, "A column without soil: " + report);
-            h.assertTrue(report.contains("Рядом не вижу"), "Not the chain's own refusal: " + report);
+            // The pumpkin is seen and no column is built for want of soil: the refusal names its distance and says it saw it —
+            // never «Рядом не вижу» and a distance in one sentence (the judge read both together).
+            h.assertTrue(report.contains("вижу, но не достать") && report.contains("8 блоков вверх"), "Not the chain's own refusal: " + report);
+            h.assertTrue(!report.contains("Рядом не вижу"), "The refusal claims it saw nothing over a block it names: " + report);
             h.assertTrue(!report.contains("Полторы минуты") && !report.contains("не выполнено"), "A wrong end: " + report);
             h.assertBlockPresent(Blocks.PUMPKIN, target);
             assertRestored(h, before);

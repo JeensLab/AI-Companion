@@ -83,6 +83,13 @@ public final class CompanionOre {
     static final int MAX_CELLS = 30;
     private CompanionOre() { }
 
+    /** Whether an ore that gives this item lies about him where the mine may dig it: the ore's own scan, never a list of names. */
+    static boolean liesAbout(CompanionEntity c, ServerLevel level, Item drop) {
+        for (Kind ore : Kind.values()) if (ore.drop == drop)
+            return CompanionObsidian.nearest(c, level, CompanionObsidian.DEPTH, ore::is, pos -> true) != null;
+        return false;
+    }
+
     /** Natural ground a tunnel may go through: stone of the world (netherrack and basalt too), soil and any ore. Built blocks are never dug. */
     static boolean tunnelable(BlockState state) {
         return state.is(BlockTags.BASE_STONE_OVERWORLD) || state.is(BlockTags.BASE_STONE_NETHER) || CompanionQuarry.soil(state)

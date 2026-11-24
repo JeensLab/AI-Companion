@@ -563,7 +563,7 @@ public final class CompanionWork {
                 // block, and one the player set down himself is the order's too).
                 CompanionCrops.Kind fruit = "harvest_crops".equals(action) ? CompanionCrops.Kind.of(item) : null;
                 if (fruit != null && fruit.stem()) {
-                    var lying = CompanionWaySearch.available(owner, level, fruit.produce, CompanionPicking.requested(owner, level));
+                    var lying = CompanionWaySearch.available(owner, level, fruit.produce, CompanionPicking.requested(owner, level, fruit.produce));
                     if (lying.some()) {
                         int wanted = count > 0 ? Math.min(count, lying.count()) : lying.count();
                         CompanionActionResult started = picking.begin(BuiltInRegistries.ITEM.getKey(fruit.produce).toString(), Math.max(1, wanted));
@@ -594,7 +594,7 @@ public final class CompanionWork {
                 // it is here. The one search answers first, as it does for every obtain (a lapis block in the air is no ore).
                 List<CompanionPickable.Source> storage = CompanionPickable.storage(level, ore.drop);
                 Item lying = storage.isEmpty() ? ore.drop : storage.getFirst().block().asItem();
-                if (CompanionWaySearch.available(owner, level, lying, CompanionPicking.requested(owner, level)).some()) {
+                if (CompanionWaySearch.available(owner, level, lying, CompanionPicking.requested(owner, level, lying)).some()) {
                     CompanionActionResult started = picking.begin(BuiltInRegistries.ITEM.getKey(lying).toString(), Math.max(1, Math.min(count, MAX_ORE)));
                     if (started == null) { job = Job.BLOCK; phase = Phase.BLOCK; break; }
                 }

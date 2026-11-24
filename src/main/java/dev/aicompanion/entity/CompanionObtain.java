@@ -436,6 +436,8 @@ public final class CompanionObtain {
             if (ore.drop == item) {
                 // No ore of it about, and the block the player asked for is seen but no way reaches it: the refusal names that
                 // block's distance, never the ore's name («золотой блок вижу в 21 блоке вверх, но пути нет, а руды рядом нет»).
+                // about(item) is the ore's own scan too (CompanionBag's grows): an iron block seen far off is no reason to
+                // refuse the ore that lies beside him, and with no ore about the seen block's distance is the refusal.
                 if (grows != null && !about(item) && near != null && ordered != null)
                     return refuse("«" + ordered + "» вижу — " + near + ", но пути к нему нет, а руды для него рядом тоже нет.");
                 return addSplit("mine_ore", "minecraft:" + ore.key() + "_ore", ceil(count, perOre(ore)), CompanionWork.MAX_ORE);

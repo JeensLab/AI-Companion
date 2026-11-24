@@ -533,9 +533,14 @@ public final class CompanionObsidianTests {
         });
     }
 
-    /** Lava and obsidian where the player has a building are his: no water poured there, nothing mined, and he says what is missing. */
-    @GameTest(template = "tall_tree", timeoutTicks = 600)
-    public static void lavaAndObsidianWhereThePlayerBuildsAreLeftAlone(GameTestHelper h) {
+    /**
+     * The obsidian the player set down himself is the order's target: his wall by the chest of his is mined for «добудь 2
+     * обсидиана», while the lava pond on his site is still his — no water is poured over it and his bucket comes back untouched
+     * (the rule that flipped with PATH7: «do not break the player's build» keeps the soil a way lays and the lava of his pond,
+     * never the block the order named).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void obsidianThePlayerSetDownIsMinedForHisOrder(GameTestHelper h) {
         ground(h);
         List<BlockPos> pond = lava(h, 18, 15, 3, 1);
         CompanionEntity c = spawn(h);
@@ -549,10 +554,14 @@ public final class CompanionObsidianTests {
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
             String report = future.join().report();
-            h.assertTrue(report.contains("Рядом нечего копать: ни обсидиана, ни лавы"), "He does not say what is missing: " + report);
-            h.assertTrue(count(c, Items.WATER_BUCKET) == 1 && count(c, Items.OBSIDIAN) == 0, "He poured or mined: " + report);
-            for (BlockPos cell : wall) h.assertBlockPresent(Blocks.OBSIDIAN, cell);
+            h.assertTrue(count(c, Items.OBSIDIAN) == 2, "Not two obsidian from the wall he set down: " + report);
+            h.assertTrue(!report.contains("Рядом нечего копать"), "He refused over a wall of his own obsidian: " + report);
+            // The two blocks nearest him came off his own wall; the other two still stand.
+            long standing = wall.stream().filter(cell -> h.getBlockState(cell).is(Blocks.OBSIDIAN)).count();
+            h.assertTrue(standing == 2, "The wall was not mined twice: " + standing + " standing, " + report);
+            // The lava of his pond is his still: no water poured over it, his bucket in the bag.
             for (BlockPos cell : pond) h.assertBlockPresent(Blocks.LAVA, cell);
+            h.assertTrue(count(c, Items.WATER_BUCKET) == 1, "He poured his water over the pond: " + report);
         });
     }
 

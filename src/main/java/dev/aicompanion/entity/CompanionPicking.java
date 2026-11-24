@@ -99,6 +99,8 @@ final class CompanionPicking {
     private BlockPos target;
     /** The target is a block the player set down himself: the order named it, so it is his to take (no column of soil is the way's own). */
     private boolean ownTarget;
+    /** The rule for a target the player set down himself: his build keeps every block but one of the item the order named. */
+    private Predicate<BlockPos> ownSite = NOTHING_KEPT;
     /** The cells he takes the target from, his way to them and the walks so far. */
     private Set<BlockPos> stands = Set.of();
     /** A leaf order is the leaves of any kind: the species it named first, the leaves of any tree or hedge about after it (any #minecraft:leaves). */
@@ -140,6 +142,7 @@ final class CompanionPicking {
         leafSources = leafOrder ? allowed(level, CompanionPickable.leaves(level)) : List.of();
         sources = leafOrder ? leafSources : speciesSources;
         shearsGather = leafOrder || asked != null && level != null && CompanionPickable.shorn(level, asked);
+        ownSite = asked == null || level == null ? NOTHING_KEPT : keptUnlessOwn(c, level, asked);
         if (sources.isEmpty()) return CompanionActionResult.failed("Такое я с земли не собираю: " + id + ".");
         item = asked; wanted = count; before = leafOrder ? CompanionLeaves.carried(c) : w.items.countCarried(item); due = 0; settleAt = 0; retried = false;
         stone = sources.stream().allMatch(source -> CompanionPickable.stone(source.block()));
@@ -194,17 +197,44 @@ final class CompanionPicking {
     private static final Predicate<BlockPos> NOTHING_KEPT = pos -> false;
 
     /**
-     * The gather's rule for an explicit order, named for the search's line: a block the player set down himself is no reason to
-     * pass it over — «do not break the player's build» governs the soil a way lays under his feet, never the block the order
-     * names (the owner: he hung a pumpkin above his own base and «добудь тыкву» found nothing). What still keeps a block is lava
-     * beside it, a drop that would burn, and the rest of the gather's own rules.
+     * Whether the block is the item's own: it IS the item (a pumpkin, a lapis block, the cobblestone he hung) or a block a recipe
+     * of one makes it of (a lapis block for nine lapis, an iron block for ingots). Such a block is the order's target wherever it
+     * stands, the player's own build or not. A block that merely gives the item when broken — the poppy for red dye, the clay for
+     * clay balls — is a source, and the flowers by the player's chest stay his (the owner, 18.11).
      */
-    static CompanionWaySearch.Mine requested(CompanionEntity c, ServerLevel level) {
+    static boolean ownBlock(ServerLevel level, Item item, BlockState state) {
+        for (CompanionPickable.Source source : CompanionPickable.identity(level, item)) if (state.is(source.block())) return true;
+        for (CompanionPickable.Source source : CompanionPickable.storage(level, item)) if (state.is(source.block())) return true;
+        return false;
+    }
+
+    /** What the player's own build keeps: his site and his stone — but never a block of the item itself. */
+    private static Predicate<BlockPos> keptUnlessOwn(CompanionEntity c, ServerLevel level, Item item) {
+        Predicate<BlockPos> kept = kept(c, level);
+        return pos -> kept.test(pos) && !ownBlock(level, item, level.getBlockState(pos));
+    }
+
+    /**
+     * The gather's rule for an explicit order, named for the search's line: a block of the item itself is no reason to pass it
+     * over because the player set it down — «do not break the player's build» governs the soil a way lays under his feet and the
+     * flowers by his chest, never the target the order named (the owner: he hung a pumpkin above his own base and «добудь тыкву»
+     * found nothing). What still keeps a block is lava beside it, a drop that would burn, and the rest of the gather's own rules.
+     */
+    static CompanionWaySearch.Mine requested(CompanionEntity c, ServerLevel level, Item item) {
+        return requested(c, level, item, true);
+    }
+
+    /**
+     * The same rule for an item the chain only passes through ({@code takeOwn} false): the order named another thing, so the
+     * player's own build keeps its blocks — the flowers by his chest stay his for a dye made of the wild bush (the owner, 18.11).
+     */
+    static CompanionWaySearch.Mine requested(CompanionEntity c, ServerLevel level, Item item, boolean takeOwn) {
         Predicate<BlockPos> own = kept(c, level);
+        Predicate<BlockPos> keptRule = takeOwn ? keptUnlessOwn(c, level, item) : own;
         return new CompanionWaySearch.Mine() {
             @Override public String why(BlockPos pos) {
                 if (lavaBeside(level, pos)) return LAVA;
-                if (!grounded(c, level, pos) || !takes(level, pos, NOTHING_KEPT)) return OTHER;
+                if (!grounded(c, level, pos) || !takes(level, pos, keptRule)) return OTHER;
                 return null;
             }
             @Override public boolean own(BlockPos pos) { return own.test(pos); }
@@ -741,7 +771,7 @@ final class CompanionPicking {
         }
         if (due >= wanted) { down(); collect(level, got); return; }
         Predicate<BlockPos> site = kept(c, level);
-        if (target != null && (gives(sources, level.getBlockState(target)) == 0 || !takes(level, target, ownTarget ? NOTHING_KEPT : site) || lavaBeside(level, target))) { release(); ownTarget = false; }
+        if (target != null && (gives(sources, level.getBlockState(target)) == 0 || !takes(level, target, ownTarget ? ownSite : site) || lavaBeside(level, target))) { release(); ownTarget = false; }
         if (target == null) {
             boolean dug = soilAbout(level);
             if (leafOrder) {
@@ -757,9 +787,10 @@ final class CompanionPicking {
                 // A block of the kind he may take: from a stand he can walk to first, then up a column of his own soil.
                 // Stone dug by name: from the ground only, and not after the hollows it showed in had no way to them (#197).
                 if (!(stone && missed >= STONE_TRIES)) target = pick(level, site, speciesSources, dug && !stone, false);
-                // A block the player set down himself is the order's too: taken when none of the kind is his by the way's own
-                // rule — the pumpkin he hung above his base, the lapis block in the air (the owner, PATH7).
-                if (target == null) { target = pick(level, NOTHING_KEPT, speciesSources, dug && !stone, false); ownTarget = target != null; }
+                // A block of the item itself that the player set down is the order's too: taken when none of the kind is his by
+                // the way's own rule — the pumpkin he hung above his base, the lapis block in the air (the owner, PATH7). The
+                // flowers by his chest are sources, not the item, and stay his.
+                if (target == null) { target = pick(level, ownSite, speciesSources, dug && !stone, false); ownTarget = target != null; }
             }
         }
         if (target == null) {
