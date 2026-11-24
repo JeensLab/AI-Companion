@@ -136,7 +136,8 @@ public final class CompanionCourse {
         var owner = w.owner;
         long now = level.getGameTime();
         double along = along(owner.getX(), owner.getZ());
-        if (along > best + 1) { best = along; lastAdvance = now; failed = 0; }
+        if (along > best + 1) failed = 0;
+        if (along > best + 1) { best = along; lastAdvance = now; }
         if (blocks > 0 && along >= blocks - .5) { w.finish(true, "Прошли " + blocks + " " + blocksWord(blocks) + " на " + heading.name + "."); return; }
         if (now - began >= LIMIT_SECONDS * 20L) { w.finish(true, "Идём на " + heading.name + " уже двадцать минут, остановился передохнуть."); return; }
         // What was in sight at the start is not what was looked for: «пока не найдём воду» by a pond means another water.
