@@ -74,9 +74,10 @@ public final class CompanionLocalCommands {
             return "companion goal cancel";
         // Before «стоп»: «веди на север, пока не скажу стоп» is the walk, not a stop.
         String heading = CompanionHeadingCommands.parse(normalized, companionName);
-        // «Веди к крепости» with a marker the player named so is the walk to that marker (below), not the eye of ender's.
-        if (heading != null && !(heading.endsWith(" stronghold")
-                && CompanionPlaceSpeech.parse(text, companionName, markers, markersEnabled).kind() == CompanionPlaceSpeech.Kind.GO)) return heading;
+        // «Веди к крепости» with a marker the player named so is about that marker (below), not the eye of ender's walk;
+        // «брось око» is the eye's whatever the markers.
+        if (heading != null && !(heading.endsWith(" stronghold") && normalized.contains("крепост") && markersEnabled
+                && markers.stream().anyMatch(CompanionPlaceSpeech::fortress))) return heading;
         if (normalized.matches("(?sU).*\\b(стоп|отмена|отмени|остановись)\\b.*")
                 || normalized.contains("перестань рубить") || normalized.contains("прекрати рубить")
                 || normalized.contains("хватит рубить") || normalized.contains("брось рубить")

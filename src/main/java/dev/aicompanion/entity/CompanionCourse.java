@@ -118,7 +118,7 @@ public final class CompanionCourse {
      */
     private EyeOfEnder flying;
     private ItemEntity lying;
-    private boolean sinks, broke, picking;
+    private boolean sinks, broke, picking, claimed;
     private long fell;
     private int urged;
     private String closed;
@@ -224,22 +224,26 @@ public final class CompanionCourse {
      * falls, and the fallen one is found the tick it falls (a tick of the walk that came late found none where it had hung and
      * called it broken). It is taken only where it came to lie at hand: not out of water, not off a tree, not from a pit (game
      * 24.11: he went down a cave after one, thirty blocks, and the walk was over). The one thrown over the place goes into the
-     * ground and is left there. One he still cannot get to is given up, so the pickup does not turn him back for it again and again.
+     * ground and is left there. One he still cannot get to is given up (that one only: what else he has to pick up is his as
+     * before), so the pickup does not turn him back for it again and again. Told to stand («стой», «жди») he does not go for it.
      */
     void watch() {
         if (!(w.owner.level() instanceof ServerLevel level)) return;
         long now = level.getGameTime();
         if (flying != null && !flying.isAlive()) {
-            lying = sinks ? null : level.getEntitiesOfClass(ItemEntity.class, flying.getBoundingBox().inflate(2), item -> item.getItem().is(Items.ENDER_EYE)).stream().findFirst().orElse(null);
-            flying = null; broke = lying == null; picking = !broke; fell = now;
+            // The one born this tick where his hung: not a player's own eye that lies by.
+            lying = sinks ? null : level.getEntitiesOfClass(ItemEntity.class, flying.getBoundingBox().inflate(2), item -> item.getItem().is(Items.ENDER_EYE) && item.getAge() <= 2).stream().findFirst().orElse(null);
+            flying = null; broke = lying == null; picking = !broke; claimed = false; fell = now;
         }
-        if (lying != null && (!lying.isAlive() || lying.onGround() || lying.isInWater() || now - fell > LAND_TICKS)) {
-            if (lying.isAlive() && lying.onGround() && !lying.isInWater() && Math.abs(lying.getY() - w.owner.getY()) <= AT_HAND) w.owner.claimDrops(java.util.List.of(lying));
-            else picking = false;
-            lying = null;
-        }
-        if (lying == null && picking && !w.owner.hasPendingLoot()) picking = false;
-        if (picking && now - fell > PICK_TICKS) { w.owner.loot.shun(now + 20 * 300); picking = false; }
+        if (lying == null) return;
+        if (!claimed) {
+            if (lying.isAlive() && !lying.onGround() && !lying.isInWater() && now - fell <= LAND_TICKS) return;
+            claimed = lying.isAlive() && lying.onGround() && !lying.isInWater() && Math.abs(lying.getY() - w.owner.getY()) <= AT_HAND
+                    && (goal != null || w.owner.isFollowing());
+            if (claimed) w.owner.claimDrops(java.util.List.of(lying));
+        } else if (lying.isAlive() && now - fell > PICK_TICKS) { w.owner.loot.shun(lying.getUUID(), now + 20 * 300); claimed = false; }
+        // In his bag, left where it lies, or given up.
+        if (!claimed || !lying.isAlive()) { lying = null; picking = false; }
     }
 
     /** The eye's part of a tick; true when it took the tick (an eye in the air, his fallen one being picked up, a throw, the end). */

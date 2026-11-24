@@ -236,6 +236,10 @@ public final class CompanionCourseTests {
         h.assertTrue(noMarker.kind() == dev.aicompanion.client.CompanionPlaceSpeech.Kind.NONE, "Asked about a marker: " + noMarker.question());
         var marker = dev.aicompanion.client.CompanionPlaceSpeech.parse("Олег, веди к крепости", "Олег", java.util.List.of("крепость"), true);
         h.assertTrue(marker.kind() == dev.aicompanion.client.CompanionPlaceSpeech.Kind.GO, "The marker «крепость» is not walked to: " + marker.kind());
+        var which = dev.aicompanion.client.CompanionPlaceSpeech.parse("Олег, веди к крепости", "Олег", java.util.List.of("крепость2", "дача"), true);
+        h.assertTrue(which.kind() != dev.aicompanion.client.CompanionPlaceSpeech.Kind.NONE, "With a marker «крепость2» the eye is thrown, no question asked");
+        String thrown = CompanionLocalCommands.route("брось око", "Олег", java.util.List.of("крепость"), true);
+        h.assertTrue("companion work walk_heading 0 stronghold".equals(thrown), "«брось око» with a marker «крепость» routed as " + thrown);
         String toMarker = CompanionLocalCommands.route("Олег, веди к крепости", "Олег", java.util.List.of("крепость"), true);
         h.assertTrue(toMarker != null && toMarker.startsWith("companion place go"), "With a marker «крепость» routed as " + toMarker);
         var walk = CompanionPlanCodec.decode(message("{\"action\":\"walk_heading\",\"item\":\"northeast\"}")).actions();
