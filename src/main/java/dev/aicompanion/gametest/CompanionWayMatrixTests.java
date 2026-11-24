@@ -296,11 +296,11 @@ public final class CompanionWayMatrixTests {
         });
     }
 
-    /** The first height past the way's bound: twenty-one above is refused honestly, the block left and no column started. */
+    /** The first height past the way's bound: thirty-three above is refused honestly, the block left and no column started. */
     @GameTest(template = "tall_tree", timeoutTicks = 800)
     public static void aBlockTwentyOneAboveIsRefusedHonestly(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
-        BlockPos target = new BlockPos(16, FEET + 21, 16);
+        BlockPos target = new BlockPos(16, FEET + 33, 16);
         h.setBlock(target, Blocks.PUMPKIN);
         CompanionEntity c = spawn(h);
         c.setItem(1, new ItemStack(Items.DIRT, 24));

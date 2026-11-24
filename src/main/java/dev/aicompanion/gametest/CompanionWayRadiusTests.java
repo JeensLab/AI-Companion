@@ -61,13 +61,13 @@ public final class CompanionWayRadiusTests {
     public static void aBlockOutsideTheBoxIsSaidOutside(GameTestHelper h) {
         flat(h);
         CompanionEntity c = spawn(h);
-        BlockPos far = new BlockPos(HOME + 80, FEET + 2, HOME);
+        BlockPos far = new BlockPos(HOME + 65, FEET + 2, HOME);
         h.setBlock(far, Blocks.PUMPKIN);
         var seen = c.obtainAvailable("minecraft:pumpkin");
-        h.assertTrue(!seen.some(), "A pumpkin 80 across is in a sixty-four box: " + seen);
+        h.assertTrue(!seen.some(), "A pumpkin 65 across is in a sixty-four box: " + seen);
         List<String> lines = journal(c, "way_search").stream().filter(line -> line.contains("\"item\":\"minecraft:pumpkin\"")).toList();
         String outside = lines.stream().filter(line -> line.contains("\"outside\":")).findFirst().orElse(null);
-        h.assertTrue(outside != null, "No «за коробкой» line for the pumpkin 80 across: " + lines);
+        h.assertTrue(outside != null, "No «за коробкой» line for the pumpkin 65 across: " + lines);
         h.assertTrue(outside.contains("за коробкой 64 вбок есть 1"), "The line does not say the block is just outside the box: " + outside);
         h.assertBlockPresent(Blocks.PUMPKIN, far);
         h.succeed();

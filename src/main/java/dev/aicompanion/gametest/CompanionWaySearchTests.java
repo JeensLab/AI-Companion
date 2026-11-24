@@ -162,6 +162,8 @@ public final class CompanionWaySearchTests {
         BlockPos far = new BlockPos(SIDE - 1 - 1, FEET, SIDE - 1 - 1);
         h.setBlock(far, Blocks.PUMPKIN);
         CompanionEntity c = spawn(h, 2, 2);
+        // His own search cut to sixteen: the pumpkin across the arena is outside that box, and the line says so.
+        c.setSearchRadius(16);
         c.setItem(1, new ItemStack(Items.DIRT, 20));
         int[] before = snapshot(h);
         var future = sayModel(h, c, "добудь тыкву", obtainPlan("minecraft:pumpkin"));
@@ -214,7 +216,7 @@ public final class CompanionWaySearchTests {
             String line = lines.stream().filter(entry -> entry.contains("\"item\":\"minecraft:obsidian\"")
                     && entry.contains("\"chosen\":\"")).findFirst().orElse(null);
             h.assertTrue(line != null, "No way_search line naming the chosen obsidian: " + lines);
-            h.assertTrue(line.contains("\"radius\":" + Math.min(32, c.getSearchRadius())) && line.contains("\"depth\":32"),
+            h.assertTrue(line.contains("\"radius\":" + Math.min(64, c.getSearchRadius())) && line.contains("\"depth\":64"),
                     "The box is not named: " + line);
             h.assertTrue(line.contains("\"candidates\":") && line.contains("\"id\":\"minecraft:obsidian\"")
                     && line.contains("\"shape\":\"column\""), "The choice is not named: " + line);
@@ -229,6 +231,8 @@ public final class CompanionWaySearchTests {
         BlockPos far = new BlockPos(SIDE - 2, FEET, SIDE - 2);
         h.setBlock(far, Blocks.PUMPKIN);
         CompanionEntity c = spawn(h, 2, 2);
+        // His own search cut to sixteen: the pumpkin across the arena is outside that box, and the line says so.
+        c.setSearchRadius(16);
         c.setItem(1, new ItemStack(Items.DIRT, 20));
         var future = sayModel(h, c, "добудь тыкву", obtainPlan("minecraft:pumpkin"));
         h.succeedWhen(() -> {
