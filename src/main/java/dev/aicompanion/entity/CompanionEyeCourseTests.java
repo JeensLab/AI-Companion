@@ -94,6 +94,28 @@ public final class CompanionEyeCourseTests {
         });
     }
 
+    /**
+     * His only eye falls on the leaves of a tree, six blocks over his head: he does not go up for it (nor into water, nor down a pit:
+     * in game he went down a cave after one), it is not claimed as his pickup, and he says he could not take it.
+     */
+    @GameTest(template = "large_search", skyAccess = true, timeoutTicks = 800)
+    public static void anEyeFallenOutOfHandIsLeftWhereItLies(GameTestHelper h) {
+        CompanionEntity c = arena(h);
+        ServerPlayer player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT, true);
+        for (int x = START_X + 8; x <= START_X + 16; x++) for (int z = LINE - 4; z <= LINE + 4; z++) h.setBlock(new BlockPos(x, 8, z), leaves);
+        c.setItem(0, new ItemStack(Items.ENDER_EYE));
+        h.assertTrue(CompanionEvents.executeAction(player, "walk_heading", "stronghold", 0).success(), "Not accepted: " + c.getLastTaskResult());
+        long id = c.activeWorkId();
+        h.succeedWhen(() -> {
+            CompanionActionResult result = c.workResult(id);
+            h.assertTrue(result != null && !c.isWorking(), "Still walking: " + c.getLastTaskResult());
+            var lying = h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, c.getBoundingBox().inflate(40), item -> item.getItem().is(Items.ENDER_EYE));
+            h.assertTrue(lying.stream().noneMatch(item -> item.getPersistentData().contains("aicompanion:harvester")), "The eye on the leaves was claimed for his pickup");
+            h.assertTrue(!result.success() && result.message().contains(lying.isEmpty() ? "разбилось" : "подобрать не смог") && result.message().contains("восток"), result.message());
+        });
+    }
+
     /** A stone floor over bedrock with a bedrock border; he stands at (START_X, 2, LINE), the player behind him; the stronghold is FAR blocks east of where it is asked for. */
     private static CompanionEntity arena(GameTestHelper h) {
         CompanionCourse.stronghold = (level, from) -> level.dimension() == Level.OVERWORLD ? from.offset(FAR, 0, 0) : null;

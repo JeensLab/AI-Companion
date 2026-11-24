@@ -75,8 +75,10 @@ public final class CompanionCourse {
     private static final int OVER = 10;
     /** Times the rest of the way is laid anew from where a way round has brought him, before he says he cannot come nearer. */
     private static final int AIMS = 3;
-    /** His fallen eye is gone for at most this long before he walks on without it (it fell into water, up a tree). */
+    /** His fallen eye is gone for at most this long before he walks on without it (round a rock, behind a fence). */
     private static final int PICK_TICKS = 20 * 15;
+    /** His fallen eye is taken where it came to lie within this many blocks of his feet up or down, and has this long to land. */
+    private static final int AT_HAND = 4, LAND_TICKS = 20 * 5;
     /**
      * Where an eye of ender thrown here flies: the game's own search (EnderEyeItem.use). A GameTest, whose flat world has no
      * stronghold, puts its point here.
@@ -115,6 +117,7 @@ public final class CompanionCourse {
      * whether it broke, and whether he is picking it up.
      */
     private EyeOfEnder flying;
+    private ItemEntity lying;
     private boolean sinks, broke, picking;
     private long fell;
     private int urged;
@@ -218,20 +221,24 @@ public final class CompanionCourse {
 
     /**
      * Every tick, also while a fight or the pickup has his legs and after «стоп»: the eye in the air is his until it breaks or
-     * falls, and the fallen one is claimed the tick it falls (a tick of the walk that came late found none where it had hung and
-     * called it broken). The one thrown over the place goes into the ground and is left there. An eye he cannot get to (in
-     * water, up a tree) is given up, so the pickup does not turn him back for it again and again.
+     * falls, and the fallen one is found the tick it falls (a tick of the walk that came late found none where it had hung and
+     * called it broken). It is taken only where it came to lie at hand: not out of water, not off a tree, not from a pit (game
+     * 24.11: he went down a cave after one, thirty blocks, and the walk was over). The one thrown over the place goes into the
+     * ground and is left there. One he still cannot get to is given up, so the pickup does not turn him back for it again and again.
      */
     void watch() {
         if (!(w.owner.level() instanceof ServerLevel level)) return;
         long now = level.getGameTime();
         if (flying != null && !flying.isAlive()) {
-            var fallen = sinks ? java.util.List.<ItemEntity>of()
-                    : level.getEntitiesOfClass(ItemEntity.class, flying.getBoundingBox().inflate(2), item -> item.getItem().is(Items.ENDER_EYE));
-            w.owner.claimDrops(fallen);
-            flying = null; broke = fallen.isEmpty(); picking = !broke; fell = now;
+            lying = sinks ? null : level.getEntitiesOfClass(ItemEntity.class, flying.getBoundingBox().inflate(2), item -> item.getItem().is(Items.ENDER_EYE)).stream().findFirst().orElse(null);
+            flying = null; broke = lying == null; picking = !broke; fell = now;
         }
-        if (picking && !w.owner.hasPendingLoot()) picking = false;
+        if (lying != null && (!lying.isAlive() || lying.onGround() || lying.isInWater() || now - fell > LAND_TICKS)) {
+            if (lying.isAlive() && lying.onGround() && !lying.isInWater() && Math.abs(lying.getY() - w.owner.getY()) <= AT_HAND) w.owner.claimDrops(java.util.List.of(lying));
+            else picking = false;
+            lying = null;
+        }
+        if (lying == null && picking && !w.owner.hasPendingLoot()) picking = false;
         if (picking && now - fell > PICK_TICKS) { w.owner.loot.shun(now + 20 * 300); picking = false; }
     }
 
