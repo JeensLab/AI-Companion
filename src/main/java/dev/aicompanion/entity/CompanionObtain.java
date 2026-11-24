@@ -38,7 +38,7 @@ import java.util.Set;
  * lava and powder snow into an empty one. What only the Nether has (quartz, netherrack, basalt) is fetched there through a lit portal
  * (CompanionErrand): the preparation at home, nether_go, the digging at the exit portal, nether_back, and the rest of the chain at home.
  * What none of the skills can get
- * (an ink sac, a blaze rod…) is said before anything starts.
+ * (a nether star, a ghast's tear…) is said before anything starts.
  */
 public final class CompanionObtain {
     /** One step of the chain: an allowlisted action, its item and count. */
@@ -616,8 +616,9 @@ public final class CompanionObtain {
         return key != null && BuiltInRegistries.ITEM.getOptional(key).map(item -> new ItemStack(item).is(kind)).orElse(false);
     }
 
+    /** Not alone in the Nether on his errand: what only his player's kill brings does not fall there, and the rest of the plan is made at home. */
     private boolean hunted(Item item) {
-        return roams != null && !CompanionMobDrops.sources(level, item).isEmpty() && roamed.computeIfAbsent(item, roams::test);
+        return roams != null && (trip == null || !trip.away()) && !CompanionMobDrops.sources(level, item).isEmpty() && roamed.computeIfAbsent(item, roams::test);
     }
 
     /** A family, an ore's drop, an animal's, a block's that stands here or the wool of a sheep he has shears for: one of his skills gets it, whatever the bag holds. */
