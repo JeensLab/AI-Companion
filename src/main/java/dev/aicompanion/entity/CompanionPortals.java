@@ -58,7 +58,7 @@ final class CompanionPortals {
     CompanionActionResult enter(ServerLevel level) {
         BlockPos found = litNear(level, c.blockPosition(), WALKS_FROM);
         // An order into the Nether is an errand he comes back from; from the End there is no way back while the dragon lives.
-        if (found == null) return CompanionActionResult.failed(CompanionEndPortal.openNear(level, c.blockPosition(), END_NEAR)
+        if (found == null) return CompanionActionResult.failed(level.dimension() != net.minecraft.world.level.Level.END && CompanionEndPortal.openNear(level, c.blockPosition(), END_NEAR)
                 ? "В Край первым не пойду: оттуда не вернуться, пока жив дракон. Иди — я за тобой." : "Рядом нет портала в Незер.");
         c.setFollowing(true);
         goTo(level, found);

@@ -111,6 +111,36 @@ public final class CompanionEndPortalTests {
         });
     }
 
+    /**
+     * One frame is empty and the player stands in the ring: the last eye would open the portal under him. He is told to step out,
+     * the eye stays in the bag; with the player out of the ring the next order opens the portal.
+     */
+    @GameTest(template = "large_search", skyAccess = true, timeoutTicks = 1200)
+    public static void theLastEyeWaitsForThePlayerToLeaveTheRing(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        List<BlockPos> frames = ring(h, 1, false);
+        for (int i = 1; i < 12; i++) h.setBlock(frames.get(i), h.getBlockState(frames.get(i)).setValue(EndPortalFrameBlock.HAS_EYE, true));
+        companion.setItem(0, new ItemStack(Items.ENDER_EYE, 2));
+        ServerPlayer player = owner(h, companion);
+        BlockPos middle = h.absolutePos(new BlockPos(X + 2, 1, Z + 2)), away = h.absolutePos(new BlockPos(X - 6, 1, Z - 6));
+        player.teleportTo(middle.getX() + .5, middle.getY(), middle.getZ() + .5);
+        h.assertTrue(CompanionEvents.executeAction(player, "open_end_portal", "", 1).success(), "Order refused: " + companion.getLastTaskResult());
+        boolean[] again = {false};
+        h.succeedWhen(() -> {
+            done(h, companion);
+            if (!again[0]) {
+                h.assertTrue(!companion.didLastTaskSucceed() && companion.getLastTaskResult().contains("Выйди из кольца"), companion.getLastTaskResult());
+                h.assertTrue(eyes(h, frames) == 11 && portal(h, 1) == 0 && count(companion) == 2, "Eyes in the frames " + eyes(h, frames) + ", in the bag " + count(companion));
+                h.assertTrue(player.level() == h.getLevel(), "The player was sent to the End");
+                player.teleportTo(away.getX() + .5, away.getY(), away.getZ() + .5);
+                again[0] = true;
+                h.assertTrue(CompanionEvents.executeAction(player, "open_end_portal", "", 1).success(), "The second order refused: " + companion.getLastTaskResult());
+            }
+            h.assertTrue(companion.didLastTaskSucceed() && companion.getLastTaskResult().contains("Портал Края открыт"), companion.getLastTaskResult());
+            h.assertTrue(eyes(h, frames) == 12 && portal(h, 1) == 9 && count(companion) == 1, "Eyes in the frames " + eyes(h, frames) + ", in the bag " + count(companion));
+        });
+    }
+
     /** No frame near, no eye, a portal that is open already: said at the order, nothing is spent. The phrases and the plan's schema. */
     @GameTest(template = "large_search", skyAccess = true)
     public static void refusalsAndPhrases(GameTestHelper h) {
@@ -123,10 +153,13 @@ public final class CompanionEndPortalTests {
         companion.setItem(0, ItemStack.EMPTY);
         CompanionActionResult noEye = CompanionEvents.executeAction(player, "open_end_portal", "", 1);
         h.assertTrue(!noEye.success() && noEye.message().contains("Нет ока Края") && !companion.isWorking(), "With no eye: " + noEye.message());
-        // A portal of the End near and none of the Nether: «зайди в портал» is not an order to go to the End alone.
+        // Every frame with an eye and no portal (a ring set wrong): no success is said, no eye is spent.
         for (BlockPos frame : frames) h.setBlock(frame, h.getBlockState(frame).setValue(EndPortalFrameBlock.HAS_EYE, true));
-        for (int x = 1; x <= 3; x++) for (int z = 1; z <= 3; z++) h.setBlock(new BlockPos(X + x, 1, Z + z), Blocks.END_PORTAL);
         companion.setItem(0, new ItemStack(Items.ENDER_EYE, 3));
+        CompanionActionResult wrong = CompanionEvents.executeAction(player, "open_end_portal", "", 1);
+        h.assertTrue(!wrong.success() && wrong.message().contains("рамка собрана не так") && !companion.isWorking() && count(companion) == 3, "With a ring full of eyes and no portal: " + wrong.message());
+        // A portal of the End near and none of the Nether: «зайди в портал» is not an order to go to the End alone.
+        for (int x = 1; x <= 3; x++) for (int z = 1; z <= 3; z++) h.setBlock(new BlockPos(X + x, 1, Z + z), Blocks.END_PORTAL);
         CompanionActionResult open = CompanionEvents.executeAction(player, "open_end_portal", "", 1);
         h.assertTrue(open.success() && open.message().contains("уже открыт") && !companion.isWorking() && count(companion) == 3, "With the portal open: " + open.message());
         BlockPos beside = h.absolutePos(new BlockPos(X - 2, 1, Z + 2));
@@ -147,6 +180,10 @@ public final class CompanionEndPortalTests {
         boolean refused;
         try { CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"open_end_portal\",\"item\":\"minecraft:ender_eye\",\"count\":3}]")); refused = false; } catch (IllegalStateException invalid) { refused = true; }
         h.assertTrue(refused, "A count and an item are taken");
+        // What the player hears of the eyes that are missing is the number, not a general «не хватает материалов».
+        String heard = dev.aicompanion.client.CompanionDialogue.summarize(List.of(new dev.aicompanion.client.PlannedAction("open_end_portal", 0, 1)),
+                "План остановлен: Вставил 5 очей, не хватает ещё 5 — дай мне или скажи сделать.");
+        h.assertTrue(heard.contains("Вставил 5 очей") && heard.contains("ещё 5"), "The player hears: " + heard);
         h.succeed();
     }
 

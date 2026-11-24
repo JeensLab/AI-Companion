@@ -515,6 +515,8 @@ public final class CompanionDialogue {
         }
         if (last.contains("План остановлен:")) {
             String failure = dev.aicompanion.CompanionFailureMessages.primary(last);
+            // The End portal's eyes: how many he put in and how many are missing is the answer, not «не хватает материалов».
+            if (actions.stream().anyMatch(action -> "open_end_portal".equals(action.type()))) return speakable(failure);
             // A pen or a breeding order says its own facts (what stands, who is inside, what is missing), not a general excuse.
             if (actions.stream().anyMatch(action -> "build_pen".equals(action.type()) || "breed_animals".equals(action.type()) || "scout_traders".equals(action.type()) || "trade_items".equals(action.type()))) return speakable(failure);
             String partial = partialGather(actions, failure);

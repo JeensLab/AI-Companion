@@ -46,7 +46,9 @@ final class CompanionEndPortal {
         if (!(c.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Не могу без загруженного мира.");
         ring = ringNear(level, c.blockPosition());
         if (ring.isEmpty()) return CompanionActionResult.failed("Не вижу рядом рамки портала Края: подведи меня к ней.");
-        CompanionActionResult answer = open(level) || empty(level).isEmpty() ? CompanionActionResult.ok("Портал Края уже открыт.")
+        CompanionActionResult answer = open(level) ? CompanionActionResult.ok("Портал Края уже открыт.")
+                // A ring a player set wrong (a frame turned outward, one missing): full of eyes and no portal, no success of his.
+                : empty(level).isEmpty() ? CompanionActionResult.failed("Во всех рамках уже есть очи, а портал не открылся: рамка собрана не так.")
                 : w.items.countCarried(Items.ENDER_EYE) == 0 ? CompanionActionResult.failed("Нет ока Края: дай мне или скажи сделать.") : null;
         // No work of his begins: the ring is not kept, or the next portal built for the Nether would be taken for this one (active()).
         if (answer != null) ring = List.of();
@@ -102,6 +104,11 @@ final class CompanionEndPortal {
         CompanionEntity c = w.owner;
         List<BlockPos> left = empty(level);
         if (left.isEmpty() || w.items.countCarried(Items.ENDER_EYE) == 0) { finish(level, left.size()); return; }
+        // The last eye opens the portal under whoever stands in the ring: a player there is not sent to the End by his hand.
+        if (left.size() == 1 && level.players().stream().anyMatch(player -> !outside(player.blockPosition()) && Math.abs(player.getBlockY() - left.getFirst().getY()) <= 2)) {
+            w.finish(false, (put > 0 ? "Вставил " + eyes(put) + ", осталось" : "Осталось") + " последнее око. Выйди из кольца портала и скажи ещё раз: портал откроется прямо под тобой.");
+            return;
+        }
         if (frame == null || !left.contains(frame)) frame = left.stream().min(Comparator.comparingDouble(pos -> pos.distSqr(c.blockPosition()))).orElseThrow();
         if (outside(c.blockPosition()) && c.placement.reaches(frame, Blocks.END_PORTAL_FRAME)) { put(level); return; }
         // In the air no way is searched (as to a bench); in water he goes on.
