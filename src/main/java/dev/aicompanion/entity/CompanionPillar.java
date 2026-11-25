@@ -420,8 +420,7 @@ public final class CompanionPillar {
      * the support would stand half a cell over his feet: a jump of one and a half blocks, which he does not make.
      */
     private boolean footForColumn(BlockPos foot) {
-        double feet = CompanionMiningNavigation.standOr(owner, foot);
-        return feet >= foot.getY() - 0.07D && feet <= foot.getY() + 0.07D;
+        return CompanionMiningNavigation.standsAtCellBottom(owner, foot);
     }
 
     /** The fewest steps of soil a column to this block takes, at most {@code limit}: 0 when no column reaches it at all. */
@@ -541,6 +540,9 @@ public final class CompanionPillar {
     }
 
     private Column planColumn(ServerLevel level, BlockPos log) {
+        // The way is the player's switch («Строить себе путь»): off, no way's column is planned here either, and the block is left.
+        // A leaf crown keeps its own short climb: the switch is the way to a block, not the shears' way to a leaf.
+        if (way && !owner.buildWay()) { failureReason = "switch off"; return null; }
         int supply = soilCount();
         if (supply == 0) { failureReason = "Для подъёма не хватает земли в сумке"; return null; }
         if (cellWay) return planCellColumn(level, log, supply);

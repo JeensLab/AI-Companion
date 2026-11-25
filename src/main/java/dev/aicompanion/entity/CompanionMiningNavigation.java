@@ -255,9 +255,12 @@ final class CompanionMiningNavigation {
         } else {
             // The floor under the cell: a full block, a stair, a top slab, a path, a farm bed — its top is the floor he stands on.
             BlockState floor = level.getBlockState(pos.below());
-            double top = floor.getCollisionShape(level, pos.below()).max(Direction.Axis.Y);
-            if (top <= 0) return NO_STAND;
-            feet = pos.getY() - 1 + Math.min(top, 1.0);
+            if (floor.isFaceSturdy(level, pos.below(), Direction.UP)) feet = pos.getY();
+            else if (!floor.is(BlockTags.LEAVES) && !floor.is(BlockTags.LOGS)) {
+                double top = floor.getCollisionShape(level, pos.below()).max(Direction.Axis.Y);
+                if (top <= 0) return NO_STAND;
+                feet = pos.getY() - 1 + Math.min(top, 1.0);
+            } else return NO_STAND;
         }
         AABB body = new AABB(pos.getX() + .2, feet, pos.getZ() + .2, pos.getX() + .8, feet + owner.getBbHeight(), pos.getZ() + .8);
         return level.noCollision(owner, body) ? feet : NO_STAND;
@@ -268,10 +271,10 @@ final class CompanionMiningNavigation {
         return standHeight(owner, pos) != NO_STAND;
     }
 
-    /** The height his feet stand at in this cell, or the cell's own bottom when no body fits there (he is in the air over it). */
-    static double standOr(CompanionEntity owner, BlockPos pos) {
+    /** Whether a body stands in this cell with its feet on the cell's own floor (the ground, a stair's top, a path), not on a step above or below it. */
+    static boolean standsAtCellBottom(CompanionEntity owner, BlockPos pos) {
         double feet = standHeight(owner, pos);
-        return feet == NO_STAND ? pos.getY() : feet;
+        return feet != NO_STAND && feet >= pos.getY() - 0.07D && feet <= pos.getY() + 0.07D;
     }
 
     /**
