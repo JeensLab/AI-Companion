@@ -55,8 +55,6 @@ final class CompanionBridge {
     boolean isRecovering() { return recovering; }
     /** Whether the floor is laid from bank to bank: a walk across the gap, not one still being laid. */
     boolean isWalk() { return !recovering && plan != null && placed.size() >= plan.cells().size(); }
-    /** Whether the floor stands on because a drop it was the walk to is not in his bag yet. */
-    boolean isHeld() { return held; }
     boolean hasSupports() { return !placed.isEmpty(); }
     int supportCount() { return placed.size(); }
     String failureReason() { return failureReason; }
