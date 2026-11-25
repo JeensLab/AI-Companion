@@ -66,13 +66,6 @@ final class CompanionMiningNavigation {
     }
 
     /**
-     * Whether the drop of this block comes to rest somewhere he can fetch it: not in lava, not down a shaft. Where it rests is
-     * the pickup's own question (its chase walks or raises its own way to it); this is only «the drop is not lost», which is
-     * what a stand cell must know before the block is swung at.
-     */
-    static boolean dropSafe(net.minecraft.world.level.Level level, BlockPos block) { return dropRest(level, block) != null; }
-
-    /**
      * Like a player who mines for the drop (marathon 23.10: at the bottom of the ravine of game log 05cdd3a7 he mined twenty
      * stones from one spot and picked up none — they fell into crevices and shafts). From this stand the drop is touched where
      * it rests (a column aside, from his feet to two blocks over them), or it rests in a free cell beside him, level with his
@@ -94,14 +87,21 @@ final class CompanionMiningNavigation {
         if (!level.getFluidState(rest.above()).isEmpty()) return false;
         // And out again: a step up to a side cell (not across a corner, the game walks no corner it cannot cut) with room for
         // the body there (marathon 23.10, «долина»: a stone mined across the corner a block below his feet lay in its own hole,
-        // whose only side ways out had a block over the head; nobody got it).
+        // whose only side ways out had a block over the head; nobody got it). A stair's top or a slab is a floor to step out
+        // onto as the ground is: the old full-face rule sent him up a column beside a staircase he could walk down (25.11).
         for (Direction side : Direction.Plane.HORIZONTAL) {
             BlockPos out = rest.relative(side).above();
-            if (out.below().equals(block) || !level.getBlockState(out.below()).isFaceSturdy(level, out.below(), Direction.UP)) continue;
+            if (out.below().equals(block) || !holds(level, out.below())) continue;
             if ((out.equals(block) || level.getBlockState(out).getCollisionShape(level, out).isEmpty())
                     && (out.above().equals(block) || level.getBlockState(out.above()).getCollisionShape(level, out.above()).isEmpty())) return true;
         }
         return false;
+    }
+
+    /** Whether this block is a floor a body can step onto: its collision top is its cell's own top or a step of it (a stair, a slab, a path). */
+    private static boolean holds(net.minecraft.world.level.Level level, BlockPos pos) {
+        var shape = level.getBlockState(pos).getCollisionShape(level, pos);
+        return !shape.isEmpty() && shape.max(Direction.Axis.Y) > 0;
     }
 
     /** Cells he can stand on and work the block from: within reach, with the block in sight (or behind leaves, if those may go). */
