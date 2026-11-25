@@ -46,7 +46,7 @@ public final class CompanionAbilities {
                     List.of("WOOD", "STONE", "COAL", "IRON")),
             new Ability("делаю вещи и плавлю руду в печи", List.of("craft_item", "smelt_items"),
                     List.of("PICK", "COOK", "SMELT_IRON", "IRON_PICK", "COLLECT")),
-            new Ability("строю дом и загон для животных", List.of("build_house", "build_pen"), List.of()),
+            new Ability("строю дом, загон для животных и деревенские постройки", List.of("build_house", "build_pen"), List.of()),
             new Ability("делаю грядки, собираю урожай и компост", List.of("farm_crops", "harvest_crops", "use_bone_meal", "compost_items"), List.of()),
             new Ability("раскладываю вещи по сундукам и забираю их оттуда", List.of("store_items", "take_items", "sort_chests"),
                     List.of("STORE", "TAKE_WOOD", "TAKE_STONE")),
@@ -55,14 +55,16 @@ public final class CompanionAbilities {
             new Ability("бьюсь с монстрами и охраняю тебя", List.of("hunt_mobs", "protect", "stop_protect"), List.of()),
             new Ability("хожу за тобой, жду на месте и прихожу на зов", List.of("follow", "wait", "come", "wander", "stop"), List.of()),
             new Ability("запоминаю места и твой дом, вожу тебя туда", List.of("remember_place", "go_to_place", "set_home"), List.of()),
-            new Ability("строю портал, генератор булыжника и голема", List.of("build_portal", "build_cobble_gen", "build_golem"), List.of()),
+            new Ability("строю портал, генератор булыжника, голема и снеговика", List.of("build_portal", "build_cobble_gen", "build_golem"), List.of()),
+            // The Nether trip is no plan action of its own: obtain_item sends him through a lit portal nearby and back.
+            new Ability("хожу в Незер за кварцем и незераком, если рядом портал", List.of("obtain_item"), List.of()),
             new Ability("иду в нужную сторону и захожу в портал", List.of("walk_heading", "enter_portal"), List.of()),
             new Ability("веду к крепости Края по оку и вставляю очи в портал", List.of("walk_heading", "open_end_portal"), List.of()),
             new Ability("рыбачу удочкой", List.of("fish"), List.of()),
             new Ability("надеваю снаряжение, чиню вещи и снимаю чары", List.of("equip_item", "unequip_item", "repair_item", "disenchant_item"), List.of()),
-            new Ability("даю тебе вещи и ставлю сундук", List.of("give_items", "give_wood", "place_block"), List.of()),
+            new Ability("даю тебе вещи и ставлю блоки", List.of("give_items", "give_wood", "place_block"), List.of()),
             new Ability("ищу торговцев и торгую с ними", List.of("scout_traders", "trade_items"), List.of()),
-            new Ability("берусь за долгую цель и иду к ней, докуда смогу дойти", List.of("pursue_goal"), List.of()),
+            new Ability("берусь за долгую цель — броня, Незер, дракон — иду, докуда смогу", List.of("pursue_goal"), List.of()),
             new Ability("играю на гитаре у костра", List.of("campfire_song"), List.of()));
 
     private static final List<Ability> ALL = loaded(DECLARED);

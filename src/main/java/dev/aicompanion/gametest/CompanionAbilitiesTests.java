@@ -143,6 +143,21 @@ public final class CompanionAbilitiesTests {
     }
 
     @GameTest(template = "empty")
+    public static void theFeaturesOfTheReleasesAreNamedToo(GameTestHelper h) {
+        // Features a player asks for by name that shipped before 0.0.5: the snow golem beside the iron one (PR #193),
+        // the Nether trip for quartz and netherrack (PR #182), the village buildings (PR #165), and the dragon at the
+        // end of the long goal (PR #38). None of them is a new action — they are all already in the codec's list — so
+        // only the phrases can leave them out, and «что ты умеешь» would never mention them.
+        String all = String.join(" | ", CompanionAbilities.phrases());
+        h.assertTrue(all.contains("снеговик"), "the snow golem is not named: " + all);
+        h.assertTrue(all.contains("Незер"), "the Nether trip is not named: " + all);
+        h.assertTrue(all.contains("кузниц") || all.contains("постройк"), "the village buildings are not named: " + all);
+        CompanionAbilities.Ability goal = abilityWithAction("pursue_goal");
+        h.assertTrue(goal.phrase().contains("дракон"), "the long goal does not name the dragon: «" + goal.phrase() + "»");
+        h.succeed();
+    }
+
+    @GameTest(template = "empty")
     public static void phrasesPromiseOnlyWhatTheCodeDelivers(GameTestHelper h) {
         CompanionAbilities.Ability goal = abilityWithAction("pursue_goal");
         h.assertTrue(goal.phrase().contains("смогу"), "the long goal does not say how far he goes: «" + goal.phrase() + "»");
