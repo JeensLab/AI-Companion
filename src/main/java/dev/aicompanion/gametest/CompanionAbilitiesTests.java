@@ -110,9 +110,16 @@ public final class CompanionAbilitiesTests {
     public static void theAskInOtherWordsIsLocalAndOtherQuestionsGoToTheModel(GameTestHelper h) {
         for (String phrase : new String[]{"что ты умеешь", "что умеешь?", "Олег, что ты умеешь", "расскажи, что ты умеешь",
                 "перечисли свои умения", "назови 3 умения", "расскажи мне 10 своих умений",
-                "расскажи о своих умениях", "что ты умеешь, Олег"})
+                "расскажи о своих умениях", "что ты умеешь, Олег",
+                // The polite word in the middle and the word of repetition: the player says both, and neither is a question
+                // about a thing, so the model must not be asked (review 24.11).
+                "расскажи, пожалуйста, что ты умеешь", "расскажи пожалуйста свои умения", "что ты ещё умеешь",
+                "Олег, что ты еще умеешь?", "расскажи ещё, что ты умеешь"})
             h.assertTrue(CompanionLocalCommands.route(phrase, "Олег").startsWith("companion abilities "),
                     "«" + phrase + "» -> " + CompanionLocalCommands.route(phrase, "Олег"));
+        for (String phrase : new String[]{"расскажи, пожалуйста, что ты умеешь", "что ты ещё умеешь"})
+            h.assertTrue("companion abilities 5".equals(CompanionLocalCommands.route(phrase, "Олег")),
+                    "mnimar's phrasing «" + phrase + "» -> " + CompanionLocalCommands.route(phrase, "Олег"));
         for (String phrase : new String[]{"что ты умеешь делать с медью", "Ты умеешь строить дом?", "расскажи про лошадь"})
             h.assertTrue(CompanionLocalCommands.route(phrase, "Олег") == null,
                     "«" + phrase + "» -> " + CompanionLocalCommands.route(phrase, "Олег"));
