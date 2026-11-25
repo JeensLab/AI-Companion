@@ -1,6 +1,7 @@
 package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.entity.CompanionChunkTicket;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionMineSite;
 import dev.aicompanion.entity.CompanionSeal;
@@ -11,10 +12,13 @@ import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.ForcedChunksSavedData;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.neoforged.neoforge.common.world.chunk.ForcedChunkManager;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -23,7 +27,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/** The parts the diamond mine is built from: geometry, the mine record and sealing. The arena starts at Y -60. */
+/** The parts the diamond mine is built from: geometry, the mine record, sealing and the chunk ticket. The arena starts at Y -60. */
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionMineFoundationTests {
@@ -193,6 +197,32 @@ public final class CompanionMineFoundationTests {
         h.succeed();
     }
 
+    /** The ticket follows him across a chunk border and leaves no forced chunk behind when released. */
+    // Own batch: the level-wide check below must not see the tickets of expeditions running beside it.
+    @GameTest(template = "marathon_cave", batch = "mine_chunk_ticket")
+    public static void chunkTicketHoldsFollowsAndReleases(GameTestHelper h) {
+        var level = h.getLevel();
+        CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), 4, 2, 4);
+        var id = companion.getUUID();
+        try {
+            h.assertTrue(!CompanionChunkTicket.held(id), "Held before hold");
+            boolean baseline = ForcedChunkManager.hasForcedChunks(level);
+            h.assertTrue(CompanionChunkTicket.hold(companion) && CompanionChunkTicket.held(id), "Not held after hold");
+            h.assertTrue(companion.chunkPosition().equals(CompanionChunkTicket.heldChunk(id)), "Wrong chunk held");
+            h.assertTrue(ForcedChunkManager.hasForcedChunks(level) && entityTickets(level), "No forced chunk after hold");
+            companion.setPos(companion.getX() + 32, companion.getY(), companion.getZ());
+            CompanionChunkTicket.follow(companion);
+            h.assertTrue(CompanionChunkTicket.held(id) && companion.chunkPosition().equals(CompanionChunkTicket.heldChunk(id)), "Ticket did not follow to " + companion.chunkPosition());
+            CompanionChunkTicket.release(companion);
+            h.assertTrue(!CompanionChunkTicket.held(id), "Held after release");
+            // The GameTest harness force-loads its own arenas, so the level-wide answer is compared with the one before the hold.
+            h.assertTrue(!entityTickets(level) && ForcedChunkManager.hasForcedChunks(level) == baseline, "A forced chunk is left after release; before hold: " + baseline);
+        } finally {
+            CompanionChunkTicket.release(id);
+        }
+        h.succeed();
+    }
+
     /** An entrance is solid natural ground away from planks and chests. */
     @GameTest(template = "marathon_cave")
     public static void entranceKeepsAwayFromBuildings(GameTestHelper h) {
@@ -204,6 +234,11 @@ public final class CompanionMineFoundationTests {
         var moved = CompanionShaftPlan.chooseEntrance(level, spot, 8);
         h.assertTrue(moved != null && Math.max(Math.abs(moved.feet().getX() - spot.east().getX()), Math.abs(moved.feet().getZ() - spot.getZ())) > 2, "Entrance next to planks: " + moved);
         h.succeed();
+    }
+
+    private static boolean entityTickets(ServerLevel level) {
+        var data = level.getDataStorage().get(ForcedChunksSavedData.factory(), "chunks");
+        return data != null && !data.getEntityForcedChunks().isEmpty();
     }
 
     private static CompanionMineSite loadedFrom(CompoundTag tag) {
