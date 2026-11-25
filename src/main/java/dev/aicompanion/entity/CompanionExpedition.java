@@ -27,7 +27,6 @@ final class CompanionExpedition {
     private static final int NEAR_ENTRANCE = 16;
     /** Afloat in a pool under a cliff, the surface lies above the reach of the entrance search from his height: it is looked for this much higher, up to the limit. */
     private static final int POOL_RISE = 8, MAX_POOL_RISE = 32;
-    /** What the climb says of a way up it could not open (see {@link CompanionExpeditionClimb}). */
     /** Wear of the iron pickaxe kept for the diamond itself, and how near a diamond in sight must be to spend the rest on rock. */
     private static final int DIAMOND_IRON = 4, DIAMOND_SIGHT = 8;
     static final double ENTRANCE_NEAR = 1.0;
@@ -104,7 +103,7 @@ final class CompanionExpedition {
         w.deadline += given;
     }
 
-    /** Below the mine's entrance: there a monster comes up the tunnel and is fought off wherever the player is. */
+    /** Below the mine's entrance, or in a buried mine: the dark there is deeper than on the surface (the light check, the torches). */
     boolean underground() { return active && w.mine.exists() && (owner.getY() < w.mine.entrance().getY() - CompanionMineSite.UNDERGROUND_DEPTH || w.mine.buried()); }
 
     void begin(ServerLevel level) {
@@ -209,7 +208,6 @@ final class CompanionExpedition {
         plan = null;
         lead.clear();
         dig.reset();
-        w.mine.retreated();
         holdStep(CLIMB_TICKS + CompanionExpeditionRetreat.REST_TICKS);
         retreat.begin(why);
         stage = Stage.RETREAT;
@@ -595,7 +593,6 @@ final class CompanionExpedition {
 
     private void end(Ending ending, String why) {
         dig.flush();
-        if (ending == Ending.FOUND) w.mine.retreatsForgotten();
         String text = CompanionExpeditionReport.of(w, gained(), stairSteps) + " " + why + rememberStop(ending);
         if (ore.missedDiamond && gained() == 0) text += " Видел алмазную руду, но взять её нечем: нужна железная кирка.";
         if (unheld) text += " Чанки вокруг шахты удержать не удалось.";

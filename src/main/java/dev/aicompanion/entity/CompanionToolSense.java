@@ -111,8 +111,8 @@ final class CompanionToolSense {
         // Use the real detached recipe planner, including existing sticks and hand-held materials.
         // Optional upgrades never start another gathering/smelting order.
         // Like a player: iron and diamonds go into a pickaxe on their own, other tools from them only on request.
-        // Diamonds mined for the player are not material: while a diamond hunt runs they stay in the bag.
-        boolean diamondsWanted = owner.work.job == CompanionWork.Job.EXPEDITION || owner.work.job == CompanionWork.Job.ORE && owner.work.ore == CompanionOre.Kind.DIAMOND;
+        // Diamonds of a diamond expedition are not material: they stay in the bag.
+        boolean diamondsWanted = owner.work.job == CompanionWork.Job.EXPEDITION;
         for (String material : kind.equals("pickaxe") ? new String[]{"diamond", "iron", "stone", "wooden"} : new String[]{"stone", "wooden"}) {
             String id = "minecraft:" + material + "_" + kind;
             if (speed(id) <= best || blocked(id) || material.equals("wooden") && best > 0 || woodOnly && !material.equals("wooden") || diamondsWanted && material.equals("diamond")) continue;

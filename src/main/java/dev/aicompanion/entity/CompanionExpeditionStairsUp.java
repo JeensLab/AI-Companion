@@ -204,10 +204,10 @@ final class CompanionExpeditionStairsUp {
         return cells;
     }
 
-    /** The cell is shut by something other than liquid: the same look with every liquid round it left out. */
+    /** The cell is shut by something other than water: the same look with the water round it left out, lava still shuts it. */
     private boolean shutByBlock(ServerLevel level, BlockPos cell) {
         Set<BlockPos> liquid = new HashSet<>();
-        for (BlockPos pos : BlockPos.betweenClosed(cell.offset(-1, -1, -1), cell.offset(1, 1, 1))) if (!level.getFluidState(pos).isEmpty()) liquid.add(pos.immutable());
+        for (BlockPos pos : BlockPos.betweenClosed(cell.offset(-1, -1, -1), cell.offset(1, 1, 1))) if (level.getFluidState(pos).is(FluidTags.WATER)) liquid.add(pos.immutable());
         CompanionShaftPlan.Avoid dry = new CompanionShaftPlan.Avoid(Set.of(), (stand, d) -> false, c -> false, liquid);
         return CompanionShaftPlan.classify(level, from, cell, w.mine.seals(), dry, laying == null ? null : laying.cell).kind() == CompanionShaftPlan.Kind.BLOCKED;
     }
@@ -229,7 +229,7 @@ final class CompanionExpeditionStairsUp {
         if (kept.contains(cell)) return giveUp(level, "protected");
         CompanionShaftPlan.Avoid wading = new CompanionShaftPlan.Avoid(Set.of(), (stand, d) -> false, c -> false, waded(level, from));
         CompanionShaftPlan.Hazard flowed = CompanionShaftPlan.classify(level, from, cell, w.mine.seals(), wading, laying == null ? null : laying.cell);
-        // A block put into the cell by a player since it was planned (a chest, planks) shuts this side; liquid he cannot seal is for the wading, not a block.
+        // A block put into the cell by a player since it was planned (a chest, planks) shuts this side; water he cannot seal is for the wading, not a block.
         if (flowed.kind() == CompanionShaftPlan.Kind.BLOCKED && shutByBlock(level, cell)) return giveUp(level, "blocked");
         if (flowed.kind() == CompanionShaftPlan.Kind.SEAL) {
             CompanionSeal.Result placed = CompanionSeal.place(owner, flowed.cell());
@@ -272,7 +272,6 @@ final class CompanionExpeditionStairsUp {
 
     void reset() {
         // The stone held back mid-column falls where it was cut: a climb that ends or is begun again leaves none in the record.
-        // M2: when the expedition reuses this class, a reset must not drop the stone of another column it is still cutting.
         dig.flush();
         kept = Set.of();
         refused.clear();

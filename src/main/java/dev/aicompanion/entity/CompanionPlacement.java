@@ -5,20 +5,15 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.tags.BlockTags;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.Vec3;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
 
 final class CompanionPlacement {
     final CompanionEntity c;
@@ -73,7 +68,7 @@ final class CompanionPlacement {
         boolean fieldBench = plan.placeTable() && c.hasKnownCraftingTable();
         BlockPos tablePosition = plan.placeTable() ? findPlacementPosition(serverLevel, Blocks.CRAFTING_TABLE, c.blockPosition(), pos -> true) : null;
         if (plan.placeTable() && (tablePosition == null
-                || !setDown(serverLevel, tablePosition, Blocks.CRAFTING_TABLE.defaultBlockState()))) {
+                || !serverLevel.setBlock(tablePosition, Blocks.CRAFTING_TABLE.defaultBlockState(), 3))) {
             return recordActionResult(CompanionActionResult.failed("Не нашёл свободное безопасное место для верстака. Материалы сохранены."));
         }
         if (tablePosition != null) { c.rememberPlaced(tablePosition); benchSetDown = tablePosition.immutable(); markTemporaryInMine(serverLevel, tablePosition); }
@@ -122,7 +117,7 @@ final class CompanionPlacement {
         ItemStack item = findBlockItem(block);
         if (item == null) return recordActionResult(CompanionActionResult.failed("У меня в сумке нет блока " + blockId + "."));
         BlockPos position = findPlacementPosition(serverLevel, block, origin, allowed);
-        if (position == null || !setDown(serverLevel, position, block.defaultBlockState())) {
+        if (position == null || !serverLevel.setBlock(position, block.defaultBlockState(), 3)) {
             return recordActionResult(CompanionActionResult.failed("Не нашёл безопасное место для " + blockId + " рядом со мной."));
         }
         c.animateAction(1, position, item);
@@ -238,66 +233,15 @@ final class CompanionPlacement {
     private static boolean isWorkBlock(Block block) { return block == Blocks.CRAFTING_TABLE || block == Blocks.FURNACE; }
 
     /**
-     * The cell is in his mine: a cell of the mine or beside one (a niche cut in its wall), under the ground. Below the entrance that is so by
-     * the record alone; at its height the sky decides, for a mine started again under the ground has its entrance down among the tunnels.
+     * A bench or a furnace the expedition sets down in its mine is a temporary block of it: out of the way it comes up by hand when it shuts the
+     * walk. One set down on a player's order or for another work is not the expedition's to take.
      */
-    private boolean insideMine(ServerLevel level, Set<BlockPos> mine, BlockPos cell) {
-        if (cell.getY() >= c.mineSite().entrance().getY() && CompanionExpeditionRecord.underSky(level, cell.above())) return false;
-        if (mine.contains(cell)) return true;
-        for (Direction side : Direction.Plane.HORIZONTAL) if (mine.contains(cell.relative(side))) return true;
-        return false;
-    }
-
-    /** A bench or a furnace set down in his mine is a temporary block of it: out of the way it comes up by hand when it shuts the walk. */
     private void markTemporaryInMine(ServerLevel level, BlockPos cell) {
-        if (!c.mineSite().exists() || !isWorkBlock(level.getBlockState(cell).getBlock())) return;
-        if (insideMine(level, CompanionMineSite.mineCells(c.mineSite()), cell)) c.mineSite().temporary(cell);
-    }
-
-    /** Sets the block down; a cell of rock (the niche of the mine wall) is cut first, with its real drop. */
-    private boolean setDown(ServerLevel level, BlockPos pos, BlockState state) {
-        if (!level.getBlockState(pos).canBeReplaced()) {
-            c.animateAction(1, pos, ItemStack.EMPTY);
-            if (!level.destroyBlock(pos, true, c)) return false;
-        }
-        return level.setBlock(pos, state, 3);
-    }
-
-    /**
-     * Where he stands in his mine a bench or a furnace goes into a niche in the wall beside the way, never into a cell of it: the walk
-     * stays open. First the walls beside his feet, then the walls beside the cells of the way next to them; null when none can be cut.
-     * The rock is cut by the caller (see {@link #setDown}), so asking is free.
-     */
-    private BlockPos wallNiche(ServerLevel level, Set<BlockPos> mine, java.util.function.Predicate<BlockPos> allowed) {
-        BlockPos feet = c.blockPosition();
-        List<BlockPos> way = new ArrayList<>(List.of(feet));
-        for (Direction side : Direction.Plane.HORIZONTAL) if (mine.contains(feet.relative(side))) way.add(feet.relative(side));
-        for (BlockPos from : way) for (Direction side : Direction.Plane.HORIZONTAL) {
-            BlockPos niche = from.relative(side);
-            if (allowed.test(niche) && nicheFits(level, mine, niche, side)) return niche.immutable();
-        }
-        return null;
-    }
-
-    /** Plain rock or soil that no cell of the mine stands on or under, with solid rock behind it and no liquid or falling block that could pour in. */
-    private boolean nicheFits(ServerLevel level, Set<BlockPos> mine, BlockPos niche, Direction away) {
-        if (!level.hasChunkAt(niche) || !level.getWorldBorder().isWithinBounds(niche)) return false;
-        if (niche.equals(c.work.exitCell) || c.work.quarrySoil.contains(niche) || c.work.quarrySupports.contains(niche.below())) return false;
-        if (mine.contains(niche) || mine.contains(niche.above()) || mine.contains(niche.below())) return false;
-        if (c.mineSite().seals().contains(niche) || c.mineSite().temporary().contains(niche)) return false;
-        BlockState rock = level.getBlockState(niche);
-        if (!rock.is(BlockTags.BASE_STONE_OVERWORLD) && !rock.is(BlockTags.DIRT) || rock.hasBlockEntity() || rock.getDestroySpeed(level, niche) < 0) return false;
-        for (Direction side : Direction.values()) if (!level.getFluidState(niche.relative(side)).isEmpty()) return false;
-        BlockPos behind = niche.relative(away);
-        return !level.getBlockState(behind).getCollisionShape(level, behind).isEmpty()
-                && !(level.getBlockState(niche.above()).getBlock() instanceof net.minecraft.world.level.block.FallingBlock);
+        if (!c.work.expedition.active() || !isWorkBlock(level.getBlockState(cell).getBlock())) return;
+        if (CompanionMineSite.mineCells(c.mineSite()).contains(cell)) c.mineSite().temporary(cell);
     }
 
     BlockPos findPlacementPosition(ServerLevel serverLevel, Block block, BlockPos origin, java.util.function.Predicate<BlockPos> allowed) {
-        if (isWorkBlock(block) && c.mineSite().exists()) {
-            Set<BlockPos> mine = CompanionMineSite.mineCells(c.mineSite());
-            if (mine.contains(c.blockPosition()) && insideMine(serverLevel, mine, c.blockPosition())) return wallNiche(serverLevel, mine, allowed);
-        }
         BlockState state = block.defaultBlockState();
         int returnHeight = CompanionMiningNavigation.provenReturnHeight(c);
         BlockPos shutting = null;
@@ -315,8 +259,8 @@ final class CompanionPlacement {
                 // Not on a stump of the tree he fells: a bench set there for his axe took the dark oak's square (in game 09.11).
                 if (c.replant.awaits(pos)) continue;
                 if (!serverLevel.hasChunkAt(pos) || !serverLevel.getBlockState(pos).canBeReplaced()) continue;
-                // Not on top of a bench: in a one-cell pocket that block hides the bench from his eyes and he can no longer craft at it.
-                if (serverLevel.getBlockState(pos.below()).is(Blocks.CRAFTING_TABLE)) continue;
+                // Not on top of a bench in his mine: in a one-cell pocket that block hides the bench from his eyes and he can no longer craft at it.
+                if (c.work.expedition.active() && serverLevel.getBlockState(pos.below()).is(Blocks.CRAFTING_TABLE)) continue;
                 if (!serverLevel.getFluidState(pos).isEmpty() || !serverLevel.getWorldBorder().isWithinBounds(pos)) continue;
                 if (!serverLevel.getBlockState(pos.below()).isFaceSturdy(serverLevel, pos.below(), Direction.UP)) continue;
                 if (!state.canSurvive(serverLevel, pos)) continue;
@@ -330,8 +274,9 @@ final class CompanionPlacement {
                     for (Direction direction : Direction.Plane.HORIZONTAL) if (serverLevel.getBlockState(pos.relative(direction)).getBlock() instanceof net.minecraft.world.level.block.ChestBlock) adjacentChest = true;
                     if (adjacentChest) continue;
                 }
-                // Only what blocks building counts: a mob or the player, not an item lying in the cell (a stone on every step of his stairs).
-                if (c.getBoundingBox().intersects(new AABB(pos)) || !serverLevel.isUnobstructed(state, pos, CollisionContext.empty())) continue;
+                // In his mine only what blocks building counts: a mob or the player, not an item lying in the cell (a stone on every step of his stairs).
+                boolean inMine = c.work.expedition.active();
+                if (c.getBoundingBox().intersects(new AABB(pos)) || !serverLevel.getEntities(c, new AABB(pos), entity -> !(inMine && entity instanceof ItemEntity)).isEmpty()) continue;
                 if (!CompanionMiningNavigation.preservesReturnOnPlacement(c, pos, returnHeight)) {
                     if (takenUpAtOnce && shutting == null) shutting = pos.immutable();
                     continue;

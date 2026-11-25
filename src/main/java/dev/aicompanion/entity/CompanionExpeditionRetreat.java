@@ -17,6 +17,8 @@ final class CompanionExpeditionRetreat {
 
     /** The fit health he rests up to, the longest rest and the ticks a plug may take. */
     static final float FIT = 18;
+    /** How far off his way a blow may have pulled him for the way up to still be his way. */
+    static final double FLEE_REACH = 24;
     static final int REST_TICKS = 20 * 240, PLUG_TRIES = 60;
     /** Why a rest does not heal him, as the report says it: the goal reads it to wait for food rather than count the retreat against its stops. */
     static final String NO_FOOD = "нет еды, а без сытости рана сама не заживает";
@@ -45,13 +47,26 @@ final class CompanionExpeditionRetreat {
         CompanionMineSite mine = w.mine;
         if (!mine.exists()) return;
         List<BlockPos> way = CompanionMineSite.wayUp(mine);
-        int at = CompanionExpeditionRecord.nearest(way, owner.blockPosition(), CompanionMineSite.NEAR_STAND);
+        // Under blows he may be far off his way (a fight pulled him aside): then the nearest cell within FLEE_REACH, not within a stand's reach.
+        BlockPos pos = owner.blockPosition();
+        int at = CompanionExpeditionDanger.hurtByMobLately(owner) ? closest(way, pos) : CompanionExpeditionRecord.nearest(way, pos, CompanionMineSite.NEAR_STAND);
         plugCell = mine.stands().size() >= 2 ? mine.stands().get(1) : null;
         int hold = plugCell == null ? way.size() - 1 : way.size() - 2;
         if (at < 0 || at > hold) { plugCell = null; return; }
         climbed = at < way.size() - 1;
         walk.set(way.subList(0, hold + 1), at);
         phase = Phase.CLIMB;
+    }
+
+    /** The cell of the way nearest to him within FLEE_REACH, or -1. */
+    static int closest(List<BlockPos> way, BlockPos here) {
+        int closest = -1;
+        double best = FLEE_REACH * FLEE_REACH;
+        for (int i = 0; i < way.size(); i++) {
+            double d = way.get(i).distSqr(here);
+            if (d < best) { closest = i; best = d; }
+        }
+        return closest;
     }
 
     Result tick(ServerLevel level) {

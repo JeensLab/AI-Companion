@@ -136,7 +136,7 @@ final class CompanionExpeditionDig {
         int room = SEAL_RESERVE - CompanionSeal.available(owner) - w.mine.heldCount();
         int toolRoom = CompanionExpeditionSupply.STONE_RESERVE - CompanionTools.count(owner, ItemTags.STONE_TOOL_MATERIALS);
         for (ItemStack stack : drops) {
-            boolean forTools = stack.is(ItemTags.STONE_TOOL_MATERIALS) && toolRoom > 0;
+            boolean forTools = w.expedition.active() && stack.is(ItemTags.STONE_TOOL_MATERIALS) && toolRoom > 0;
             if ((forTools || CompanionSeal.seals(stack) && room > 0) && w.items.canStore(List.of(stack))) {
                 kept.add(stack);
                 room -= stack.getCount();

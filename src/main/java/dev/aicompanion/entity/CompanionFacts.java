@@ -50,7 +50,7 @@ public final class CompanionFacts {
         return carried.entrySet().stream().filter(entry -> kind.test(entry.getKey())).mapToInt(Map.Entry::getValue).sum();
     }
 
-    /** He stands down in his mine, say after a reload: what is made on the surface waits for the next time he is up. */
+    /** He stands down in his mine: a climb to the surface that ended there did not bring him up. */
     public boolean belowMine() { return belowMine; }
 
     /** The armour piece in the slot, or null. */
