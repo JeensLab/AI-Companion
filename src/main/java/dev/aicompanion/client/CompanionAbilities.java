@@ -15,7 +15,8 @@ import java.util.Set;
  * an ability. A new plan action or deed without a phrase fails the abilities GameTest, naming the constant (in the game
  * it is only logged); a phrase about something the code has no action or deed for fails the same way, so the list cannot drift
  * from the code. «Что ты умеешь» and «расскажи 10 умений» are answered from it without a model request, as a random
- * selection drawn without repeats, so two asks do not read back the same five (idea 4NTZD, issue #105).
+ as a random selection drawn without repeats that says how many of the list it shows, so two asks do not read back the same
+  * five and five lines are not taken for all of them (idea 4NTZD, issue #105).
  *
  * Scope: everything the player can ASK him to do — the plan codec's actions and the autonomy deeds
  * ({@link CompanionAutonomy.Deed}). The direct commands only reword those same actions, switch the deeds on and off, or
@@ -52,8 +53,9 @@ public final class CompanionAbilities {
                     List.of("STORE", "TAKE_WOOD", "TAKE_STONE")),
             new Ability("развожу животных и охочусь на них", List.of("breed_animals", "hunt_animals"), List.of("HUNT")),
             new Ability("стригу овец, дою коров, собираю яйца и мёд", List.of("obtain_item"), List.of()),
-            new Ability("бьюсь с монстрами и охраняю тебя", List.of("hunt_mobs", "protect", "stop_protect"), List.of()),
-            new Ability("хожу за тобой, жду на месте и прихожу на зов", List.of("follow", "wait", "come", "wander", "stop"), List.of()),
+            new Ability("бьюсь с монстрами и охраняю тебя или твоё место", List.of("hunt_mobs", "protect", "stop_protect"), List.of()),
+            new Ability("хожу за тобой, жду, гуляю и прихожу на зов", List.of("follow", "wait", "come", "wander", "stop"), List.of()),
+            new Ability("подбираю то, что лежит рядом", List.of("pick_up"), List.of()),
             new Ability("запоминаю места и твой дом, вожу тебя туда", List.of("remember_place", "go_to_place", "set_home"), List.of()),
             new Ability("строю портал, генератор булыжника, голема и снеговика", List.of("build_portal", "build_cobble_gen", "build_golem"), List.of()),
             // The Nether trip is no plan action of its own: obtain_item sends him through a lit portal nearby and back.
@@ -98,7 +100,8 @@ public final class CompanionAbilities {
      */
     public static String answer(String command, Random random) {
         List<Ability> shown = selection(count(command), random);
-        StringBuilder text = new StringBuilder("Умею вот что: ");
+        // The five are a sample: the header says how many there are, so the player does not take it for the whole list.
+        StringBuilder text = new StringBuilder("Умею вот что (" + shown.size() + " из " + ALL.size() + "): ");
         for (int i = 0; i < shown.size(); i++) {
             if (i > 0) text.append("; ");
             text.append(i + 1).append(") ").append(shown.get(i).phrase());

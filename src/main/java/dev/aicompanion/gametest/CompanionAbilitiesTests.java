@@ -37,6 +37,9 @@ public final class CompanionAbilitiesTests {
         for (String item : items)
             h.assertTrue(CompanionAbilities.phrases().contains(item), "not a registered ability: «" + item + "» in " + answer);
         h.assertTrue(!answer.contains("лета"), "the answer promises flying: " + answer);
+        // The five are a sample of a longer list: the player hears how many there are, not that these five are all.
+        h.assertTrue(answer.contains("из " + CompanionAbilities.size()),
+                "the answer does not say how many abilities there are: " + answer);
         h.succeed();
     }
 
@@ -154,6 +157,12 @@ public final class CompanionAbilitiesTests {
         h.assertTrue(all.contains("кузниц") || all.contains("постройк"), "the village buildings are not named: " + all);
         CompanionAbilities.Ability goal = abilityWithAction("pursue_goal");
         h.assertTrue(goal.phrase().contains("дракон"), "the long goal does not name the dragon: «" + goal.phrase() + "»");
+        // «Охраняй дачу» is go_to_place + protect, and the combat phrase named only the player.
+        CompanionAbilities.Ability guard = abilityWithAction("protect");
+        h.assertTrue(guard.phrase().contains("место"), "the guard of a named place is not named: «" + guard.phrase() + "»");
+        // «Подбери» is pick_up, an order of its own; «погуляй» is wander, not the follow the phrase named.
+        h.assertTrue(all.contains("подбираю"), "picking up what lies nearby is not named: " + all);
+        h.assertTrue(all.contains("гуляю"), "walking about on his own is not named: " + all);
         h.succeed();
     }
 
