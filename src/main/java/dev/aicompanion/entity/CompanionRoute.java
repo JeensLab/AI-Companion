@@ -255,7 +255,7 @@ public final class CompanionRoute {
         if (w.path != null && farPaths.contains(w.path)) setFar(w.path);
         double distance = w.owner.distanceToSqr(block.getCenter());
         if (distance <= 3.8D * 3.8D && CompanionMiningNavigation.visible(w.owner, w.owner.getEyePosition(), block)
-                && (!forTheDrop || CompanionMiningNavigation.dropCollectable(level, block, w.owner.blockPosition()))) { w.owner.getNavigation().stop(); told("ARRIVED", far ? "far" : "near"); return 1; }
+                && (!forTheDrop || CompanionMiningNavigation.dropSafe(level, block))) { w.owner.getNavigation().stop(); told("ARRIVED", far ? "far" : "near"); return 1; }
         // The way's own column stands where the block is in a swing: the swing goes on from it even where the drop lies below —
         // the walk to the drop comes after the block is broken, never between two swings (PATH7, #105: an ore in the air was
         // swung at one tick and reset the next, until the watchdog).
@@ -310,7 +310,12 @@ public final class CompanionRoute {
         if (pillar.isWayActive()) return tickWay(pillar, block);
         // A floor across the gap already being laid is ticked before anything else: its plan stands while it is his.
         if (owner.temporaryBridge.isActive() || owner.temporaryBridge.isRecovering()) return tickBridge(block);
-        if (pillar.isActive()) return noWay(block, "a leaf crown's column stands");
+        if (pillar.isActive()) {
+            // A column of the way that failed is still coming down (its soil with it): the next answer waits for it, rather than
+            // a refusal over a column that stands there yet.
+            if (pillar.isRecovering()) return 0;
+            return noWay(block, "a leaf crown's column stands");
+        }
         // Between two steps before a way is raised (a hop on the way to it): the block is not given up, asked again next tick.
         if (!owner.onGround()) return 0;
         // The one geometry answer, logged as the decision the player can read: up a column, or a floor across a gap. It asks
@@ -339,7 +344,17 @@ public final class CompanionRoute {
 
     private int tickWay(CompanionPillar pillar, BlockPos block) {
         CompanionPillar.Outcome outcome = pillar.tickToward(block, false, CompanionPillar.WAY_SUPPORTS);
-        if (outcome == CompanionPillar.Outcome.FAILED) return noWay(block, "column failed: " + pillar.failureReason());
+        if (outcome == CompanionPillar.Outcome.FAILED) {
+            String why = pillar.failureReason();
+            // Every foot of the column failed: a floor across the gap before it is the other way the same geometry answer gives
+            // (PATH7: «мост через провал»), never a refusal while one can still be laid. It waits for the failed column's soil.
+            if (!pillar.isActive()) {
+                CompanionReach.BridgePlan plan = CompanionReach.bridge(w.owner, (ServerLevel) w.owner.level(), block, 3.5D, true,
+                        CompanionPillar.WAY_SUPPORTS, false);
+                if (plan != null && plan.length() > 0) return tickBridge(block);
+            }
+            return noWay(block, "column failed: " + why);
+        }
         return outcome == CompanionPillar.Outcome.READY ? 1 : 0;
     }
 

@@ -274,18 +274,33 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
                 need = action.count() - dev.aicompanion.entity.CompanionLeaves.carried(companion) + companion.carriedCount(item);
                 check = dev.aicompanion.entity.CompanionLeaves.FAMILY;
             }
+            // An order is done when the thing is in the bag, in the count asked — never because a block of it still stands in the
+            // world. The bag answers before any search and any plan: a block mined and its drop picked up leaves no block to find,
+            // and a search finding none must not call a met order a failure (the owner, 25.11).
+            int have = companion.carriedCount(item);
+            if (have >= action.count())
+                return new CompanionPlanRunner.Expansion(java.util.List.of(new PlannedAction("verify_item", 0, action.count(), check)), null);
+            // What lies about him of the thing is taken before anything is made or dug for it — the same rule a block lying there
+            // follows: a drop still waiting is fetched by the pickup, and the bag is checked after it. A re-search that finds no
+            // block of the item is no reason to give the order up while its drop lies on the ground.
+            int lying = 0;
+            if (!leafOrder) lying = dev.aicompanion.entity.CompanionPickUp.lying(level, companion.blockPosition(), companion.pickUpRadius(),
+                    item, companion.getOwnerId());
             // An order for more than the world gives promises only what is there (PATH7: «добудь обсидиан» is a portal frame's
             // ten, and one block above him is one): the same reach answer the work asks, so the phrasing cannot change it.
             CompanionReach.Available world = leafOrder ? null : companion.obtainAvailable(item);
             var plan = companion.obtainPlan(item, need);
-            if (plan.refused()) return new CompanionPlanRunner.Expansion(java.util.List.of(), plan.refusal());
+            if (plan.refused() && lying == 0) return new CompanionPlanRunner.Expansion(java.util.List.of(), plan.refusal());
             // The promise is what the chain really produces (one block of his own lava is one obsidian), never more. The errand's
             // own walk to the portal and back is no produce: the last step that gives the item is counted.
             int produced = 0;
             for (var step : plan.steps())
                 if (!step.type().equals("nether_go") && !step.type().equals("nether_back")) produced = step.count();
-            int promised = world == null ? need : Math.min(need, companion.carriedCount(item) + produced);
+            int promised = world == null ? need : Math.min(need, have + lying + produced);
             java.util.List<PlannedAction> steps = new java.util.ArrayList<>();
+            // What lies about him of the thing goes first: the pickup claims it and walks to it, and the plan's own work is made
+            // from the bag it left (a replan after the pickup drops the step it made needless).
+            if (lying > 0) steps.add(new PlannedAction("pick_up", 0, Math.clamp(need - have, 1, 64), item));
             // A crown above every stand cell is climbed on soil he digs himself: the dirt for the column comes first, and
             // «дай земли» is left for a world with no soil about him (the owner, 18.11: «до листвы не достану — дай земли»
             // over dirt he could dig). Sized for the leaves the order will come at, not only the first: a stair that serves part

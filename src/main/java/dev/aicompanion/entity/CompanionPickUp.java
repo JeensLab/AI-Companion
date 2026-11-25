@@ -255,6 +255,16 @@ public final class CompanionPickUp {
     }
 
     /**
+     * How many of this item lie on the ground about a point, as the order's own pickup would take them: the count a drop still
+     * waiting holds, asked by a plan before it decides the world has nothing left (the owner, 25.11: the block was gone and its
+     * drop lay there, and the order was given up as a failure).
+     */
+    public static int lying(ServerLevel level, BlockPos center, int radius, String item, java.util.UUID playerId) {
+        Meaning meaning = of(item);
+        return meaning == null ? 0 : total(find(level, center, radius, meaning, ALL_AT_ONCE, playerId));
+    }
+
+    /**
      * «Лежит рядом: minecraft:cobblestone (3), minecraft:chicken (1).» — what really lies around, for the honest answer
      * when nothing matched. The radius is the scan's own: the answer never names a drop the order would not have looked
      * at. The ids are the game's; the client says their names in the player's language, so a modded drop is named by its

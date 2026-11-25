@@ -108,7 +108,10 @@ public final class CompanionReach {
             boolean solid = !level.getBlockState(block).getCollisionShape(level, block).isEmpty();
             if (solid) {
                 stands.addAll(CompanionMiningNavigation.standCells(c, block, reach, false, true));
-                if (forTheDrop) stands.removeIf(stand -> !CompanionMiningNavigation.dropCollectable(level, block, stand));
+                // The drop is another question: where it comes to rest, the pickup walks or raises its own way to it. Only a drop
+                // that is lost (lava, a shaft) keeps a stand cell from being a way — a block a staircase reaches is taken from it,
+                // never built up to because the drop falls to the ground below (the owner's staircase, 25.11).
+                if (forTheDrop && !CompanionMiningNavigation.dropSafe(level, block)) stands.clear();
             } else {
                 for (int dy = -2; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
                     BlockPos cell = block.offset(dx, dy, dz);

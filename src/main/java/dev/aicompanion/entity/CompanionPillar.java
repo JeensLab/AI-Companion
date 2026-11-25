@@ -82,6 +82,15 @@ public final class CompanionPillar {
     /** Ticks the column could not be planned for want of a search (he is in the air): waited for, bounded. */
     private int unplannedTicks;
     private static final int UNPLANNED_TICKS = 40;
+    /** The feet a column to this target could stand at, best first: a foot that fails is traded for the next one, and only every
+     *  one of them failing gives the column up (the owner, 25.11: it refused over one foot while other cells were about). */
+    private List<Column> feet = new ArrayList<>();
+    /** How many of those feet were asked of the route: each answer is a search, and a search is not free. */
+    private int feetAsked;
+    /** The target those feet belong to: its candidates are kept while they are asked, a few per tick. */
+    private BlockPos feetTarget;
+    /** A foot could not be answered this tick (the cells went elsewhere, or no search came about): not a failure, ask again. */
+    private boolean footUnknown;
     private boolean recovering;
     /** The steps this climb may take: a leaf crown's six, a way up's sixteen (set by tickToward). */
     private int limit = LEAF_SUPPORTS;
@@ -159,7 +168,7 @@ public final class CompanionPillar {
             // A column it could not search to for want of this tick's cells is not one without a way: planned again next tick.
             // Nor is one whose search did not run at all (he is in the air, in a jump): waited for, but not for ever.
             if (column == null) {
-                boolean notKnown = owner.work.route.busyAnswers() != busy || owner.work.route.notSearchedAnswers() != unknown;
+                boolean notKnown = footUnknown || owner.work.route.busyAnswers() != busy || owner.work.route.notSearchedAnswers() != unknown;
                 if (notKnown && ++unplannedTicks <= UNPLANNED_TICKS) return Outcome.WORKING;
                 return Outcome.FAILED;
             }
@@ -172,8 +181,8 @@ public final class CompanionPillar {
         }
 
         int needed = stepsTo(block, base);
-        if (needed < 0) return fail("С этой опоры не достану до соседней ветки");
-        if (needed > limit) return fail("Верхушка слишком высокая для короткой опоры");
+        if (needed < 0) return footFailed(level, block, "с этой опоры не достану");
+        if (needed > limit) return footFailed(level, block, "верхушка слишком высокая для короткой опоры");
         if (soilCount() < Math.max(0, needed - supports.size())) return fail("Для подъёма не хватает земли в сумке");
         if (++attemptTicks > attemptBudget() || !level.hasChunkAt(base)) return fail("Не получилось подняться, поищу дерево пониже");
         if (way && attemptTicks % 40 == 0) dev.aicompanion.CompanionDiagnostics.event(owner.diagnosticTrace(), "way_climb", "entity", owner.getUUID(),
@@ -202,7 +211,7 @@ public final class CompanionPillar {
                     approach = owner.work.route.toCells(Set.of(base));
                     if (approach == null && owner.work.route.busyAnswers() != busy) return Outcome.WORKING;
                 }
-                if (approach == null || !approach.canReach()) return fail("Под опорой нет безопасного места");
+                if (approach == null || !approach.canReach()) return footFailed(level, block, "к опоре не пройти");
                 CompanionMiningNavigation.walk(owner, approach);
             } else {
                 owner.getNavigation().stop();
@@ -220,11 +229,11 @@ public final class CompanionPillar {
         // A branch of the same crown hanging over the column is not an obstacle: it is the next log to chop from here.
         BlockPos overhead = wood ? reachableLogAbove(level, placement) : null;
         if (overhead != null) { branch = overhead; return Outcome.WORKING; }
-        if (!clearJumpSpace(level, placement)) return fail("Над опорой не хватает свободного места");
+        if (!clearJumpSpace(level, placement)) return footFailed(level, block, "над опорой не хватает свободного места");
         // Clearing one leaf at a time is visible; wait until the next tick before jumping.
         if (!jumpSpaceClear(level, placement)) return Outcome.WORKING;
         if (!prepareSoil()) return fail("Не могу взять землю в руку, проверь место в моей сумке");
-        if (!safeFoundation(level, placement.below())) return fail("Под опорой нет безопасного места");
+        if (!CompanionMiningNavigation.standable(owner, placement)) return footFailed(level, block, "под опорой нет безопасного места");
         Vec3 motion = owner.getDeltaMovement();
         owner.setDeltaMovement(motion.x * 0.15D, motion.y, motion.z * 0.15D);
         jumpCell = placement.immutable();
@@ -405,6 +414,16 @@ public final class CompanionPillar {
         return longest;
     }
 
+    /**
+     * Whether a column can stand at this cell: its floor's top is the cell's own bottom (the ground, a stair's top, a path), so
+     * the first support goes into the cell he stands in and one jump puts him on it. A bottom slab's top is half a cell up, and
+     * the support would stand half a cell over his feet: a jump of one and a half blocks, which he does not make.
+     */
+    private boolean footForColumn(BlockPos foot) {
+        double feet = CompanionMiningNavigation.standOr(owner, foot);
+        return feet >= foot.getY() - 0.07D && feet <= foot.getY() + 0.07D;
+    }
+
     /** The fewest steps of soil a column to this block takes, at most {@code limit}: 0 when no column reaches it at all. */
     public int leastSteps(BlockPos block, int limit) {
         int least = Integer.MAX_VALUE;
@@ -423,7 +442,7 @@ public final class CompanionPillar {
         int least = 0;
         for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = -2; dy <= 2; dy++) {
             BlockPos feet = new BlockPos(block.getX() + dx, origin.getY() + dy, block.getZ() + dz);
-            if (feet.distSqr(origin) > (double) COLUMN_WALK * COLUMN_WALK || !safeFoundation(level, feet.below())) continue;
+            if (feet.distSqr(origin) > (double) COLUMN_WALK * COLUMN_WALK || !footForColumn(feet)) continue;
             int steps = requiredSteps(block, feet);
             if (steps <= 0 || steps > limit || !columnClearable(level, feet, steps)) continue;
             if (least == 0 || steps < least) least = steps;
@@ -472,7 +491,7 @@ public final class CompanionPillar {
         if (!(owner.level() instanceof ServerLevel level) || !level.hasChunkAt(cell)) return cells;
         for (int down = 1; down <= limit + 2; down++) for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
             BlockPos feet = cell.offset(dx, -down, dz);
-            if (!safeFoundation(level, feet.below())) continue;
+            if (!footForColumn(feet)) continue;
             int steps = stepsToCell(cell, feet);
             if (steps <= 0 || steps > limit || !columnClearable(level, feet, steps)) continue;
             cells.put(feet.immutable(), steps);
@@ -504,7 +523,7 @@ public final class CompanionPillar {
         // of the block: from there the top of the column swings to it whatever its offset up to the way's four (PATH7, #105).
         for (int down = 1; down <= limit + 5; down++) for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
             BlockPos feet = block.offset(dx, -down, dz);
-            if (!safeFoundation(level, feet.below())) continue;
+            if (!footForColumn(feet)) continue;
             int steps = requiredSteps(block, feet);
             if (steps < 0 || steps > limit || !columnClearable(level, feet, steps)) continue;
             cells.put(feet.immutable(), steps);
@@ -527,25 +546,78 @@ public final class CompanionPillar {
         if (cellWay) return planCellColumn(level, log, supply);
         failureReason = log.getY() + 0.5D - owner.getY() > limit + 5.0D
                 ? "Верхушка слишком высокая для короткой опоры" : "Не нашёл безопасного места для подъёма";
-        Column best = null;
         BlockPos origin = owner.blockPosition();
-        // Directly under the log is allowed: with the trunk chopped away, that is where a hanging crown is reached from.
-        // While the trunk still stands, columnClearable rejects that column because the trunk itself is solid.
-        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
-            for (int dy = -2; dy <= 2; dy++) {
-                BlockPos feet = new BlockPos(log.getX() + dx, origin.getY() + dy, log.getZ() + dz);
-                if (feet.distSqr(origin) > (double) COLUMN_WALK * COLUMN_WALK || !safeFoundation(level, feet.below())) continue;
-                int steps = requiredSteps(log, feet);
-                if (steps > supply && steps <= limit) failureReason = "Для подъёма не хватает земли в сумке";
-                if (steps <= 0 || steps > limit || steps > supply || !columnClearable(level, feet, steps)) continue;
-                if (!level.getEntities(owner, new AABB(feet).expandTowards(0, steps + 2, 0), CompanionPillar::blocksSupport).isEmpty()) continue;
-                Path path = owner.work.route.toCells(Set.of(feet));
-                if (path == null) continue;
-                double score = feet.distSqr(origin) + steps * 4.0D + dx * dx + dz * dz;
-                if (best == null || score < best.score()) best = new Column(feet.immutable(), path, steps, score);
+        // The candidates of one target are kept while they are asked, a few feet a tick: a search is not free, and the feet after
+        // the first six are asked at the next tick rather than dropped.
+        if (!log.equals(feetTarget)) {
+            List<Column> candidates = new ArrayList<>();
+            // Directly under the log is allowed: with the trunk chopped away, that is where a hanging crown is reached from.
+            // While the trunk still stands, columnClearable rejects that column because the trunk itself is solid.
+            for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
+                for (int dy = -2; dy <= 2; dy++) {
+                    BlockPos foot = new BlockPos(log.getX() + dx, origin.getY() + dy, log.getZ() + dz);
+                    // A foot a player walks on is a foot: the ground, a stair, a path (CompanionMiningNavigation.standable).
+                    if (foot.distSqr(origin) > (double) COLUMN_WALK * COLUMN_WALK || !footForColumn(foot)) continue;
+                    int steps = requiredSteps(log, foot);
+                    if (steps > supply && steps <= limit) failureReason = "Для подъёма не хватает земли в сумке";
+                    if (steps <= 0 || steps > limit || steps > supply || !columnClearable(level, foot, steps)) continue;
+                    if (!level.getEntities(owner, new AABB(foot).expandTowards(0, steps + 2, 0), CompanionPillar::blocksSupport).isEmpty()) continue;
+                    candidates.add(new Column(foot.immutable(), null, steps, foot.distSqr(origin) + steps * 4.0D + dx * dx + dz * dz));
+                }
             }
+            candidates.sort(java.util.Comparator.comparingDouble(Column::score));
+            feetTarget = log.immutable(); feet = candidates; feetAsked = 0;
         }
-        return best;
+        return nextFoot(level, log);
+    }
+
+    /**
+     * The next foot of this column, asked of the route: the candidates best first, and a foot no walk reaches is passed over for
+     * the next one. Null when none of them is reached — or when this tick's search cells went elsewhere, which is no answer at
+     * all ({@link #footUnknown}).
+     */
+    private Column nextFoot(ServerLevel level, BlockPos target) {
+        footUnknown = false;
+        for (int asked = 0; asked < FEET_TRIES && feetAsked < feet.size(); asked++) {
+            Column candidate = feet.get(feetAsked);
+            int busy = owner.work.route.busyAnswers();
+            Path path = owner.work.route.toCells(Set.of(candidate.feet()));
+            if (path == null) {
+                if (owner.work.route.busyAnswers() != busy) { footUnknown = true; return null; }
+                sayFoot(target, candidate.feet(), "к опоре не пройти");
+                feetAsked++;
+                continue;
+            }
+            feetAsked++;
+            return new Column(candidate.feet(), path, candidate.steps(), candidate.score());
+        }
+        // This tick's share of the searches is spent: the feet after these are asked at the next tick, not dropped.
+        if (feetAsked < feet.size()) footUnknown = true;
+        return null;
+    }
+
+    /** One line per foot refused: which cell was tried, why it was no good, and that another is asked. */
+    private void sayFoot(BlockPos target, BlockPos foot, String why) {
+        dev.aicompanion.CompanionDiagnostics.say(owner.diagnosticTrace(), "way_foot",
+                "опора " + foot.toShortString() + " к " + target.toShortString() + " не годится: " + why + "; пробую следующую",
+                "entity", owner.getUUID(), "target", target.toShortString(), "foot", foot.toShortString(), "why", why,
+                "asked", feetAsked, "candidates", feet.size());
+    }
+
+    /**
+     * The foot the column planned at is no good — no walk to it, no room over it, no foundation under its first support: the next
+     * foot about the block is asked, and only when every one of them has failed is the column given up with the real reason.
+     * While a support already stands the foot is settled, and the failure is the column's own.
+     */
+    private Outcome footFailed(ServerLevel level, BlockPos block, String why) {
+        if (!supports.isEmpty()) return fail(why);
+        if (base != null) sayFoot(block, base, why);
+        owner.getNavigation().stop();
+        approach = null; jumpCell = null; cooldown = 0;
+        Column next = nextFoot(level, block);
+        if (next == null) return footUnknown ? Outcome.WORKING : fail(why);
+        base = next.feet(); approach = next.path(); resetWatchdog(block);
+        return Outcome.WORKING;
     }
 
     /**
@@ -557,21 +629,18 @@ public final class CompanionPillar {
     private Column planCellColumn(ServerLevel level, BlockPos cell, int supply) {
         failureReason = cell.getY() - owner.getY() > limit + 5 ? "Слишком высоко для короткой опоры" : "Не нашёл безопасного места для подъёма";
         BlockPos origin = owner.blockPosition();
-        List<java.util.Map.Entry<BlockPos, Integer>> feet = new ArrayList<>();
-        for (var entry : columnsForCell(cell, limit).entrySet()) {
-            if (entry.getValue() > supply) { if (entry.getValue() <= limit) failureReason = "Для подъёма не хватает земли в сумке"; continue; }
-            if (entry.getKey().distSqr(origin) > (double) COLUMN_WALK * COLUMN_WALK) continue;
-            if (!level.getEntities(owner, new AABB(entry.getKey()).expandTowards(0, entry.getValue() + 2, 0), CompanionPillar::blocksSupport).isEmpty()) continue;
-            feet.add(entry);
+        if (!cell.equals(feetTarget)) {
+            List<Column> candidates = new ArrayList<>();
+            for (var entry : columnsForCell(cell, limit).entrySet()) {
+                if (entry.getValue() > supply) { if (entry.getValue() <= limit) failureReason = "Для подъёма не хватает земли в сумке"; continue; }
+                if (entry.getKey().distSqr(origin) > (double) COLUMN_WALK * COLUMN_WALK) continue;
+                if (!level.getEntities(owner, new AABB(entry.getKey()).expandTowards(0, entry.getValue() + 2, 0), CompanionPillar::blocksSupport).isEmpty()) continue;
+                candidates.add(new Column(entry.getKey(), null, entry.getValue(), entry.getValue() + entry.getKey().distSqr(origin)));
+            }
+            candidates.sort(java.util.Comparator.comparingDouble(Column::score));
+            feetTarget = cell.immutable(); feet = candidates; feetAsked = 0;
         }
-        feet.sort(java.util.Comparator.comparingDouble(entry -> entry.getKey().distSqr(origin) + entry.getValue() * 4.0D));
-        for (int tried = 0; tried < Math.min(feet.size(), FEET_TRIES); tried++) {
-            BlockPos at = feet.get(tried).getKey();
-            Path path = owner.work.route.toCells(Set.of(at));
-            if (path == null) continue;
-            return new Column(at.immutable(), path, feet.get(tried).getValue(), feet.get(tried).getValue() + at.distSqr(origin));
-        }
-        return null;
+        return nextFoot(level, cell);
     }
 
     /** The feet of a column asked of the route in one tick: each answer is a search, and a search is not free. */
@@ -602,12 +671,6 @@ public final class CompanionPillar {
             if (!state.getCollisionShape(level, pos).isEmpty() && !isFoliage(state)) return false;
         }
         return true;
-    }
-
-    private boolean safeFoundation(ServerLevel level, BlockPos pos) {
-        return level.hasChunkAt(pos) && level.getWorldBorder().isWithinBounds(pos)
-                && level.getFluidState(pos).isEmpty()
-                && level.getBlockState(pos).isFaceSturdy(level, pos, Direction.UP);
     }
 
     private boolean clearJumpSpace(ServerLevel level, BlockPos feet) {
@@ -798,6 +861,7 @@ public final class CompanionPillar {
         breaking.reset();
         base = target = jumpCell = branch = null;
         approach = null;
+        feetTarget = null; feet.clear(); feetAsked = 0; footUnknown = false;
         lastProgress = null;
         attemptTicks = stalledTicks = jumpTicks = failedJumps = cooldown = cleanupTicks = unplannedTicks = 0;
         recovering = false;

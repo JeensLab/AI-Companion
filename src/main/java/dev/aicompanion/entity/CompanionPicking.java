@@ -596,7 +596,7 @@ final class CompanionPicking {
                 // his own (the same rule the ground reach follows), so a crown whose only cells are leaf tops is climbed, and
                 // the walk is not sent up to a leaf top it cannot come down from (the owner, 18.11).
                 if (leaf && (level.getBlockState(stand.below()).is(BlockTags.LEAVES) || level.getBlockState(stand.below()).is(BlockTags.LOGS))) continue;
-                if (leaf || CompanionMiningNavigation.dropCollectable(level, block, stand)) cells.add(stand);
+                if (leaf || CompanionMiningNavigation.dropSafe(level, block)) cells.add(stand);
             }
             return cells;
         }

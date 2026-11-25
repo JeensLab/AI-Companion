@@ -6,6 +6,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.HitResult;
@@ -63,6 +64,13 @@ final class CompanionMiningNavigation {
         }
         return null;
     }
+
+    /**
+     * Whether the drop of this block comes to rest somewhere he can fetch it: not in lava, not down a shaft. Where it rests is
+     * the pickup's own question (its chase walks or raises its own way to it); this is only «the drop is not lost», which is
+     * what a stand cell must know before the block is swung at.
+     */
+    static boolean dropSafe(net.minecraft.world.level.Level level, BlockPos block) { return dropRest(level, block) != null; }
 
     /**
      * Like a player who mines for the drop (marathon 23.10: at the bottom of the ravine of game log 05cdd3a7 he mined twenty
@@ -221,15 +229,49 @@ final class CompanionMiningNavigation {
         return length;
     }
 
-    /** A cell he can stand in and work from: the floor sturdy, room for the body, his head in the air; his feet may be in water, not in lava. */
-    static boolean standable(CompanionEntity owner, BlockPos pos) {
+    /** The feet height of no stand at all: nothing holds a body in that cell. */
+    private static final double NO_STAND = -Double.MAX_VALUE;
+
+    /**
+     * The height his feet stand at in this cell, or {@link #NO_STAND} when no body fits there. The game's own walk stands a body
+     * on the collision top of what is under it (WalkNodeEvaluator.getFloorLevel), so a cell is a stand wherever a player walks:
+     * on the ground, on a stair's top step, on a slab, on a path or a farm bed, in a ladder's or a vine's own cell, and on a
+     * half-height step inside the cell itself (a bottom slab, a carpet). An existing staircase, slab or ladder is a way like the
+     * ground is — the reach answer, the route and the pickup all ask this one rule.
+     */
+    static double standHeight(CompanionEntity owner, BlockPos pos) {
         var level = owner.level();
         if (!level.hasChunkAt(pos) || !level.hasChunkAt(pos.below()) || !level.getWorldBorder().isWithinBounds(pos)
-                || CompanionLava.at(level, pos) || !level.getFluidState(pos.above()).isEmpty()) return false;
-        // Farmland is 15/16 high, so none of its faces is sturdy; it is still floor to stand on and to pick a drop up from.
-        var floor = level.getBlockState(pos.below());
-        if (!floor.isFaceSturdy(level, pos.below(), Direction.UP) && !floor.is(Blocks.FARMLAND)) return false;
-        return level.noCollision(owner, new AABB(pos.getX() + .2, pos.getY(), pos.getZ() + .2, pos.getX() + .8, pos.getY() + owner.getBbHeight(), pos.getZ() + .8));
+                || CompanionLava.at(level, pos) || !level.getFluidState(pos.above()).isEmpty()) return NO_STAND;
+        double feet = NO_STAND;
+        BlockState own = level.getBlockState(pos);
+        double ownTop = own.getCollisionShape(level, pos).max(Direction.Axis.Y);
+        if (ownTop > 0 && ownTop < 1) {
+            // A step inside the cell itself: a bottom slab, a stair's lower half, a carpet, a path — he stands on its top.
+            feet = pos.getY() + ownTop;
+        } else if (ownTop == 0 && own.is(BlockTags.CLIMBABLE)) {
+            // A ladder or a vine: he stands in its own cell, nothing solid in it.
+            feet = pos.getY();
+        } else {
+            // The floor under the cell: a full block, a stair, a top slab, a path, a farm bed — its top is the floor he stands on.
+            BlockState floor = level.getBlockState(pos.below());
+            double top = floor.getCollisionShape(level, pos.below()).max(Direction.Axis.Y);
+            if (top <= 0) return NO_STAND;
+            feet = pos.getY() - 1 + Math.min(top, 1.0);
+        }
+        AABB body = new AABB(pos.getX() + .2, feet, pos.getZ() + .2, pos.getX() + .8, feet + owner.getBbHeight(), pos.getZ() + .8);
+        return level.noCollision(owner, body) ? feet : NO_STAND;
+    }
+
+    /** A cell he can stand in and work from: the floor sturdy, room for the body, his head in the air; his feet may be in water, not in lava. */
+    static boolean standable(CompanionEntity owner, BlockPos pos) {
+        return standHeight(owner, pos) != NO_STAND;
+    }
+
+    /** The height his feet stand at in this cell, or the cell's own bottom when no body fits there (he is in the air over it). */
+    static double standOr(CompanionEntity owner, BlockPos pos) {
+        double feet = standHeight(owner, pos);
+        return feet == NO_STAND ? pos.getY() : feet;
     }
 
     /**

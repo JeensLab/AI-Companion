@@ -224,11 +224,12 @@ final class CompanionBag {
         if (nearest == null) return "";
         return CompanionReach.distance(c, nearest);
     }
-    /** The end of obtain_item: success only by the bag, never by the plan. */
+    /** The end of obtain_item: success only by the bag, never by the plan. The count that decided it is journalled. */
     public CompanionActionResult carriedCheck(String item, int count) {
         // «Листва» is no item of its own: a leaf order is met by leaves of any species, counted together.
         if (CompanionLeaves.isFamily(item)) {
             int have = CompanionLeaves.carried(c);
+            decide(item, count, have, "Листва");
             return have >= count ? CompanionActionResult.ok("Готово: «Листва» у меня, " + have + " шт.")
                     : CompanionActionResult.failed("Добыл не всё: «Листва» у меня " + have + " из " + count + ".");
         }
@@ -238,8 +239,15 @@ final class CompanionBag {
         int have = 0;
         for (ItemStack stack : carriedForPlan()) if (stack.is(wanted)) have += stack.getCount();
         String name = new ItemStack(wanted).getHoverName().getString();
+        decide(item, count, have, name);
         return have >= count ? CompanionActionResult.ok("Готово: «" + name + "» у меня, " + have + " шт.")
                 : CompanionActionResult.failed("Добыл не всё: «" + name + "» у меня " + have + " из " + count + ".");
+    }
+
+    /** «order_done» or «order_failed» with the bag's count: what decided the order, in the game log as well as the journal. */
+    private void decide(String item, int count, int have, String name) {
+        dev.aicompanion.CompanionDiagnostics.event(c.diagnosticTrace(), have >= count ? "order_done" : "order_failed",
+                "entity", c.getUUID(), "item", item, "name", name, "asked", count, "have", have);
     }
     /** How many of the item he carries, as obtain_item counts them. */
     public int carriedCount(String item) {
