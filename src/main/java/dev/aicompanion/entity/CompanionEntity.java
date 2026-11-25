@@ -597,9 +597,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     }
 
     public void setProtecting(boolean protecting) {
-        woodBreaking.reset(); dirtBreaking.reset(); recovery.cancel(); movementIntent = null;
+        woodBreaking.reset(); dirtBreaking.reset(); loot.cancel(); recovery.cancel(); movementIntent = null;
         supportSoilTask = false;
-        work.cancel(); loot.cancel();
+        work.cancel();
         temporaryPillar.requestCleanup();
         roaming = false;
         entityData.set(DATA_ROAMING, false);
