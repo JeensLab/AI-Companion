@@ -349,8 +349,9 @@ public final class CompanionObtain {
                 }
                 // A block of obsidian lies about even where the way search reached none: the work asks the way again (another foot
                 // may do, a floor across the gap), and only when no block is there at all is lava looked for — never «ни обсидиана,
-                // ни лавы» over a block of obsidian in sight (the owner, 25.11).
-                if (grows != null && about(Items.OBSIDIAN)) return add("mine_obsidian", key, Math.min(count, 1));
+                // ни лавы» over a block of obsidian in sight (the owner, 25.11). The promise is what the way reached, or the one
+                // block in sight when it reached none; with no way answer asked here, the whole count is promised as before.
+                if (grows != null && about(Items.OBSIDIAN)) return add("mine_obsidian", key, found == null ? count : Math.min(count, 1));
                 int buckets = bag.getOrDefault("minecraft:lava_bucket", 0);
                 if (grows != null && !about(Items.LAVA_BUCKET) && buckets == 0) {
                     // After the blocks his own buckets made, the old line said there was nothing about to dig over a bag that already
@@ -481,7 +482,7 @@ public final class CompanionObtain {
         CompanionReach.Available found = reachable == null || CompanionLeaves.isLeaf(BuiltInRegistries.ITEM.getKey(item).toString())
                 ? null : reachable.apply(item);
         noteSeen(item, found);
-        if (found == null ? picked(item) : found.some() || picked(item)) {
+        if (found == null ? picked(item) : found.some()) {
             if (silked(item) && !carriesSilk(item)) return refuse("Для «" + name(item) + "» нужен инструмент с «Шёлковым касанием»: в сумке такого нет.");
             if (found != null && found.soil() > 0) {
                 // A column for it stands on soil he does not carry: the plan digs that soil first, as a crown's is dug.
