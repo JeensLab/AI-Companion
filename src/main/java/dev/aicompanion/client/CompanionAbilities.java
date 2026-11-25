@@ -15,8 +15,8 @@ import java.util.Set;
  * an ability. A new plan action or deed without a phrase fails the abilities GameTest, naming the constant (in the game
  * it is only logged); a phrase about something the code has no action or deed for fails the same way, so the list cannot drift
  * from the code. «Что ты умеешь» and «расскажи 10 умений» are answered from it without a model request, as a random
- as a random selection drawn without repeats that says how many of the list it shows, so two asks do not read back the same
-  * five and five lines are not taken for all of them (idea 4NTZD, issue #105).
+ * selection drawn without repeats that says how many of the list it shows, so two asks do not read back the same
+ * five and five lines are not taken for all of them (idea 4NTZD, issue #105).
  *
  * Scope: everything the player can ASK him to do — the plan codec's actions and the autonomy deeds
  * ({@link CompanionAutonomy.Deed}). The direct commands only reword those same actions, switch the deeds on and off, or
