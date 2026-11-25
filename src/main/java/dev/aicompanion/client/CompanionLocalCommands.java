@@ -313,9 +313,14 @@ public final class CompanionLocalCommands {
      */
     private static String abilitiesCommand(String normalized, String companionName) {
         String rest = withoutTrailingAddress(withoutAddress(normalized, companionName), companionName);
-        String question = "(?sU)(?:что\\s+(?:ты\\s+)?(?:вообще\\s+|сейчас\\s+|такого\\s+)*умеешь(?:\\s+делать)?"
-                + "|(?:расскажи|рассказывай|перечисли|назови|скажи|озвучь)\\s*,?\\s*(?:мне\\s+|нам\\s+)?"
-                + "(?:что\\s+(?:ты\\s+)?(?:вообще\\s+|сейчас\\s+|такого\\s+)*умеешь(?:\\s+делать)?"
+        // «расскажи, пожалуйста, что ты умеешь»: the polite word may stand in the middle, after the verb and before the ask,
+        // not only at the end. «что ты ещё умеешь», «расскажи ещё, что ты умеешь»: the word of repetition asks the same
+        // question, not a question about a thing. Both used to fall through to the model.
+        String polite = "(?:(?:,\\s*)?пожалуйста\\s*,?\\s*)?";
+        String again = "(?:(?:ещё|еще)\\s*,?\\s*)?";
+        String question = "(?sU)(?:что\\s+(?:ты\\s+" + again + ")?(?:вообще\\s+|сейчас\\s+|такого\\s+)*умеешь(?:\\s+делать)?"
+                + "|(?:расскажи|рассказывай|перечисли|назови|скажи|озвучь)\\s*,?\\s*" + polite + "(?:(?:мне|нам)\\s+)?" + again
+                + "(?:что\\s+(?:ты\\s+" + again + ")?(?:вообще\\s+|сейчас\\s+|такого\\s+)*умеешь(?:\\s+делать)?"
                 + "|(?:\\d+\\s+|про\\s+|о\\s+|свои\\s+|своих\\s+|все\\s+|всё\\s+){0,3}умени[а-я]*))"
                 + "(?:\\s*,?\\s*пожалуйста)?\\W*";
         if (!rest.matches(question)) return null;
