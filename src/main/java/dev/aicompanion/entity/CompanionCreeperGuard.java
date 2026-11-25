@@ -4,6 +4,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.util.LandRandomPos;
 import net.minecraft.world.entity.monster.Creeper;
@@ -56,6 +57,8 @@ final class CompanionCreeperGuard {
     private static final double LUNGE = 4;
     /** {@link Creeper#getSwelling} counts the fuse over this many ticks. */
     private static final int SWELL_TICKS = 28;
+    /** The blow that kills a lit creeper ({@link #finishes}) is waited for only with this many ticks of the fuse to spare, and its hurt time down to this. */
+    private static final int FINISH_SPARE = 2, HURT_HALF = 10;
     /**
      * The house: a creeper this near its middle is walked away before the fight, until it is this far from it; he waits for it when it falls
      * this far behind, so that it keeps after him.
@@ -125,7 +128,7 @@ final class CompanionCreeperGuard {
         lookAtFuse(creeper, now);
         if (creeper != null && now >= nextProbe && owner.getHealth() > FIGHT_HEALTH) {
             nextProbe = now + PLAN_EVERY;
-            probe.plan(level, threats(level));
+            probe.plan(level, threats(level), creeper);
             room = probe.clears();
         }
         shielded = creeper != null && burns(creeper) && shield.covers(level, creeper);
@@ -168,7 +171,7 @@ final class CompanionCreeperGuard {
         // The melee goal does not run while the guard holds the turn, so it cannot bring a weapon out for it.
         if (fighting || dashing) {
             owner.selectWeaponForCombat();
-            path = escape.plan((ServerLevel) owner.level(), threats((ServerLevel) owner.level()));
+            path = escape.plan((ServerLevel) owner.level(), threats((ServerLevel) owner.level()), watched);
         }
         // The blow first only with a way out of the blast after it, and not by the house unless walking it off has failed: the melee goal
         // fights it there then too.
@@ -303,7 +306,8 @@ final class CompanionCreeperGuard {
      * is, a push at a time to the next cell. Where there is none, a blow at the creeper: it throws it back, which is more than standing.
      */
     private void retreat(ServerLevel level, Creeper creeper) {
-        Vec3 step = escape.step(level, threats(level));
+        if (finishes(creeper)) { finish(creeper); return; }
+        Vec3 step = escape.step(level, threats(level), creeper);
         if (step != null) {
             mention(escape.holding() ? "hold" : "path", creeper, escape.goal());
             owner.getNavigation().stop();
@@ -313,6 +317,30 @@ final class CompanionCreeperGuard {
         }
         mention("strike", creeper, null);
         strike(creeper);
+    }
+
+    /**
+     * One blow of what he holds kills this lit creeper, it is within his reach, and his swing is ready {@link #FINISH_SPARE} ticks before the
+     * fuse burns down: the blow, not the run. A dead creeper does not blow; a run may not get clear (run ct36 20261031 void-4: five health
+     * left two blocks off, twenty ticks of the run through water went nowhere, and the blow came the tick it blew).
+     */
+    private boolean finishes(Creeper creeper) {
+        int swing = owner.combat.ticksToSwing();
+        // A creeper struck less than half its hurt time before the blow takes only what exceeds that hit (LivingEntity#hurt): no sure kill.
+        return creeper.getHealth() <= owner.getAttributeValue(Attributes.ATTACK_DAMAGE) && owner.isWithinMeleeAttackRange(creeper)
+                && creeper.invulnerableTime - swing <= HURT_HALF && swing + FINISH_SPARE <= (1 - creeper.getSwelling(0)) * SWELL_TICKS;
+    }
+
+    /** He stands in reach until his swing is ready, and strikes. */
+    private void finish(Creeper creeper) {
+        owner.getNavigation().stop();
+        if (!owner.combat.swingReady()) { mention("finish", creeper, null); return; }
+        // The weapon in hand is the one the kill was judged by: strike() would pick one again, and may take a bow out.
+        owner.combat.swung();
+        owner.swing(InteractionHand.MAIN_HAND);
+        boolean landed = owner.doHurtTarget(creeper);
+        if (landed) landed();
+        event("finished", creeper, -1, "landed", landed);
     }
 
     /**
@@ -336,7 +364,7 @@ final class CompanionCreeperGuard {
         if (!owner.combat.swingReady()) return true;
         mayStrike = false;
         // The way out was judged where the fuse was seen; the step in may have left it behind.
-        if (escape.plan(level, threats(level)) < 0 || !escape.clears()) { event("strike_cornered", creeper, -1); return false; }
+        if (escape.plan(level, threats(level), creeper) < 0 || !escape.clears()) { event("strike_cornered", creeper, -1); return false; }
         boolean landed = strike(creeper);
         if (landed) landed();
         event("struck", creeper, -1, "landed", landed);
