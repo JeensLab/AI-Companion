@@ -442,7 +442,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.targetSelector.addGoal(1, new CompanionCombat.OwnerDefenseGoal(this));
         this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, net.minecraft.world.entity.Mob.class, 10,
                 true, false, target -> protecting ? (!guardByPlayer || work.isHunting()) && combat.isThreateningOwner(target) : combat.comesForOwner(target)));
-        this.targetSelector.addGoal(2, new CompanionGuardWatch(this));
+        this.targetSelector.addGoal(2, combat.guardWatch);
         // Who flies is out of the blade's reach: only with a bow (ghasts, phantoms).
         this.targetSelector.addGoal(2, new CompanionArchery.FlierTargetGoal(this));
     }
