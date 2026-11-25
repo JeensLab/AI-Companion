@@ -42,18 +42,18 @@ public final class CompanionAbilities {
      * autonomy is named at least once.
      */
     private static final List<Ability> DECLARED = List.of(
-            new Ability("добываю дерево, камень, землю, руду и разные вещи",
+            new Ability("добываю дерево, камень, землю, руду и разные вещи, обтёсываю брёвна",
                     List.of("gather_wood", "gather_stone", "gather_dirt", "gather_loose", "mine_ore", "obtain_item", "pick_up"),
                     List.of("WOOD", "STONE", "COAL", "IRON")),
             new Ability("делаю вещи и плавлю руду в печи", List.of("craft_item", "smelt_items"),
                     List.of("PICK", "COOK", "SMELT_IRON", "IRON_PICK", "COLLECT")),
             new Ability("строю дом, загон для животных и деревенские постройки", List.of("build_house", "build_pen"), List.of()),
-            new Ability("делаю грядки, собираю урожай и компост", List.of("farm_crops", "harvest_crops", "use_bone_meal", "compost_items"), List.of()),
-            new Ability("раскладываю вещи по сундукам и забираю их оттуда", List.of("store_items", "take_items", "sort_chests"),
+            new Ability("делаю грядки, удобряю их костной мукой, собираю урожай и компост", List.of("farm_crops", "harvest_crops", "use_bone_meal", "compost_items"), List.of()),
+            new Ability("раскладываю вещи в сундуки, бочки, печи и воронки, забираю их оттуда", List.of("store_items", "take_items", "sort_chests"),
                     List.of("STORE", "TAKE_WOOD", "TAKE_STONE")),
             new Ability("развожу животных и охочусь на них", List.of("breed_animals", "hunt_animals"), List.of("HUNT")),
             new Ability("стригу овец, дою коров, собираю яйца и мёд", List.of("obtain_item"), List.of()),
-            new Ability("бьюсь с монстрами и охраняю тебя или твоё место", List.of("hunt_mobs", "protect", "stop_protect"), List.of()),
+            new Ability("бьюсь с монстрами и охраняю тебя", List.of("hunt_mobs", "protect", "stop_protect"), List.of()),
             new Ability("хожу за тобой, жду, гуляю и прихожу на зов", List.of("follow", "wait", "come", "wander", "stop"), List.of()),
             new Ability("подбираю то, что лежит рядом", List.of("pick_up"), List.of()),
             new Ability("запоминаю места и твой дом, вожу тебя туда", List.of("remember_place", "go_to_place", "set_home"), List.of()),

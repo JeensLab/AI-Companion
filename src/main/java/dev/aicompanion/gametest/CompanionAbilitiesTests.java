@@ -111,18 +111,29 @@ public final class CompanionAbilitiesTests {
 
     @GameTest(template = "empty")
     public static void theAskInOtherWordsIsLocalAndOtherQuestionsGoToTheModel(GameTestHelper h) {
+        List<String> missed = new ArrayList<>();
         for (String phrase : new String[]{"что ты умеешь", "что умеешь?", "Олег, что ты умеешь", "расскажи, что ты умеешь",
                 "перечисли свои умения", "назови 3 умения", "расскажи мне 10 своих умений",
                 "расскажи о своих умениях", "что ты умеешь, Олег",
                 // The polite word in the middle and the word of repetition: the player says both, and neither is a question
                 // about a thing, so the model must not be asked (review 24.11).
                 "расскажи, пожалуйста, что ты умеешь", "расскажи пожалуйста свои умения", "что ты ещё умеешь",
-                "Олег, что ты еще умеешь?", "расскажи ещё, что ты умеешь"})
-            h.assertTrue(CompanionLocalCommands.route(phrase, "Олег").startsWith("companion abilities "),
-                    "«" + phrase + "» -> " + CompanionLocalCommands.route(phrase, "Олег"));
-        for (String phrase : new String[]{"расскажи, пожалуйста, что ты умеешь", "что ты ещё умеешь"})
+                "Олег, что ты еще умеешь?", "расскажи ещё, что ты умеешь",
+                // «всё, что ты умеешь», «ещё раз» and the polite word after «мне»: three more ways a player asks the same
+                // question, each used to fall through to the model (judge 25.11).
+                "расскажи всё, что ты умеешь", "расскажи ещё раз, что ты умеешь", "расскажи мне, пожалуйста, что ты умеешь"}) {
+            String command = CompanionLocalCommands.route(phrase, "Олег");
+            if (command == null || !command.startsWith("companion abilities ")) missed.add(phrase + " -> " + command);
+        }
+        h.assertTrue(missed.isEmpty(), "these asks fell through to the model: " + missed);
+        for (String phrase : new String[]{"расскажи, пожалуйста, что ты умеешь", "что ты ещё умеешь",
+                "расскажи ещё раз, что ты умеешь", "расскажи мне, пожалуйста, что ты умеешь"})
             h.assertTrue("companion abilities 5".equals(CompanionLocalCommands.route(phrase, "Олег")),
                     "mnimar's phrasing «" + phrase + "» -> " + CompanionLocalCommands.route(phrase, "Олег"));
+        // «расскажи всё, что ты умеешь» asks for the whole list, not the five of a sample.
+        for (String phrase : new String[]{"расскажи всё, что ты умеешь", "расскажи все, что ты умеешь"})
+            h.assertTrue(("companion abilities " + CompanionAbilities.size()).equals(CompanionLocalCommands.route(phrase, "Олег")),
+                    "«" + phrase + "» -> " + CompanionLocalCommands.route(phrase, "Олег"));
         for (String phrase : new String[]{"что ты умеешь делать с медью", "Ты умеешь строить дом?", "расскажи про лошадь"})
             h.assertTrue(CompanionLocalCommands.route(phrase, "Олег") == null,
                     "«" + phrase + "» -> " + CompanionLocalCommands.route(phrase, "Олег"));
@@ -157,12 +168,32 @@ public final class CompanionAbilitiesTests {
         h.assertTrue(all.contains("кузниц") || all.contains("постройк"), "the village buildings are not named: " + all);
         CompanionAbilities.Ability goal = abilityWithAction("pursue_goal");
         h.assertTrue(goal.phrase().contains("дракон"), "the long goal does not name the dragon: «" + goal.phrase() + "»");
-        // «Охраняй дачу» is go_to_place + protect, and the combat phrase named only the player.
-        CompanionAbilities.Ability guard = abilityWithAction("protect");
-        h.assertTrue(guard.phrase().contains("место"), "the guard of a named place is not named: «" + guard.phrase() + "»");
+        // Bone meal shipped in 0.0.4 (PR #190: «удобри огород», «удобри две грядки», «вырасти дерево»), and the garden
+        // phrase named only «делаю грядки, собираю урожай и компост»: the word «удобряю» never appeared, so «что ты умеешь»
+        // never told a player he could do it.
+        CompanionAbilities.Ability garden = abilityWithAction("use_bone_meal");
+        h.assertTrue(garden.phrase().contains("удобряю"), "bone meal is not named: «" + garden.phrase() + "»");
         // «Подбери» is pick_up, an order of its own; «погуляй» is wander, not the follow the phrase named.
         h.assertTrue(all.contains("подбираю"), "picking up what lies nearby is not named: " + all);
         h.assertTrue(all.contains("гуляю"), "walking about on his own is not named: " + all);
+        h.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void thePhrasesNameTheWorkTheCodeReallyDoes(GameTestHelper h) {
+        // Three phrases did not match what the code does (judge 25.11): the guard follows the player, not a place; a
+        // store order may name a barrel, a furnace or a hopper, not only a chest; a stripped log is obtain_item's own
+        // chain of gather_wood and strip_log with his axe. Every miss is collected, so one run names all three.
+        List<String> wrong = new ArrayList<>();
+        CompanionAbilities.Ability guard = abilityWithAction("protect");
+        if (!guard.phrase().contains("тебя") || guard.phrase().contains("место"))
+            wrong.add("the guard follows the player, not a place: «" + guard.phrase() + "»");
+        CompanionAbilities.Ability storage = abilityWithAction("store_items");
+        if (!(storage.phrase().contains("бочк") && storage.phrase().contains("печ") && storage.phrase().contains("воронк")))
+            wrong.add("the containers the code handles are not named: «" + storage.phrase() + "»");
+        CompanionAbilities.Ability wood = abilityWithAction("gather_wood");
+        if (!wood.phrase().contains("обтёсываю")) wrong.add("log stripping is not named: «" + wood.phrase() + "»");
+        h.assertTrue(wrong.isEmpty(), "the phrases do not match the code: " + wrong);
         h.succeed();
     }
 
