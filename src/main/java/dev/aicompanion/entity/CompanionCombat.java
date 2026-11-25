@@ -62,8 +62,11 @@ final class CompanionCombat {
     }
 
     /** One blow at the pace of his weapon, when the foe is in his reach and in sight. */
-    void strike(LivingEntity target) {
-        if (!swingReady() || !c.isWithinMeleeAttackRange(target) || !c.getSensing().hasLineOfSight(target)) return;
+    void strike(LivingEntity target) { strike(target, c.getSensing().hasLineOfSight(target)); }
+
+    /** The same with the sight of the foe judged by the caller: from his column he sees over its edge ({@link CompanionHighGround}). */
+    void strike(LivingEntity target, boolean seen) {
+        if (!swingReady() || !c.isWithinMeleeAttackRange(target) || !seen) return;
         swung();
         footwork.struck(target);
         c.swing(InteractionHand.MAIN_HAND);
