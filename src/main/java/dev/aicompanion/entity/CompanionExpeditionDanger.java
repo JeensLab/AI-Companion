@@ -1,0 +1,43 @@
+package dev.aicompanion.entity;
+
+/** Why the expedition must go up now: a fire or low health; a meal eaten on the spot is given time to mend (moved out of {@link CompanionExpedition}). */
+final class CompanionExpeditionDanger {
+    /** At or below this health he goes up. */
+    private static final float HEALTH_VERY = 8;
+    /** How long a meal is given to raise his health before the climb, and how recent a blow from a mob keeps the climb. */
+    private static final int MEAL_GRACE = 200, RECENT_HURT = 100;
+    private final CompanionEntity owner;
+    private long mealStart = -1;
+    private float mealHealth;
+
+    CompanionExpeditionDanger(CompanionEntity owner) { this.owner = owner; }
+
+    /** A new danger check starts from the health at that time. */
+    void reset() { mealStart = -1; }
+
+    /** Why he must go up now (a fire, or health at the limit), or null. */
+    String now() {
+        // The goal no longer stops a step that owns the expedition for a fire.
+        if (owner.isOnFire() || owner.isInLava()) return "горю";
+        float health = owner.getHealth();
+        if (health > HEALTH_VERY) { mealStart = -1; return null; }
+        // With food in the bag he eats on the spot (a fall, a blast, /damage); climbing at once would give up the order for a meal.
+        // A living attacker that struck lately (a skeleton out of the fight's sight) or a harmful effect means a wound a meal does not end, and so does a meal that does not mend.
+        if (CompanionEating.hasFood(owner) && !hurtByMobLately() && !hasHarmfulEffect() && mealMends(health)) return null;
+        return "мало здоровья (" + (int) Math.ceil(health) + ")";
+    }
+
+    private boolean hurtByMobLately() { return owner.getLastHurtByMob() != null && owner.tickCount - owner.getLastHurtByMobTimestamp() < RECENT_HURT; }
+
+    private boolean hasHarmfulEffect() {
+        for (var effect : owner.getActiveEffects()) if (!effect.getEffect().value().isBeneficial()) return true;
+        return false;
+    }
+
+    /** True while the meal is young, or the health has risen since it began: the next check starts from the health now. */
+    private boolean mealMends(float health) {
+        long now = owner.level().getGameTime();
+        if (mealStart < 0 || health > mealHealth) { mealStart = now; mealHealth = health; return true; }
+        return now - mealStart < MEAL_GRACE;
+    }
+}

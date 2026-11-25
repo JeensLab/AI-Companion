@@ -57,6 +57,13 @@ public final class CompanionExpeditionRecord {
         return !tree && (!state.getCollisionShape(level, pos).isEmpty() || !state.getFluidState().isEmpty());
     }
 
+    /** The move under way is refused so that the next order takes another one instead of walking into the same trouble. */
+    static void rememberMove(CompanionMineSite mine, Direction tunnel, CompanionExpeditionStep plan, BlockPos stand, Direction dir) {
+        if (tunnel != null) mine.refuse(mine.foot(), tunnel);
+        else if (plan != null) mine.refuse(plan.from, plan.turn);
+        else if (stand != null && dir != null) mine.refuse(stand, dir);
+    }
+
     /**
      * Every tunnel off the foot is done: the base moves along the longest one, up to two cells short of its end, and the tunnels
      * are forgotten. {@code atFoot}: he stands at the foot, not at the end of the last tunnel. Null when no tunnel is long

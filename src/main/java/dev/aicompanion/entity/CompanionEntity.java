@@ -127,6 +127,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final NonNullList<ItemStack> companionInventory = NonNullList.withSize(27, ItemStack.EMPTY);
     final CompanionPillar temporaryPillar = new CompanionPillar(this);
     final CompanionWork work = new CompanionWork(this);
+    public CompanionMineSite mineSite() { return work.mine; }
     private final CompanionFurnaceBatches batches = new CompanionFurnaceBatches(this);
     final CompanionGathering gathering = new CompanionGathering(this);
     final CompanionEquipment equipment = new CompanionEquipment(this);
@@ -373,6 +374,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public String diagnosticTrace() { return diagnostics.trace(); }
     public void diagnosticSnapshot(String event) { if (dev.aicompanion.CompanionDiagnostics.enabled()) diagnostics.snapshot(event); }
     String diagnosticState() { return diagnostics.diagnosticState(); }
+    /** For the diagnostics: where the mine expedition is (its stage), empty outside one. */
+    public String expeditionStage() { return work.expedition.stageName(); }
     net.minecraft.world.entity.ai.goal.GoalSelector goalSelector() { return goalSelector; }
 
     /** The game's ground navigation with the companion's own route search (CompanionNavigation). */
@@ -798,46 +801,6 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     }
 
     /**
-     * «Подбери <X>»: what of that meaning lies on the ground around him is walked to and taken by the game's own pickup,
-     * in water and at another height too. Nothing of it near: the honest answer names what does lie around, and only
-     * then does he take up the usual work (a hunt for meat, a dig for stone and the like). With the setting off he
-     * skips the ground and goes straight to that work.
-     */
-    CompanionActionResult pickUpNearby(String item, int count) {
-        CompanionPickUp.Meaning meaning = CompanionPickUp.of(item);
-        if (meaning == null) return CompanionActionResult.failed("Не понял, что подобрать: «" + item + "».");
-        if (count < 1 || count > 64) return CompanionActionResult.failed("За раз подбираю от 1 до 64 предметов.");
-        if (!(level() instanceof ServerLevel level)) return CompanionActionResult.failed("Для подбора нужен загруженный мир.");
-        boolean fallback = meaning.fallbackAction() != null;
-        // The order says how much: «подбери 8 брёвен» falls back on 8, the route's 64 («no number») keeps the meaning's own amount.
-        int wanted = count < CompanionPickUp.ALL_AT_ONCE ? count : meaning.fallbackCount();
-        if (!pickUpNearby && fallback) return startWork(meaning.fallbackAction(), meaning.fallbackItem(), wanted);
-        var found = CompanionPickUp.find(level, blockPosition(), pickUpRadius, meaning, count, getOwnerId());
-        var room = new java.util.ArrayList<ItemEntity>();
-        for (ItemEntity drop : found) if (canStoreDrops(java.util.List.of(drop.getItem().copyWithCount(1)))) room.add(drop);
-        if (!room.isEmpty()) {
-            CompanionActionResult started = startWork("pick_up_nearby", item, count);
-            if (started.success()) loot.claim(room);
-            return started;
-        }
-        if (!found.isEmpty()) {
-            // Matching drops lie there, but none of them fits: the bag is full, not the ground empty.
-            return CompanionActionResult.failed("Лежит рядом: " + meaning.name() + " (" + CompanionPickUp.total(found) + "), но сумка полна.");
-        }
-        String honest = "Рядом нет " + meaning.genitive() + ". " + CompanionPickUp.lying(level, blockPosition(), pickUpRadius, getOwnerId());
-        if (!fallback) return CompanionActionResult.failed(honest);
-        CompanionActionResult taken = startWork(meaning.fallbackAction(), meaning.fallbackItem(), wanted);
-        if (!taken.success()) return CompanionActionResult.failed(honest);
-        // The fallback is the rest of this order, not a refusal of it: the workId is kept so the plan waits for that work,
-        // the honest answer stays in the report, and the following steps of the plan still run.
-        long workId = activeWorkId();
-        if (workId <= 0) return CompanionActionResult.failed(honest);
-        return recordActionResult(CompanionActionResult.accepted(honest + " " + meaning.fallbackNote())
-                .withEvidence(new CompanionActionResult.Evidence(workId, meaning.fallbackAction(), meaning.fallbackItem(),
-                        wanted, null, null, null)));
-    }
-
-    /**
      * «Запомни это место, дача»: saves the point he stands on as a named marker of the player. The same name again
      * moves that marker; a full list loses its oldest one, and the answer names it. Off: the word is not taken.
      */
@@ -1181,6 +1144,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         if (!dead && !isRemoved() && level() instanceof ServerLevel) {
             String where = blockPosition().toShortString();
             String cause = source.getLocalizedDeathMessage(this).getString();
+            diagnostics.died(source);
             work.cancel(); gatheringLogs = gatheringDirt = false; loot.cancel();
             if (deathTrip.active() && getOwnerId() != null)
                 CompanionDeathSpots.get(((ServerLevel) level()).getServer()).deathOnTheWay(getOwnerId(), deathTrip.spotId());
@@ -1206,6 +1170,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         }
         super.die(source);
     }
+
+    @Override public void onRemovedFromLevel() { if (!level().isClientSide) CompanionChunkTicket.release(this); super.onRemovedFromLevel(); }
 
     /** A gate he opened is shut when he is taken out of the world in the middle of it: a goal is not stopped then. */
     @Override public void remove(net.minecraft.world.entity.Entity.RemovalReason reason) {

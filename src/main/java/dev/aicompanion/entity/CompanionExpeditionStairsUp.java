@@ -204,6 +204,14 @@ final class CompanionExpeditionStairsUp {
         return cells;
     }
 
+    /** The cell is shut by something other than liquid: the same look with every liquid round it left out. */
+    private boolean shutByBlock(ServerLevel level, BlockPos cell) {
+        Set<BlockPos> liquid = new HashSet<>();
+        for (BlockPos pos : BlockPos.betweenClosed(cell.offset(-1, -1, -1), cell.offset(1, 1, 1))) if (!level.getFluidState(pos).isEmpty()) liquid.add(pos.immutable());
+        CompanionShaftPlan.Avoid dry = new CompanionShaftPlan.Avoid(Set.of(), (stand, d) -> false, c -> false, liquid);
+        return CompanionShaftPlan.classify(level, from, cell, w.mine.seals(), dry, laying == null ? null : laying.cell).kind() == CompanionShaftPlan.Kind.BLOCKED;
+    }
+
     private List<Direction> order(BlockPos here) {
         int dx = goal.getX() - here.getX(), dz = goal.getZ() - here.getZ();
         List<Direction> order = new ArrayList<>(4);
@@ -221,8 +229,8 @@ final class CompanionExpeditionStairsUp {
         if (kept.contains(cell)) return giveUp(level, "protected");
         CompanionShaftPlan.Avoid wading = new CompanionShaftPlan.Avoid(Set.of(), (stand, d) -> false, c -> false, waded(level, from));
         CompanionShaftPlan.Hazard flowed = CompanionShaftPlan.classify(level, from, cell, w.mine.seals(), wading, laying == null ? null : laying.cell);
-        // A block put into the cell by a player since it was planned (a chest, planks) shuts this side.
-        if (flowed.kind() == CompanionShaftPlan.Kind.BLOCKED) return giveUp(level, "blocked");
+        // A block put into the cell by a player since it was planned (a chest, planks) shuts this side; liquid he cannot seal is for the wading, not a block.
+        if (flowed.kind() == CompanionShaftPlan.Kind.BLOCKED && shutByBlock(level, cell)) return giveUp(level, "blocked");
         if (flowed.kind() == CompanionShaftPlan.Kind.SEAL) {
             CompanionSeal.Result placed = CompanionSeal.place(owner, flowed.cell());
             if (placed.placed()) { w.mine.sealed(flowed.cell()); seals++; return Result.WORKING; }

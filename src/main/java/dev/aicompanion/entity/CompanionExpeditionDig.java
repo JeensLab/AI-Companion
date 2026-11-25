@@ -134,10 +134,13 @@ final class CompanionExpeditionDig {
         }
         List<ItemStack> kept = new ArrayList<>(), spare = new ArrayList<>();
         int room = SEAL_RESERVE - CompanionSeal.available(owner) - w.mine.heldCount();
+        int toolRoom = CompanionExpeditionSupply.STONE_RESERVE - CompanionTools.count(owner, ItemTags.STONE_TOOL_MATERIALS);
         for (ItemStack stack : drops) {
-            if (CompanionSeal.seals(stack) && room > 0 && w.items.canStore(List.of(stack))) {
+            boolean forTools = stack.is(ItemTags.STONE_TOOL_MATERIALS) && toolRoom > 0;
+            if ((forTools || CompanionSeal.seals(stack) && room > 0) && w.items.canStore(List.of(stack))) {
                 kept.add(stack);
                 room -= stack.getCount();
+                toolRoom -= stack.getCount();
             } else spare.add(stack);
         }
         if (!kept.isEmpty()) w.mine.hold(pos, kept);
@@ -261,7 +264,7 @@ final class CompanionExpeditionDig {
      * Pickaxes he can still dig his way up with: those in the bag (stone, diamond, netherite, iron with any wear).
      */
     int pickaxesLeft() {
-        int left = count(Items.STONE_PICKAXE);
+        int left = count(Items.STONE_PICKAXE) + CompanionExpeditionSupply.craftable(w);
         if (ironLeft(0)) left++;
         if (hardPickaxe() != null) left++;
         return left;

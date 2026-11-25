@@ -23,7 +23,7 @@ public final class CompanionLighting {
         }
         return false;
     }
-    public static final int DARK = 7, SPACING = 6, COOLDOWN = 20 * 3;
+    public static final int DARK = 7, MINE_DARK = 2, SPACING = 6, COOLDOWN = 20 * 3;
     private final CompanionEntity owner;
     private long nextPlacement;
     private int freeTicks;
@@ -59,7 +59,13 @@ public final class CompanionLighting {
                 "brightness", level.getMaxLocalRawBrightness(owner.blockPosition()));
     }
 
-    public boolean dark(ServerLevel level) { return level.getMaxLocalRawBrightness(owner.blockPosition()) <= DARK; }
+    /**
+     * Underground on the diamond mine a torch goes down only near light 0, the one light monsters spawn in: the old light 7 laid one
+     * every three steps, forty-odd on each way down, and the stock was gone in the tunnels. Two, not one: the cell beside him is a block darker.
+     */
+    public boolean dark(ServerLevel level) {
+        return level.getMaxLocalRawBrightness(owner.blockPosition()) <= (owner.work.expedition.underground() ? MINE_DARK : DARK);
+    }
     private boolean hasFuel() {
         for (int slot = 0; slot < owner.getContainerSize(); slot++) if (owner.getItem(slot).is(ItemTags.COALS) && !owner.carriedForPlayer(owner.getItem(slot))) return true;
         return false;

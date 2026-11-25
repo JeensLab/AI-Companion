@@ -127,7 +127,7 @@ final class CompanionBreath {
 
     /**
      * A block he may break for air, as the way out of a pit is cut (CompanionRecovery): soil, rock or leaves no harder than deepslate,
-     * not one that falls, nothing anyone stands on, no chest or bench beside it, and no water or
+     * not one that falls, not a plug of his mine or a cell it forbids, nothing anyone stands on, no chest or bench beside it, and no water or
      * lava over it or beside it to fill the cell. A player's planks, glass or ladder stay.
      */
     private boolean cuttable(BlockPos block) {
@@ -136,7 +136,7 @@ final class CompanionBreath {
         float hardness = state.getDestroySpeed(level, block);
         if (!(CompanionQuarry.soil(state) || CompanionRecovery.rock(state) || state.is(net.minecraft.tags.BlockTags.LEAVES))
                 || hardness < 0 || hardness > CUT_HARDNESS || state.getBlock() instanceof FallingBlock) return false;
-        if (CompanionMiningNavigation.supportsLivingEntity(c, block)) return false;
+        if (c.mineSite().seals().contains(block) || c.mineSite().forbidden(block) || CompanionMiningNavigation.supportsLivingEntity(c, block)) return false;
         // A player's own: leaves he set (persistent), his buildings and the stone he placed.
         if (state.getBlock() instanceof LeavesBlock && state.getValue(LeavesBlock.PERSISTENT)) return false;
         if (level instanceof ServerLevel server && c.getOwnerId() != null
