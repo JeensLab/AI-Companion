@@ -29,7 +29,7 @@ import static dev.aicompanion.gametest.CompanionMineArena.rig;
 @GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionClimbToPlayerTests {
-    private static final int PIT_DEPTH = 9, ROOF_HEIGHT = 5, PLAYER_EAST = 11, SHALLOW = 2, DEEP = 3, FOLLOW_RANGE_SHORT = 8, FOLLOW_RANGE_PIT = 6,
+    private static final int PIT_DEPTH = 9, ROOF_HEIGHT = 5, PLAYER_EAST = 11, SHALLOW = 3, DEEP = 3, FOLLOW_RANGE_SHORT = 8, FOLLOW_RANGE_PIT = 6,
             RAVINE_WEST = 12, RAVINE_EAST = 4, RAVINE_DEPTH = 5, PLAYER_FAR = 20, FOLLOW_RANGE_RAVINE = 10, PLATEAU = 4, PLATEAU_HEIGHT = 6, PLAYER_BELOW_EAST = 14, RIM_HOLE = 9;
 
     private CompanionClimbToPlayerTests() { }
@@ -80,7 +80,7 @@ public final class CompanionClimbToPlayerTests {
     }
 
     /**
-     * The real «ко мне» of run come (seed 7): the mouth of his own mine, a hole two deep with its lip all round, and the player at the same height
+     * The real «ко мне» of run come (seed 7): the mouth of his own mine, a hole three deep with its lip all round, and the player at the same height
      * as the floor, in a dip of his own beyond the lip with a step down to it. The self-rescue has nothing to climb to (the player is not higher)
      * and cannot cut the andesite; the stairs go up onto the lip, and the walk goes on from there.
      */
@@ -427,6 +427,118 @@ public final class CompanionClimbToPlayerTests {
         h.succeedWhen(() -> {
             CompanionActionResult result = ended(h, c, id);
             h.assertTrue(result.success() && count(c, Items.DIAMOND) == 0, "He said «" + result.message() + "» at the ore | " + report(c));
+        });
+    }
+
+    /** In the open there is no pit: the player on a pillar of eight blocks on level ground (too high to jump up to) gets no stairs and no bridge of cobblestone. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    public static void cutsNoStairsToAPlayerOnAPillarInTheOpen(GameTestHelper h) {
+        mountain(h, false);
+        for (int y = GROUND + 1; y <= GROUND + 8; y++) h.setBlock(new BlockPos(CENTER + 6, y, CENTER), Blocks.ANDESITE);
+        noStairsInTheOpen(h, new BlockPos(CENTER + 6, GROUND + 9, CENTER));
+    }
+
+    /** The same with the player in the air over the ground: nothing is laid up to him. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    public static void cutsNoStairsToAFlyingPlayerInTheOpen(GameTestHelper h) {
+        mountain(h, false);
+        noStairsInTheOpen(h, new BlockPos(CENTER + 4, GROUND + 12, CENTER));
+    }
+
+    /** Oleg on level ground, the player at {@code spot} out of reach above: the hand-over ends with no block laid in the air round him. */
+    private static void noStairsInTheOpen(GameTestHelper h, BlockPos spot) {
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        BlockPos at = h.absolutePos(spot);
+        h.getLevel().getPlayerByUUID(c.getOwnerId()).teleportTo(at.getX() + .5, at.getY(), at.getZ() + .5);
+        c.setItem(6, new ItemStack(Items.DIAMOND));
+        h.assertTrue(c.startWork("give_items", "minecraft:diamond", 1).success(), "Hand-over not accepted: " + c.getLastTaskResult());
+        long id = c.activeWorkId();
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            for (int x = CENTER - 3; x <= CENTER + 8; x++) for (int z = CENTER - 3; z <= CENTER + 3; z++) for (int y = GROUND + 1; y <= GROUND + 13; y++) {
+                boolean pillar = x == CENTER + 6 && z == CENTER && y <= GROUND + 8 && spot.getY() == GROUND + 9;
+                h.assertTrue(pillar || h.getBlockState(new BlockPos(x, y, z)).isAir(), "A block laid in the open at " + x + "," + y + "," + z + "; he said «" + result.message() + "» | " + report(c));
+            }
+        });
+    }
+
+    /**
+     * Review of the climb (round 3): a room of a player's making is no pit. Oleg in a room of andesite under a roof of slabs (the light goes through
+     * a slab, a body does not), the player outside at the same height behind the wall: no wall is dug, no floor is laid.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    public static void digsNothingOutOfARoomWithASlabRoofToAPlayerBesideIt(GameTestHelper h) {
+        mountain(h, false);
+        for (int x = CENTER - 2; x <= CENTER + 2; x++) for (int z = CENTER - 2; z <= CENTER + 2; z++) {
+            boolean wall = Math.abs(x - CENTER) == 2 || Math.abs(z - CENTER) == 2;
+            for (int y = GROUND + 1; y <= GROUND + 3; y++) if (wall) h.setBlock(new BlockPos(x, y, z), Blocks.ANDESITE);
+            h.setBlock(new BlockPos(x, GROUND + 4, z), Blocks.OAK_SLAB);
+        }
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        c.setItem(4, ItemStack.EMPTY);
+        c.setItem(5, ItemStack.EMPTY);
+        givesNothingAndChangesNothing(h, c, new BlockPos(CENTER, GROUND + 1, CENTER), new BlockPos(CENTER + 5, GROUND + 1, CENTER), GROUND + 6);
+    }
+
+    /**
+     * Review of the climb (round 3): a cave under a skylight is no pit. Two chambers in the rock at one height, he in one under a hole of one block
+     * to the surface, the player in the other behind four blocks of rock: the sky over him is no wall round him, and nothing is dug.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    public static void digsNothingInACaveWithASkylightToAPlayerBehindRock(GameTestHelper h) {
+        mountain(h, false);
+        int floorY = GROUND - 5;
+        for (int x = CENTER - 5; x <= CENTER + 10; x++) for (int z = CENTER - 3; z <= CENTER + 3; z++) for (int y = floorY - 1; y < GROUND; y++) h.setBlock(new BlockPos(x, y, z), Blocks.ANDESITE);
+        for (int x = CENTER - 3; x <= CENTER; x++) for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = floorY; y <= floorY + 2; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        for (int x = CENTER + 5; x <= CENTER + 8; x++) for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = floorY; y <= floorY + 2; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        for (int y = floorY + 3; y <= GROUND; y++) h.setBlock(new BlockPos(CENTER - 2, y, CENTER), Blocks.AIR);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        c.setItem(4, ItemStack.EMPTY);
+        c.setItem(5, ItemStack.EMPTY);
+        givesNothingAndChangesNothing(h, c, new BlockPos(CENTER - 2, floorY, CENTER), new BlockPos(CENTER + 6, floorY, CENTER), GROUND + 1);
+    }
+
+    /** Oleg at {@code in}, the player at {@code owner}, a diamond to give: the hand-over fails, and not one block from the floor of the arena to {@code top} is changed (a torch lit in the dark is no dig). */
+    private static void givesNothingAndChangesNothing(GameTestHelper h, CompanionEntity c, BlockPos in, BlockPos owner, int top) {
+        BlockPos inside = h.absolutePos(in), outside = h.absolutePos(owner);
+        c.teleportTo(inside.getX() + .5, inside.getY(), inside.getZ() + .5);
+        h.getLevel().getPlayerByUUID(c.getOwnerId()).teleportTo(outside.getX() + .5, outside.getY(), outside.getZ() + .5);
+        c.setItem(6, new ItemStack(Items.DIAMOND));
+        java.util.Map<BlockPos, net.minecraft.world.level.block.state.BlockState> before = new java.util.HashMap<>();
+        for (int x = CENTER - 6; x <= CENTER + 10; x++) for (int z = CENTER - 6; z <= CENTER + 6; z++) for (int y = GROUND - 9; y <= top; y++) {
+            BlockPos cell = new BlockPos(x, y, z);
+            before.put(cell, h.getBlockState(cell));
+        }
+        h.assertTrue(c.startWork("give_items", "minecraft:diamond", 1).success(), "Hand-over not accepted: " + c.getLastTaskResult());
+        long id = c.activeWorkId();
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(!result.success(), "He gave it from where he was shut in: «" + result.message() + "» | " + report(c));
+            before.forEach((cell, state) -> h.assertTrue(h.getBlockState(cell).equals(state) || h.getBlockState(cell).is(Blocks.TORCH) || h.getBlockState(cell).is(Blocks.WALL_TORCH),
+                    "A block was dug or laid at " + cell.toShortString() + " (" + state + " became " + h.getBlockState(cell) + "); he said «" + result.message() + "» | " + report(c)));
+        });
+    }
+
+    /**
+     * Review of the climb: what he is handing over is not what he lays under the steps. Water in the first cells of the stairs, twenty cobblestones to
+     * give and dirt in the bag: the water is shut in with dirt, every cobblestone goes to the player.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    public static void sealsWithDirtAndGivesAllTheCobblestone(GameTestHelper h) {
+        CompanionEntity c = pit(h);
+        c.setItem(4, new ItemStack(Items.COBBLESTONE, 20));
+        c.setItem(5, new ItemStack(Items.DIRT, 64));
+        for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = GROUND - PIT_DEPTH + 1; y < GROUND - PIT_DEPTH + 4; y++) h.setBlock(new BlockPos(CENTER + 2, y, z), Blocks.WATER);
+        h.assertTrue(c.startWork("give_items", "minecraft:cobblestone", 20).success(), "Hand-over not accepted: " + c.getLastTaskResult());
+        long id = c.activeWorkId();
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && thrown(h, c, Items.COBBLESTONE) >= 20, "He gave " + thrown(h, c, Items.COBBLESTONE) + " of 20 cobblestones, said «" + result.message() + "» | " + report(c));
+            for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = GROUND - PIT_DEPTH + 1; y < GROUND - PIT_DEPTH + 4; y++)
+                h.assertTrue(!h.getBlockState(new BlockPos(CENTER + 2, y, z)).is(Blocks.COBBLESTONE), "Cobblestone he was giving was laid at " + y + "," + z + " | " + report(c));
         });
     }
 

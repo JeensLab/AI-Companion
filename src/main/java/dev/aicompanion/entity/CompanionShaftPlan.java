@@ -199,6 +199,15 @@ public final class CompanionShaftPlan {
         return CompanionBuildings.crafted(state) || level.getBlockEntity(pos) != null;
     }
 
+    /** A block of a player's making in the two cells of a stand or beside them (the floor under, the walls round, the roof over): a house, a yard with a door, a chest. */
+    static boolean builtAround(ServerLevel level, BlockPos feet) {
+        for (BlockPos cell : List.of(feet, feet.above())) {
+            if (built(level, cell)) return true;
+            for (Direction side : Direction.values()) if (built(level, cell.relative(side))) return true;
+        }
+        return false;
+    }
+
     private static boolean builtBeside(ServerLevel level, BlockPos cell) {
         for (Direction side : Direction.values()) if (built(level, cell.relative(side))) return true;
         return false;

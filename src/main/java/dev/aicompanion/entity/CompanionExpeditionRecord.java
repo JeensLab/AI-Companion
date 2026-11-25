@@ -25,8 +25,6 @@ public final class CompanionExpeditionRecord {
     /** Where the tunnels go on from: the way the new base is walked to, and the stairs' direction there. */
     public record Base(Direction direction, List<BlockPos> path) { }
 
-    /** Light a block takes off entirely: rock and soil; the leaves and the glass of a roof take less. */
-    private static final int LIGHT_BLOCKED = 15;
     private CompanionExpeditionRecord() { }
 
     /** Open sky over the cell, the leaves of trees not counted: a jungle's canopy (leaves and branches) shuts the sky light off the whole surface, and the surface under it is not a pit of the mine. */
@@ -55,7 +53,8 @@ public final class CompanionExpeditionRecord {
     private static boolean shuts(LevelReader level, BlockPos pos) {
         BlockState state = level.getBlockState(pos);
         boolean tree = state.is(BlockTags.LEAVES) || state.is(BlockTags.LOGS);
-        return !tree && (state.getLightBlock(level, pos) >= LIGHT_BLOCKED || !state.getFluidState().isEmpty());
+        // A roof is what a body cannot pass: glass, a slab, a stair, a trapdoor and iron bars shut the sky as well as stone does, though they let the light through.
+        return !tree && (!state.getCollisionShape(level, pos).isEmpty() || !state.getFluidState().isEmpty());
     }
 
     /**

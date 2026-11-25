@@ -150,8 +150,9 @@ final class CompanionExpeditionStairsUp {
                         continue;
                     }
                     case FLOOR -> {
-                        // A floor fills a gap of one block over a solid one, never a bridge over open air.
-                        if (CompanionShaftPlan.open(level, hazard.cell().below())) continue;
+                        // A floor fills a gap of one block over a block that bears it (a sturdy top: not air, not water or lava), never a bridge.
+                        BlockPos under = hazard.cell().below();
+                        if (!level.getBlockState(under).isFaceSturdy(level, under, Direction.UP)) continue;
                         laying = new CompanionExpeditionFloor(hazard.cell());
                     }
                     case OK -> laying = null;

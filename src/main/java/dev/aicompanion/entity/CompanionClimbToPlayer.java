@@ -15,8 +15,9 @@ import net.minecraft.world.entity.player.Player;
 
 /**
  * The walk to the player has no way at all, or failed with the player well above him, and he stands at the bottom of an open pit (a hole, a canyon, a
- * ravine under the sky, walled on every side), or in a walled-in place with a roof over it (a pocket in a cliff, a chamber) with the player at least
- * {@link #ABOVE} blocks higher: as a player digs out of a hole, he cuts stairs of his own up towards him (at his own height the goal is raised to the
+ * ravine under the sky, walled on every side, its walls at least {@link #ABOVE} high or the player that much higher), or in a walled-in place with
+ * a roof over it (a pocket in a cliff, a chamber) with the player at least {@link #ABOVE} blocks higher, never in a place of a player's making
+ * (a house, a yard with a door, a chest, planks, slabs, glass): as a player digs out of a hole, he cuts stairs of his own up towards him (at his own height the goal is raised to the
  * lip of the hole), with the tools he carries (not what he is handing over), a floor laid only over a solid block (a one-block gap, never a bridge) and
  * never into the column of blocks the player stands on. The stairs end once he is out of the pit under the sky, and the ordinary walk goes on from
  * there, or as soon as a walk is possible. In the open (a player on a pillar, a tree or in the air, with ground round him), in a roofed place with the
@@ -69,7 +70,7 @@ final class CompanionClimbToPlayer {
      * lower, and the hand-over ended «Не смог к тебе подойти» until the goal said «не получилось отдать алмазы».
      */
     private boolean start(Player player) {
-        if (task == w.taskId || !inPit() && !(higher(player) && closed((ServerLevel) w.owner.level(), w.owner.blockPosition(), false))) return false;
+        if (task == w.taskId || !realPit(player)) return false;
         if (stairs == null) {
             var dig = new CompanionExpeditionDig(w);
             // This climb is the way out itself: only the wear for ore is kept, none for a staircase out of a pit.
@@ -115,30 +116,51 @@ final class CompanionClimbToPlayer {
     }
 
     /** At the bottom of a pit under the sky: no way out of it but up, not even a drop of any depth (a ledge, a mesa or a roof is none). */
-    private boolean inPit() { return closed((ServerLevel) w.owner.level(), w.owner.blockPosition(), true); }
+    private boolean inPit() { return rim((ServerLevel) w.owner.level(), w.owner.blockPosition(), true, false) >= 0; }
 
     /**
-     * No walk from {@code at} leads out of {@link #BASIN} cells, however deep a drop it takes ({@link #FALL}: a ledge, a mesa or a roof is no pit):
-     * a pit or a chamber, not a spot beside a trunk, a wall or a cliff, where the ground goes on round them. With {@code sky} only under the sky
-     * (a cell under a roof is no way out), else anywhere (a hole with a roof over it is walled in too).
+     * A pit the stairs are cut out of: he is at the bottom of an open one under the sky (its walls at least {@link #ABOVE} high, or the player at least
+     * that much higher), or walled in under a roof with the player at least that much higher. Never in a place of a player's making (a house, a yard
+     * with a door, a chest, planks, slabs, glass): there the wall is his, and a level yard or a room beside him is no pit.
      */
-    private static boolean closed(ServerLevel level, BlockPos at, boolean sky) {
+    private boolean realPit(Player player) {
+        var level = (ServerLevel) w.owner.level();
+        BlockPos at = w.owner.blockPosition();
+        int open = rim(level, at, true, true);
+        if (open >= 0 && (open >= ABOVE || higher(player))) return true;
+        return higher(player) && rim(level, at, false, true) >= 0;
+    }
+
+    /**
+     * -1 when the walk from {@code at} leads out of {@link #BASIN} cells, however deep a drop it takes ({@link #FALL}: a ledge, a mesa or a roof is no
+     * pit), or with {@code strict} touches a block of a player's making; else the height of the lowest wall it meets above {@code at} (0 when it meets
+     * none: a cave under a skylight is no pit). With {@code sky} only under the sky (a cell under a roof is no way out), else anywhere (a hole with
+     * a roof over it is walled in too).
+     */
+    private static int rim(ServerLevel level, BlockPos at, boolean sky, boolean strict) {
         // The sky over a column is looked at once for the whole walk: the cells of one column are asked for in turn.
         Map<Long, Integer> ceilings = new HashMap<>();
-        if (sky && !CompanionExpeditionRecord.underSky(level, at, ceilings)) return false;
+        if (sky && !CompanionExpeditionRecord.underSky(level, at, ceilings)) return -1;
         ArrayDeque<BlockPos> next = new ArrayDeque<>(Set.of(at));
         Set<BlockPos> seen = new HashSet<>(next);
-        int walked = 0;
+        int walked = 0, rim = Integer.MAX_VALUE;
         while (!next.isEmpty()) {
             BlockPos cell = next.poll();
+            if (strict && CompanionShaftPlan.builtAround(level, cell)) return -1;
             for (Direction d : Direction.Plane.HORIZONTAL) {
-                BlockPos feet = feetIn(level, cell.relative(d));
-                if (feet == null || !seen.add(feet) || sky && !CompanionExpeditionRecord.underSky(level, feet, ceilings)) continue;
-                if (++walked > BASIN) return false;
+                BlockPos side = cell.relative(d), feet = feetIn(level, side);
+                if (feet == null) {
+                    int height = 0;
+                    while (height < LIP_REACH && !CompanionShaftPlan.open(level, side.above(height))) height++;
+                    if (height > 0) rim = Math.min(rim, side.getY() + height - at.getY());
+                    continue;
+                }
+                if (!seen.add(feet) || sky && !CompanionExpeditionRecord.underSky(level, feet, ceilings)) continue;
+                if (++walked > BASIN) return -1;
                 next.add(feet);
             }
         }
-        return true;
+        return rim == Integer.MAX_VALUE ? 0 : Math.max(rim, 0);
     }
 
     /** Where the feet go walking into {@code cell}: a block up, level, or down onto the first floor (no deeper than {@link #FALL}); null for a wall. */
@@ -163,7 +185,7 @@ final class CompanionClimbToPlayer {
         // Out is under the sky where the walk leads on: a step of his stairs under the rock of the pit's wall is still in it (run water of seed 7, 21.11).
         if (w.owner.onGround() && !w.owner.blockPosition().equals(lastCheck)) {
             lastCheck = w.owner.blockPosition();
-            if (CompanionExpeditionRecord.underSky(level, lastCheck) && !closed(level, lastCheck, true)) return over();
+            if (CompanionExpeditionRecord.underSky(level, lastCheck) && rim(level, lastCheck, true, false) < 0) return over();
         }
         stairs.aim(goal(player));
         stairs.keep(support(level, player));
