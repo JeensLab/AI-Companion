@@ -686,8 +686,7 @@ public final class CompanionWork {
 
     public void tick() {
         if (!(owner.level() instanceof ServerLevel level) || job == null) return;
-        if (level.getGameTime() > deadline) { finish(CompanionActionResult.timeout("Не успел закончить работу. Остановился, вещи у меня.")); return; }
-        if (stalled()) return;
+        if (owner.gathering.workEnded(level)) return;
         if (job != Job.HOUSE && owner.actionAnimation() != 0) return;
         // Breaking does not wait for the last drop: the next block goes while the drop is still on its way to him, and the
         // pickup settles after the breaking. Waiting per block is what made a crown one block at a time.
@@ -759,7 +758,7 @@ public final class CompanionWork {
      * True when the work was stopped: a minute and a half on the same spot (within two blocks), with the same bag and
      * counters and no new status. Waiting at a loaded furnace is checked by its product instead.
      */
-    private boolean stalled() {
+    boolean stalled() {
         if (phase == Phase.COOK || awaitingHouse() != null || building() != null && building().waitingForRoom()) { stallTicks = 0; return false; }
         long signature = progressSignature();
         boolean news = stallSeen.size() < 256 && stallSeen.add(phase + "|" + owner.getLastTaskResult());
@@ -827,7 +826,7 @@ public final class CompanionWork {
         }
     }
 
-    void watchChase() { hunting.watchChase(); drops.watch(); }
+    void watchChase() { hunting.watchChase(); drops.watch(); owner.gathering.watchWork(); }
     static final java.util.UUID NO_ID = new java.util.UUID(0, 0);
 
     /**

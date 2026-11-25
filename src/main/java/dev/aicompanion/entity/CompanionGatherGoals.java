@@ -52,6 +52,12 @@ final class CompanionGatherGoals {
         /** Logs of a player's building (no living crown, touching planks, doors, glass…): never chopped. */
         private final Set<BlockPos> builtLogs = new HashSet<>();
         private final Set<BlockPos> currentTreeLogs = new HashSet<>();
+        /** A log of the current tree was refused for want of any route: the rest of the tree is asked about as a whole before it is tried log by log. */
+        private boolean treeRefusedNoRoute;
+        /** The whole-tree question is still being searched: not yet «no trees». */
+        private boolean treeSearching;
+        /** Logs of a tree asked about at once: the trunk's foot and what rises from it, not a crown of five hundred. */
+        private static final int TREE_SAMPLE = 32;
         /** Trunks no walk reached from where he stood: not compared on foot again during this request. */
         private final Set<BlockPos> walkTried = new HashSet<>();
         private List<BlockPos> searchCandidates;
@@ -104,6 +110,7 @@ final class CompanionGatherGoals {
             pathFailTicks = 0;
             unreachableLogs.clear(); builtLogs.clear(); walkTried.clear();
             currentTreeLogs.clear();
+            treeRefusedNoRoute = treeSearching = false;
             c.replant.reset();
             searchOrigin = c.blockPosition();
             searchCandidates = null; searchedByPlayer = false;
@@ -153,6 +160,7 @@ final class CompanionGatherGoals {
             if (target == null) {
                 if (c.temporaryPillar.isRecovering()) return;
                 if (c.loot.hasPending()) return;
+                if (treeSearching) return;
                 // The tree is down and its drops are in the bag: its stumps get their saplings before the next tree or the report.
                 if (c.replant.tick()) return;
                 if (c.logsRemaining == 0 && currentTreeLogs.isEmpty()) {
@@ -304,6 +312,7 @@ final class CompanionGatherGoals {
 
         private void rejectTarget(boolean skipHigherCrown, String reason) {
             c.woodBreaking.reset();
+            if (approachPath == null) treeRefusedNoRoute = true;
             // One failed climb is not proof that the whole crown is out of reach: try another log of it once more.
             // A crown that is simply too tall, or a second failure on the same tree, still ends with the honest skip.
             if (skipHigherCrown && ++crownFailures < CROWN_ATTEMPTS && !reason.contains("слишком высокая") && !reason.contains("нечего подставить")) skipHigherCrown = false;
@@ -375,6 +384,17 @@ final class CompanionGatherGoals {
         private BlockPos selectNextLog() {
             currentTreeLogs.removeIf(pos -> unreachableLogs.contains(pos) || !c.level().hasChunkAt(pos)
                     || !c.level().getBlockState(pos).is(logBlocks()));
+            treeSearching = false;
+            if (treeRefusedNoRoute && !currentTreeLogs.isEmpty()) {
+                // On a ledge over a cliff each log of each tree was refused one by one, ninety seconds of it.
+                // One search to the stand cells of the whole tree: a way to any of them keeps the tree, none retires it at once.
+                var walk = c.work.route.nearest(currentTreeLogs.stream().sorted(Comparator.comparingInt(BlockPos::getY)).limit(TREE_SAMPLE).toList(), TRUNK);
+                if (walk.busy()) { treeSearching = true; return null; }
+                treeRefusedNoRoute = false;
+                if (walk.found()) return walk.block();
+                unreachableLogs.addAll(currentTreeLogs);
+                currentTreeLogs.clear();
+            }
             if (currentTreeLogs.isEmpty()) {
                 if (c.temporaryPillar.hasSupports()) { c.temporaryPillar.requestCleanup(); return null; }
                 if (c.replant.pending()) return null;
@@ -408,6 +428,7 @@ final class CompanionGatherGoals {
 
         private void collectConnectedLogs(BlockPos seed) {
             crownFailures = 0;
+            treeRefusedNoRoute = false;
             currentTreeLogs.addAll(CompanionLogSearch.connected((ServerLevel) c.level(), seed, logBlocks()));
         }
 
