@@ -64,6 +64,8 @@ final class CompanionNodeEvaluator extends WalkNodeEvaluator {
         var state = currentContext.level().getBlockState(new net.minecraft.core.BlockPos(x, y, z));
         return state.is(net.minecraft.tags.BlockTags.CLIMBABLE) && !state.is(net.minecraft.world.level.block.Blocks.SCAFFOLDING);
     }
+    /** The world as this search sees it (the snapshot its cells are read from). */
+    net.minecraft.world.level.CollisionGetter level() { return currentContext.level(); }
     boolean collides(net.minecraft.world.phys.AABB box) { return !currentContext.level().noCollision(mob, box); }
     /**
      * The water straight up from (x, y, z) ends in air within {@code blocks}, and none of it is a bubble column that drags down (over

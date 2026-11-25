@@ -49,4 +49,25 @@ public final class CompanionMealTests {
             h.succeed();
         });
     }
+
+    /** With no order and no goal the meal waits for the foe at his side as before: a wound of eight is not the line (the zombie here does no harm). */
+    @GameTest(template = "tall_tree", timeoutTicks = 200)
+    public static void withNoOrderTheMealStillWaitsForTheZombieAtHisSide(GameTestHelper h) {
+        box(h, 0, 0, 0, 31, 6, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 0, 31, Blocks.BEDROCK);
+        box(h, 0, 1, 0, 31, 2, 31, Blocks.DIRT);
+        CompanionEntity c = spawn(h, 16, 3, 16);
+        c.setItem(0, new ItemStack(Items.BREAD, BREAD));
+        c.setHealth(WOUNDED);
+        Zombie zombie = h.spawn(net.minecraft.world.entity.EntityType.ZOMBIE, new BlockPos(17, 3, 16));
+        zombie.getAttribute(Attributes.ATTACK_DAMAGE).setBaseValue(0);
+        zombie.getAttribute(Attributes.MAX_HEALTH).setBaseValue(ZOMBIE_HEALTH); zombie.setHealth(ZOMBIE_HEALTH);
+        long begun = h.getTick();
+        h.onEachTick(() -> {
+            if (zombie.isAlive()) { zombie.setTarget(c); c.setTarget(zombie); }
+            String trace = " | bread " + count(c, Items.BREAD) + ", health " + c.getHealth();
+            h.assertTrue(count(c, Items.BREAD) == BREAD, "He ate with a foe at his side and no order" + trace);
+            if (h.getTick() - begun >= MEAL_WINDOW) h.succeed();
+        });
+    }
 }

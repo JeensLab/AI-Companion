@@ -112,4 +112,27 @@ public final class CompanionGatherStallTests {
             }
         });
     }
+
+    /**
+     * A wood order whose gathering let go before any log while trees stand in reach is not the answer of «no tree» (the plan gives up the later
+     * parts that need wood only on that answer).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void aGatherStoppedWithTreesInReachIsNotTheAnswerOfNoTree(GameTestHelper h) {
+        CompanionEntity c = spawn(h, 16, 1, 16);
+        c.setFollowing(false);
+        var started = c.startWork("gather_wood", "", 4);
+        h.assertTrue(started.success(), "Order not accepted: " + started.message());
+        long id = c.activeWorkId();
+        h.runAfterDelay(40, () -> {
+            // The goal lets go of the work for no reason of «no tree» (a limit of its own, a yield that was not taken back).
+            try { var gathering = CompanionEntity.class.getDeclaredField("gatheringLogs"); gathering.setAccessible(true); gathering.setBoolean(c, false); }
+            catch (ReflectiveOperationException e) { throw new IllegalStateException(e); }
+        });
+        h.succeedWhen(() -> {
+            CompanionActionResult result = c.workResult(id);
+            h.assertTrue(result != null && !c.isWorking(), "The order did not end: " + c.getLastTaskResult());
+            h.assertTrue(!result.success() && !result.message().contains(dev.aicompanion.client.CompanionPlanRunner.NO_TREE), "Said «no tree» with trees in reach: " + result.message());
+        });
+    }
 }

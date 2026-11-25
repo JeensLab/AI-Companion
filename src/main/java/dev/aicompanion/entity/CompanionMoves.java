@@ -44,6 +44,7 @@ final class CompanionMoves {
     private final CompanionNodeEvaluator eval;
     private final Mob mob;
     private final Node[] sides = new Node[4];
+    private final java.util.Set<Node> chainRefused = new java.util.HashSet<>();
 
     CompanionMoves(CompanionNodeEvaluator eval, Mob mob) { this.eval = eval; this.mob = mob; }
 
@@ -171,7 +172,7 @@ final class CompanionMoves {
      * step and is neither stairs nor a ladder, which he walks up. The way on is then over it (a step up), if it is no higher than that.
      */
     private boolean filled(int x, int y, int z) {
-        var level = mob.level();
+        var level = eval.level();
         BlockPos pos = new BlockPos(x, y, z);
         if (level.getBlockState(pos).getCollisionShape(level, pos).isEmpty() && level.getBlockState(pos.above()).getCollisionShape(level, pos.above()).isEmpty()) return false;
         if (eval.climbableAt(x, y, z) || level.getBlockState(pos).is(net.minecraft.tags.BlockTags.STAIRS)) return false;
@@ -212,19 +213,35 @@ final class CompanionMoves {
      * takes for a column (4 ticks in the air against 4.6), so a stair is walked step by step and breaks the chain, before and after it.
      * Into water and onto a ladder or vine nothing is added.
      */
-    private static boolean fallsFar(Node from, Node to) {
+    private boolean fallsFar(Node from, Node to) {
+        if (chain(from, to) <= LAND_DROP) return false;
+        // The search may find a safer way into this cell later (a stair beside the drop): it opens the cell again for what it refused here.
+        chainRefused.add(from);
+        return true;
+    }
+
+    /** The blocks fallen in a row by the way into {@code from}, then onto {@code to}: 0 for a step of one block, into water, onto a ladder or vine. */
+    static int chain(Node from, Node to) {
         int fall = from.y - to.y;
-        if (fall <= 1 || to.type == PathType.WATER || to.type == PathType.OPEN) return false;
+        if (fall <= 1 || to.type == PathType.WATER || to.type == PathType.OPEN) return 0;
         Node at = from;
-        for (int link = 0; link < CHAIN_LINKS && at.cameFrom != null && at.type != PathType.WATER; link++) {
+        for (int link = 0; link < CHAIN_LINKS && at.cameFrom != null && at.type != PathType.WATER && at.type != PathType.OPEN; link++) {
             Node before = at.cameFrom;
             int drop = before.y - at.y;
             if (drop <= 1 || before.x == at.x && before.z == at.z) break;
             fall += drop;
             at = before;
         }
-        return fall > LAND_DROP;
+        return fall;
     }
+
+    /** The blocks fallen in a row by the way the search has into this cell. */
+    static int chainOf(Node node) { return node.cameFrom == null ? 0 : chain(node.cameFrom, node); }
+
+    /** Whether a drop from this cell was refused for the chain of falls before it. */
+    boolean refusedForChain(Node node) { return chainRefused.contains(node); }
+
+    void forgetRefused(Node node) { chainRefused.remove(node); }
 
     /** Down through air to the first cell with a floor: no deeper than he may fall, unless it is water. */
     private Node drop(int x, int y, int z) {

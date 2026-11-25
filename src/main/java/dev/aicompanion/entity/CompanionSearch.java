@@ -145,10 +145,21 @@ final class CompanionSearch {
         Node node = current;
         float g = node.g + ticks, walked = node.walkedDistance + node.distanceTo(to);
         if (walked >= range) limited = true;
-        if (to.closed || walked >= range || (to.f > 0 && g >= to.g)) return;
+        // A way into a cell with fewer fallen blocks wins over a quicker one that leaves no drop beyond it (CompanionMoves.chain): into an open cell
+        // always, into a closed one only if a drop from it was refused for the chain, and then the cell is opened again.
+        boolean reached = to.closed ? moves.refusedForChain(to) : to.f > 0;
+        int fallen = reached ? CompanionMoves.chain(node, to) : 0, had = reached ? CompanionMoves.chainOf(to) : 0;
+        boolean safer = reached && fallen < had && !descendsFrom(node, to);
+        if (walked >= range || reached && !to.closed && fallen > had || !safer && (to.closed || to.f > 0 && g >= to.g)) return;
         to.cameFrom = node; to.g = g; to.walkedDistance = walked;
+        if (to.closed) { to.closed = false; moves.forgetRefused(to); }
         float f = g + WEIGHT * estimate(to);
         if (to.inOpenSet()) open.changeCost(to, f); else { to.f = f; open.insert(to); }
+    }
+
+    private static boolean descendsFrom(Node node, Node ancestor) {
+        for (Node at = node; at != null; at = at.cameFrom) if (at == ancestor) return true;
+        return false;
     }
 
     /** None arrives: the way to the cell nearest to a target, as the game gave it. */

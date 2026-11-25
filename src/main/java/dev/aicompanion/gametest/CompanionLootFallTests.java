@@ -121,6 +121,42 @@ public final class CompanionLootFallTests {
         });
     }
 
+    /**
+     * A plateau, a ledge one cell wide two blocks below it, ground two blocks below the ledge, and nothing else between: the plateau drops
+     * onto the ledge (quicker), and a stair of single blocks leads down to it as well. The drop onto the ledge and on to the ground is a fall
+     * of four, the stair and the drop a fall of two: the search reaches the ledge by the drop first, and must still find the way by the stair.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 200)
+    public static void aLedgeReachedByADropAndByAStairKeepsTheDropBeyondItForTheStair(GameTestHelper h) {
+        CompanionSingleRouteTests.box(h, 0, 0, 0, 31, 23, 31, Blocks.AIR);
+        CompanionSingleRouteTests.box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
+        CompanionSingleRouteTests.box(h, 0, 2, 0, 10, 7, 31, Blocks.STONE);
+        CompanionSingleRouteTests.box(h, 11, 2, 0, 11, 12, 31, Blocks.STONE);
+        CompanionSingleRouteTests.box(h, 12, 2, 0, 31, 3, 31, Blocks.STONE);
+        CompanionSingleRouteTests.box(h, 12, 4, 9, 12, 12, 9, Blocks.STONE);
+        CompanionSingleRouteTests.box(h, 11, 6, 10, 11, 12, 10, Blocks.AIR);
+        CompanionSingleRouteTests.box(h, 11, 7, 9, 11, 12, 9, Blocks.AIR);
+        CompanionSingleRouteTests.box(h, 0, 0, 0, 31, 23, 0, Blocks.BEDROCK);
+        CompanionSingleRouteTests.box(h, 0, 0, 31, 31, 23, 31, Blocks.BEDROCK);
+        CompanionSingleRouteTests.box(h, 0, 0, 0, 0, 23, 31, Blocks.BEDROCK);
+        CompanionSingleRouteTests.box(h, 31, 0, 0, 31, 23, 31, Blocks.BEDROCK);
+        CompanionEntity c = CompanionSingleRouteTests.spawn(h, 8, 8, 10);
+        var nav = (CompanionNavigation) c.getNavigation();
+        h.runAfterDelay(5, () -> {
+            var path = nav.searchNow(java.util.Set.of(h.absolutePos(new BlockPos(16, 4, 10))), 1);
+            StringBuilder dbg = new StringBuilder(); if (path != null) for (int i = 0; i < path.getNodeCount(); i++) dbg.append(" ").append(h.relativePos(path.getNode(i).asBlockPos()).toShortString());
+            h.assertTrue(path != null && path.canReach(), "No way to the ground by the stair: " + dbg);
+            int fall = 0;
+            for (int i = 1; i < path.getNodeCount(); i++) {
+                int drop = path.getNode(i - 1).y - path.getNode(i).y;
+                if (drop <= 1) { fall = 0; continue; }
+                fall += drop;
+                h.assertTrue(fall <= 3, "A fall of " + fall + " blocks in a row on the way, at node " + i);
+            }
+            h.succeed();
+        });
+    }
+
     /** He stays on the plateau unhurt, and after a while is no longer going for the drop. */
     private static void left(GameTestHelper h, CompanionEntity c) {
         h.onEachTick(() -> h.assertTrue(c.getY() > h.absolutePos(new BlockPos(0, 12, 0)).getY() && c.getHealth() >= c.getMaxHealth(),

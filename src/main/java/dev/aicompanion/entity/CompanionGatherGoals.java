@@ -111,6 +111,7 @@ final class CompanionGatherGoals {
             unreachableLogs.clear(); builtLogs.clear(); walkTried.clear();
             currentTreeLogs.clear();
             treeRefusedNoRoute = treeSearching = false;
+            c.gathering.noTreeFound = false;
             c.replant.reset();
             searchOrigin = c.blockPosition();
             searchCandidates = null; searchedByPlayer = false;
@@ -167,7 +168,7 @@ final class CompanionGatherGoals {
                     String accessNote = unreachableLogs.isEmpty() ? "Текущее дерево закончил." : "До части брёвен не удалось добраться, поэтому оставил их.";
                     finish("Закончил сбор: срубил " + gathered + " брёвен (цель была " + c.requestedLogs + "). "
                             + accessNote + " У меня в сумке: " + c.getStoredItemsSummary() + ".");
-                } else if (++noLogsTicks >= 100) finish(kind != null ? (gathered == 0 ? unreachableLogs.isEmpty() ? kind.none() : kind.outOfReach()
+                } else if (++noLogsTicks >= 100) { c.gathering.noTreeFound = gathered == 0; finish(kind != null ? (gathered == 0 ? unreachableLogs.isEmpty() ? kind.none() : kind.outOfReach()
                         : "Сбор завершён раньше цели: срубил " + gathered + " из " + c.requestedLogs + " брёвен " + kind.genitive()
                         + (unreachableLogs.isEmpty() ? ", больше рядом не нашёл. " : ", до остальных не добрался. ") + "У меня в сумке: " + c.getStoredItemsSummary() + ".")
                         : gathered == 0
@@ -176,7 +177,7 @@ final class CompanionGatherGoals {
                         : "Сбор завершён раньше цели: срубил " + gathered + " из " + c.requestedLogs + " брёвен; "
                         + (unreachableLogs.isEmpty() ? "рядом больше нет доступных брёвен. "
                         : "оставшиеся брёвна не удалось достать по пути. ")
-                        + "У меня в сумке: " + c.getStoredItemsSummary() + ".");
+                        + "У меня в сумке: " + c.getStoredItemsSummary() + "."); }
                 return;
             }
             noLogsTicks = 0;

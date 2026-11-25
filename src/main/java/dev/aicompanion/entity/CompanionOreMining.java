@@ -31,8 +31,10 @@ final class CompanionOreMining {
     /** The flooded cells of his tunnel he has passed: his own way, not a pond, whatever is dug beside them. */
     private final Set<BlockPos> wayWater = new HashSet<>();
     /** Where the order began, the way out when no tunnel of it set a better exit; the stand the stair dug out of a pit leads to; the steps of that stair so far. */
-    private BlockPos home, pitStand;
+    private BlockPos home, pitStand, lastPitStand;
     private int pitSteps, dugCells;
+    /** Whether no walk leads from where he is to {@link #home} (the order ended in a pit); null while that is not known. */
+    private Boolean noWalkHome;
     private long homeWork = -1;
     private static final int MAX_PIT_STEPS = 24, PIT_DEPTH = 2, PLAYER_NEAR = 8;
 
@@ -42,7 +44,7 @@ final class CompanionOreMining {
     private void beginOrder() {
         long order = w.owner.activeWorkId();
         if (order == homeWork) return;
-        homeWork = order; home = w.owner.blockPosition(); pitStand = null; pitSteps = dugCells = 0;
+        homeWork = order; home = w.owner.blockPosition(); pitStand = lastPitStand = null; pitSteps = dugCells = 0; noWalkHome = null;
     }
 
     /** The pickaxe this ore needs: the best carried one that really drops it, otherwise made the usual way. */
@@ -128,6 +130,8 @@ final class CompanionOreMining {
         beginOrder();
         if (w.oreDone || w.oreMined >= w.oreWanted) {
             w.oreDone = true;
+            // The rest of the tunnel to an ore the order no longer needs is not dug (only the stair out of a pit is, from here on).
+            if (pitSteps == 0) w.oreTunnel.clear();
             // A drop that fell into a pocket while the rest of the vein still closed it is reachable now: one more round.
             if (!w.oreLootRetried) { w.oreLootRetried = true; w.owner.retryHarvestPickup(); return; }
             climbOutOfOre(level); return;
@@ -298,7 +302,7 @@ final class CompanionOreMining {
         int reach = w.items.reachBlock(level, cell, false);
         if (reach < 0) { unreachable(w.target); rejectOre(); return; }
         if (reach == 0) return;
-        w.owner.workStatus("Прокладываю ход к «" + w.ore.oreName + "».");
+        w.owner.workStatus(pitStand != null ? "Прокладываю ступень, чтобы выбраться из ямы." : "Прокладываю ход к «" + w.ore.oreName + "».");
         if (!w.breaking.tick(level, cell)) return;
         if (harvestOreCell(level, cell)) { w.oreTunnel.removeFirst(); w.resetApproach(); w.cooldown = 2; }
     }
@@ -378,6 +382,8 @@ final class CompanionOreMining {
 
     /** One ore, one reason: an ore already left for lava or a spring (no plugs, over lava, a fall beside it) is not counted again as «no safe way». */
     private void unreachable(BlockPos ore) {
+        // Once the order is done nothing more is an ore he failed to reach: the cells dug now are the way out of a pit.
+        if (w.oreDone) return;
         if (ore == null || !lackedPlugs.contains(ore) && !lackedSpringPlugs.contains(ore) && !overLava.contains(ore) && !lavaFalls.contains(ore)) w.oreUnreachable++;
     }
 
@@ -427,6 +433,7 @@ final class CompanionOreMining {
 
     /** Back up the own stairs before reporting, like after stone: in legs when the way is longer than one search. A pit with no walk out of it gets a stair dug up. */
     private void climbOutOfOre(ServerLevel level) {
+        if (!pitKnown()) return;
         BlockPos exit = exitCell();
         if (exit == null || w.owner.getY() >= exit.getY() - .5) { finishOre(); return; }
         if (!w.owner.onGround() && !w.owner.isInWater()) return;
@@ -452,13 +459,22 @@ final class CompanionOreMining {
     }
 
     /**
-     * The tunnel's stand above the ore; else, only for a pit this order dug him into (below its start by more than a step, no player
-     * beside him), the place the order began. An order that dug nothing, or that ends beside the player, ends where it stands.
+     * The tunnel's stand above the ore; else, only for a pit this order dug him into (below its start by more than a step, no walk back to
+     * the start, no player beside him), the place the order began. A cave or a slope he walked down, an order that dug nothing, or one that
+     * ends beside the player, ends where it stands.
      */
     private BlockPos exitCell() {
         if (w.oreExit != null) return w.oreExit;
-        boolean inPit = home != null && dugCells > 0 && (pitSteps > 0 || w.owner.getY() < home.getY() - PIT_DEPTH);
-        return inPit && w.owner.level().getNearestPlayer(w.owner, PLAYER_NEAR) == null ? home : null;
+        boolean below = home != null && dugCells > 0 && (pitSteps > 0 || w.owner.getY() < home.getY() - PIT_DEPTH);
+        if (!below || w.owner.level().getNearestPlayer(w.owner, PLAYER_NEAR) != null) return null;
+        return pitSteps > 0 || Boolean.TRUE.equals(noWalkHome) ? home : null;
+    }
+
+    /** Asks once whether a walk leads back to where the order began; false while the answer is not in. */
+    private boolean pitKnown() {
+        if (noWalkHome != null || pitSteps > 0 || w.oreExit != null || home == null || dugCells == 0 || w.owner.getY() >= home.getY() - PIT_DEPTH) return true;
+        noWalkHome = w.route.noWay(home);
+        return noWalkHome != null;
     }
 
     /**
@@ -485,8 +501,10 @@ final class CompanionOreMining {
                 cells.add(cell.immutable());
             }
             if (!open || !cells.isEmpty() && lacksPlugs(level, cells, null, ownWater(), true) != CompanionLava.Opening.SAFE) continue;
+            // A stand that is open already and was walked to once (no walk to it was found) is no new step.
+            if (cells.isEmpty() && stand.equals(lastPitStand)) continue;
             w.oreTunnel.addAll(cells); w.resetApproach();
-            pitStand = stand.immutable(); pitSteps++;
+            pitStand = lastPitStand = stand.immutable(); pitSteps++;
             dev.aicompanion.CompanionDiagnostics.event(w.owner.diagnosticTrace(), "ore_pit_stair", "entity", w.owner.getUUID(), "from", here, "stand", stand, "cells", cells.size());
             return true;
         }
@@ -497,8 +515,10 @@ final class CompanionOreMining {
         if (w.owner.getY() >= pitStand.getY() - .5 && w.owner.blockPosition().distSqr(pitStand) <= 2) { pitStand = null; w.route.stop(); return; }
         w.owner.movementIntent(pitStand);
         w.owner.workStatus("Выбираюсь из ямы по ступеням.");
+        int busy = w.route.busyAnswers();
         if (w.path == null || w.route.legOver()) w.path = w.route.toCells(Set.of(pitStand));
-        if (w.path == null) { pitStand = null; return; }
+        // This tick's cells went elsewhere: not "no walk", asked again next tick.
+        if (w.path == null) { if (w.route.busyAnswers() == busy) pitStand = null; return; }
         w.route.walk(w.path);
     }
 

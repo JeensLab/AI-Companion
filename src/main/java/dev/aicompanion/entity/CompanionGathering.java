@@ -88,6 +88,9 @@ final class CompanionGathering {
         c.getEntityData().set(CompanionEntity.DATA_LAST_TASK_RESULT, "Предыдущую задачу остановил. В сумке: " + c.getStoredItemsSummary() + ".");
     }
 
+    /** The last gathering of logs ended because it found no tree, not for another reason (a stop, a limit): the plan gives up wood only on that. */
+    boolean noTreeFound;
+
     /**
      * The work's deadline and its guard against a stand-still; true when one of them ended the work.
      * The work's own tick runs them, but a gathering goal holds that tick off: {@link #watchWork()} runs them then.

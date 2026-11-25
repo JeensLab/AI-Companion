@@ -35,7 +35,7 @@ final class CompanionEating {
         c.animateAction(4, c.blockPosition(), c.eating);
     }
 
-    /** A long order away from the player: he eats at this health whoever is near. */
+    /** On an order or a goal he eats at this health whoever is near. */
     private static final float ORDER_EATS_BELOW = 10;
 
     /**
