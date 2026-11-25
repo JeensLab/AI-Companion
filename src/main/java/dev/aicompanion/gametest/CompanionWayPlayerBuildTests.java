@@ -46,37 +46,37 @@ public final class CompanionWayPlayerBuildTests {
     // ---- one kind each: hung above the base he built, asked for by the phrase ----
 
     /** A pumpkin he hung five up and four across his base: «добудь тыкву» takes it, though it stands on his own building. */
-    @GameTest(template = "way_far", timeoutTicks = 16000)
+    @GameTest(template = "way_wide", timeoutTicks = 16000)
     public static void aGourdHeHungAboveHisBaseIsTaken(GameTestHelper h) {
         taken(h, Blocks.PUMPKIN, Items.PUMPKIN, 4, 2, 5, "добудь тыкву", "minecraft:pumpkin");
     }
 
     /** A lapis block he hung seven up and six across his base: «добудь блок лазурита» takes it as it lies. */
-    @GameTest(template = "way_far", timeoutTicks = 16000)
+    @GameTest(template = "way_wide", timeoutTicks = 16000)
     public static void aStorageBlockHeHungAboveHisBaseIsTaken(GameTestHelper h) {
         taken(h, Blocks.LAPIS_BLOCK, Items.LAPIS_BLOCK, 6, 3, 7, "добудь блок лазурита", "minecraft:lapis_block");
     }
 
     /** «Добудь лазурит» over the lapis block he hung: the block is not an ore, it is the block that makes the item — it is mined. */
-    @GameTest(template = "way_far", timeoutTicks = 16000)
+    @GameTest(template = "way_wide", timeoutTicks = 16000)
     public static void anOresItemFromTheBlockHeHungIsTaken(GameTestHelper h) {
         taken(h, Blocks.LAPIS_BLOCK, Items.LAPIS_LAZULI, 3, 4, 4, "добудь лазурит", "minecraft:lapis_lazuli");
     }
 
     /** A plain block he hung ten up and eight across his base: «добудь булыжник» takes the block itself, not a stone face. */
-    @GameTest(template = "way_far", timeoutTicks = 16000)
+    @GameTest(template = "way_wide", timeoutTicks = 16000)
     public static void aPlainBlockHeHungAboveHisBaseIsTaken(GameTestHelper h) {
         taken(h, Blocks.COBBLESTONE, Items.COBBLESTONE, 8, 2, 10, "добудь булыжник", "minecraft:cobblestone");
     }
 
     /** The far corner of his own numbers: a barrel 25 across and 20 up, hung by him above his base — the search's box holds it. */
-    @GameTest(template = "way_far", timeoutTicks = 32000)
+    @GameTest(template = "way_wide", timeoutTicks = 32000)
     public static void aFarCornerBlockHeHungAboveHisBaseIsTaken(GameTestHelper h) {
         taken(h, Blocks.BARREL, Items.BARREL, 25, 0, 20, "добудь бочку", "minecraft:barrel");
     }
 
     /** His whole scene: four blocks of different kinds hung above his base at once, asked one after another — every one is taken. */
-    @GameTest(template = "way_far", timeoutTicks = 40000)
+    @GameTest(template = "way_wide", timeoutTicks = 40000)
     public static void hisWholeSceneOfHungBlocksIsTaken(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
         CompanionEntity c = spawn(h);
@@ -119,7 +119,7 @@ public final class CompanionWayPlayerBuildTests {
      * many cells held one, how many of those were the player's own build — and that they were taken anyway, because they are the
      * order. One line, as every search has: the player reads the decision, not only its result.
      */
-    @GameTest(template = "way_far", timeoutTicks = 16000)
+    @GameTest(template = "way_wide", timeoutTicks = 16000)
     public static void theSearchLineSaysTheBlocksWereHisOwnAndTaken(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
         CompanionEntity c = spawn(h);
@@ -146,7 +146,7 @@ public final class CompanionWayPlayerBuildTests {
      * A block he sees but no way reaches: the refusal names the distance and says it SAW the block — «вижу, но не достать: 21
      * блок вверх и 12 вбок», never «Рядом не вижу» and a distance in the same sentence (the judge read both together).
      */
-    @GameTest(template = "way_far", timeoutTicks = 400)
+    @GameTest(template = "way_wide", timeoutTicks = 400)
     public static void aSeenBlockIsRefusedAsSeenNotAsMissing(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
         CompanionEntity c = spawn(h);
@@ -166,7 +166,7 @@ public final class CompanionWayPlayerBuildTests {
      * A block outside the box is said once for one answer: the search is asked again every tick of an order, and the line «за
      * коробкой 24 вбок есть 1» must not repeat for an answer that did not change (the judge counted seventeen).
      */
-    @GameTest(template = "way_far", timeoutTicks = 400)
+    @GameTest(template = "way_wide", timeoutTicks = 400)
     public static void theOutsideLineIsSaidOnceForOneAnswer(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
         CompanionEntity c = spawn(h);

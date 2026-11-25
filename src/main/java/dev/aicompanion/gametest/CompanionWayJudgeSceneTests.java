@@ -45,25 +45,25 @@ public final class CompanionWayJudgeSceneTests {
     private static final int HOME_X = 20, HOME_Z = 16;
 
     /** The owner's nearest: a gold block 3 across and 3 up, nothing under it. */
-    @GameTest(template = "way_far", timeoutTicks = 16000)
+    @GameTest(template = "way_wide", timeoutTicks = 16000)
     public static void goldBlockThreeAcrossThreeUpIsTaken(GameTestHelper h) {
         taken(h, Blocks.GOLD_BLOCK, Items.GOLD_BLOCK, "minecraft:gold_block", "добудь золотой блок", 3, 0, 3, true, plainPickaxe());
     }
 
     /** Wool 8 across and 8 up. */
-    @GameTest(template = "way_far", timeoutTicks = 20000)
+    @GameTest(template = "way_wide", timeoutTicks = 20000)
     public static void woolEightAcrossEightUpIsTaken(GameTestHelper h) {
         taken(h, Blocks.WHITE_WOOL, Items.WHITE_WOOL, "minecraft:white_wool", "добудь белую шерсть", 8, 1, 8, true, plainPickaxe());
     }
 
     /** Planks 14 across and 14 up: the middle of the owner's scene. */
-    @GameTest(template = "way_far", timeoutTicks = 24000)
+    @GameTest(template = "way_wide", timeoutTicks = 24000)
     public static void planksFourteenAcrossFourteenUpAreTaken(GameTestHelper h) {
         taken(h, Blocks.OAK_PLANKS, Items.OAK_PLANKS, "minecraft:oak_planks", "добудь дубовые доски", 14, -2, 14, true, plainPickaxe());
     }
 
     /** Gold ore 6 across and 3 up, asked for as its drop: raw gold, not the ore block. */
-    @GameTest(template = "way_far", timeoutTicks = 16000)
+    @GameTest(template = "way_wide", timeoutTicks = 16000)
     public static void goldOreSixAcrossThreeUpGivesRawGold(GameTestHelper h) {
         // An ore's drop is not in the block table (a wooden pickaxe cannot take an ore), so the way's search does not see it:
         // the mine's own chain takes the ore. The order is what must end with raw gold in the bag.
@@ -74,26 +74,26 @@ public final class CompanionWayJudgeSceneTests {
      * A plain pickaxe and a Silk Touch one in the same bag, a gold block three above: the block is taken, not swapped between
      * hands until the order times out.
      */
-    @GameTest(template = "way_far", timeoutTicks = 16000)
+    @GameTest(template = "way_wide", timeoutTicks = 16000)
     public static void goldBlockThreeUpWithAPlainAndASilkPickaxeIsTaken(GameTestHelper h) {
         taken(h, Blocks.GOLD_BLOCK, Items.GOLD_BLOCK, "minecraft:gold_block", "добудь золотой блок", 3, 0, 3, true,
                 plainPickaxe(), silkPickaxe(h));
     }
 
     /** The far corner of the owner's own numbers: a barrel 25 across and 20 up, nothing under it. */
-    @GameTest(template = "way_far", timeoutTicks = 40000)
+    @GameTest(template = "way_wide", timeoutTicks = 40000)
     public static void barrelTwentyFiveAcrossTwentyUpIsTaken(GameTestHelper h) {
         taken(h, Blocks.BARREL, Items.BARREL, "minecraft:barrel", "добудь бочку", 25, 0, 20, true, plainPickaxe());
     }
 
     /** Glass 20 across and 16 up, the only pickaxe a Silk Touch one (glass gives nothing to a plain one). */
-    @GameTest(template = "way_far", timeoutTicks = 32000)
+    @GameTest(template = "way_wide", timeoutTicks = 32000)
     public static void glassTwentyAcrossSixteenUpIsTakenWithASilkTool(GameTestHelper h) {
         taken(h, Blocks.GLASS, Items.GLASS, "minecraft:glass", "добудь стекло", 20, 0, 16, true, silkPickaxe(h));
     }
 
     /** A block seen but 33 up, past the way's height: the refusal names the distance, not a bare «подойти не смог». */
-    @GameTest(template = "way_far", timeoutTicks = 400)
+    @GameTest(template = "way_wide", timeoutTicks = 400)
     public static void aSeenBlockTwentyOneUpIsRefusedWithItsDistance(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
         BlockPos target = new BlockPos(HOME_X + 12, FEET + 33, HOME_Z);

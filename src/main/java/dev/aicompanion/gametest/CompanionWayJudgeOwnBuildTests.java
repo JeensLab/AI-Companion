@@ -44,13 +44,13 @@ public final class CompanionWayJudgeOwnBuildTests {
     private static final int HOME_X = 20, HOME_Z = 16;
 
     /** His nearest gourd: a pumpkin he hung 5 up and 4 across his base, nothing under it — «добудь тыкву» takes it. */
-    @GameTest(template = "way_far", timeoutTicks = 16000)
+    @GameTest(template = "way_wide", timeoutTicks = 16000)
     public static void hisPumpkinFiveUpIsFoundAndTaken(GameTestHelper h) {
         his(h, Blocks.PUMPKIN, Items.PUMPKIN, "minecraft:pumpkin", "добудь тыкву", 4, 2, 5, true);
     }
 
     /** The storage block he hung 7 up: «добудь блок лазурита» takes the block as it lies. */
-    @GameTest(template = "way_far", timeoutTicks = 16000)
+    @GameTest(template = "way_wide", timeoutTicks = 16000)
     public static void hisLapisBlockSevenUpIsFoundAndTaken(GameTestHelper h) {
         his(h, Blocks.LAPIS_BLOCK, Items.LAPIS_BLOCK, "minecraft:lapis_block", "добудь блок лазурита", 6, 3, 7, true);
     }
@@ -60,19 +60,19 @@ public final class CompanionWayJudgeOwnBuildTests {
      * does not see an ore's drop (a bare hand takes nothing of an ore), so the mine's own scan is what must find the ore — and it
      * does not keep the player's site, so the ore he set down is dug like any other.
      */
-    @GameTest(template = "way_far", timeoutTicks = 16000)
+    @GameTest(template = "way_wide", timeoutTicks = 16000)
     public static void hisGoldOreThreeUpGivesRawGold(GameTestHelper h) {
         his(h, Blocks.GOLD_ORE, Items.RAW_GOLD, "minecraft:raw_gold", "добудь золото", 6, 2, 3, false);
     }
 
     /** A plain block he hung 10 up and 8 across: «добудь булыжник» takes the block itself. */
-    @GameTest(template = "way_far", timeoutTicks = 16000)
+    @GameTest(template = "way_wide", timeoutTicks = 16000)
     public static void hisCobblestoneTenUpIsFoundAndTaken(GameTestHelper h) {
         his(h, Blocks.COBBLESTONE, Items.COBBLESTONE, "minecraft:cobblestone", "добудь булыжник", 8, 2, 10, true);
     }
 
     /** His far corner: a barrel 25 across and 20 up, hung by him — found, mined, the column down, the soil back. */
-    @GameTest(template = "way_far", timeoutTicks = 40000)
+    @GameTest(template = "way_wide", timeoutTicks = 40000)
     public static void hisBarrelTwentyFiveAcrossTwentyUpIsFoundAndTaken(GameTestHelper h) {
         his(h, Blocks.BARREL, Items.BARREL, "minecraft:barrel", "добудь бочку", 25, 0, 20, true);
     }
@@ -81,7 +81,7 @@ public final class CompanionWayJudgeOwnBuildTests {
      * His whole scene at once: a chest and two planks he set down as his base, four kinds hung above it — the search says the
      * blocks were his own and taken, one line, and every one of the four ends in the bag.
      */
-    @GameTest(template = "way_far", timeoutTicks = 40000)
+    @GameTest(template = "way_wide", timeoutTicks = 40000)
     public static void hisWholeSceneIsFoundAndTaken(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
         CompanionEntity c = spawn(h);

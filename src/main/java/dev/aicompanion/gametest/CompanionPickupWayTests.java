@@ -47,7 +47,7 @@ public final class CompanionPickupWayTests {
      * bag holds one soil where the pickup's column asks four: it digs the other three about him, raises the column, takes the wool
      * and brings the soil back.
      */
-    @GameTest(template = "way_far", timeoutTicks = 2400)
+    @GameTest(template = "way_wide", timeoutTicks = 2400)
     public static void aDropRestingOnABlockAboveIsClimbedFor(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
         BlockPos pedestal = new BlockPos(HOME_X + 2, FEET + 3, HOME_Z);
@@ -82,7 +82,7 @@ public final class CompanionPickupWayTests {
      * comes to rest on the pumpkin, and nothing walkable reaches it — the pickup climbs its own column of four for it, and the
      * column comes down with the soil in his bag.
      */
-    @GameTest(template = "way_far", timeoutTicks = 2400)
+    @GameTest(template = "way_wide", timeoutTicks = 2400)
     public static void theLapisOnHisPumpkinIsPickedUp(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
         BlockPos pumpkin = new BlockPos(HOME_X + 2, FEET + 3, HOME_Z);
@@ -115,7 +115,7 @@ public final class CompanionPickupWayTests {
      * three, short of the five the pickup's column would ask: it lays a floor over the cells that were air and takes the wool. The
      * floor is a way, not a scaffold, and stays where he laid it.
      */
-    @GameTest(template = "way_far", timeoutTicks = 2400)
+    @GameTest(template = "way_wide", timeoutTicks = 2400)
     public static void aDropBeyondAGapIsBridged(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
         for (int x = TRENCH_FROM; x <= TRENCH_TO; x++) for (int z = 1; z <= SIDE - 2; z++)
@@ -155,7 +155,7 @@ public final class CompanionPickupWayTests {
      * never a silent «С этим пока не справился». With the way off the same drop says the way was switched off, so the line is the
      * way's own answer.
      */
-    @GameTest(template = "way_far", timeoutTicks = 2400)
+    @GameTest(template = "way_wide", timeoutTicks = 2400)
     public static void aDropWithNoWaySaysWhy(GameTestHelper h) {
         flat(h, Blocks.STONE);
         BlockPos pedestal = new BlockPos(HOME_X + 2, FEET + 3, HOME_Z);

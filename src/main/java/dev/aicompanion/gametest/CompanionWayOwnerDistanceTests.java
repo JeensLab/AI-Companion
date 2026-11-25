@@ -53,25 +53,25 @@ public final class CompanionWayOwnerDistanceTests {
     // ---- one distance each: across, up, nothing under it ----
 
     /** His obsidian fifteen to the side and ten up, nothing under it: the foot of the column is a walk of fifteen blocks. */
-    @GameTest(template = "way_far", timeoutTicks = 16000)
+    @GameTest(template = "way_wide", timeoutTicks = 16000)
     public static void obsidianFifteenAcrossTenUpIsTaken(GameTestHelper h) {
         floatingTaken(h, Blocks.OBSIDIAN, Items.OBSIDIAN, 15, 0, 10, "добудь обсидиан", "minecraft:obsidian");
     }
 
     /** His lapis block twenty-two to the side and four up: farther than the ten the column's foot was allowed. */
-    @GameTest(template = "way_far", timeoutTicks = 20000)
+    @GameTest(template = "way_wide", timeoutTicks = 20000)
     public static void lapisBlockTwentyTwoAcrossFourUpIsTaken(GameTestHelper h) {
         floatingTaken(h, Blocks.LAPIS_BLOCK, Items.LAPIS_BLOCK, 22, 0, 4, "добудь блок лазурита", "minecraft:lapis_block");
     }
 
     /** His pumpkin twenty to the side and twenty up: the way's own height, and the farthest across of his scene. */
-    @GameTest(template = "way_far", timeoutTicks = 24000)
+    @GameTest(template = "way_wide", timeoutTicks = 24000)
     public static void pumpkinTwentyAcrossTwentyUpIsTaken(GameTestHelper h) {
         floatingTaken(h, Blocks.PUMPKIN, Items.PUMPKIN, 20, 0, 20, "добудь тыкву", "minecraft:pumpkin");
     }
 
     /** A block a chain also makes, twenty across and eighteen up: taken as it lies from a column, never made again. */
-    @GameTest(template = "way_far", timeoutTicks = 24000)
+    @GameTest(template = "way_wide", timeoutTicks = 24000)
     public static void goldBlockTwentyAcrossEighteenUpIsTaken(GameTestHelper h) {
         floatingTaken(h, Blocks.GOLD_BLOCK, Items.GOLD_BLOCK, 20, 0, 18, "добудь золотой блок", "minecraft:gold_block");
     }
@@ -83,7 +83,7 @@ public final class CompanionWayOwnerDistanceTests {
      * eight, a pumpkin fourteen and fourteen, a gold block twenty and eighteen — asked one after another: every one is found
      * and taken, and no refusal names the old box.
      */
-    @GameTest(template = "way_far", timeoutTicks = 40000)
+    @GameTest(template = "way_wide", timeoutTicks = 40000)
     public static void theOwnersFloatingBlocksAtEveryDistanceAreAllTaken(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
         BlockPos obsidian = new BlockPos(HOME_X + 3, FEET + 3, HOME_Z);
@@ -135,7 +135,7 @@ public final class CompanionWayOwnerDistanceTests {
      * the nearest one with its distance up and across and the way's answer, and the one chosen — the player can read the
      * decision, not only its result.
      */
-    @GameTest(template = "way_far", timeoutTicks = 16000)
+    @GameTest(template = "way_wide", timeoutTicks = 16000)
     public static void theSearchLineNamesTheBoxTheDistanceAndTheChoice(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
         BlockPos target = new BlockPos(HOME_X + 15, FEET + 10, HOME_Z);
@@ -166,7 +166,7 @@ public final class CompanionWayOwnerDistanceTests {
      * A pumpkin thirty-three above, past the way's height: seen by the search, no way reaches it. The refusal names the distance
      * — «33 блок вверх» — and the line of the search says why: never only «Рядом не вижу».
      */
-    @GameTest(template = "way_far", timeoutTicks = 400)
+    @GameTest(template = "way_wide", timeoutTicks = 400)
     public static void aSeenButUnreachableBlockIsRefusedWithItsDistance(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
         BlockPos target = new BlockPos(HOME_X, FEET + 33, HOME_Z);
@@ -193,7 +193,7 @@ public final class CompanionWayOwnerDistanceTests {
      * A gold block thirty-three above with no gold ore about: the chain would fall back to the ore and name it, but the block
      * itself is what the player asked for and it is seen — the refusal names the block and its distance, never «Руды … не нашёл».
      */
-    @GameTest(template = "way_far", timeoutTicks = 400)
+    @GameTest(template = "way_wide", timeoutTicks = 400)
     public static void aChainFallbackRefusalNamesTheBlockNotTheOre(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
         BlockPos target = new BlockPos(HOME_X, FEET + 33, HOME_Z);
@@ -214,7 +214,7 @@ public final class CompanionWayOwnerDistanceTests {
     }
 
     /** «Лазурит» with the lapis block hanging twenty across and twelve up: the block is mined and made into lapis, as the owner asked. */
-    @GameTest(template = "way_far", timeoutTicks = 24000)
+    @GameTest(template = "way_wide", timeoutTicks = 24000)
     public static void lapisLazuliComesFromTheBlockTwentyAcross(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
         BlockPos target = new BlockPos(HOME_X + 20, FEET + 12, HOME_Z);
@@ -235,7 +235,7 @@ public final class CompanionWayOwnerDistanceTests {
     }
 
     /** A pumpkin thirty across with his search at twenty-four: it is not claimed, and the line says a block exists outside the box. */
-    @GameTest(template = "way_far", timeoutTicks = 400)
+    @GameTest(template = "way_wide", timeoutTicks = 400)
     public static void aBlockOutsideTheBoxIsSaidAsOutside(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
         BlockPos far = new BlockPos(HOME_X + 30, FEET + 4, HOME_Z);

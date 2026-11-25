@@ -136,7 +136,7 @@ public final class CompanionItemOrderTests {
      * His own scene: «добудь тыкву», «добудь 1 тыкву», «добудь блок тыквы» one after another, each answered by the router and
      * run by the plan runner. Every one ends with a pumpkin in the bag and its own way_search line — the work really ran.
      */
-    @GameTest(template = "way_far", timeoutTicks = 24000)
+    @GameTest(template = "way_wide", timeoutTicks = 24000)
     public static void everyGourdOrderIsDoneNotSaid(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
         CompanionEntity c = spawn(h);
@@ -174,7 +174,7 @@ public final class CompanionItemOrderTests {
     }
 
     /** «Добудь бочку» for a barrel the player hung himself: the order is the work, and the barrel is in the bag. */
-    @GameTest(template = "way_far", timeoutTicks = 16000)
+    @GameTest(template = "way_wide", timeoutTicks = 16000)
     public static void aPlainBlockOrderIsWorkToo(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
         CompanionEntity c = spawn(h);
