@@ -149,8 +149,10 @@ final class CompanionSearch {
         // always, into a closed one only if a drop from it was refused for the chain, and then the cell is opened again.
         boolean reached = to.closed ? moves.refusedForChain(to) : to.f > 0;
         int fallen = reached ? CompanionMoves.chain(node, to) : 0, had = reached ? CompanionMoves.chainOf(to) : 0;
-        boolean safer = reached && fallen < had && !descendsFrom(node, to);
+        boolean safer = reached && fallen < had;
         if (walked >= range || reached && !to.closed && fallen > had || !safer && (to.closed || to.f > 0 && g >= to.g)) return;
+        // A cell is never given a way that runs through itself: reopening raised its cost above that of cells already reached through it.
+        if ((to.closed || to.f > 0) && descendsFrom(node, to)) return;
         to.cameFrom = node; to.g = g; to.walkedDistance = walked;
         if (to.closed) { to.closed = false; moves.forgetRefused(to); }
         float f = g + WEIGHT * estimate(to);
