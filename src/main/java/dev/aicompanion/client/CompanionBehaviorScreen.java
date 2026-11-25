@@ -144,7 +144,39 @@ final class CompanionBehaviorScreen extends Screen {
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).build());
         addRenderableWidget(Button.builder(Component.literal("Свои анекдоты: файл и перезагрузка"), b -> minecraft.setScreen(new CompanionJokeScreen(this)))
                 .bounds(left, top, ROW_WIDTH, ROW_HEIGHT).build());
+        addRenderableWidget(Button.builder(fishingInvitationsLabel(), b -> {
+            OpenRouterConfig.FISHING_INVITATIONS.set(!OpenRouterConfig.FISHING_INVITATIONS.get());
+            OpenRouterConfig.FISHING_INVITATIONS.save();
+            CompanionAmbientClient.resetFishingInvitations();
+            b.setMessage(fishingInvitationsLabel());
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).build());
+        addRenderableWidget(Button.builder(fishingIntervalLabel(), b -> {
+            int next = OpenRouterConfig.FISHING_INVITE_MINUTES.get() + 5;
+            OpenRouterConfig.FISHING_INVITE_MINUTES.set(next > 60 ? 5 : next);
+            OpenRouterConfig.FISHING_INVITE_MINUTES.save();
+            CompanionAmbientClient.resetFishingInvitations();
+            b.setMessage(fishingIntervalLabel());
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).build());
+        addRenderableWidget(Button.builder(leisureFishingLabel(), b -> {
+            int next = OpenRouterConfig.FISHING_LEISURE_MINUTES.get() + 5;
+            OpenRouterConfig.FISHING_LEISURE_MINUTES.set(next > 60 ? 0 : next);
+            OpenRouterConfig.FISHING_LEISURE_MINUTES.save();
+            b.setMessage(leisureFishingLabel());
+            CompanionPreferences.sync();
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "В режиме самостоятельности Олег может порыбачить рядом с тобой, если у него есть удочка и других дел нет."))).build());
         fitRows(top);
+    }
+    private static Component fishingInvitationsLabel() {
+        return Component.literal("Приглашения на рыбалку: " + (OpenRouterConfig.FISHING_INVITATIONS.get() ? "вкл." : "выкл."));
+    }
+    private static Component fishingIntervalLabel() {
+        int minutes = OpenRouterConfig.FISHING_INVITE_MINUTES.get();
+        return Component.literal("Пауза между приглашениями: " + minutes + "–" + (minutes * 2) + " мин.");
+    }
+    private static Component leisureFishingLabel() {
+        int minutes = OpenRouterConfig.FISHING_LEISURE_MINUTES.get();
+        return Component.literal("Сам рыбачит: " + (minutes == 0 ? "выкл." : "раз в " + minutes + "–" + (minutes * 2) + " мин."));
     }
     private Component jokesLabel() { return Component.literal("Анекдоты: " + (OpenRouterConfig.JOKES.get() ? "вкл." : "выкл.")); }
     private Component jokeIntervalLabel() {

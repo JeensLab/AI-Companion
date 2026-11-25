@@ -2,6 +2,8 @@ package dev.aicompanion.gametest;
 
 import com.google.gson.JsonParser;
 import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.CompanionFishingInvitation;
+import dev.aicompanion.client.CompanionLocalCommands;
 import dev.aicompanion.client.CompanionPlanCodec;
 import dev.aicompanion.client.CompanionPlanRunner;
 import dev.aicompanion.client.CompanionServerPlanPort;
@@ -218,6 +220,58 @@ public final class CompanionFishingTests {
         var puffer = CompanionObtain.plan(level, List.of(new ItemStack(Items.FISHING_ROD)), false, "minecraft:pufferfish", 1, thing -> thing == Items.FISHING_ROD, thing -> false);
         h.assertTrue(puffer.refused() && puffer.steps().isEmpty(), "A pufferfish is not fished for by «добудь»: " + puffer);
         h.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void casualFishingAndOneShotConsent(GameTestHelper h) {
+        var invite = new CompanionFishingInvitation();
+        h.assertTrue(!invite.due(100, 20, 0) && !invite.due(24099, 20, 0)
+                && invite.due(24100, 20, 0), "First invitation ignored its delay");
+        invite.checked(24100);
+        h.assertTrue(!invite.due(24699, 20, 0) && invite.due(24700, 20, 0), "Dry bank check was repeated too soon");
+        for (String text : List.of("дада емае", "да погнали тогда", "да, идём рыбачить, брат")) {
+            invite.offered(24700, 20, 0);
+            h.assertTrue(invite.answer(text, 24701) == CompanionFishingInvitation.Answer.ACCEPT, "Missed consent: " + text);
+            h.assertTrue(invite.answer("да", 24702) == CompanionFishingInvitation.Answer.OTHER, "Reused consent");
+        }
+        invite.offered(24700, 20, 0);
+        h.assertTrue(invite.answer("да, но не сейчас", 24701) == CompanionFishingInvitation.Answer.DECLINE, "Refusal was ignored");
+        invite.offered(24700, 20, 0);
+        h.assertTrue(invite.answer("да", 25901) == CompanionFishingInvitation.Answer.OTHER, "Expired consent started fishing");
+        invite.offered(24700, 20, 0);
+        invite.reset();
+        h.assertTrue(invite.answer("да", 24701) == CompanionFishingInvitation.Answer.OTHER, "Consent survived reset");
+        for (String words : List.of("а теперь порыбачим", "Олег, айда к речке, рыбки половим", "пагнали рыбалить", "давай закинем удочки")) {
+            String route = CompanionLocalCommands.route(words, "Олег");
+            h.assertTrue(CompanionFishingInvitation.ORDER.equals(route), "Missed informal fishing order: " + words + " -> " + route);
+        }
+        for (String words : List.of("вчера мы рыбачили", "не пойдём на рыбалку", "может, порыбачим потом")) {
+            h.assertTrue(!CompanionFishingInvitation.proposesTrip(words), "Discussion became an order: " + words);
+        }
+        h.assertTrue(!CompanionLocalCommands.cancelsPlans("companion fishing_ask"), "A question cancelled an order");
+        h.succeed();
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void anAutonomousFishingBreakYieldsToThePlayer(GameTestHelper h) throws ReflectiveOperationException {
+        pond(h);
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.FISHING_ROD));
+        c.autonomy().setEnabled(true);
+        c.autonomy().configureFishing(20);
+        var nextFishing = c.autonomy().getClass().getDeclaredField("nextFishing");
+        nextFishing.setAccessible(true);
+        nextFishing.setLong(c.autonomy(), 0); // Only the scheduling delay is skipped; the real deed has to walk and cast.
+        h.startSequence().thenWaitUntil(() -> {
+            h.assertTrue(c.autonomy().deedName().contains("порыбачить"), "Fishing break did not start");
+            h.assertTrue(bobbers(h) > 0, "Autonomous fishing did not cast");
+        }).thenExecute(() -> {
+            var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+            CompanionEvents.executeAction(player, "stop", "", 1);
+        }).thenIdle(40).thenExecute(() -> {
+            h.assertTrue(!c.autonomy().running() && !c.hasActiveWorkOrder() && bobbers(h) == 0, "Fishing continued after stop");
+            h.assertTrue(count(c, Items.FISHING_ROD) == 1, "Stopping lost or duplicated the rod");
+        }).thenSucceed();
     }
 
     /** A pond nine by nine and five deep in the grass, its water level with the ground. */

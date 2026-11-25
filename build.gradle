@@ -67,6 +67,10 @@ neoForge {
             if (quickPlay != null) programArguments.addAll('--quickPlaySingleplayer', quickPlay)
             // Optional: `./gradlew runClient -PcampfireProbe` runs the offline campfire QA (screenshots and tune changes) and quits.
             if (providers.gradleProperty('campfireProbe').isPresent()) systemProperty 'aicompanion.campfireProbe', 'true'
+            if (providers.gradleProperty('fishingTogetherProbe').isPresent()) {
+                gameDirectory = project.file('build/fishing-together-client')
+                systemProperty 'aicompanion.fishingTogetherProbe', 'true'
+            }
         }
 
         responsesClientProbe {

@@ -212,12 +212,12 @@ public final class CompanionAbilitiesTests {
     @GameTest(template = "empty")
     public static void aPhraseAboutADeedThatDoesNotExistFailsNamingIt(GameTestHelper h) {
         List<CompanionAbilities.Ability> probe = new ArrayList<>(CompanionAbilities.all());
-        probe.add(new CompanionAbilities.Ability("ловлю рыбу", List.of("obtain_item"), List.of("FISH")));
+        probe.add(new CompanionAbilities.Ability("играю в карты", List.of("obtain_item"), List.of("PLAY_CARDS")));
         try {
             CompanionAbilities.verify(probe);
-            h.fail("A phrase about the deed FISH was accepted");
+            h.fail("A phrase about the deed PLAY_CARDS was accepted");
         } catch (IllegalStateException refused) {
-            h.assertTrue(refused.getMessage().contains("FISH"), "the refusal does not name the deed: " + refused.getMessage());
+            h.assertTrue(refused.getMessage().contains("PLAY_CARDS"), "the refusal does not name the deed: " + refused.getMessage());
         }
         h.succeed();
     }

@@ -14,6 +14,15 @@ public final class OpenRouterConfig {
             .comment("Maximum independent resource-search and roaming distance, in loaded chunks.")
             .defineInRange("searchRadius", 64, 16, 128);
     public static final ModConfigSpec.BooleanValue AUTONOMOUS_SPEECH = BUILDER.define("autonomousSpeech", true);
+    public static final ModConfigSpec.BooleanValue FISHING_INVITATIONS = BUILDER
+            .comment("Let Oleg invite the player to fish in quiet moments near water.")
+            .define("fishingInvitations", true);
+    public static final ModConfigSpec.IntValue FISHING_INVITE_MINUTES = BUILDER
+            .comment("Minimum active minutes between fishing invitations. A random delay up to the same duration is added.")
+            .defineInRange("fishingInviteMinutes", 20, 5, 60);
+    public static final ModConfigSpec.IntValue FISHING_LEISURE_MINUTES = BUILDER
+            .comment("Minimum minutes between short fishing trips in autonomy mode. 0 disables trips.")
+            .defineInRange("fishingLeisureMinutes", 20, 0, 60);
     public static final ModConfigSpec.BooleanValue JOKES = BUILDER
             .comment("Occasional short local jokes in quiet moments, without a model request.")
             .define("jokes", true);

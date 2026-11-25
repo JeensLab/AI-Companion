@@ -30,6 +30,7 @@ public final class CompanionPreferences {
         int radius = OpenRouterConfig.SEARCH_RADIUS.get();
         boolean chunks = OpenRouterConfig.CHUNK_LOADING.get(), speech = OpenRouterConfig.AUTONOMOUS_SPEECH.get();
         int murmurInterval = OpenRouterConfig.MURMUR_INTERVAL_PERCENT.get();
+        int leisureFishing = OpenRouterConfig.FISHING_LEISURE_MINUTES.get();
         boolean conversationAvailable = CompanionAmbientClient.availableForObservation();
         boolean longTerm = OpenRouterConfig.LONG_TERM_MEMORY.get();
         CompanionMemoryFlow.bind(server, playerId, longTerm);
@@ -54,6 +55,7 @@ public final class CompanionPreferences {
                 companion.setCompanionName(name); companion.setSearchRadius(radius); companion.setLifestyle(chunks, speech);
                 companion.setMurmurIntervalPercent(murmurInterval);
                 companion.setConversationAvailable(conversationAvailable);
+                companion.autonomy().configureFishing(leisureFishing);
                 companion.setDeathRecovery(OpenRouterConfig.DEATH_RECOVERY.get());
                 companion.setBoatRide(OpenRouterConfig.BOAT_RIDE.get());
                 companion.setGuardByPlayer(OpenRouterConfig.GUARD_NEAREST_TO_PLAYER.get());
