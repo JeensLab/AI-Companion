@@ -208,6 +208,18 @@ public final class CompanionShaftPlan {
         return false;
     }
 
+    /**
+     * Tells of a cell whether a block of a player's making (see {@link #built}) lies within {@code reach} blocks of it (a box, the diagonals too). The blocks
+     * are looked for once, round the cells from {@code min} to {@code max}, and the test is then a look through the few found (none in open nature).
+     */
+    static Predicate<BlockPos> nearBuilt(ServerLevel level, BlockPos min, BlockPos max, int reach) {
+        List<BlockPos> found = new ArrayList<>();
+        for (BlockPos pos : BlockPos.betweenClosed(min.offset(-reach, -reach, -reach), max.offset(reach, reach, reach))) {
+            if (level.hasChunkAt(pos) && built(level, pos)) found.add(pos.immutable());
+        }
+        return cell -> found.stream().anyMatch(block -> Math.abs(block.getX() - cell.getX()) <= reach && Math.abs(block.getY() - cell.getY()) <= reach && Math.abs(block.getZ() - cell.getZ()) <= reach);
+    }
+
     private static boolean builtBeside(ServerLevel level, BlockPos cell) {
         for (Direction side : Direction.values()) if (built(level, cell.relative(side))) return true;
         return false;

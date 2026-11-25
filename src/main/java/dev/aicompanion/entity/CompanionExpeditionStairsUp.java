@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 /**
  * A staircase cut up through the rock towards the entrance on the surface when the record's way up is gone (a restart under the ground
@@ -24,6 +25,13 @@ final class CompanionExpeditionStairsUp {
     enum Result { WORKING, ARRIVED, STUCK, NO_TOOL }
 
     private static final int MAX_STEPS = 256, STEP_PATIENCE = 20 * 40, MAX_SEALS = 32, MAX_STUCK = 6, BOB = 2;
+    /**
+     * A step is shut when a block of a player's making lies this close to a cell it cuts (a box): a staircase never comes up in a house or a dugout through
+     * its plain floor or roof. Three, because a hut of seven by seven outside, the commonest small build, has no floor cell farther than three from one of
+     * its walls; more would shut off every pit beside a base, less would let the stairs come up in a room of five. Torches are no sign: his own path torches look the same.
+     */
+    private static final int BUILT_NEAR = 3;
+    private static final String NO_FLOOR = "в пути наверх нет пола, а блоков, чтобы его настелить, нет";
 
     private final CompanionWork w;
     private final CompanionEntity owner;
@@ -48,6 +56,8 @@ final class CompanionExpeditionStairsUp {
     private int index, steps, stepTicks, seals, stuck;
     private boolean moved;
     private CompanionExpeditionFloor laying;
+    /** A side was left for want of a block to lay its floor, at the stand he is planning from: said as the reason if no side is left. */
+    private boolean noFloor;
     private String why = "";
 
     CompanionExpeditionStairsUp(CompanionWork w, CompanionExpeditionDig dig) { this(w, dig, true, null); }
@@ -95,7 +105,7 @@ final class CompanionExpeditionStairsUp {
             if (laying != null) {
                 switch (dig.lay(laying)) {
                     case LAID -> laying = null;
-                    case NO_BLOCK -> { return stop("в пути наверх нет пола, а блоков, чтобы его настелить, нет"); }
+                    case NO_BLOCK -> { noFloor = true; return giveUp(level, "no floor block"); }
                     case FAILED -> { return giveUp(level, "floor"); }
                     case WORKING, PLACED -> { return Result.WORKING; }
                 }
@@ -117,9 +127,10 @@ final class CompanionExpeditionStairsUp {
     /** The next step, a cell up while below the goal and level at its height or when every step up is shut: towards the goal where the rock allows, else along the last direction, else any side left; false when every side is shut. */
     private boolean plan(ServerLevel level, BlockPos here) {
         boolean up = here.getY() < goal.getY();
+        noFloor = false;
         if (step(level, here, up, false)) return true;
         if (up && step(level, here, false, true)) return true;
-        why = "путь наверх закрыт";
+        why = closed();
         return false;
     }
 
@@ -128,8 +139,9 @@ final class CompanionExpeditionStairsUp {
         Set<BlockPos> waded = waded(level, here);
         Set<BlockPos> shut = new HashSet<>(own.forbidden());
         shut.addAll(kept);
+        Predicate<BlockPos> built = CompanionShaftPlan.nearBuilt(level, here.offset(-1, 0, -1), here.offset(1, 3, 1), BUILT_NEAR);
         for (Set<BlockPos> forbidden : List.of(shut, kept)) {
-            CompanionShaftPlan.Avoid avoid = new CompanionShaftPlan.Avoid(forbidden, own.refused(), cell -> false, waded);
+            CompanionShaftPlan.Avoid avoid = new CompanionShaftPlan.Avoid(forbidden, own.refused(), built, waded);
             for (Direction d : order(here)) {
                 if (refused.contains(key(here, d)) || sideways && dir != null && d == dir.getOpposite()) continue;
                 BlockPos step = up ? here.relative(d).above() : here.relative(d);
@@ -153,6 +165,8 @@ final class CompanionExpeditionStairsUp {
                         // A floor fills a gap of one block over a block that bears it (a sturdy top: not air, not water or lava), never a bridge.
                         BlockPos under = hazard.cell().below();
                         if (!level.getBlockState(under).isFaceSturdy(level, under, Direction.UP)) continue;
+                        // With no block to lay, the side that needs none comes first (the rock cut at a wall is the floor blocks of the next steps).
+                        if (CompanionSeal.available(owner) == 0) { noFloor = true; continue; }
                         laying = new CompanionExpeditionFloor(hazard.cell());
                     }
                     case OK -> laying = null;
@@ -207,6 +221,8 @@ final class CompanionExpeditionStairsUp {
         if (kept.contains(cell)) return giveUp(level, "protected");
         CompanionShaftPlan.Avoid wading = new CompanionShaftPlan.Avoid(Set.of(), (stand, d) -> false, c -> false, waded(level, from));
         CompanionShaftPlan.Hazard flowed = CompanionShaftPlan.classify(level, from, cell, w.mine.seals(), wading, laying == null ? null : laying.cell);
+        // A block put into the cell by a player since it was planned (a chest, planks) shuts this side.
+        if (flowed.kind() == CompanionShaftPlan.Kind.BLOCKED) return giveUp(level, "blocked");
         if (flowed.kind() == CompanionShaftPlan.Kind.SEAL) {
             CompanionSeal.Result placed = CompanionSeal.place(owner, flowed.cell());
             if (placed.placed()) { w.mine.sealed(flowed.cell()); seals++; return Result.WORKING; }
@@ -233,8 +249,10 @@ final class CompanionExpeditionStairsUp {
         to = null;
         laying = null;
         dig.forget();
-        return ++stuck > MAX_STUCK ? stop("путь наверх закрыт") : Result.WORKING;
+        return ++stuck > MAX_STUCK ? stop(closed()) : Result.WORKING;
     }
+
+    private String closed() { return noFloor ? NO_FLOOR : "путь наверх закрыт"; }
 
     private Result stop(String reason) {
         why = reason;
@@ -257,6 +275,7 @@ final class CompanionExpeditionStairsUp {
         index = steps = stepTicks = seals = stuck = 0;
         moved = false;
         laying = null;
+        noFloor = false;
         why = "";
     }
 }

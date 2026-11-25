@@ -479,7 +479,7 @@ public final class CompanionClimbToPlayerTests {
         c.setFollowing(false);
         c.setItem(4, ItemStack.EMPTY);
         c.setItem(5, ItemStack.EMPTY);
-        givesNothingAndChangesNothing(h, c, new BlockPos(CENTER, GROUND + 1, CENTER), new BlockPos(CENTER + 5, GROUND + 1, CENTER), GROUND + 6);
+        givesNothingAndChangesNothing(h, c, new BlockPos(CENTER, GROUND + 1, CENTER), new BlockPos(CENTER + 5, GROUND + 1, CENTER), new BlockPos(CENTER - 6, GROUND - 9, CENTER - 6), new BlockPos(CENTER + 10, GROUND + 6, CENTER + 6));
     }
 
     /**
@@ -498,17 +498,17 @@ public final class CompanionClimbToPlayerTests {
         c.setFollowing(false);
         c.setItem(4, ItemStack.EMPTY);
         c.setItem(5, ItemStack.EMPTY);
-        givesNothingAndChangesNothing(h, c, new BlockPos(CENTER - 2, floorY, CENTER), new BlockPos(CENTER + 6, floorY, CENTER), GROUND + 1);
+        givesNothingAndChangesNothing(h, c, new BlockPos(CENTER - 2, floorY, CENTER), new BlockPos(CENTER + 6, floorY, CENTER), new BlockPos(CENTER - 6, GROUND - 9, CENTER - 6), new BlockPos(CENTER + 10, GROUND + 1, CENTER + 6));
     }
 
-    /** Oleg at {@code in}, the player at {@code owner}, a diamond to give: the hand-over fails, and not one block from the floor of the arena to {@code top} is changed (a torch lit in the dark is no dig). */
-    private static void givesNothingAndChangesNothing(GameTestHelper h, CompanionEntity c, BlockPos in, BlockPos owner, int top) {
+    /** Oleg at {@code in}, the player at {@code owner}, a diamond to give: the hand-over fails, and not one block of the box from {@code min} to {@code max} is changed (a torch lit in the dark is no dig). */
+    private static void givesNothingAndChangesNothing(GameTestHelper h, CompanionEntity c, BlockPos in, BlockPos owner, BlockPos min, BlockPos max) {
         BlockPos inside = h.absolutePos(in), outside = h.absolutePos(owner);
         c.teleportTo(inside.getX() + .5, inside.getY(), inside.getZ() + .5);
         h.getLevel().getPlayerByUUID(c.getOwnerId()).teleportTo(outside.getX() + .5, outside.getY(), outside.getZ() + .5);
         c.setItem(6, new ItemStack(Items.DIAMOND));
         java.util.Map<BlockPos, net.minecraft.world.level.block.state.BlockState> before = new java.util.HashMap<>();
-        for (int x = CENTER - 6; x <= CENTER + 10; x++) for (int z = CENTER - 6; z <= CENTER + 6; z++) for (int y = GROUND - 9; y <= top; y++) {
+        for (int x = min.getX(); x <= max.getX(); x++) for (int z = min.getZ(); z <= max.getZ(); z++) for (int y = min.getY(); y <= max.getY(); y++) {
             BlockPos cell = new BlockPos(x, y, z);
             before.put(cell, h.getBlockState(cell));
         }
@@ -520,6 +520,51 @@ public final class CompanionClimbToPlayerTests {
             before.forEach((cell, state) -> h.assertTrue(h.getBlockState(cell).equals(state) || h.getBlockState(cell).is(Blocks.TORCH) || h.getBlockState(cell).is(Blocks.WALL_TORCH),
                     "A block was dug or laid at " + cell.toShortString() + " (" + state + " became " + h.getBlockState(cell) + "); he said «" + result.message() + "» | " + report(c)));
         });
+    }
+
+    /** The rock under the turf is andesite from the depth of the chambers up: the self-rescue digs only stone, soil and deepslate, so what is dug is dug by the stairs. */
+    private static void andesite(GameTestHelper h) {
+        for (int x = CENTER - 12; x <= CENTER + 14; x++) for (int z = CENTER - 8; z <= CENTER + 8; z++) for (int y = GROUND - 9; y < GROUND; y++) h.setBlock(new BlockPos(x, y, z), Blocks.ANDESITE);
+    }
+
+    /**
+     * Review of the climb: what a player built stands over natural ground too. Oleg in a closed chamber of the rock beside and six blocks under a hut
+     * whose floor is plain turf (seven by seven outside, walls and roof of planks, no door), the player in it: stairs cut east and up from the chamber would
+     * come out in the middle of the room, and none is cut up through the floor (a step with a building close by is shut, so the staircase stays under the
+     * rock or comes up outside). The hand-over ends with «не могу пройти», and not a block of the hut or its floor is changed.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    public static void cutsNoStairsUpThroughTheFloorOfAHutToAPlayerInIt(GameTestHelper h) {
+        mountain(h, false);
+        andesite(h);
+        int floorY = GROUND - 6;
+        for (int x = CENTER - 6; x <= CENTER - 4; x++) for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = floorY; y <= floorY + 2; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        for (int x = CENTER - 3; x <= CENTER + 3; x++) for (int z = CENTER - 3; z <= CENTER + 3; z++) {
+            boolean wall = Math.abs(x - CENTER) == 3 || Math.abs(z - CENTER) == 3;
+            for (int y = GROUND + 1; y <= GROUND + 3; y++) if (wall) h.setBlock(new BlockPos(x, y, z), Blocks.OAK_PLANKS);
+            h.setBlock(new BlockPos(x, GROUND + 4, z), Blocks.OAK_PLANKS);
+        }
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        givesNothingAndChangesNothing(h, c, new BlockPos(CENTER - 5, floorY, CENTER), new BlockPos(CENTER + 1, GROUND + 1, CENTER),
+                new BlockPos(CENTER - 3, GROUND, CENTER - 3), new BlockPos(CENTER + 3, GROUND + 5, CENTER + 3));
+    }
+
+    /**
+     * Review of the climb: a chest in the chamber he is shut in makes it a place of a player's making wherever he stands in it. A chamber of eight by three
+     * seven blocks under the turf, the chest at its west end, he at the east end, the player on the turf above and east of him: nothing is cut, not a block of it changes.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    public static void cutsNoStairsOutOfAChamberWithAChestToAPlayerAbove(GameTestHelper h) {
+        mountain(h, false);
+        andesite(h);
+        int floorY = GROUND - 6;
+        for (int x = CENTER - 5; x <= CENTER + 2; x++) for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = floorY; y <= floorY + 2; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        h.setBlock(new BlockPos(CENTER - 5, floorY, CENTER), Blocks.CHEST);
+        h.setBlock(new BlockPos(CENTER - 5, floorY + 1, CENTER - 1), Blocks.OAK_PLANKS);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        givesNothingAndChangesNothing(h, c, new BlockPos(CENTER + 2, floorY, CENTER), new BlockPos(CENTER + 8, GROUND + 1, CENTER), new BlockPos(CENTER - 6, GROUND - 9, CENTER - 6), new BlockPos(CENTER + 10, GROUND + 1, CENTER + 6));
     }
 
     /**
@@ -539,6 +584,56 @@ public final class CompanionClimbToPlayerTests {
             h.assertTrue(result.success() && thrown(h, c, Items.COBBLESTONE) >= 20, "He gave " + thrown(h, c, Items.COBBLESTONE) + " of 20 cobblestones, said «" + result.message() + "» | " + report(c));
             for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = GROUND - PIT_DEPTH + 1; y < GROUND - PIT_DEPTH + 4; y++)
                 h.assertTrue(!h.getBlockState(new BlockPos(CENTER + 2, y, z)).is(Blocks.COBBLESTONE), "Cobblestone he was giving was laid at " + y + "," + z + " | " + report(c));
+        });
+    }
+
+    /**
+     * Review of the climb: with no block to lay, a side that needs a floor is given up like any other, and the climb goes on from the wall. The pit
+     * of three by three, nothing in the bag but the pickaxes, the player in the air straight over it (he stays in its middle): every step up from the middle lies
+     * over the pit's own air, and only the rock cut at its wall gives him blocks for a floor.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    public static void climbsOutOfAWidePitWithNoBlockToLayAFloor(GameTestHelper h) {
+        CompanionEntity c = pit(h);
+        c.setItem(4, ItemStack.EMPTY);
+        c.setItem(5, ItemStack.EMPTY);
+        BlockPos above = h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER));
+        h.getLevel().getPlayerByUUID(c.getOwnerId()).teleportTo(above.getX() + .5, above.getY(), above.getZ() + .5);
+        c.setItem(6, new ItemStack(Items.DIAMOND));
+        h.assertTrue(c.startWork("give_items", "minecraft:diamond", 1).success(), "Hand-over not accepted: " + c.getLastTaskResult());
+        long id = c.activeWorkId();
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) == 0, "He said «" + result.message() + "» in the pit | " + report(c));
+        });
+    }
+
+    /**
+     * Review of the climb: a block a player puts into the cell of the step under way shuts that side. A well one block wide; when the first
+     * cell of the east step is cut, planks are set in the cell over it, and they stay (a block of a player's close by shuts every side of the well, so the order ends).
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    public static void leavesABlockPutIntoTheCellOfTheStepUnderWay(GameTestHelper h) {
+        CompanionEntity c = pit(h);
+        for (int x = CENTER - 1; x <= CENTER + 1; x++) for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = GROUND - PIT_DEPTH + 1; y <= GROUND; y++)
+            if (x != CENTER || z != CENTER) h.setBlock(new BlockPos(x, y, z), Blocks.ANDESITE);
+        c.setItem(6, new ItemStack(Items.DIAMOND));
+        h.assertTrue(c.startWork("give_items", "minecraft:diamond", 1).success(), "Hand-over not accepted: " + c.getLastTaskResult());
+        long id = c.activeWorkId();
+        BlockPos[] over = {null};
+        h.onEachTick(() -> {
+            // The self-rescue may have pillared him up first: the first cell cut in the east wall, wherever it is, and the planks go into the cell over it.
+            for (int y = GROUND - PIT_DEPTH + 2; over[0] == null && y < GROUND - 1; y++) {
+                if (h.getBlockState(new BlockPos(CENTER + 1, y, CENTER)).isAir() && h.getBlockState(new BlockPos(CENTER + 1, y + 1, CENTER)).is(Blocks.ANDESITE)) {
+                    over[0] = new BlockPos(CENTER + 1, y + 1, CENTER);
+                    h.setBlock(over[0], Blocks.OAK_PLANKS);
+                }
+            }
+            h.assertTrue(over[0] == null || h.getBlockState(over[0]).is(Blocks.OAK_PLANKS), "The planks put into the cell of the step were cut | " + report(c));
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(over[0] != null, "The east step was never cut | " + report(c));
+            ended(h, c, id);
         });
     }
 

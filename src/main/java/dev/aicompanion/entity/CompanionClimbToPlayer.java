@@ -71,12 +71,11 @@ final class CompanionClimbToPlayer {
      */
     private boolean start(Player player) {
         if (task == w.taskId || !realPit(player)) return false;
-        if (stairs == null) {
-            var dig = new CompanionExpeditionDig(w);
-            // This climb is the way out itself: only the wear for ore is kept, none for a staircase out of a pit.
-            dig.ironForRock(CompanionExpeditionDig.SPARE_DURABILITY);
-            stairs = new CompanionExpeditionStairsUp(w, dig, false, STATUS);
-        }
+        // A dig of its own for each climb: the counters of the last one (walk and cell patience, the way round) must not carry over.
+        var dig = new CompanionExpeditionDig(w);
+        // This climb is the way out itself: only the wear for ore is kept, none for a staircase out of a pit.
+        dig.ironForRock(CompanionExpeditionDig.SPARE_DURABILITY);
+        stairs = new CompanionExpeditionStairsUp(w, dig, false, STATUS);
         if (w.owner.isSelfRescuing()) w.owner.recovery.cancel();
         task = w.taskId;
         running = true;
