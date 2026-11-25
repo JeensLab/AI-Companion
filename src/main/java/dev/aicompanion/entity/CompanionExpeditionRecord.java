@@ -31,7 +31,7 @@ public final class CompanionExpeditionRecord {
 
     /** Open sky over the cell, the leaves of trees not counted: a jungle's canopy (leaves and branches) shuts the sky light off the whole surface, and the surface under it is not a pit of the mine. */
     static boolean underSky(LevelReader level, BlockPos pos) {
-        if (level.canSeeSky(pos)) return true;
+        // The blocks over the cell are read, not the sky light: the light engine lags behind a block just set (a roof built in a test, a cave-in).
         if (!level.hasChunkAt(pos)) return false;
         BlockPos.MutableBlockPos above = pos.mutable();
         for (int y = pos.getY(); y < level.getMaxBuildHeight(); y++) if (shuts(level, above.setY(y))) return false;
@@ -43,7 +43,6 @@ public final class CompanionExpeditionRecord {
      * block that shuts the sky ({@code ceilings}, by column), and a cell is under the sky when it is above that block.
      */
     static boolean underSky(LevelReader level, BlockPos pos, java.util.Map<Long, Integer> ceilings) {
-        if (level.canSeeSky(pos)) return true;
         if (!level.hasChunkAt(pos)) return false;
         int ceiling = ceilings.computeIfAbsent(((long) pos.getX() << 32) ^ (pos.getZ() & 0xFFFFFFFFL), column -> {
             BlockPos.MutableBlockPos cell = new BlockPos.MutableBlockPos(pos.getX(), 0, pos.getZ());
