@@ -163,7 +163,7 @@ final class CompanionExpeditionDig {
         int slot = -1, rank = SPARE.size();
         for (int i = 0; i < owner.getContainerSize(); i++) {
             for (int r = 0; r < rank; r++) {
-                if (!owner.carriedForPlayer(owner.getItem(i)) && (SPARE.get(r).contains(owner.getItem(i).getItem()) || r == 0 && surplusRock(owner, owner.getItem(i)))) { slot = i; rank = r; break; }
+                if (!owner.carriedForPlayer(owner.getItem(i)) && owner.work.handOver.reserved(owner.getItem(i)) == 0 && (SPARE.get(r).contains(owner.getItem(i).getItem()) || r == 0 && surplusRock(owner, owner.getItem(i)))) { slot = i; rank = r; break; }
             }
         }
         return slot;
@@ -186,7 +186,7 @@ final class CompanionExpeditionDig {
         for (int k = SEALING_ROCK.size() - 1; slot < 0 && k >= 0; k--) {
             for (int i = 0; i < owner.getContainerSize(); i++) {
                 ItemStack stack = owner.getItem(i);
-                if (stack.is(SEALING_ROCK.get(k)) && CompanionSeal.available(owner) - stack.getCount() > 0) { slot = i; break; }
+                if (stack.is(SEALING_ROCK.get(k)) && owner.work.handOver.reserved(stack) == 0 && CompanionSeal.available(owner) - stack.getCount() > 0) { slot = i; break; }
             }
         }
         if (slot < 0) return false;
@@ -218,9 +218,9 @@ final class CompanionExpeditionDig {
     }
 
     /** What he may dig with: all he carries but what he is handing over to the player (a pickaxe asked for is not worn down on the way). */
-    private List<ItemStack> tools() { return w.items.carriedItems().stream().filter(stack -> !w.handOver.beingGiven(stack)).toList(); }
+    private List<ItemStack> tools() { return w.items.carriedItems().stream().filter(stack -> stack.getCount() > w.handOver.reserved(stack)).toList(); }
 
-    private int count(Item item) { return tools().stream().filter(stack -> stack.is(item)).mapToInt(ItemStack::getCount).sum(); }
+    private int count(Item item) { return tools().stream().filter(stack -> stack.is(item)).mapToInt(stack -> stack.getCount() - w.handOver.reserved(stack)).sum(); }
 
     /** Rock and soil with stone pickaxes, an iron one with wear to spare once no stone pickaxe could be made; ore with the cheapest pickaxe that gets its drop. */
     private Item toolFor(BlockState state) {

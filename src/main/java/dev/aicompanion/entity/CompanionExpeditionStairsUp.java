@@ -83,7 +83,8 @@ final class CompanionExpeditionStairsUp {
     Result tick(ServerLevel level) {
         if (to == null) {
             BlockPos here = stand(level);
-            if (here.getY() >= goal.getY() && here.distManhattan(goal) <= 1) return Result.ARRIVED;
+            // Level or higher than the goal and next to it on the ground: the height is no part of the distance (a goal below him is reached from above).
+            if (here.getY() >= goal.getY() && Math.abs(here.getX() - goal.getX()) + Math.abs(here.getZ() - goal.getZ()) <= 1) return Result.ARRIVED;
             if (!plan(level, here)) return Result.STUCK;
             // A seal placed this tick is no step: the side is looked at again next tick.
             if (to == null) return Result.WORKING;
@@ -148,7 +149,11 @@ final class CompanionExpeditionStairsUp {
                         refused.add(key(here, d));
                         continue;
                     }
-                    case FLOOR -> laying = new CompanionExpeditionFloor(hazard.cell());
+                    case FLOOR -> {
+                        // A floor fills a gap of one block over a solid one, never a bridge over open air.
+                        if (CompanionShaftPlan.open(level, hazard.cell().below())) continue;
+                        laying = new CompanionExpeditionFloor(hazard.cell());
+                    }
                     case OK -> laying = null;
                 }
                 from = here;
@@ -197,6 +202,8 @@ final class CompanionExpeditionStairsUp {
     private Result open(ServerLevel level) {
         if (!dig.reach(from)) return dig.walkStuck() ? giveUp(level, "walk") : Result.WORKING;
         BlockPos cell = cells.get(index);
+        // The cell was free when the step was planned: a player who has walked onto it since keeps his floor, and this side is given up.
+        if (kept.contains(cell)) return giveUp(level, "protected");
         CompanionShaftPlan.Avoid wading = new CompanionShaftPlan.Avoid(Set.of(), (stand, d) -> false, c -> false, waded(level, from));
         CompanionShaftPlan.Hazard flowed = CompanionShaftPlan.classify(level, from, cell, w.mine.seals(), wading, laying == null ? null : laying.cell);
         if (flowed.kind() == CompanionShaftPlan.Kind.SEAL) {
@@ -238,6 +245,7 @@ final class CompanionExpeditionStairsUp {
 
     void reset() {
         // The stone held back mid-column falls where it was cut: a climb that ends or is begun again leaves none in the record.
+        // M2: when the expedition reuses this class, a reset must not drop the stone of another column it is still cutting.
         dig.flush();
         kept = Set.of();
         refused.clear();

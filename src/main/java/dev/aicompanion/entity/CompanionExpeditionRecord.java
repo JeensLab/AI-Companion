@@ -27,9 +27,6 @@ public final class CompanionExpeditionRecord {
 
     /** Light a block takes off entirely: rock and soil; the leaves and the glass of a roof take less. */
     private static final int LIGHT_BLOCKED = 15;
-    /** How far over a cell the sky is looked for: a column of leaves is no more than this, and the climb asks for hundreds of cells at every step. */
-    private static final int SKY_REACH = 64;
-
     private CompanionExpeditionRecord() { }
 
     /** Open sky over the cell, the leaves of trees not counted: a jungle's canopy (leaves and branches) shuts the sky light off the whole surface, and the surface under it is not a pit of the mine. */
@@ -37,12 +34,29 @@ public final class CompanionExpeditionRecord {
         if (level.canSeeSky(pos)) return true;
         if (!level.hasChunkAt(pos)) return false;
         BlockPos.MutableBlockPos above = pos.mutable();
-        for (int y = pos.getY(); y < Math.min(level.getMaxBuildHeight(), pos.getY() + SKY_REACH); y++) {
-            BlockState state = level.getBlockState(above.setY(y));
-            boolean tree = state.is(BlockTags.LEAVES) || state.is(BlockTags.LOGS);
-            if (!tree && (state.getLightBlock(level, above) >= LIGHT_BLOCKED || !state.getFluidState().isEmpty())) return false;
-        }
+        for (int y = pos.getY(); y < level.getMaxBuildHeight(); y++) if (shuts(level, above.setY(y))) return false;
         return true;
+    }
+
+    /**
+     * {@link #underSky(LevelReader, BlockPos)} for a walk over many cells: the column over each is read once, from the top down to its highest
+     * block that shuts the sky ({@code ceilings}, by column), and a cell is under the sky when it is above that block.
+     */
+    static boolean underSky(LevelReader level, BlockPos pos, java.util.Map<Long, Integer> ceilings) {
+        if (level.canSeeSky(pos)) return true;
+        if (!level.hasChunkAt(pos)) return false;
+        int ceiling = ceilings.computeIfAbsent(((long) pos.getX() << 32) ^ (pos.getZ() & 0xFFFFFFFFL), column -> {
+            BlockPos.MutableBlockPos cell = new BlockPos.MutableBlockPos(pos.getX(), 0, pos.getZ());
+            for (int y = level.getMaxBuildHeight() - 1; y >= level.getMinBuildHeight(); y--) if (shuts(level, cell.setY(y))) return y;
+            return Integer.MIN_VALUE;
+        });
+        return pos.getY() > ceiling;
+    }
+
+    private static boolean shuts(LevelReader level, BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
+        boolean tree = state.is(BlockTags.LEAVES) || state.is(BlockTags.LOGS);
+        return !tree && (state.getLightBlock(level, pos) >= LIGHT_BLOCKED || !state.getFluidState().isEmpty());
     }
 
     /**

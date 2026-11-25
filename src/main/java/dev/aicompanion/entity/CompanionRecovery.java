@@ -229,7 +229,7 @@ final class CompanionRecovery {
         return false;
     }
     private boolean spare(ItemStack stack) {
-        if (!buildingBlock(stack) || owner.carriedForPlayer(stack)) return false;
+        if (!buildingBlock(stack) || owner.carriedForPlayer(stack) || stack.getCount() <= owner.work.handOver.reserved(stack)) return false;
         if (CompanionTools.soilItem(stack) || stack.is(Items.STONE)) return true;
         if (stack.is(ItemTags.PLANKS)) return owner.workWoodSpare();
         long reserve = owner.workStoneReserve();

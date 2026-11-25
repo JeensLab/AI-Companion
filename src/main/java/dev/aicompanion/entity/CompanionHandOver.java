@@ -33,8 +33,23 @@ final class CompanionHandOver {
         return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals(w.requestedItem);
     }
 
-    /** A stack the hand-over under way gives away: nothing is dug with it or sealed with it on the way to the player. */
-    boolean beingGiven(ItemStack stack) { return w.job == CompanionWork.Job.GIVE && giftMatches(stack); }
+    /**
+     * How many of {@code stack} the hand-over under way keeps for the player: the gift is counted off the bag in the order it is given (the bag
+     * slot by slot, the hand last), so a stack of sixty-four with one asked for keeps one, and of two pickaxes one is his. Nothing of it is dug
+     * with, sealed with, thrown out or stood on on the way to the player.
+     */
+    int reserved(ItemStack stack) {
+        if (w.job != CompanionWork.Job.GIVE) return 0;
+        int left = w.requestedCount, size = w.owner.getContainerSize();
+        for (int index = 0; index <= size && left > 0; index++) {
+            ItemStack held = index == size ? w.owner.getMainHandItem() : w.owner.getItem(index);
+            if (!giftMatches(held)) continue;
+            int take = Math.min(left, held.getCount());
+            if (held == stack) return take;
+            left -= take;
+        }
+        return 0;
+    }
 
     /** A cell he can stand in by its floor: nothing in the way, or a low block (carpet, slab, path, farmland) with room above it. */
     private static boolean standable(ServerLevel level, BlockPos cell) {

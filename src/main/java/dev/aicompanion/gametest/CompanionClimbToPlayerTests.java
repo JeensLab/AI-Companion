@@ -204,20 +204,8 @@ public final class CompanionClimbToPlayerTests {
      */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
     public static void leavesTheBlockThePlayerStandsOnWhenCuttingUpToHim(GameTestHelper h) {
-        mountain(h, false);
-        for (int x = CENTER - 3; x <= CENTER + 4; x++) for (int z = CENTER - 4; z <= CENTER + 4; z++) for (int y = GROUND - RIM_HOLE; y < GROUND; y++) {
-            BlockPos wall = new BlockPos(x, y, z);
-            if (h.getBlockState(wall).is(Blocks.STONE) || h.getBlockState(wall).is(Blocks.DIRT)) h.setBlock(wall, Blocks.ANDESITE);
-        }
-        for (int x = CENTER - 1; x <= CENTER + 1; x++) for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = GROUND - RIM_HOLE + 1; y <= GROUND; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
-        for (int x = CENTER - 1; x <= CENTER + 1; x++) for (int z = CENTER - 1; z <= CENTER + 1; z++) h.setBlock(new BlockPos(x, GROUND - RIM_HOLE + 1 + ROOF_HEIGHT, z), Blocks.ANDESITE);
-        CompanionEntity c = rig(h);
-        c.setFollowing(false);
-        BlockPos floor = h.absolutePos(new BlockPos(CENTER, GROUND - RIM_HOLE + 1, CENTER)), owner = h.absolutePos(new BlockPos(CENTER + 3, GROUND + 1, CENTER));
-        c.teleportTo(floor.getX() + .5, floor.getY(), floor.getZ() + .5);
-        h.getLevel().getPlayerByUUID(c.getOwnerId()).teleportTo(owner.getX() + .5, owner.getY(), owner.getZ() + .5);
-        c.setItem(6, new ItemStack(Items.DIAMOND));
-        h.assertTrue(c.startWork("give_items", "minecraft:diamond", 1).success(), "Hand-over not accepted: " + c.getLastTaskResult());
+        CompanionEntity c = rimHole(h, 3, 0);
+        BlockPos owner = h.absolutePos(new BlockPos(CENTER + 3, GROUND + 1, CENTER));
         long id = c.activeWorkId();
         h.onEachTick(() -> {
             for (int y = 1; y <= RIM_HOLE - 3; y++)
@@ -229,56 +217,149 @@ public final class CompanionClimbToPlayerTests {
         });
     }
 
-    /** In the open there is no pit: the player on a pillar of eight blocks on level ground (too high to jump up to) gets no stairs and no bridge of cobblestone. */
+    /** The same with the player in the air (a jump, a fall) over the rim: the blocks he will land on are as safe as the ones he stands on. */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
-    public static void cutsNoStairsToAPlayerOnAPillarInTheOpen(GameTestHelper h) {
-        mountain(h, false);
-        for (int y = GROUND + 1; y <= GROUND + 8; y++) h.setBlock(new BlockPos(CENTER + 6, y, CENTER), Blocks.ANDESITE);
-        noStairsInTheOpen(h, new BlockPos(CENTER + 6, GROUND + 9, CENTER));
+    public static void leavesTheGroundUnderAPlayerInTheAirWhenCuttingUpToHim(GameTestHelper h) {
+        CompanionEntity c = rimHole(h, 3, 3);
+        BlockPos ground = h.absolutePos(new BlockPos(CENTER + 3, GROUND, CENTER));
+        long id = c.activeWorkId();
+        h.onEachTick(() -> {
+            for (int y = 0; y <= RIM_HOLE - 3; y++)
+                h.assertTrue(!h.getLevel().getBlockState(ground.below(y)).isAir(), "The ground under the player in the air was dug out at " + ground.below(y).toShortString() + " | " + report(c));
+        });
+        h.succeedWhen(() -> ended(h, c, id));
     }
 
-    /** The same with the player in the air over the ground: nothing is laid up to him. */
+    /**
+     * A player who walks onto the line of the stairs while they are being cut keeps his floor: the cells of the step under way were free when it
+     * was planned. The player waits far off on the rim; as soon as the stairs have cut into the wall he steps onto the grass over the cell
+     * just cut, where the rest of its step is still to be cut, and every block of the column under him stays.
+     */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
-    public static void cutsNoStairsToAFlyingPlayerInTheOpen(GameTestHelper h) {
-        mountain(h, false);
-        noStairsInTheOpen(h, new BlockPos(CENTER + 4, GROUND + 12, CENTER));
+    public static void leavesTheFloorOfAPlayerWhoWalksOntoTheLineOfTheStairs(GameTestHelper h) {
+        CompanionEntity c = rimHole(h, 8, 0);
+        long id = c.activeWorkId();
+        var player = h.getLevel().getPlayerByUUID(c.getOwnerId());
+        java.util.List<BlockPos> watched = new java.util.ArrayList<>();
+        h.onEachTick(() -> {
+            if (watched.isEmpty()) {
+                int frontX = Integer.MIN_VALUE, frontZ = CENTER;
+                for (int x = CENTER + 2; x <= CENTER + 8; x++) for (int z = CENTER - 4; z <= CENTER + 4; z++) for (int y = GROUND - RIM_HOLE + 1; y < GROUND; y++)
+                    if (h.getBlockState(new BlockPos(x, y, z)).isAir() && x > frontX) { frontX = x; frontZ = z; }
+                if (frontX == Integer.MIN_VALUE) return;
+                BlockPos on = h.absolutePos(new BlockPos(frontX, GROUND + 1, frontZ));
+                player.teleportTo(on.getX() + .5, on.getY(), on.getZ() + .5);
+                for (int y = GROUND - RIM_HOLE + 1; y <= GROUND; y++) {
+                    BlockPos cell = new BlockPos(frontX, y, frontZ);
+                    if (!h.getBlockState(cell).isAir()) watched.add(cell);
+                }
+                return;
+            }
+            for (BlockPos cell : watched) h.assertTrue(!h.getBlockState(cell).isAir(), "A block of the column under the player who stepped onto the line was dug out at " + cell.toShortString() + " | " + report(c));
+        });
+        h.succeedWhen(() -> {
+            StringBuilder dbg = new StringBuilder();
+            for (int x = CENTER - 4; x <= CENTER + 9; x++) { for (int y = GROUND - RIM_HOLE + 1; y <= GROUND; y++) dbg.append(h.getBlockState(new BlockPos(x, y, CENTER)).isAir() ? '_' : '#'); dbg.append('/'); }
+            h.assertTrue(!watched.isEmpty(), "The stairs never came near the rim " + dbg + " he at " + h.relativePos(c.blockPosition()).toShortString() + " player at " + h.relativePos(player.blockPosition()).toShortString() + " | " + report(c));
+            ended(h, c, id);
+        });
     }
 
-    /** Oleg on level ground, the player at {@code spot} out of reach above: the hand-over ends with no block laid in the air round him. */
-    private static void noStairsInTheOpen(GameTestHelper h, BlockPos spot) {
+    /**
+     * Oleg on the floor of a hole nine deep in andesite with a roof over its lower part (no jumping and pillaring out), the player on the grass
+     * {@code east} blocks off its middle and {@code lift} blocks above it, a diamond to give.
+     */
+    private static CompanionEntity rimHole(GameTestHelper h, int east, int lift) {
+        mountain(h, false);
+        for (int x = CENTER - 3; x <= CENTER + 9; x++) for (int z = CENTER - 4; z <= CENTER + 4; z++) for (int y = GROUND - RIM_HOLE; y < GROUND; y++) {
+            BlockPos wall = new BlockPos(x, y, z);
+            if (h.getBlockState(wall).is(Blocks.STONE) || h.getBlockState(wall).is(Blocks.DIRT)) h.setBlock(wall, Blocks.ANDESITE);
+        }
+        for (int x = CENTER - 1; x <= CENTER + 1; x++) for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = GROUND - RIM_HOLE + 1; y <= GROUND; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        for (int x = CENTER - 1; x <= CENTER + 1; x++) for (int z = CENTER - 1; z <= CENTER + 1; z++) h.setBlock(new BlockPos(x, GROUND - RIM_HOLE + 1 + ROOF_HEIGHT, z), Blocks.ANDESITE);
         CompanionEntity c = rig(h);
         c.setFollowing(false);
-        BlockPos at = h.absolutePos(spot);
-        h.getLevel().getPlayerByUUID(c.getOwnerId()).teleportTo(at.getX() + .5, at.getY(), at.getZ() + .5);
+        BlockPos floor = h.absolutePos(new BlockPos(CENTER, GROUND - RIM_HOLE + 1, CENTER)), owner = h.absolutePos(new BlockPos(CENTER + east, GROUND + 1 + lift, CENTER));
+        c.teleportTo(floor.getX() + .5, floor.getY(), floor.getZ() + .5);
+        h.getLevel().getPlayerByUUID(c.getOwnerId()).teleportTo(owner.getX() + .5, owner.getY(), owner.getZ() + .5);
+        c.setItem(6, new ItemStack(Items.DIAMOND));
+        h.assertTrue(c.startWork("give_items", "minecraft:diamond", 1).success(), "Hand-over not accepted: " + c.getLastTaskResult());
+        return c;
+    }
+
+    /**
+     * Review of the climb: a pocket sealed in a cliff face is no pit. A cell of three by three by three at the top of a mass of andesite nine
+     * high, the player on the ground at its foot, lower than he is: no stairs out through the face and no bridge of cobblestone over the air, the hand-over ends
+     * with «не могу пройти».
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    public static void cutsNoStairsOutOfARoofedPocketToAPlayerBelow(GameTestHelper h) {
+        mountain(h, false);
+        for (int x = CENTER - 4; x <= CENTER + 4; x++) for (int z = CENTER - 4; z <= CENTER + 4; z++) for (int y = GROUND + 1; y <= GROUND + 9; y++) h.setBlock(new BlockPos(x, y, z), Blocks.ANDESITE);
+        for (int x = CENTER - 1; x <= CENTER + 1; x++) for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = GROUND + 4; y <= GROUND + 6; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        BlockPos in = h.absolutePos(new BlockPos(CENTER, GROUND + 4, CENTER)), owner = h.absolutePos(new BlockPos(CENTER + 7, GROUND + 1, CENTER));
+        c.teleportTo(in.getX() + .5, in.getY(), in.getZ() + .5);
+        h.getLevel().getPlayerByUUID(c.getOwnerId()).teleportTo(owner.getX() + .5, owner.getY(), owner.getZ() + .5);
         c.setItem(6, new ItemStack(Items.DIAMOND));
         h.assertTrue(c.startWork("give_items", "minecraft:diamond", 1).success(), "Hand-over not accepted: " + c.getLastTaskResult());
         long id = c.activeWorkId();
         h.succeedWhen(() -> {
             CompanionActionResult result = ended(h, c, id);
-            for (int x = CENTER - 3; x <= CENTER + 8; x++) for (int z = CENTER - 3; z <= CENTER + 3; z++) for (int y = GROUND + 1; y <= GROUND + 13; y++) {
-                boolean pillar = x == CENTER + 6 && z == CENTER && y <= GROUND + 8 && spot.getY() == GROUND + 9;
-                h.assertTrue(pillar || h.getBlockState(new BlockPos(x, y, z)).isAir(), "A block laid in the open at " + x + "," + y + "," + z + "; he said «" + result.message() + "» | " + report(c));
+            h.assertTrue(!result.success(), "He gave it from a sealed pocket: «" + result.message() + "» | " + report(c));
+            for (int x = CENTER - 6; x <= CENTER + 10; x++) for (int z = CENTER - 6; z <= CENTER + 6; z++) for (int y = GROUND + 1; y <= GROUND + 12; y++) {
+                boolean mass = Math.abs(x - CENTER) <= 4 && Math.abs(z - CENTER) <= 4 && y <= GROUND + 9, pocket = Math.abs(x - CENTER) <= 1 && Math.abs(z - CENTER) <= 1 && y >= GROUND + 4 && y <= GROUND + 6;
+                if (pocket) continue;
+                h.assertTrue(mass != h.getBlockState(new BlockPos(x, y, z)).isAir(), "The cliff was cut or built on at " + x + "," + y + "," + z + "; he said «" + result.message() + "» | " + report(c));
             }
         });
     }
 
     /**
-     * Review of the climb: what he is handing over is not what he lays under the steps. Water in the first cells of the stairs, twenty cobblestones to
-     * give and dirt in the bag: the water is shut in with dirt, every cobblestone goes to the player.
+     * Review of the climb: two sealed chambers in the mountain, he in one, the player in the other at his own height with four blocks of rock
+     * between: no stairs are cut through the rock to him, and nothing round the chambers is dug.
      */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
-    public static void sealsWithDirtAndGivesAllTheCobblestone(GameTestHelper h) {
-        CompanionEntity c = pit(h);
-        c.setItem(4, new ItemStack(Items.COBBLESTONE, 20));
-        c.setItem(5, new ItemStack(Items.DIRT, 64));
-        for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = GROUND - PIT_DEPTH + 1; y < GROUND - PIT_DEPTH + 4; y++) h.setBlock(new BlockPos(CENTER + 2, y, z), Blocks.WATER);
-        h.assertTrue(c.startWork("give_items", "minecraft:cobblestone", 20).success(), "Hand-over not accepted: " + c.getLastTaskResult());
+    public static void digsNoWallToAPlayerAtHisOwnHeightBehindRock(GameTestHelper h) {
+        mountain(h, false);
+        int floorY = GROUND - 8;
+        // Andesite all round: the self-rescue cuts only stone, soil and deepslate, so what is dug here is dug by the stairs.
+        for (int x = CENTER - 5; x <= CENTER + 10; x++) for (int z = CENTER - 3; z <= CENTER + 3; z++) for (int y = floorY - 1; y < GROUND; y++) h.setBlock(new BlockPos(x, y, z), Blocks.ANDESITE);
+        for (int x = CENTER - 3; x <= CENTER; x++) for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = floorY; y <= floorY + 2; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        for (int x = CENTER + 5; x <= CENTER + 8; x++) for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = floorY; y <= floorY + 2; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        BlockPos in = h.absolutePos(new BlockPos(CENTER - 1, floorY, CENTER)), owner = h.absolutePos(new BlockPos(CENTER + 6, floorY, CENTER));
+        c.teleportTo(in.getX() + .5, in.getY(), in.getZ() + .5);
+        h.getLevel().getPlayerByUUID(c.getOwnerId()).teleportTo(owner.getX() + .5, owner.getY(), owner.getZ() + .5);
+        c.setItem(6, new ItemStack(Items.DIAMOND));
+        h.assertTrue(c.startWork("give_items", "minecraft:diamond", 1).success(), "Hand-over not accepted: " + c.getLastTaskResult());
         long id = c.activeWorkId();
         h.succeedWhen(() -> {
             CompanionActionResult result = ended(h, c, id);
-            h.assertTrue(result.success() && thrown(h, c, Items.COBBLESTONE) >= 20, "He gave " + thrown(h, c, Items.COBBLESTONE) + " of 20 cobblestones, said «" + result.message() + "» | " + report(c));
-            for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = GROUND - PIT_DEPTH + 1; y < GROUND - PIT_DEPTH + 4; y++)
-                h.assertTrue(!h.getBlockState(new BlockPos(CENTER + 2, y, z)).is(Blocks.COBBLESTONE), "Cobblestone he was giving was laid at " + y + "," + z + " | " + report(c));
+            h.assertTrue(!result.success(), "He gave it through the rock: «" + result.message() + "» | " + report(c));
+            for (int x = CENTER - 5; x <= CENTER + 10; x++) for (int z = CENTER - 3; z <= CENTER + 3; z++) for (int y = floorY - 1; y <= GROUND + 1; y++) {
+                boolean chamber = Math.abs(z - CENTER) <= 1 && y >= floorY && y <= floorY + 2 && (x >= CENTER - 3 && x <= CENTER || x >= CENTER + 5 && x <= CENTER + 8);
+                if (y >= GROUND + 1 || chamber) continue;
+                h.assertTrue(!h.getBlockState(new BlockPos(x, y, z)).isAir(), "Rock was dug at " + x + "," + y + "," + z + "; he said «" + result.message() + "» | " + report(c));
+            }
+        });
+    }
+
+    /**
+     * Review of the climb: the gift is held back by number, not by kind. He has two stone pickaxes (one in the hand, one in the bag) and no other
+     * tool, and is asked for one: he digs with the other, and the one is thrown.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    public static void digsWithTheSecondPickaxeWhenGivingOneOfTwo(GameTestHelper h) {
+        CompanionEntity c = pit(h);
+        c.setItem(1, ItemStack.EMPTY);
+        h.assertTrue(c.startWork("give_items", "minecraft:stone_pickaxe", 1).success(), "Hand-over not accepted: " + c.getLastTaskResult());
+        long id = c.activeWorkId();
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && thrown(h, c, Items.STONE_PICKAXE) >= 1, "He said «" + result.message() + "» | " + report(c));
         });
     }
 
@@ -308,26 +389,37 @@ public final class CompanionClimbToPlayerTests {
         c.setItem(5, ItemStack.EMPTY);
         c.setItem(6, new ItemStack(Items.DIAMOND));
         h.assertTrue(c.startWork("give_items", "minecraft:diamond", 1).success(), "Hand-over not accepted: " + c.getLastTaskResult());
-        boolean[] stopped = {false};
+        int[] held = {0, 0, 0}; // the stone held when he was stopped, the cobblestone in his bag then, the tick
         h.onEachTick(() -> {
-            if (stopped[0]) return;
+            if (held[0] > 0) return;
             var tag = new net.minecraft.nbt.CompoundTag();
             c.saveWithoutId(tag);
-            if (tag.contains(dev.aicompanion.entity.CompanionMineSite.HELD_KEY)) { stopped[0] = true; c.setFollowing(false); }
+            if (!tag.contains(dev.aicompanion.entity.CompanionMineSite.HELD_KEY)) return;
+            for (var entry : tag.getList(dev.aicompanion.entity.CompanionMineSite.HELD_KEY, 10))
+                for (var drop : ((net.minecraft.nbt.CompoundTag) entry).getList("Drops", 10)) held[0] += ((net.minecraft.nbt.CompoundTag) drop).getInt("Count");
+            held[1] = count(c, Items.ANDESITE);
+            held[2] = (int) h.getTick();
+            c.setFollowing(false);
         });
         h.succeedWhen(() -> {
-            h.assertTrue(stopped[0], "No stone was ever held back | " + report(c));
+            h.assertTrue(held[0] > 0 && h.getTick() > held[2] + 60, "No stone was held back, or not yet long enough | " + report(c));
             var tag = new net.minecraft.nbt.CompoundTag();
             c.saveWithoutId(tag);
             h.assertTrue(!tag.contains(dev.aicompanion.entity.CompanionMineSite.HELD_KEY), "The stone is still held after the order was stopped | " + report(c));
+            int lying = 0;
+            for (var item : h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, c.getBoundingBox().inflate(12))) if (item.getItem().is(Items.ANDESITE)) lying += item.getItem().getCount();
+            h.assertTrue(lying == held[0], held[0] + " stones were held, " + lying + " lie where they were cut; bag " + held[1] + " then, " + count(c, Items.ANDESITE) + " now | " + report(c));
+            h.assertTrue(count(c, Items.ANDESITE) == held[1], "He picked the stone up again after the stop: " + held[1] + " in the bag then, " + count(c, Items.ANDESITE) + " now | " + report(c));
         });
     }
 
-    /** An ore the pickaxe in the bag cannot take shuts that side of the stairs, not the whole climb: the east wall of the pit is diamond ore, he has only a stone pickaxe. */
+    /** An ore the pickaxe in the bag cannot take shuts that side of the stairs, not the whole climb: he is in a well one block wide whose east wall is diamond ore (the first step east is in it), and he has only a stone pickaxe. */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
     public static void goesRoundAnOreHeCannotMine(GameTestHelper h) {
         CompanionEntity c = pit(h);
-        for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = GROUND - PIT_DEPTH + 1; y < GROUND; y++) h.setBlock(new BlockPos(CENTER + 2, y, z), Blocks.DIAMOND_ORE);
+        // A well one block wide: every first step goes into the wall, and the east one into diamond ore.
+        for (int x = CENTER - 1; x <= CENTER + 1; x++) for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = GROUND - PIT_DEPTH + 1; y <= GROUND; y++)
+            if (x != CENTER || z != CENTER) h.setBlock(new BlockPos(x, y, z), x == CENTER + 1 && z == CENTER && y < GROUND ? Blocks.DIAMOND_ORE : Blocks.ANDESITE);
         c.setItem(1, ItemStack.EMPTY);
         c.setItem(6, new ItemStack(Items.DIAMOND));
         h.assertTrue(c.startWork("give_items", "minecraft:diamond", 1).success(), "Hand-over not accepted: " + c.getLastTaskResult());

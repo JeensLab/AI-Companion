@@ -39,7 +39,7 @@ public final class CompanionSeal {
     /** Sealing blocks in the bag. */
     public static int available(CompanionEntity owner) {
         int count = 0;
-        for (ItemStack stack : owner.companionInventory) if (seals(stack) && !owner.carriedForPlayer(stack) && !owner.work.handOver.beingGiven(stack)) count += stack.getCount();
+        for (ItemStack stack : owner.companionInventory) if (seals(stack) && !owner.carriedForPlayer(stack)) count += Math.max(0, stack.getCount() - owner.work.handOver.reserved(stack));
         return count;
     }
 
@@ -104,7 +104,7 @@ public final class CompanionSeal {
 
     private static int slot(CompanionEntity owner) {
         for (Item wanted : PREFERENCE) {
-            for (int slot = 0; slot < owner.getContainerSize(); slot++) if (owner.getItem(slot).is(wanted) && !owner.carriedForPlayer(owner.getItem(slot)) && !owner.work.handOver.beingGiven(owner.getItem(slot))) return slot;
+            for (int slot = 0; slot < owner.getContainerSize(); slot++) if (owner.getItem(slot).is(wanted) && !owner.carriedForPlayer(owner.getItem(slot)) && owner.getItem(slot).getCount() > owner.work.handOver.reserved(owner.getItem(slot))) return slot;
         }
         return -1;
     }
