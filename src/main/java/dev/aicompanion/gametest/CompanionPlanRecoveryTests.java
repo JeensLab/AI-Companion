@@ -598,7 +598,7 @@ public final class CompanionPlanRecoveryTests {
         @Override public CompletableFuture<Attempt> run(PlannedAction action) {
             calls.add(action.type());
             return CompletableFuture.completedFuture(new Attempt(action.type().equals("gather_wood")
-                    ? CompanionActionResult.failed("Не нашёл доступного дерева для подготовки. Вещи сохранил.") : CompanionActionResult.ok("Готово."), true));
+                    ? CompanionActionResult.noTree("Не нашёл доступного дерева для подготовки. Вещи сохранил.") : CompanionActionResult.ok("Готово."), true));
         }
     }
 

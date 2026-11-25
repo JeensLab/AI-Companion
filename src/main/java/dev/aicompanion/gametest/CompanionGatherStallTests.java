@@ -105,9 +105,31 @@ public final class CompanionGatherStallTests {
                 CompanionActionResult result = c.workResult(id);
                 h.assertTrue(result != null && !c.isWorking() && !c.isGatheringTask(),
                         "Still gathering at tick " + SEEN_BY + ": " + c.getLastTaskResult() + " | " + c.watchDetail() + " at " + h.relativePos(c.blockPosition()).toShortString());
-                h.assertTrue(!result.success() && result.message().contains("Не нашёл доступного дерева"), "Not the answer of «no tree»: " + result.message());
+                h.assertTrue(result.status() == CompanionActionResult.Status.NO_TREE && result.message().contains("Не нашёл доступного дерева"), "Not the answer of «no tree»: " + result);
                 h.assertTrue(c.blockPosition().distSqr(stand) <= 9, "Left his ledge to a place he could not have reached: " + h.relativePos(c.blockPosition()).toShortString());
                 h.assertTrue(count(c, Items.OAK_LOG) == 0, "Logs fell into the bag from nowhere");
+                h.succeed();
+            }
+        });
+    }
+
+    /**
+     * The same on the ledge with an order for a species there is none of (birch: the grove is oak): the answer is the species' own
+     * («Берёзы рядом не нашёл.»), and it is the answer of «no tree» as well, so the plan does not search again for the next part.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = TIMEOUT)
+    public static void aSpeciesWithNoTreeAroundIsTheAnswerOfNoTree(GameTestHelper h) {
+        ledgeAboveTrees(h);
+        CompanionEntity c = spawn(h, LEDGE_X, LEDGE_Y, LEDGE_Z);
+        c.setFollowing(false);
+        var started = c.startWork("gather_wood", "minecraft:birch_log", 4);
+        h.assertTrue(started.success(), "Order not accepted: " + started.message());
+        long id = c.activeWorkId();
+        h.onEachTick(() -> {
+            if (h.getTick() == SEEN_BY) {
+                CompanionActionResult result = c.workResult(id);
+                h.assertTrue(result != null && !c.isWorking() && !c.isGatheringTask(), "Still gathering at tick " + SEEN_BY + ": " + c.getLastTaskResult());
+                h.assertTrue(result.status() == CompanionActionResult.Status.NO_TREE, "Not the answer of «no tree»: " + result);
                 h.succeed();
             }
         });
@@ -132,7 +154,7 @@ public final class CompanionGatherStallTests {
         h.succeedWhen(() -> {
             CompanionActionResult result = c.workResult(id);
             h.assertTrue(result != null && !c.isWorking(), "The order did not end: " + c.getLastTaskResult());
-            h.assertTrue(!result.success() && !result.message().contains(dev.aicompanion.client.CompanionPlanRunner.NO_TREE), "Said «no tree» with trees in reach: " + result.message());
+            h.assertTrue(!result.success() && result.status() != CompanionActionResult.Status.NO_TREE, "Said «no tree» with trees in reach: " + result);
         });
     }
 }

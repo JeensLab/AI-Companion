@@ -473,7 +473,7 @@ final class CompanionOreMining {
     /** Asks once whether a walk leads back to where the order began; false while the answer is not in. */
     private boolean pitKnown() {
         if (noWalkHome != null || pitSteps > 0 || w.oreExit != null || home == null || dugCells == 0 || w.owner.getY() >= home.getY() - PIT_DEPTH) return true;
-        noWalkHome = w.route.noWay(home);
+        noWalkHome = w.route.provenNoWay(home);
         return noWalkHome != null;
     }
 

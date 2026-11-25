@@ -704,8 +704,8 @@ public final class CompanionWork {
                 // A full bag is said as it is, not as «no wood».
                 if (CompanionEntity.FULL_BAG_FOR_LOGS.equals(owner.getLastTaskResult())) { finish(false, CompanionEntity.FULL_BAG_FOR_LOGS); return; }
                 if (job == Job.DIRT) { crafting.startDigging(); return; }
-                if (job == Job.WOOD && CompanionWoodKind.of(requestedItem) != null) { finish(false, owner.getLastTaskResult()); return; }
-                finish(false, (owner.gathering.noTreeFound ? "Не нашёл доступного дерева для подготовки. Вещи сохранил." : "Не хватило доступного дерева для подготовки. Вещи сохранил.") + (job == Job.HOUSE ? " Начатый дом можно достроить позже." : "")); return;
+                if (job == Job.WOOD && CompanionWoodKind.of(requestedItem) != null) { finish(owner.gathering.woodEnd(true, owner.getLastTaskResult())); return; }
+                finish(owner.gathering.woodEnd(job == Job.WOOD, (owner.gathering.noTreeFound ? "Не нашёл доступного дерева для подготовки. Вещи сохранил." : "Не хватило доступного дерева для подготовки. Вещи сохранил.") + (job == Job.HOUSE ? " Начатый дом можно достроить позже." : ""))); return;
             }
             phase = afterWood; resetTarget();
         }

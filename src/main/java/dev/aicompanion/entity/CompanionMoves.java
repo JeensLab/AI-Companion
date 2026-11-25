@@ -27,8 +27,6 @@ final class CompanionMoves {
     private static final int WATER_DROP = 20;
     /** The deepest drop onto land, chasing or not (the game's own allows a mob with a target up to 12 on Normal, 16 on Hard). The walk follows it too: no step is skipped onto a deeper one. */
     static final int LAND_DROP = 3;
-    /** How many drops in a row are added up (a chain longer than that is far over what he may fall anyway). */
-    private static final int CHAIN_LINKS = 8;
     /** A block in a cell no higher than this (a bottom slab, a carpet, a few layers of snow) is stepped onto; a higher one fills the cell. */
     private static final double STEPPED_OVER = .5;
 
@@ -44,7 +42,6 @@ final class CompanionMoves {
     private final CompanionNodeEvaluator eval;
     private final Mob mob;
     private final Node[] sides = new Node[4];
-    private final java.util.Set<Node> chainRefused = new java.util.HashSet<>();
 
     CompanionMoves(CompanionNodeEvaluator eval, Mob mob) { this.eval = eval; this.mob = mob; }
 
@@ -57,18 +54,17 @@ final class CompanionMoves {
         double floor = ladder ? Math.max(eval.floorAt(x, y, z), y) : eval.floorAt(x, y, z);
         boolean floats = eval.typeAt(x, y - 1, z) == PathType.WATER;
         for (Direction d : Direction.Plane.HORIZONTAL) {
-            Node to = accept(x + d.getStepX(), y, z + d.getStepZ(), up, floor, d, here, floats);
+            Node to = fall(from, accept(x + d.getStepX(), y, z + d.getStepZ(), up, floor, d, here, floats));
             // Not off a ladder into a fall: his feet are anywhere in its cell, so the drop is more than the node's, and damage.
             if (ladder && to != null && to.y < y) to = null;
-            if (to != null && fallsFar(from, to)) to = null;
             sides[d.get2DDataValue()] = to;
             if (to != null && (to.costMalus >= 0 || from.costMalus < 0)) sink.offer(to, cost(from, to));
         }
         for (Direction d : Direction.Plane.HORIZONTAL) {
             Direction e = d.getClockWise();
             if (!diagonalSides(from, sides[d.get2DDataValue()], sides[e.get2DDataValue()])) continue;
-            Node to = accept(x + d.getStepX() + e.getStepX(), y, z + d.getStepZ() + e.getStepZ(), up, floor, d, here, floats);
-            if (to != null && to.type != PathType.WALKABLE_DOOR && to.costMalus >= 0 && (to.y <= y || roomOverDiagonal(from, d, e, to)) && !fallsFar(from, to)) sink.offer(to, cost(from, to));
+            Node to = fall(from, accept(x + d.getStepX() + e.getStepX(), y, z + d.getStepZ() + e.getStepZ(), up, floor, d, here, floats));
+            if (to != null && to.type != PathType.WALKABLE_DOOR && to.costMalus >= 0 && (to.y <= y || roomOverDiagonal(from, d, e, to))) sink.offer(to, cost(from, to));
         }
         if (ladder) {
             ladder(from, y + 1, LADDER_UP, sink);
@@ -209,39 +205,16 @@ final class CompanionMoves {
     /**
      * A drop straight after a drop is no new fall: he is still in the air over the first landing when he turns to the second (a drop of
      * three takes nine ticks, the next column four and a half), so the falls add up (marathon m15: down a slope of ledges three blocks
-     * each, 6 and 26 blocks in one fall). The chain may not come to more than he may fall. A drop of one block lands within the time he
-     * takes for a column (4 ticks in the air against 4.6), so a stair is walked step by step and breaks the chain, before and after it.
-     * Into water and onto a ladder or vine nothing is added.
+     * each, 6 and 26 blocks in one fall). The falls of two blocks or more are over what he may fall together, so a cell landed on by one is
+     * a node of its own, a landing (CompanionNodeEvaluator.landing), and no second such drop leaves it; a way that comes to the same cell
+     * by a step has the plain node and may drop. A drop of one block lands within the time he takes for a column (4 ticks in the air
+     * against 4.6), so a stair is walked step by step and breaks the chain, before and after it. Into water and onto a ladder or vine
+     * nothing is added: they are no landing.
      */
-    private boolean fallsFar(Node from, Node to) {
-        if (chain(from, to) <= LAND_DROP) return false;
-        // The search may find a safer way into this cell later (a stair beside the drop): it opens the cell again for what it refused here.
-        chainRefused.add(from);
-        return true;
+    private Node fall(Node from, Node to) {
+        if (to == null || from.y - to.y < 2 || to.type == PathType.WATER || to.type == PathType.OPEN) return to;
+        return from instanceof CompanionNodeEvaluator.Landing ? null : eval.landing(to);
     }
-
-    /** The blocks fallen in a row by the way into {@code from}, then onto {@code to}: 0 for a step of one block, into water, onto a ladder or vine. */
-    static int chain(Node from, Node to) {
-        int fall = from.y - to.y;
-        if (fall <= 1 || to.type == PathType.WATER || to.type == PathType.OPEN) return 0;
-        Node at = from;
-        for (int link = 0; link < CHAIN_LINKS && at.cameFrom != null && at.type != PathType.WATER && at.type != PathType.OPEN; link++) {
-            Node before = at.cameFrom;
-            int drop = before.y - at.y;
-            if (drop <= 1 || before.x == at.x && before.z == at.z) break;
-            fall += drop;
-            at = before;
-        }
-        return fall;
-    }
-
-    /** The blocks fallen in a row by the way the search has into this cell. */
-    static int chainOf(Node node) { return node.cameFrom == null ? 0 : chain(node.cameFrom, node); }
-
-    /** Whether a drop from this cell was refused for the chain of falls before it. */
-    boolean refusedForChain(Node node) { return chainRefused.contains(node); }
-
-    void forgetRefused(Node node) { chainRefused.remove(node); }
 
     /** Down through air to the first cell with a floor: no deeper than he may fall, unless it is water. */
     private Node drop(int x, int y, int z) {

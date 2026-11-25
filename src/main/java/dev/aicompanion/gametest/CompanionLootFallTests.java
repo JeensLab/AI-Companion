@@ -40,7 +40,7 @@ public final class CompanionLootFallTests {
     /**
      * Ledges down the pit's west end over rows {@code firstRow..lastRow}, each three blocks lower than the one before and one column wide:
      * every drop is allowed, together they are a fall of ten. Only ledges one row long are no way down: on longer ones a way lands on a
-     * ledge and walks a column along it before the next drop, which starts a new fall (CompanionMoves.fallsFar) and is allowed.
+     * ledge and walks a column along it before the next drop, which starts a new fall (CompanionMoves.fall) and is allowed.
      */
     private static void ledges(GameTestHelper h, int firstRow, int lastRow) {
         CompanionSingleRouteTests.box(h, 18, 3, firstRow, 18, 10, lastRow, Blocks.STONE);
@@ -153,6 +153,71 @@ public final class CompanionLootFallTests {
                 fall += drop;
                 h.assertTrue(fall <= 3, "A fall of " + fall + " blocks in a row on the way, at node " + i);
             }
+            h.succeed();
+        });
+    }
+
+    /** The plateau, the wall, the ledge and the ground of the test before, with {@code stair} cut in the wall as its way up from the ledge. */
+    private static void ledgeTerrain(GameTestHelper h) {
+        CompanionSingleRouteTests.box(h, 0, 0, 0, 31, 23, 31, Blocks.AIR);
+        CompanionSingleRouteTests.box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
+        CompanionSingleRouteTests.box(h, 0, 2, 0, 10, 7, 31, Blocks.STONE);
+        CompanionSingleRouteTests.box(h, 11, 2, 0, 11, 12, 31, Blocks.STONE);
+        CompanionSingleRouteTests.box(h, 12, 2, 0, 31, 3, 31, Blocks.STONE);
+        CompanionSingleRouteTests.box(h, 12, 4, 9, 12, 12, 9, Blocks.STONE);
+        CompanionSingleRouteTests.box(h, 11, 6, 10, 11, 12, 10, Blocks.AIR);
+        CompanionSingleRouteTests.box(h, 0, 0, 0, 31, 23, 0, Blocks.BEDROCK);
+        CompanionSingleRouteTests.box(h, 0, 0, 31, 31, 23, 31, Blocks.BEDROCK);
+        CompanionSingleRouteTests.box(h, 0, 0, 0, 0, 23, 31, Blocks.BEDROCK);
+        CompanionSingleRouteTests.box(h, 31, 0, 0, 31, 23, 31, Blocks.BEDROCK);
+    }
+
+    private static String route(GameTestHelper h, net.minecraft.world.level.pathfinder.Path path) {
+        StringBuilder text = new StringBuilder();
+        if (path != null) for (int i = 0; i < path.getNodeCount(); i++) text.append(" ").append(h.relativePos(path.getNode(i).asBlockPos()).toShortString());
+        return text.toString();
+    }
+
+    /**
+     * The stair up to the ledge is cut in the wall behind a long walled corridor: the plateau reaches its top only by that way round. The search
+     * drops onto the ledge first (the ledge is a fall of two, and a second drop from it a fall of four), then climbs the stair from the ledge,
+     * and the step down from the stair to the ledge is a new standing there, which may drop to the ground: drop, up, down, drop.
+     * The way is found whatever cell the search reached first, and no node is on it twice.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 200)
+    public static void aStairReachedOnlyFromTheLedgeStillLetsTheLedgeDropOn(GameTestHelper h) {
+        ledgeTerrain(h);
+        CompanionSingleRouteTests.box(h, 11, 7, 1, 11, 12, 9, Blocks.AIR);
+        CompanionSingleRouteTests.box(h, 12, 4, 1, 12, 12, 9, Blocks.STONE);
+        CompanionSingleRouteTests.box(h, 10, 8, 2, 10, 12, 9, Blocks.STONE);
+        CompanionEntity c = CompanionSingleRouteTests.spawn(h, 8, 8, 10);
+        var nav = (CompanionNavigation) c.getNavigation();
+        h.runAfterDelay(5, () -> {
+            var path = nav.searchNow(java.util.Set.of(h.absolutePos(new BlockPos(16, 4, 10))), 1);
+            h.assertTrue(path != null && path.canReach(), "No way to the ground by the stair after the ledge:" + route(h, path));
+            var seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<Object, Boolean>());
+            for (int i = 0; i < path.getNodeCount(); i++) h.assertTrue(seen.add(path.getNode(i)), "A node is on the way twice, at " + i + ":" + route(h, path));
+            int fall = 0;
+            for (int i = 1; i < path.getNodeCount(); i++) {
+                int drop = path.getNode(i - 1).y - path.getNode(i).y;
+                if (drop <= 1) { fall = 0; continue; }
+                fall += drop;
+                h.assertTrue(fall <= 3, "A fall of " + fall + " blocks in a row on the way, at node " + i + ":" + route(h, path));
+            }
+            h.succeed();
+        });
+    }
+
+    /** Water ends a fall: from the ledge, a fall of two blocks into a pool is no second fall past three, and the way on to the pool is found. */
+    @GameTest(template = "tall_tree", timeoutTicks = 200)
+    public static void aDropIntoWaterBelowALedgeIsNoSecondFall(GameTestHelper h) {
+        ledgeTerrain(h);
+        CompanionSingleRouteTests.box(h, 12, 4, 6, 20, 4, 14, Blocks.WATER);
+        CompanionEntity c = CompanionSingleRouteTests.spawn(h, 8, 8, 10);
+        var nav = (CompanionNavigation) c.getNavigation();
+        h.runAfterDelay(5, () -> {
+            var path = nav.searchNow(java.util.Set.of(h.absolutePos(new BlockPos(15, 4, 10))), 1);
+            h.assertTrue(path != null && path.canReach(), "No way from the ledge into the pool:" + route(h, path));
             h.succeed();
         });
     }

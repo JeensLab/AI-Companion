@@ -26,6 +26,7 @@ final class CompanionGathering {
     }
 
     void startGatheringLogsForWork(int count) {
+        noTreeFound = false;
         c.loot.beginCollection();
         c.woodTaskVersion++;
         c.temporaryPillar.requestCleanup();
@@ -90,6 +91,9 @@ final class CompanionGathering {
 
     /** The last gathering of logs ended because it found no tree, not for another reason (a stop, a limit): the plan gives up wood only on that. */
     boolean noTreeFound;
+
+    /** How a wood order that brought no log ends: as the answer of «no tree» if its search found none, else as a plain failure. */
+    CompanionActionResult woodEnd(boolean wood, String message) { return wood && noTreeFound ? CompanionActionResult.noTree(message) : CompanionActionResult.failed(message); }
 
     /**
      * The work's deadline and its guard against a stand-still; true when one of them ended the work.
