@@ -44,7 +44,7 @@ public final class CompanionExpeditionReturnTests {
     private record Rig(CompanionEntity c, ServerPlayer owner) { }
 
     /** One worn stone pickaxe: when it breaks he walks up his own stairs, digs nothing new on the way, and says he came up for supplies. */
-    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 9000)
     public static void climbsHisOwnStairsWhenPickaxesRunOut(GameTestHelper h) {
         Rig r = rig(h, NO_RING, standard(16));
         CompanionEntity c = r.c();
@@ -77,7 +77,7 @@ public final class CompanionExpeditionReturnTests {
     }
 
     /** Back on the surface with no stone pickaxe, no wood and an iron one with no wear to spare, an order to dig again ends there at once: the walk down would only end in the climb back. */
-    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 9000)
     public static void staysAboveWhenHeHasNothingToDigWithAfterTheClimb(GameTestHelper h) {
         Rig r = rig(h, NO_RING, standard(16));
         CompanionEntity c = r.c();
@@ -109,7 +109,7 @@ public final class CompanionExpeditionReturnTests {
      * Reloaded in the middle of a tunnel: he keeps his mine record, goes to the owner by his stairs without opening a new way up,
      * and an order to dig again takes him down the same stairs to continue the tunnel.
      */
-    @GameTest(template = "marathon_cave", timeoutTicks = RELOAD_TIMEOUT)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = RELOAD_TIMEOUT)
     public static void afterReloadMidTunnelWalksOutByHisStairsAndResumes(GameTestHelper h) {
         Rig r = rig(h, NO_RING, standard(16, new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.STONE_PICKAXE)));
         AtomicReference<CompanionEntity> current = new AtomicReference<>(r.c());
@@ -149,7 +149,7 @@ public final class CompanionExpeditionReturnTests {
     }
 
     /** Removed from the world in the middle of the dig, neither dead nor told to stop: the chunk is let go all the same. */
-    @GameTest(template = "marathon_cave", timeoutTicks = 600)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 600)
     public static void releasesTheChunkWhenRemovedWithoutDeath(GameTestHelper h) {
         CompanionEntity c = rig(h, RING_FROM, standard(16)).c();
         UUID id = c.getUUID();

@@ -45,7 +45,7 @@ public final class CompanionRetreatTests {
      * Left a plug on the first step (as after a retreat) and is back at the entrance: the next step takes his own plug out, walks
      * down the same stairs to the tunnel and opens nothing outside the tunnel on the way.
      */
-    @GameTest(template = "marathon_cave", timeoutTicks = RESUME_TIMEOUT)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = RESUME_TIMEOUT)
     public static void nextStepRemovesHisPlugAndGoesBackDown(GameTestHelper h) {
         mountain(h, false);
         CompanionEntity c = rig(h);
@@ -90,7 +90,7 @@ public final class CompanionRetreatTests {
      * Low health at the face of the tunnel and nothing to eat: he goes back along the tunnel and up the stairs, closes the first step behind
      * him with a plug and rests at the entrance until he is fit; the order ends as a retreat, said so.
      */
-    @GameTest(template = "marathon_cave", timeoutTicks = RESUME_TIMEOUT)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = RESUME_TIMEOUT)
     public static void lowHealthSendsHimUpBehindAPlugAndTheRestEndsTheOrder(GameTestHelper h) {
         mountain(h, false);
         CompanionEntity c = rig(h);
@@ -121,7 +121,7 @@ public final class CompanionRetreatTests {
      * Hurt by a mob far from his way (eight cells beyond the end of the tunnel in an open corridor): he walks back to his tunnel and goes up
      * by it instead of resting where he stands under the blows.
      */
-    @GameTest(template = "marathon_cave", timeoutTicks = RESUME_TIMEOUT)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = RESUME_TIMEOUT)
     public static void farFromHisWayAMobOnHimSendsHimBackToIt(GameTestHelper h) {
         mountain(h, false);
         CompanionEntity c = rig(h);

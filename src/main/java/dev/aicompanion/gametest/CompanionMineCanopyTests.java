@@ -35,7 +35,7 @@ public final class CompanionMineCanopyTests {
     private CompanionMineCanopyTests() { }
 
     /** No record of a mine yet: the entrance is chosen in the pocket, where every side of the first step is leaves. */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
     public static void cutsTheLeavesOfTheFirstStepWhenEverySideIsRoofed(GameTestHelper h) {
         CompanionEntity c = pocket(h);
         long id = start(h, c, 1);
@@ -46,7 +46,7 @@ public final class CompanionMineCanopyTests {
     }
 
     /** The recorded entrance cannot be walked to (the same pocket, a record of a mine at a walled-in cell): the mine begins again in the leaves. */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
     public static void cutsTheLeavesWhenTheRecordedEntranceCannotBeWalkedTo(GameTestHelper h) {
         CompanionEntity c = pocket(h);
         BlockPos entrance = new BlockPos(CENTER + CAGE_AT, GROUND + 1, CENTER);

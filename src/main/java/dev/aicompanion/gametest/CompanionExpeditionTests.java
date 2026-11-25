@@ -38,6 +38,9 @@ import java.util.UUID;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionExpeditionTests {
+    /** The mine tests run as a batch of their own: their digging beside the tests of the common batch starved those of path-finding time. */
+    @net.minecraft.gametest.framework.AfterBatch(batch = "mine_core") public static void afterMine(net.minecraft.server.level.ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+
     private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2;
     private static final int RING_FROM = 21, NO_RING = 99, LAVA_STEP = 8, JUNK_SLOTS = 17, FIRST_JUNK = 6, FIRST_ORE_STAND = 6, AFTER_BREAK = 3, LIT_STEPS = 6, DOWN_STAIRS = 4, SURFACE_DEPTH = 2, GIVEN_TORCHES = 16;
     private static final BlockPos WATER = new BlockPos(25, 4, 3);
@@ -49,7 +52,7 @@ public final class CompanionExpeditionTests {
      * Water under the way down, wider than a turn or two goes round (an aquifer: seed 7 at y 1): he goes a few steps back up, digs a level
      * way off to the side, out from over it, and goes on down from there, never into the water and with no end above the tunnels.
      */
-    @GameTest(template = "marathon_cave", timeoutTicks = 12000)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 12000)
     public static void movesTheStairsAwayFromWaterBelowThem(GameTestHelper h) {
         Rig r = rig(h, NO_RING, standard(GIVEN_TORCHES, new ItemStack(Items.COBBLESTONE, 64)));
         CompanionEntity c = r.c();
@@ -65,7 +68,7 @@ public final class CompanionExpeditionTests {
     }
 
     /** A lava source open only from above, beside the column he opens next and in sight from his stand: it is plugged before that column is opened. */
-    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 9000)
     public static void sealsSeenLavaBesideTheStairsBeforeOpeningTheNextColumn(GameTestHelper h) {
         Rig r = rig(h, RING_FROM, standard(16));
         CompanionEntity c = r.c();
@@ -87,7 +90,7 @@ public final class CompanionExpeditionTests {
     }
 
     /** Water inside the rock above a tunnel cell: the cell is never opened under it, or the water is plugged first; no water in the mine. */
-    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 9000)
     public static void keepsWaterAboveTheTunnelOutOfTheMine(GameTestHelper h) {
         Rig r = rig(h, NO_RING, standard(16));
         CompanionEntity c = r.c();
@@ -104,7 +107,7 @@ public final class CompanionExpeditionTests {
     }
 
     /** One stone pickaxe with three uses left: when it breaks the step ends saying he is out of pickaxes; the iron one never digs stone. */
-    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 9000)
     public static void endsOutOfPickaxesAndKeepsTheIronOneForOre(GameTestHelper h) {
         Rig r = lastPickaxe(h);
         CompanionEntity c = r.c();
@@ -121,7 +124,7 @@ public final class CompanionExpeditionTests {
      * A step that begins with no stone pickaxe, no sticks and no wood (the fetch above ground found none): going up again would
      * bring nothing back, so the iron pickaxe digs the rock while it has wear to spare, instead of the climb of a mine that ends at once.
      */
-    @GameTest(template = "marathon_cave", timeoutTicks = 3000)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 3000)
     public static void digsRockWithSpareIronWhenAStepBeginsWithoutAStonePickaxe(GameTestHelper h) {
         Rig r = rig(h, NO_RING, new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.BREAD, 8), new ItemStack(Items.TORCH, 16));
         CompanionEntity c = r.c();
@@ -139,7 +142,7 @@ public final class CompanionExpeditionTests {
     }
 
     /** No torches, but coal and sticks: he crafts some and lays them; the ones in the world and in the bag come from the coal he used. */
-    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 9000)
     public static void craftsTorchesFromCoalAndSticksAndLaysThem(GameTestHelper h) {
         Rig r = rig(h, RING_FROM, standard(0, new ItemStack(Items.COAL, 2), new ItemStack(Items.STICK, 3)));
         CompanionEntity c = r.c();
@@ -156,7 +159,7 @@ public final class CompanionExpeditionTests {
      * Monsters spawn only at block light 0: where no sky reaches, every step of his stairs keeps block light 1 or more, and a torch
      * lights about six steps, not the three of the old rule of light 7 (forty-odd torches on each way down to the diamonds, seed 7).
      */
-    @GameTest(template = "marathon_cave", timeoutTicks = 6000)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 6000)
     public static void lightsHisStairsAgainstSpawnsWithATorchForSixSteps(GameTestHelper h) {
         Rig r = rig(h, NO_RING, standard(GIVEN_TORCHES));
         CompanionEntity c = r.c();
@@ -174,7 +177,7 @@ public final class CompanionExpeditionTests {
     }
 
     /** The last torch is gone deep in the mine, coal and spare sticks are in the bag: he makes more and keeps digging, no climb for supplies. */
-    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 9000)
     public static void makesTorchesWhenTheLastOneIsGoneAndKeepsDigging(GameTestHelper h) {
         Rig r = rig(h, NO_RING, standard(1, new ItemStack(Items.COAL, 8), new ItemStack(Items.STICK, 12)));
         CompanionEntity c = r.c();
@@ -192,7 +195,7 @@ public final class CompanionExpeditionTests {
     }
 
     /** The last torch is gone deep in the mine and nothing in the bag makes more: he goes up for supplies instead of digging on in the dark. */
-    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 9000)
     public static void climbsForSuppliesWhenTheTorchesAreGoneAndCannotBeMade(GameTestHelper h) {
         Rig r = rig(h, NO_RING, standard(1));
         CompanionEntity c = r.c();
@@ -210,7 +213,7 @@ public final class CompanionExpeditionTests {
     }
 
     /** A step that begins deep in the mine with no torch and nothing to make one of: he climbs for supplies instead of digging on unlit. */
-    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 9000)
     public static void aStepBeginningUndergroundWithoutTorchesClimbs(GameTestHelper h) {
         Rig r = rig(h, NO_RING, standard(1));
         CompanionEntity c = r.c();
@@ -238,7 +241,7 @@ public final class CompanionExpeditionTests {
     }
 
     /** The last torch is gone, nothing makes more and his stairs up are lost: with no way up he digs on at once, no shortage ending, no loop of climbs. */
-    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 9000)
     public static void withNoWayUpAndNoTorchesHeDigsOnInsteadOfEndingForSupplies(GameTestHelper h) {
         Rig r = rig(h, NO_RING, standard(1));
         CompanionEntity c = r.c();
@@ -261,7 +264,7 @@ public final class CompanionExpeditionTests {
     }
 
     /** A full-depth dig through lots of rock with a nearly full bag: never the stall watchdog, never an overfull stack, the valuables stay. */
-    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 9000)
     public static void longDigWithFullBagNeverStallsAndKeepsValuables(GameTestHelper h) {
         Item[] junk = {Items.POPPY, Items.DANDELION, Items.BLUE_ORCHID, Items.ALLIUM, Items.AZURE_BLUET, Items.RED_TULIP, Items.ORANGE_TULIP, Items.WHITE_TULIP,
                 Items.PINK_TULIP, Items.OXEYE_DAISY, Items.CORNFLOWER, Items.LILY_OF_THE_VALLEY, Items.APPLE, Items.CARROT, Items.POTATO, Items.BEETROOT, Items.SUGAR, Items.PAPER};
@@ -281,7 +284,7 @@ public final class CompanionExpeditionTests {
     }
 
     /** Andesite, granite and diorite all the way through the stone, four free slots: only sealing rock is kept, so the diamond still fits. */
-    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 9000)
     public static void keepsOnlySealingRockSoANearlyFullBagStillTakesTheDiamond(GameTestHelper h) {
         Rig r = rig(h, RING_FROM, standard(16));
         CompanionEntity c = r.c();
@@ -299,7 +302,7 @@ public final class CompanionExpeditionTests {
     }
 
     /** The chunk is held while the step runs and let go of when it ends by its own result. */
-    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 9000)
     public static void holdsTheChunkWhileRunningAndReleasesItAtTheResult(GameTestHelper h) {
         CompanionEntity c = lastPickaxe(h).c();
         long id = start(h, c, 1);
@@ -312,7 +315,7 @@ public final class CompanionExpeditionTests {
     }
 
     /** «Стой» in the middle of the dig lets the chunk go. */
-    @GameTest(template = "marathon_cave", timeoutTicks = 600)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 600)
     public static void releasesTheChunkWhenToldToStop(GameTestHelper h) {
         Rig r = rig(h, RING_FROM, standard(16));
         CompanionEntity c = r.c();
@@ -329,7 +332,7 @@ public final class CompanionExpeditionTests {
     }
 
     /** Death in the middle of the dig lets the chunk go. */
-    @GameTest(template = "marathon_cave", timeoutTicks = 600)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 600)
     public static void releasesTheChunkWhenHeDies(GameTestHelper h) {
         CompanionEntity c = rig(h, RING_FROM, standard(16)).c();
         start(h, c, 1);
@@ -344,7 +347,7 @@ public final class CompanionExpeditionTests {
     }
 
     /** The diamonds are the ore he removed, and the torches come only from the coal he used: nothing appears from nothing. */
-    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 9000)
     public static void diamondsEqualRemovedOreAndNothingAppearsFromNothing(GameTestHelper h) {
         Rig r = rig(h, RING_FROM, standard(GIVEN_TORCHES, new ItemStack(Items.COAL, 1), new ItemStack(Items.STICK, 1)));
         CompanionEntity c = r.c();
@@ -361,7 +364,7 @@ public final class CompanionExpeditionTests {
     }
 
     /** A dimension change or a chunk unload removes him with setRemoved, not remove(): his nine chunks must still be let go. */
-    @GameTest(template = "marathon_cave", timeoutTicks = 600)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 600)
     public static void releasesHisChunksWhenRemovedWithoutDiscard(GameTestHelper h) {
         CompanionEntity c = rig(h, RING_FROM, standard(16)).c();
         UUID id = c.getUUID();
@@ -382,7 +385,7 @@ public final class CompanionExpeditionTests {
      * Diamond ore in the second cell of a stair step: the cell is not open to the stand, so it is broken as part of the column
      * while the column is still going. A server stop at that moment must not lose the diamond: it is in the world or in the bag.
      */
-    @GameTest(template = "marathon_cave", timeoutTicks = 3000)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 3000)
     public static void aMinedDiamondIsNotOnlyInMemory(GameTestHelper h) {
         CompanionEntity c = rig(h, NO_RING, standard(16)).c();
         BlockPos ore = stand(FIRST_ORE_STAND);
@@ -402,7 +405,7 @@ public final class CompanionExpeditionTests {
      * A save in the middle of a column carries the sealing blocks held back for it; the companion loaded from it lets them fall on
      * its first tick, so the quit loses nothing and a second save of the same state holds nothing twice.
      */
-    @GameTest(template = "marathon_cave", timeoutTicks = 3000)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 3000)
     public static void sealingBlocksHeldMidColumnSurviveASaveAndLoad(GameTestHelper h) {
         CompanionEntity c = rig(h, NO_RING, standard(16)).c();
         start(h, c, 1);
@@ -429,7 +432,7 @@ public final class CompanionExpeditionTests {
     }
 
     /** Holding is saved apart from the mine: repeated saves repeat it, a load replaces it, an emptied hold and an old save carry none, and a loaded one falls once. */
-    @GameTest(template = "marathon_cave", timeoutTicks = 200)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 200)
     public static void heldBlocksAreSavedOnceLoadedOnceAndDroppedOnce(GameTestHelper h) {
         BlockPos at = h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER));
         CompanionMineSite site = new CompanionMineSite();
@@ -463,7 +466,7 @@ public final class CompanionExpeditionTests {
     }
 
     /** Told to stop in the middle of a column, he lets the held blocks fall: they are not kept for a mine nobody will dig. */
-    @GameTest(template = "marathon_cave", timeoutTicks = 3000)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 3000)
     public static void stoppingMidColumnDropsTheHeldBlocks(GameTestHelper h) {
         Rig r = rig(h, NO_RING, standard(16));
         CompanionEntity c = r.c();

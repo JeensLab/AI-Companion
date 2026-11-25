@@ -229,8 +229,8 @@ final class CompanionExpeditionStairsUp {
         if (kept.contains(cell)) return giveUp(level, "protected");
         CompanionShaftPlan.Avoid wading = new CompanionShaftPlan.Avoid(Set.of(), (stand, d) -> false, c -> false, waded(level, from));
         CompanionShaftPlan.Hazard flowed = CompanionShaftPlan.classify(level, from, cell, w.mine.seals(), wading, laying == null ? null : laying.cell);
-        // A block put into the cell by a player since it was planned (a chest, planks) shuts this side; water he cannot seal is for the wading, not a block.
-        if (flowed.kind() == CompanionShaftPlan.Kind.BLOCKED && shutByBlock(level, cell)) return giveUp(level, "blocked");
+        // A block put into the cell by a player since it was planned (a chest, planks) shuts this side; in his mine water he cannot seal is for the wading, not a block (a climb to the player gives the side up either way).
+        if (flowed.kind() == CompanionShaftPlan.Kind.BLOCKED && (!w.expedition.active() || shutByBlock(level, cell))) return giveUp(level, "blocked");
         if (flowed.kind() == CompanionShaftPlan.Kind.SEAL) {
             CompanionSeal.Result placed = CompanionSeal.place(owner, flowed.cell());
             if (placed.placed()) { w.mine.sealed(flowed.cell()); seals++; return Result.WORKING; }

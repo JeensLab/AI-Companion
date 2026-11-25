@@ -276,7 +276,7 @@ final class CompanionPlacement {
                 }
                 // In his mine only what blocks building counts: a mob or the player, not an item lying in the cell (a stone on every step of his stairs).
                 boolean inMine = c.work.expedition.active();
-                if (c.getBoundingBox().intersects(new AABB(pos)) || !serverLevel.getEntities(c, new AABB(pos), entity -> !(inMine && entity instanceof ItemEntity)).isEmpty()) continue;
+                if (c.getBoundingBox().intersects(new AABB(pos)) || !serverLevel.getEntities(c, new AABB(pos), entity -> net.minecraft.world.entity.EntitySelector.NO_SPECTATORS.test(entity) && !(inMine && entity instanceof ItemEntity)).isEmpty()) continue;
                 if (!CompanionMiningNavigation.preservesReturnOnPlacement(c, pos, returnHeight)) {
                     if (takenUpAtOnce && shutting == null) shutting = pos.immutable();
                     continue;

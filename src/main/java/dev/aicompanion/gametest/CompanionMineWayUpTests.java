@@ -51,7 +51,7 @@ public final class CompanionMineWayUpTests {
      * A cell of the tunnel he walks back along holds his own cobblestone, a seal he laid against a pool beside it (water/2 of seed 314159: the walk by hand
      * leaves such a block alone): it is dug out on the spot and the stairs are climbed, no new ones cut.
      */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void climbsHisOwnStairsPastHisOwnBlockInTheWay(GameTestHelper h) {
         CompanionEntity c = mine(h);
         CompanionMineSite site = c.mineSite();
@@ -72,7 +72,7 @@ public final class CompanionMineWayUpTests {
     }
 
     /** The mine is started again where the tunnel ends; the stairs and the tunnel are still the record of the way up, and he climbs them without cutting. */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
     public static void aMineRestartedBelowKeepsTheOldStairsAsTheWayUp(GameTestHelper h) {
         CompanionEntity c = mine(h);
         CompanionMineSite site = c.mineSite();
@@ -96,7 +96,7 @@ public final class CompanionMineWayUpTests {
      * Runs of 07.11: the tunnels were dug until «кирок нет» and the climb began with none, so a lost stair meant a staircase dug with nothing. One stone pickaxe and nothing
      * to make another of, at the foot of the stairs: the tunnel is not dug with it, and he climbs while he can still dig, the pickaxe whole.
      */
-    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
     public static void turnsBackWhileAPickaxeIsLeftForTheWayUp(GameTestHelper h) {
         mountain(h);
         CompanionEntity c = rig(h);
@@ -123,7 +123,7 @@ public final class CompanionMineWayUpTests {
      * solid rock. No walk, plug or rescue crosses that gap, and the climb ended «Своя лестница перекрыта» with a diamond in the bag. His old stairs do not lead up
      * from here, so a staircase of his own is the way up, as for a lost one.
      */
-    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT, skyAccess = true)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 2 * TIMEOUT, skyAccess = true)
     public static void cutsNewStairsWhenTheGapToHisOldStairsCannotBeCrossed(GameTestHelper h) {
         mountain(h, false);
         BlockPos stand = h.absolutePos(new BlockPos(CENTER + DEEP_EAST, DEEP_FEET, CENTER));

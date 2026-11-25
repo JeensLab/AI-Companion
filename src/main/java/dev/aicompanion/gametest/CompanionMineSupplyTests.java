@@ -39,12 +39,11 @@ public final class CompanionMineSupplyTests {
     private static final int COAL_STEP = 5, TORCHES_SHORT = 32;
     /** The cave he is found in: below the entrance and aside of it, a chamber of three by three. */
     private static final int CAVE_BELOW = 20, CAVE_ASIDE = 10, CAVE_HALF = 1, CAVE_HEIGHT = 2, CAVE_TIMEOUT = 400;
-    /** The bench of the kit stands where the kit was made, beyond the reach the mine's own temporary blocks are looked for in (void of seed 7: forty-eight blocks from the entrance). */
 
     private CompanionMineSupplyTests() { }
 
     /** Coal in the wall of the fifth step with thirty-two torches in the bag: it is taken on the way down, not passed by until the torches are nearly gone. */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void minesCoalInSightOnTheWayDownWhileTorchesAreShort(GameTestHelper h) {
         mountain(h);
         CompanionEntity c = rig(h);
@@ -58,7 +57,7 @@ public final class CompanionMineSupplyTests {
     }
 
     /** Out of torches at the foot of his stairs, with the record that the surface had no coal: he digs on in the dark to the diamonds instead of climbing for light that is not up there. */
-    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
     public static void doesNotClimbForTorchesTheSurfaceDidNotHave(GameTestHelper h) {
         mountain(h);
         CompanionEntity c = rig(h);
@@ -75,7 +74,7 @@ public final class CompanionMineSupplyTests {
     }
 
     /** A mine on record, and the order finds him in a cave far below with no pickaxe and nothing to make one of: the order ends short of supplies at once, and no mine is begun bare-handed down there. */
-    @GameTest(template = "marathon_cave", timeoutTicks = CAVE_TIMEOUT)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = CAVE_TIMEOUT)
     public static void doesNotStartAMineWithoutAPickaxeFromACave(GameTestHelper h) {
         mountain(h, false);
         CompanionEntity c = rig(h);
@@ -97,7 +96,7 @@ public final class CompanionMineSupplyTests {
     }
 
     /** The fact about the surface coal is saved with and without a mine on record, survives the start of a mine, and an old save loads it as unknown. */
-    @GameTest(template = "marathon_cave")
+    @GameTest(batch = "mine_core", template = "marathon_cave")
     public static void theSurfaceCoalFactSurvivesASaveAndAnOldSaveLoadsAsUnknown(GameTestHelper h) {
         CompanionMineSite site = new CompanionMineSite();
         site.coalAbove(false);

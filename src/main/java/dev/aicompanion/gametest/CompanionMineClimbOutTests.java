@@ -44,7 +44,7 @@ public final class CompanionMineClimbOutTests {
     private CompanionMineClimbOutTests() { }
 
     /** The pit, the record and a bag of a pickaxe with wear to spare: he cuts his way through the rock and the roof, and walks to the surface. */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
     public static void cutsHisWayOutOfARoofedPitWhenTheRecordHasNoWayUp(GameTestHelper h) {
         CompanionEntity c = roofedPit(h, false);
         BlockPos stand = c.mineSite().stands().get(0);
@@ -60,7 +60,7 @@ public final class CompanionMineClimbOutTests {
      * above it a cell of the old record eight blocks off through solid rock and the entrance on the surface far up; no walk, no plug and no rescue
      * opens that, and the diamonds stayed down there with «путь наверх закрыт». He cuts a staircase of his own up to the surface instead.
      */
-    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT, skyAccess = true)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 2 * TIMEOUT, skyAccess = true)
     public static void cutsAStaircaseToTheSurfaceWhenTheWayAboveIsShutByRock(GameTestHelper h) {
         CompanionEntity c = deepPit(h);
         BlockPos stand = c.mineSite().stands().get(0);
@@ -76,7 +76,7 @@ public final class CompanionMineClimbOutTests {
      * Runs descent and void of seed 7 (07.11): a pocket of an aquifer, water over the rock of every column round him, so no step up may be
      * cut, and «путь наверх закрыт» with the diamonds in his bag. The way is level first, out from under the water, and up from there.
      */
-    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT, skyAccess = true)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 2 * TIMEOUT, skyAccess = true)
     public static void tunnelsLevelOutFromUnderALakeBeforeCuttingUp(GameTestHelper h) {
         CompanionEntity c = underLake(h);
         BlockPos stand = c.mineSite().stands().get(0);
@@ -85,7 +85,7 @@ public final class CompanionMineClimbOutTests {
     }
 
     /** The same pit in bedrock: no cut gets anywhere, the climb ends once, said as it is, and he is still down there. */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
     public static void endsTheClimbOnceWhenThePitCannotBeCutOutOf(GameTestHelper h) {
         CompanionEntity c = roofedPit(h, true);
         BlockPos stand = c.mineSite().stands().get(0);

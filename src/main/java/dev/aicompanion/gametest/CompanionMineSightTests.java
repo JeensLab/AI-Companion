@@ -52,7 +52,7 @@ public final class CompanionMineSightTests {
      * A diamond nearer than the one in the open passage lies in a closed pocket three blocks aside, with rock between it and his eyes.
      * The look at ore (twelve blocks) must run and pass it over: the one in sight is taken, the one behind rock stays.
      */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void takesTheDiamondInSightAndNotTheNearerOneInAClosedCavity(GameTestHelper h) {
         mountain(h, false);
         CompanionEntity c = rig(h);
@@ -68,7 +68,7 @@ public final class CompanionMineSightTests {
         });
     }
 
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void goesToADiamondInTheSameCavityOpenedAndSeen(GameTestHelper h) {
         mountain(h, false);
         CompanionEntity c = rig(h);

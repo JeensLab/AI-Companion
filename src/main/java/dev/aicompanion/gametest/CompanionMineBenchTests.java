@@ -41,25 +41,25 @@ public final class CompanionMineBenchTests {
     private CompanionMineBenchTests() { }
 
     /** No stone pickaxe is left, the bag holds cobblestone, sticks and a bench: a pickaxe is made on the spot, the steps are free again and the bench is back in the bag, with no climb. */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void makesAPickaxeOnAOneWideStairWithStonesOnEveryStep(GameTestHelper h) {
         probe(h, false, false);
     }
 
     /** The same while the autonomy protects his way back: a bench he takes up at once must not be refused for the way it shuts. */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void makesAPickaxeOnTheStairWhileTheWayBackIsProtected(GameTestHelper h) {
         probe(h, true, false);
     }
 
     /** A mine started again under the ground has no way up to climb for supplies: the same pickaxe is made and the order does not end in a shortage. */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void makesAPickaxeInABuriedMineInsteadOfEndingInAShortage(GameTestHelper h) {
         probe(h, false, true);
     }
 
     /** Two sticks are the next stone pickaxe: topping up the torches (which also take a stick each) must leave them alone, underground there is no wood. */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void topsUpTorchesWithoutEatingTheSticksOfTheNextPickaxe(GameTestHelper h) {
         mountain(h);
         CompanionEntity c = rig(h);
@@ -78,7 +78,7 @@ public final class CompanionMineBenchTests {
     }
 
     /** A bench left standing on the stairs (a taking cut short by a quit) is in the record: the next order takes it up by hand before anything else and goes on. */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void takesUpABenchLeftOnTheStairsWhenTheOrderBegins(GameTestHelper h) {
         mountain(h);
         CompanionEntity c = rig(h);
@@ -97,7 +97,7 @@ public final class CompanionMineBenchTests {
     }
 
     /** A bench that cannot be taken up (the bag has no room for it) does not hold the order: the effort is bounded and the digging goes on, the bench stays in the record. */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void givesUpOnABenchItCannotTakeAndDigsOn(GameTestHelper h) {
         mountain(h);
         CompanionEntity c = rig(h);
@@ -121,7 +121,7 @@ public final class CompanionMineBenchTests {
      * The bench of his house (or one a player ordered) stands near the entrance and the bag holds none: the expedition takes up only a bench
      * it set down itself, and this one stays where it is.
      */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void aBenchTheExpeditionDidNotSetDownStaysWhereItStands(GameTestHelper h) {
         mountain(h);
         CompanionEntity c = rig(h);
@@ -137,7 +137,7 @@ public final class CompanionMineBenchTests {
     }
 
     /** A bench put down on a player's order in his mine, with no expedition running, is not a temporary block of it. */
-    @GameTest(template = "marathon_cave", timeoutTicks = 200)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 200)
     public static void aBenchOrderedInTheMineIsNotATemporaryBlock(GameTestHelper h) {
         mountain(h);
         CompanionEntity c = rig(h);

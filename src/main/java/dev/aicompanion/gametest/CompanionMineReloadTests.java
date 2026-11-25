@@ -20,7 +20,7 @@ public final class CompanionMineReloadTests {
     private static final int STAIRS = 12, WEST_LENGTH = 10, SOUTH_LENGTH = 3, NORTH_LENGTH = 2, KEPT_AHEAD = 2, SECOND_LENGTH = 9, FAR_END = 18, WALK_BACK_TICKS = 400, NEAR_FOOT = 8;
 
     /** Three tunnels off the foot are saved and loaded, the base moves, and the moved base is saved and loaded again with its first tunnel. */
-    @GameTest(template = "marathon_cave")
+    @GameTest(batch = "mine_core", template = "marathon_cave")
     public static void movedBaseKeepsItsDirectionOverASave(GameTestHelper h) {
         BlockPos entrance = h.absolutePos(new BlockPos(2, 20, 2));
         CompanionMineSite site = new CompanionMineSite();
@@ -54,7 +54,7 @@ public final class CompanionMineReloadTests {
     }
 
     /** A save from before the base moved has no more than the old keys: it loads with the stairs' own direction and no tunnels. */
-    @GameTest(template = "marathon_cave")
+    @GameTest(batch = "mine_core", template = "marathon_cave")
     public static void oldSaveWithoutTunnelsLoadsWithTheStairsDirection(GameTestHelper h) {
         BlockPos entrance = h.absolutePos(new BlockPos(2, 20, 2));
         CompanionMineSite site = new CompanionMineSite();
@@ -72,7 +72,7 @@ public final class CompanionMineReloadTests {
     }
 
     /** He is loaded at the far end of a tunnel the foot's side of which was refused: the next tunnel starts from the foot, after the walk back, not from where he stands. */
-    @GameTest(template = "marathon_cave", timeoutTicks = 600)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 600)
     public static void reloadAtTheEndOfARefusedTunnelWalksBackToTheFoot(GameTestHelper h) {
         CompanionMineArena.mountain(h, false);
         CompanionEntity c = CompanionMineArena.rig(h);

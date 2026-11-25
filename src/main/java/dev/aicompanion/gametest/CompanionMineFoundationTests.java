@@ -34,7 +34,7 @@ public final class CompanionMineFoundationTests {
     private static final int SIZE = 32, TOP = 20;
 
     /** Twenty steps east and down: each column three cells high, the way straight, and the block under a stand never dug. */
-    @GameTest(template = "marathon_cave")
+    @GameTest(batch = "mine_core", template = "marathon_cave")
     public static void stairColumnsAreStraightAndNeverUnderTheStand(GameTestHelper h) {
         BlockPos entrance = new BlockPos(0, 100, 0);
         List<BlockPos> stands = CompanionShaftPlan.stands(entrance, Direction.EAST, 20);
@@ -56,7 +56,7 @@ public final class CompanionMineFoundationTests {
     }
 
     /** Water that can be seen from the stand is plugged first; water inside the rock cannot be, so the way is blocked. */
-    @GameTest(template = "marathon_cave")
+    @GameTest(batch = "mine_core", template = "marathon_cave")
     public static void liquidIsSealedWhenSeenAndBlocksWhenHidden(GameTestHelper h) {
         BlockPos stand = buried(h);
         var level = h.getLevel();
@@ -80,7 +80,7 @@ public final class CompanionMineFoundationTests {
     }
 
     /** East is blocked by hidden water and so is the left; the turn takes the free right side, and none when both are blocked. */
-    @GameTest(template = "marathon_cave")
+    @GameTest(batch = "mine_core", template = "marathon_cave")
     public static void forcedTurnTakesTheFreePerpendicularSide(GameTestHelper h) {
         BlockPos stand = buried(h);
         var level = h.getLevel();
@@ -95,7 +95,7 @@ public final class CompanionMineFoundationTests {
     }
 
     /** The tunnel is two wide and two high at diamond depth and the first one goes on in the direction of the stairs. */
-    @GameTest(template = "marathon_cave")
+    @GameTest(batch = "mine_core", template = "marathon_cave")
     public static void tunnelCellsAreTwoByTwoAtDiamondDepth(GameTestHelper h) {
         h.assertTrue(CompanionShaftPlan.targetFeetY(-64) == -58, "Target feet Y for a -64 world: " + CompanionShaftPlan.targetFeetY(-64));
         h.assertTrue(CompanionShaftPlan.targetFeetY(0) == 6, "Target feet Y for a 0 world: " + CompanionShaftPlan.targetFeetY(0));
@@ -112,7 +112,7 @@ public final class CompanionMineFoundationTests {
     }
 
     /** The record survives a save, and the stair is cut back to its open prefix when a stand's cell is filled in. */
-    @GameTest(template = "marathon_cave")
+    @GameTest(batch = "mine_core", template = "marathon_cave")
     public static void mineSiteSavesAndVerifiesItsOpenPrefix(GameTestHelper h) {
         BlockPos entrance = ground(h);
         var level = h.getLevel();
@@ -169,7 +169,7 @@ public final class CompanionMineFoundationTests {
     }
 
     /** One real block from the bag fills a lava cell; a cell in rock or out of reach takes nothing. */
-    @GameTest(template = "marathon_cave")
+    @GameTest(batch = "mine_core", template = "marathon_cave")
     public static void sealConsumesOneCobblestoneAndPlugsLava(GameTestHelper h) {
         BlockPos stand = buried(h);
         var level = h.getLevel();
@@ -224,7 +224,7 @@ public final class CompanionMineFoundationTests {
     }
 
     /** An entrance is solid natural ground away from planks and chests. */
-    @GameTest(template = "marathon_cave")
+    @GameTest(batch = "mine_core", template = "marathon_cave")
     public static void entranceKeepsAwayFromBuildings(GameTestHelper h) {
         BlockPos spot = ground(h);
         var level = h.getLevel();

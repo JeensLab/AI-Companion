@@ -19,7 +19,7 @@ public final class CompanionMineDeathTests {
     private CompanionMineDeathTests() { }
 
     /** Dead in the middle of the stairs: the next body goes on down the same mine, and the blocks the dead one held are not given out twice. */
-    @GameTest(template = "empty", timeoutTicks = 100)
+    @GameTest(batch = "mine_core", template = "empty", timeoutTicks = 100)
     public static void aNewBodyGoesOnWithTheMineOfTheOneWhoDied(GameTestHelper h) {
         var player = h.makeMockServerPlayerInLevel();
         CompanionEntity dead = h.spawn(AICompanionMod.COMPANION.get(), 2, 2, 2);
@@ -44,7 +44,7 @@ public final class CompanionMineDeathTests {
     }
 
     /** A memory from before the record existed has no mine: it reads, and the new body has none. */
-    @GameTest(template = "empty", timeoutTicks = 100)
+    @GameTest(batch = "mine_core", template = "empty", timeoutTicks = 100)
     public static void anOldMemoryWithoutTheMineStillReads(GameTestHelper h) {
         CompoundTag old = new CompoundTag();
         old.putString("CompanionName", "Олег");

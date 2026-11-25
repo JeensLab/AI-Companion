@@ -44,7 +44,7 @@ public final class CompanionMineIntegrityTests {
      * The stairs run into bedrock on every side at the end: that is no end of the mine but of this staircase, and he begins one anew (a restart
      * in the record) instead of ending the order with «некуда свернуть».
      */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void aDeadEndOfTheStairsStartsThemAgain(GameTestHelper h) {
         mountain(h);
         CompanionEntity c = rig(h);
@@ -62,7 +62,7 @@ public final class CompanionMineIntegrityTests {
     }
 
     /** A step of the stairs stands one level above a cell beside him: that cell is the floor of the step, and a landing there would take it out from under. */
-    @GameTest(template = "marathon_cave")
+    @GameTest(batch = "mine_core", template = "marathon_cave")
     public static void aLandingNeverOpensTheFloorOfOneOfHisSteps(GameTestHelper h) {
         mountain(h);
         var level = h.getLevel();
@@ -86,7 +86,7 @@ public final class CompanionMineIntegrityTests {
     }
 
     /** Coal is the floor of the step next to the foot and gravel lies under it: he looks at it from the foot with the torches running low, and leaves it. */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void coalUnderTheNextStepIsLeftWhereItLies(GameTestHelper h) {
         mountain(h, false);
         CompanionEntity c = rig(h);
@@ -109,7 +109,7 @@ public final class CompanionMineIntegrityTests {
     }
 
     /** Two floors above him are gone: the stairs under his feet are the way he is going, and the check of the record leaves them. */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void twoCutFloorsAboveHimDoNotCostTheStairsBelow(GameTestHelper h) {
         mountain(h, false);
         CompanionEntity c = rig(h);
@@ -130,7 +130,7 @@ public final class CompanionMineIntegrityTests {
      * A stone-gathering step cut a side chamber one level above the floor of his stairs and left him standing in it: the next stand is on the
      * other side of the wall, a straight push goes nowhere. He walks round it (or back to a stand of the stairs) and the mine goes on to the ore.
      */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void walksOutOfASideChamberBackOntoTheStairs(GameTestHelper h) {
         mountain(h);
         CompanionEntity c = rig(h);
@@ -149,7 +149,7 @@ public final class CompanionMineIntegrityTests {
     }
 
     /** Coal fetched for torches beside the top of his stairs is tunnelled to from a step: the tunnel never goes through the floor of another step. */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
     public static void aCoalTunnelAtTheEntranceLeavesTheFloorsOfHisFirstSteps(GameTestHelper h) {
         mountain(h, false);
         CompanionEntity c = rig(h);
