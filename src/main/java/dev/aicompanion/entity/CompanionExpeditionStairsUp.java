@@ -38,6 +38,8 @@ final class CompanionExpeditionStairsUp {
      */
     private final boolean keepsStairs;
     private final Set<Long> refused = new HashSet<>();
+    /** Cells no step touches: the blocks a player stands on (a climb to him must not dig out his floor). */
+    private Set<BlockPos> kept = Set.of();
     /** The stands this climb has stood on: a level step back onto one goes round a chamber with no way out, not up (a pit in bedrock). */
     private final Set<BlockPos> stood = new HashSet<>();
     private BlockPos goal, from, to;
@@ -70,6 +72,9 @@ final class CompanionExpeditionStairsUp {
 
     /** A goal that moves with him (the lip of the pit he stands in now): the stairs keep what they have done. */
     void aim(BlockPos goal) { this.goal = goal; }
+
+    /** The cells that stay as they are, taken again at every tick. */
+    void keep(Set<BlockPos> cells) { kept = cells; }
 
     int steps() { return steps; }
 
@@ -120,7 +125,9 @@ final class CompanionExpeditionStairsUp {
     private boolean step(ServerLevel level, BlockPos here, boolean up, boolean sideways) {
         CompanionShaftPlan.Avoid own = w.mine.avoid();
         Set<BlockPos> waded = waded(level, here);
-        for (Set<BlockPos> forbidden : List.of(own.forbidden(), Set.<BlockPos>of())) {
+        Set<BlockPos> shut = new HashSet<>(own.forbidden());
+        shut.addAll(kept);
+        for (Set<BlockPos> forbidden : List.of(shut, kept)) {
             CompanionShaftPlan.Avoid avoid = new CompanionShaftPlan.Avoid(forbidden, own.refused(), cell -> false, waded);
             for (Direction d : order(here)) {
                 if (refused.contains(key(here, d)) || sideways && dir != null && d == dir.getOpposite()) continue;
@@ -199,7 +206,11 @@ final class CompanionExpeditionStairsUp {
         }
         switch (dig.dig(level, cell)) {
             case DONE -> index++;
-            case NO_TOOL -> { return Result.NO_TOOL; }
+            // An ore the pickaxe in the bag cannot take (a diamond with a stone one) shuts that side, not the climb; rock he cannot dig ends it.
+            case NO_TOOL -> {
+                if (!level.getBlockState(cell).is(net.neoforged.neoforge.common.Tags.Blocks.ORES)) { why = "нечем копать"; return Result.NO_TOOL; }
+                return giveUp(level, "no tool for ore");
+            }
             case FULL -> { if (!dig.makeRoom(level)) return stop("сумка полна, камень класть некуда"); }
             case STUCK, NO_HAND -> { dig.diagnoseDig(cell); dig.forget(); return giveUp(level, "dig"); }
             case WORKING -> { }
@@ -226,6 +237,9 @@ final class CompanionExpeditionStairsUp {
     private static long key(BlockPos stand, Direction d) { return stand.asLong() * 4 + d.get2DDataValue(); }
 
     void reset() {
+        // The stone held back mid-column falls where it was cut: a climb that ends or is begun again leaves none in the record.
+        dig.flush();
+        kept = Set.of();
         refused.clear();
         stood.clear();
         goal = from = to = null;

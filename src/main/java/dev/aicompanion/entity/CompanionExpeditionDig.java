@@ -217,12 +217,17 @@ final class CompanionExpeditionDig {
         return owner.getMainHandItem().is(tool) || owner.equipForWork(BuiltInRegistries.ITEM.getKey(tool).toString()).success();
     }
 
+    /** What he may dig with: all he carries but what he is handing over to the player (a pickaxe asked for is not worn down on the way). */
+    private List<ItemStack> tools() { return w.items.carriedItems().stream().filter(stack -> !w.handOver.beingGiven(stack)).toList(); }
+
+    private int count(Item item) { return tools().stream().filter(stack -> stack.is(item)).mapToInt(ItemStack::getCount).sum(); }
+
     /** Rock and soil with stone pickaxes, an iron one with wear to spare once no stone pickaxe could be made; ore with the cheapest pickaxe that gets its drop. */
     private Item toolFor(BlockState state) {
         if (!state.is(Tags.Blocks.ORES)) return rockTool();
         Item best = null;
         int least = Integer.MAX_VALUE;
-        for (ItemStack stack : w.items.carriedItems()) {
+        for (ItemStack stack : tools()) {
             if (!stack.is(ItemTags.PICKAXES) || !stack.isCorrectToolForDrops(state) || stack.getMaxDamage() >= least) continue;
             best = stack.getItem();
             least = stack.getMaxDamage();
@@ -231,7 +236,7 @@ final class CompanionExpeditionDig {
     }
 
     private Item rockTool() {
-        if (w.items.countCarried(Items.STONE_PICKAXE) > 0) return Items.STONE_PICKAXE;
+        if (count(Items.STONE_PICKAXE) > 0) return Items.STONE_PICKAXE;
         Item hard = hardPickaxe();
         if (hard != null) return hard;
         return ironForRock && ironLeft(reserve()) ? Items.IRON_PICKAXE : null;
@@ -244,7 +249,7 @@ final class CompanionExpeditionDig {
 
     /** A diamond or netherite pickaxe with wear left: it digs rock when there is no stone pickaxe, and no iron is kept for ore that it can take instead. */
     Item hardPickaxe() {
-        for (ItemStack stack : w.items.carriedItems()) {
+        for (ItemStack stack : tools()) {
             if ((stack.is(Items.NETHERITE_PICKAXE) || stack.is(Items.DIAMOND_PICKAXE)) && stack.getDamageValue() < stack.getMaxDamage() - 1) return stack.getItem();
         }
         return null;
@@ -256,7 +261,7 @@ final class CompanionExpeditionDig {
      * Pickaxes he can still dig his way up with: those in the bag (stone, diamond, netherite, iron with any wear).
      */
     int pickaxesLeft() {
-        int left = w.items.countCarried(Items.STONE_PICKAXE);
+        int left = count(Items.STONE_PICKAXE);
         if (ironLeft(0)) left++;
         if (hardPickaxe() != null) left++;
         return left;
@@ -267,7 +272,7 @@ final class CompanionExpeditionDig {
 
     /** An iron pickaxe in the bag with more than {@code reserve} wear left. */
     boolean ironLeft(int reserve) {
-        for (ItemStack stack : w.items.carriedItems()) {
+        for (ItemStack stack : tools()) {
             if (stack.is(Items.IRON_PICKAXE) && stack.getMaxDamage() - stack.getDamageValue() > reserve) return true;
         }
         return false;

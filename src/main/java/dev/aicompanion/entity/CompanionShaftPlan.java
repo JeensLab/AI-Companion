@@ -245,6 +245,8 @@ public final class CompanionShaftPlan {
             if (liquid == null) liquid = pos;
         }
         BlockState state = level.getBlockState(cell);
+        // Leaves a player set (persistent ones) are his building, not a tree's: never cut.
+        if (state.is(BlockTags.LEAVES) && state.hasProperty(net.minecraft.world.level.block.LeavesBlock.PERSISTENT) && state.getValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT)) return Hazard.BLOCKED;
         boolean mine = own.contains(cell);
         if (!open(level, cell) && !mine && !CompanionOre.tunnelable(state) && !state.is(BlockTags.LEAVES)) return Hazard.BLOCKED;
         if (level.getBlockEntity(cell) != null || !mine && builtBeside(level, cell)) return Hazard.BLOCKED;

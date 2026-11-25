@@ -33,6 +33,9 @@ final class CompanionHandOver {
         return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals(w.requestedItem);
     }
 
+    /** A stack the hand-over under way gives away: nothing is dug with it or sealed with it on the way to the player. */
+    boolean beingGiven(ItemStack stack) { return w.job == CompanionWork.Job.GIVE && giftMatches(stack); }
+
     /** A cell he can stand in by its floor: nothing in the way, or a low block (carpet, slab, path, farmland) with room above it. */
     private static boolean standable(ServerLevel level, BlockPos cell) {
         var shape = level.getBlockState(cell).getCollisionShape(level, cell);
@@ -96,8 +99,8 @@ final class CompanionHandOver {
                     Boolean none = w.route.noWay(player.blockPosition());
                     if (none == null) { legsWalked = true; return; }
                     if (climb.startWhenStuck(player, none)) return;
-                    w.finish(false, none ? "Не могу к тебе пройти, вещи остались у меня."
-                            : "Не смог к тебе подойти: застрял на " + w.owner.blockPosition().toShortString() + ". Вещи остались у меня.");
+                    w.finish(false, (none ? "Не могу к тебе пройти, вещи остались у меня."
+                            : "Не смог к тебе подойти: застрял на " + w.owner.blockPosition().toShortString() + ". Вещи остались у меня.") + climb.whyText());
                     return;
                 }
                 // No leg at all from here (down a mine, game 28.10): the self-rescue takes the walk over while the work waits (the
@@ -108,7 +111,7 @@ final class CompanionHandOver {
                 Boolean none = w.route.noWay(player.blockPosition());
                 if (none == null) return;
                 if (climb.startWhenStuck(player, none)) return;
-                w.finish(false, none ? "Не могу к тебе пройти, вещи остались у меня." : "Не смог к тебе подойти, вещи остались у меня.");
+                w.finish(false, (none ? "Не могу к тебе пройти, вещи остались у меня." : "Не смог к тебе подойти, вещи остались у меня.") + climb.whyText());
                 return;
             }
             w.owner.workStatus("Несу тебе вещи.");

@@ -298,7 +298,7 @@ public final class CompanionSingleRouteTests {
             h.assertTrue(h.getTick() > 300 && !c.isWorking(), "Still walking: " + c.getLastTaskResult());
             long near = routeEvents(c).stream().filter(line -> line.contains("\"NEAR\"")).count();
             h.assertTrue(near == 1, near + " NEAR events for one walk: " + c.getLastTaskResult());
-            h.assertTrue(c.getLastTaskResult().equals("Не могу к тебе пройти, вещи остались у меня."), "The hand-over ended otherwise: " + c.getLastTaskResult());
+            h.assertTrue(c.getLastTaskResult().startsWith("Не могу к тебе пройти, вещи остались у меня."), "The hand-over ended otherwise: " + c.getLastTaskResult());
         });
     }
 
@@ -417,7 +417,7 @@ public final class CompanionSingleRouteTests {
         h.assertTrue(c.startWork("come", "", 1).success(), "Come order not accepted");
         h.runAtTickTime(2400, () -> {
             h.assertTrue(c.autonomyLineSerial() >= 1, "The follow phrase was not said");
-            h.assertTrue(c.getLastTaskResult().equals("Не могу к тебе пройти."), "The result of the order was replaced: " + c.getLastTaskResult());
+            h.assertTrue(c.getLastTaskResult().startsWith("Не могу к тебе пройти."), "The result of the order was replaced: " + c.getLastTaskResult());
             h.succeed();
         });
     }

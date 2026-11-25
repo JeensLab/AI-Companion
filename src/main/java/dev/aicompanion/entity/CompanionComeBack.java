@@ -45,8 +45,8 @@ final class CompanionComeBack {
             Boolean none = w.route.noWay(player.blockPosition());
             if (none == null) return;
             if (w.handOver.climb.startWhenStuck(player, none)) return;
-            if (none) { w.finish(false, "Не могу к тебе пройти."); return; }
-            w.finish(false, "Не смог добраться до тебя. Застрял на " + w.owner.blockPosition().toShortString() + ". Иду за тобой дальше, как получится."); return;
+            if (none) { w.finish(false, "Не могу к тебе пройти." + w.handOver.climb.whyText()); return; }
+            w.finish(false, "Не смог добраться до тебя. Застрял на " + w.owner.blockPosition().toShortString() + ". Иду за тобой дальше, как получится." + w.handOver.climb.whyText()); return;
         }
     }
 }

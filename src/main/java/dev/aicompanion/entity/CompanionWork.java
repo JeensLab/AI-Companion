@@ -669,6 +669,7 @@ public final class CompanionWork {
         // A tool taken for a swing is the work's too: the hand it replaced comes back before the work ends, never into the next one.
         owner.putToolAway();
         items.putHeldStackBack();
+        releaseHeld();
         clearCracks();
         closeChest();
         if (job == Job.ERRAND) owner.errand.cancelled();
@@ -800,8 +801,11 @@ public final class CompanionWork {
     /** Also lets the stone a save held back mid-column (CompanionMineSite#hold) fall: no column is being dug after a load, and he is there to pick it up. */
     void watchChase() {
         hunting.watchChase(); drops.watch();
-        if (mine.loadedHeld()) for (CompanionMineSite.Held drop : mine.takeHeld()) owner.dropHarvest(drop.pos(), drop.drops());
+        if (mine.loadedHeld()) releaseHeld();
     }
+
+    /** The stone held back mid-column falls where it was cut: the work that was cutting it is over (cancelled, his death, a hand-over done). */
+    private void releaseHeld() { for (CompanionMineSite.Held drop : mine.takeHeld()) owner.dropHarvest(drop.pos(), drop.drops()); }
     static final java.util.UUID NO_ID = new java.util.UUID(0, 0);
 
     /**

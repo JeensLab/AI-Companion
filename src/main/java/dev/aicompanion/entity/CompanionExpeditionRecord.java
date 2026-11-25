@@ -27,6 +27,8 @@ public final class CompanionExpeditionRecord {
 
     /** Light a block takes off entirely: rock and soil; the leaves and the glass of a roof take less. */
     private static final int LIGHT_BLOCKED = 15;
+    /** How far over a cell the sky is looked for: a column of leaves is no more than this, and the climb asks for hundreds of cells at every step. */
+    private static final int SKY_REACH = 64;
 
     private CompanionExpeditionRecord() { }
 
@@ -35,7 +37,7 @@ public final class CompanionExpeditionRecord {
         if (level.canSeeSky(pos)) return true;
         if (!level.hasChunkAt(pos)) return false;
         BlockPos.MutableBlockPos above = pos.mutable();
-        for (int y = pos.getY(); y < level.getMaxBuildHeight(); y++) {
+        for (int y = pos.getY(); y < Math.min(level.getMaxBuildHeight(), pos.getY() + SKY_REACH); y++) {
             BlockState state = level.getBlockState(above.setY(y));
             boolean tree = state.is(BlockTags.LEAVES) || state.is(BlockTags.LOGS);
             if (!tree && (state.getLightBlock(level, above) >= LIGHT_BLOCKED || !state.getFluidState().isEmpty())) return false;
