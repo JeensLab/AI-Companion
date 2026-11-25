@@ -115,6 +115,42 @@ public final class CompanionOreTests {
     }
 
     /**
+     * The same pit, but he is in the air when the order first asks whether a walk leads out of it (he has fallen from the ore under his
+     * feet, and the drop is picked up mid-fall): no search runs in the air, and that is no answer of «there is a way out». He is held
+     * hovering for a while once he has the coal, then let fall; the order must still dig him out.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void anOreOrderAirborneWhenItAsksForTheWayOutStillLeavesThePit(GameTestHelper h) {
+        int top = 7;
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
+        for (int x = 8; x <= 24; x++) for (int z = 8; z <= 24; z++) for (int y = 1; y < top; y++) h.setBlock(new BlockPos(x, y, z), Blocks.STONE);
+        for (int y = 4; y < top; y++) h.setBlock(new BlockPos(20, y, 20), Blocks.AIR);
+        h.setBlock(new BlockPos(21, 4, 20), Blocks.COAL_ORE);
+        CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), 16, top, 16);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        bind(h, companion);
+        h.assertTrue(companion.startWork("mine_ore", "coal", 1).success(), "Ore order not accepted");
+        boolean[] started = {false};
+        int[] hovered = {0};
+        h.onEachTick(() -> {
+            if (companion.hasActiveWorkOrder()) {
+                started[0] = true;
+                boolean hold = count(companion, Items.COAL) >= 1 && hovered[0] < 60 && companion.blockPosition().getY() - h.absolutePos(BlockPos.ZERO).getY() < top - 1;
+                if (hold && hovered[0] == 0) companion.setPos(companion.getX(), companion.getY() + .6, companion.getZ());
+                if (hold) hovered[0]++;
+                companion.setNoGravity(hold);
+                return;
+            }
+            companion.setNoGravity(false);
+            if (!started[0]) return;
+            int y = companion.blockPosition().getY() - h.absolutePos(BlockPos.ZERO).getY();
+            h.assertTrue(hovered[0] > 0, "He was never held in the air: the test did not run | " + report(companion));
+            h.assertTrue(y >= top, "The order ended in the pit, at " + y + " | " + report(companion));
+            h.succeed();
+        });
+    }
+
+    /**
      * The tunnel to a coal in sight on its far side (a pocket of air behind it) passes another coal; that one fills the order of one, and
      * the rest of the tunnel is no longer his to dig: the ore he was sent to is left standing.
      */

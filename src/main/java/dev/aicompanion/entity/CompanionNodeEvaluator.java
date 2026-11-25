@@ -76,12 +76,11 @@ final class CompanionNodeEvaluator extends WalkNodeEvaluator {
     }
     /** The landing node of the cell {@code plain} is. */
     Node landing(Node plain) {
-        return landings.computeIfAbsent(Node.createHash(plain.x, plain.y, plain.z), key -> {
-            Landing node = new Landing(plain.x, plain.y, plain.z);
-            node.type = plain.type;
-            node.costMalus = plain.costMalus;
-            return node;
-        });
+        Landing node = landings.computeIfAbsent(Node.createHash(plain.x, plain.y, plain.z), key -> new Landing(plain.x, plain.y, plain.z));
+        // The plain node's judgement of the cell may be raised after the landing was made (mark keeps the highest malus).
+        node.type = plain.type;
+        node.costMalus = plain.costMalus;
+        return node;
     }
     /** The world as this search sees it (the snapshot its cells are read from). */
     net.minecraft.world.level.CollisionGetter level() { return currentContext.level(); }

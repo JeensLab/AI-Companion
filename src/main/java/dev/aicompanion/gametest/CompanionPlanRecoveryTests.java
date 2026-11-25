@@ -602,6 +602,43 @@ public final class CompanionPlanRecoveryTests {
         }
     }
 
+    /**
+     * A search for a species found none (birch in an oak forest): the later parts for that species are given up, but a plain wood part is
+     * not: oaks stand there, and it gets its wood.
+     */
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void noBirchDoesNotMeanNoWoodForThePartsAfterIt(GameTestHelper h) {
+        var port = new BirchlessPort();
+        var plan = List.of(new PlannedAction("obtain_item", 0, 4, "minecraft:birch_log"), new PlannedAction("obtain_item", 0, 1, "minecraft:crafting_table"),
+                new PlannedAction("obtain_item", 0, 2, "minecraft:birch_log"));
+        var future = CompanionPlanRunner.run(plan, port);
+        h.succeedWhen(() -> {
+            Outcome outcome = future.join();
+            h.assertTrue(port.gathers.stream().filter(log -> log.contains("birch")).count() == 1 && port.gathers.contains(""), "Wood was searched for " + port.gathers + " | " + outcome.report());
+        });
+    }
+
+    /** Birch is wanted by the first and third obtain, a plain tree by the second; of the gathers only the plain one finds a tree. */
+    private static final class BirchlessPort implements CompanionPlanRunner.Port {
+        final List<String> calls = new ArrayList<>();
+        final List<String> gathers = new ArrayList<>();
+        @Override public String trace() { return "gametest-birchless"; }
+        @Override public boolean cancelled() { return false; }
+        @Override public CompletableFuture<State> state(PlannedAction action) { return CompletableFuture.completedFuture(IDLE); }
+        @Override public CompletableFuture<Void> pause(int seconds) { return CompletableFuture.completedFuture(null); }
+        @Override public CompletableFuture<CompanionPlanRunner.Expansion> expand(PlannedAction action) {
+            String log = action.item().contains("birch") ? action.item() : "";
+            return CompletableFuture.completedFuture(new CompanionPlanRunner.Expansion(List.of(new PlannedAction("gather_wood", 0, 1, log),
+                    new PlannedAction("craft_item", 0, action.count(), action.item()), new PlannedAction("verify_item", 0, action.count(), action.item())), null));
+        }
+        @Override public CompletableFuture<Attempt> run(PlannedAction action) {
+            calls.add(action.type());
+            if (action.type().equals("gather_wood")) gathers.add(action.item());
+            return CompletableFuture.completedFuture(new Attempt(action.type().equals("gather_wood") && !action.item().isEmpty()
+                    ? CompanionActionResult.noTree("Берёзы рядом не нашёл.") : CompanionActionResult.ok("Готово."), true));
+        }
+    }
+
     private static final PlannedAction OBTAIN_HELMET = new PlannedAction("obtain_item", 0, 1, "minecraft:iron_helmet");
 
     /** A bag in the fake: ore gives ingots, a helmet takes two ingots and a log. expand plans from it like the server planner. */
