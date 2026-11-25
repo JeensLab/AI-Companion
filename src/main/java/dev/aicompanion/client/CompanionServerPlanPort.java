@@ -278,13 +278,18 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             // world. The bag answers before any search and any plan: a block mined and its drop picked up leaves no block to find,
             // and a search finding none must not call a met order a failure (the owner, 25.11).
             int have = companion.carriedCount(item);
-            if (have >= action.count())
+            // In the Nether on the errand the way home is part of the chain (nether_back): the bag's answer must not drop it, so
+            // there the plan is made as before and its own steps carry him out.
+            boolean away = level.dimension() == net.minecraft.world.level.Level.NETHER;
+            if (have >= action.count() && !away)
                 return new CompanionPlanRunner.Expansion(java.util.List.of(new PlannedAction("verify_item", 0, action.count(), check)), null);
             // What lies about him of the thing is taken before anything is made or dug for it — the same rule a block lying there
             // follows: a drop still waiting is fetched by the pickup, and the bag is checked after it. A re-search that finds no
             // block of the item is no reason to give the order up while its drop lies on the ground.
             int lying = 0;
-            if (!leafOrder) lying = dev.aicompanion.entity.CompanionPickUp.lying(level, companion.blockPosition(), companion.pickUpRadius(),
+            // The pickup is no step of the errand's own (only the digging and the way back run there): a drop in the Nether is
+            // fetched by the chase as he digs, not by a step of the chain.
+            if (!leafOrder && !away) lying = dev.aicompanion.entity.CompanionPickUp.lying(level, companion.blockPosition(), companion.pickUpRadius(),
                     item, companion.getOwnerId());
             // An order for more than the world gives promises only what is there (PATH7: «добудь обсидиан» is a portal frame's
             // ten, and one block above him is one): the same reach answer the work asks, so the phrasing cannot change it.
