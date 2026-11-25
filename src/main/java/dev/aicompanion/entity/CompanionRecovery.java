@@ -239,9 +239,16 @@ final class CompanionRecovery {
         return !stack.isEmpty() && stack.getItem() instanceof BlockItem && (CompanionTools.soilItem(stack) || stack.is(ItemTags.PLANKS)
                 || stack.is(Items.COBBLESTONE) || stack.is(Items.STONE) || stack.is(Items.COBBLED_DEEPSLATE));
     }
+    /** A stair or tunnel cell of his mine, feet or head: a block set there shuts his own way, and the climb or the walk back cannot open it again. */
+    private boolean ownMineCell(BlockPos cell) {
+        CompanionMineSite mine = owner.work.mine;
+        if (!mine.exists()) return false;
+        if (mine.inTunnel(cell) || mine.above().contains(cell) || mine.above().contains(cell.below()) || cell.equals(mine.entrance()) || cell.below().equals(mine.entrance())) return true;
+        return mine.stands().contains(cell) || mine.stands().contains(cell.below());
+    }
     private boolean canJump(ServerLevel level) {
         BlockPos cell = owner.blockPosition();
-        if (!level.hasChunkAt(cell) || !level.getFluidState(cell).isEmpty() || !level.getBlockState(cell).canBeReplaced()
+        if (ownMineCell(cell) || !level.hasChunkAt(cell) || !level.getFluidState(cell).isEmpty() || !level.getBlockState(cell).canBeReplaced()
                 || !level.getBlockState(cell.below()).isFaceSturdy(level, cell.below(), Direction.UP)) return false;
         for (int y = 1; y <= 3; y++) {
             BlockPos above = cell.above(y);
@@ -253,7 +260,7 @@ final class CompanionRecovery {
         owner.getNavigation().stop(); jumpTicks++;
         owner.getMoveControl().setWantedPosition(jumpCell.getX() + .5, owner.getY(), jumpCell.getZ() + .5, .35);
         if (owner.getBoundingBox().minY > jumpCell.getY() + 1.001 && !owner.getBoundingBox().intersects(new AABB(jumpCell))) {
-            if (!buildingBlock(owner.getMainHandItem()) || !level.getBlockState(jumpCell).canBeReplaced()
+            if (ownMineCell(jumpCell) || !buildingBlock(owner.getMainHandItem()) || !level.getBlockState(jumpCell).canBeReplaced()
                     || !level.getFluidState(jumpCell).isEmpty() || !level.getWorldBorder().isWithinBounds(jumpCell)
                     || !level.getEntities(owner, new AABB(jumpCell), e -> e instanceof LivingEntity && e.isAlive()).isEmpty()) { stop(false); return; }
             BlockState state = ((BlockItem)owner.getMainHandItem().getItem()).getBlock().defaultBlockState();
@@ -353,14 +360,17 @@ final class CompanionRecovery {
     private record ListDirection(Direction direction, double score) { }
     private boolean safeToDig(ServerLevel level, BlockPos pos) {
         if (!level.hasChunkAt(pos) || !level.getWorldBorder().isWithinBounds(pos) || owner.distanceToSqr(pos.getCenter()) > 16) return false;
+        // A plug of his closes a cave: a way cut out of the rock does not go through it.
+        if (owner.work.mine.seals().contains(pos) || owner.work.mine.forbidden(pos)) return false;
         BlockState state = level.getBlockState(pos);
         if (!(CompanionQuarry.soil(state) || rock(state) || state.is(net.minecraft.tags.BlockTags.LEAVES)) || state.getDestroySpeed(level, pos) < 0) return false;
         for (Direction direction : Direction.values()) {
             BlockPos near = pos.relative(direction);
             var fluid = level.getFluidState(near);
             // Marathon 23.10: out of a flooded shaft at the bottom of a ravine every wall cell touches the water, and no step was ever
-            // cut. Water only wets the new step (a player digs there); lava never. Sand or gravel falls in only from above.
-            if (!level.hasChunkAt(near) || fluid.is(net.minecraft.tags.FluidTags.LAVA) || level.getBlockEntity(near) != null
+            // cut. Water only wets the new step (a player digs there); lava never. Sand or gravel falls in only from above, and so
+            // does water: in a pocket a block wide it takes the air he breathes (seed 7, a pocket under an aquifer).
+            if (!level.hasChunkAt(near) || fluid.is(net.minecraft.tags.FluidTags.LAVA) || direction == Direction.UP && !fluid.isEmpty() || level.getBlockEntity(near) != null
                     || level.getBlockState(near).is(Blocks.CRAFTING_TABLE)
                     || direction == Direction.UP && level.getBlockState(near).getBlock() instanceof net.minecraft.world.level.block.FallingBlock) return false;
         }
