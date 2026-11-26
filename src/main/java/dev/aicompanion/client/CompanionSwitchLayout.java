@@ -16,7 +16,7 @@ public final class CompanionSwitchLayout {
     public static final String SEARCH_RADIUS_LABEL = "Дальность поиска";
     /** The distances that row turns through: the setting's own 16..128, so 128 is reachable as 32 is. */
     public static final int[] SEARCH_RADIUS_STEPS = {16, 32, 64, 128};
-    public static final int SEARCH_RADIUS_MIN = 16, SEARCH_RADIUS_MAX = 128;
+    public static final int SEARCH_RADIUS_MIN = 16, SEARCH_RADIUS_MAX = dev.aicompanion.entity.CompanionEntity.MAX_SEARCH_RADIUS;
     /** The pickup radius the row beside it turns through: every step of the setting's 4..32, so 32 is reached (the old step of eight skipped 8 and 16 and never came to 32). */
     public static final int PICK_UP_RADIUS_MIN = 4, PICK_UP_RADIUS_MAX = 32, PICK_UP_RADIUS_STEP = 4;
 

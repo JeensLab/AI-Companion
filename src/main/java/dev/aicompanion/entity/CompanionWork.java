@@ -747,11 +747,12 @@ public final class CompanionWork {
         if (job != Job.HOUSE && owner.actionAnimation() != 0) return;
         // Breaking does not wait for the last drop: the next block goes while the drop is still on its way to him, and the
         // pickup settles after the breaking. Waiting per block is what made a crown one block at a time.
-        // The drop of the last block does not hold the work back: ORE, BLOCK and OBSIDIAN break on while their drops fall, and
-        // their own descent (requestCleanup) and bounded wait for the drop come after (the owner, 27.11: the ore order stood on
-        // its column for five minutes because the pending drop gated it out of finishMine, and no cleanup was ever asked).
+        // The mine's own finish is no waiting either: once its promise is met (the blocks broken or the bag holding it) the way
+        // down and the drop come first, never the pending drop gating the work out of finishMine (the owner, 27.11: the ore
+        // order stood on its column for five minutes because no cleanup was ever asked). The drops of the blocks still to come
+        // are waited for as before: the cobblestone of the way is what plugs the spring of the next ore.
         if (job != Job.BLOCK && job != Job.COME && job != Job.COURSE && job != Job.HUNT && job != Job.PICK_UP && job != Job.PLACE
-                && job != Job.OBSIDIAN && job != Job.ORE
+                && job != Job.OBSIDIAN && !orePromiseMet()
                 && owner.hasPendingLoot() && !(job == Job.HOUSE && templateJob && templateHouse.scaffolding())) return;
         if (owner.getOwnerId() == null || level.getServer().getPlayerList().getPlayer(owner.getOwnerId()) == null) {
             finish(false, "Потерял связь с игроком, остановился."); return;
@@ -843,6 +844,10 @@ public final class CompanionWork {
         finish(CompanionActionResult.blocked("Полторы минуты стоял без продвижения" + (doing.isEmpty() ? "" : ": «" + doing + "»")
                 + ". Остановился, вещи у меня."));
         return true;
+    }
+    /** Whether the mine has come to its own finish: its promise is met in the blocks broken or in the bag (mineOre's own first line). */
+    private boolean orePromiseMet() {
+        return job == Job.ORE && (oreDone || oreMined >= oreWanted || !ironPrep && oreGained() >= oreWanted);
     }
     /** What the work has to show: the bag and hands item by item, and its own counters. */
     private long progressSignature() {

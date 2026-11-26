@@ -200,7 +200,7 @@ public final class CompanionPlanRequirements {
     /**
      * Game log 22.10: «добудь пять руды», «добудь 20», «сколько сможешь», «добывай бесконечно» — every time the model sent a
      * single block, and Oleg said «готово». The amount the player said is the amount: digits or words, «сколько сможешь» is
-     * the most one order allows, no number for ore is four. Only a plan with one kind of gathering is touched.
+     * the most one order allows, no number for ore is sixteen. Only a plan with one kind of gathering is touched.
      */
     /**
      * A fresh villager's goods are fixed for good by the first trade: the model's consent stands only when the player's own words

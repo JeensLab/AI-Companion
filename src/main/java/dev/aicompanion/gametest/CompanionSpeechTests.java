@@ -39,7 +39,7 @@ public final class CompanionSpeechTests {
         h.assertTrue(counts("дабудь 20 железа", ONE_IRON).equals(List.of(16, 4)), "twenty: " + counts("дабудь 20 железа", ONE_IRON));
         h.assertTrue(counts("Хорошо, добудь этой киркой столько железной руды, сколько сможешь", ONE_IRON).equals(List.of(16)), "as many");
         h.assertTrue(counts("Добудь нам больше железа и пойди его переплавь в печке", ONE_IRON).equals(List.of(8)), "more");
-        h.assertTrue(counts("добудь железо", ONE_IRON).equals(List.of(4)), "no number for ore is four");
+        h.assertTrue(counts("добудь железо", ONE_IRON).equals(List.of(16)), "no number for ore is sixteen");
         h.assertTrue(counts("добудь одну железную руду", ONE_IRON).equals(List.of(1)), "one is one");
         var craft = new CompanionReply("", List.of(new PlannedAction("mine_ore", 0, 6, "minecraft:iron_ore"), new PlannedAction("craft_item", 0, 2, "minecraft:iron_pickaxe")));
         h.assertTrue(CompanionPlanRequirements.apply("сделай 2 железных кирки", craft).actions().equals(craft.actions()), "Craft count went to the ore");
@@ -49,7 +49,7 @@ public final class CompanionSpeechTests {
                 && smelt.get(1).count() == PlannedAction.ALL_CARRIED, "Smelting lost from «добудь и переплавь»: " + smelt);
 
         var noCount = CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"mine_ore\",\"item\":\"minecraft:iron_ore\"}]"));
-        h.assertTrue(noCount.getFirst().count() == 4, "Model step without count: " + noCount);
+        h.assertTrue(noCount.getFirst().count() == 16, "Model step without count: " + noCount);
 
         h.assertTrue(CompanionWorkCommands.parse("Олег, дабудь-ка двадцать камня", "Олег").count() == 20, "local stone in words");
         h.assertTrue(CompanionWorkCommands.parse("добудь пять железа", "Олег").count() == 5, "local ore in words");
