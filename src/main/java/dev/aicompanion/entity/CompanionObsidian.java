@@ -71,6 +71,10 @@ final class CompanionObsidian {
     private static final int HOLE_NEAR = 3;
     private static final float HOLE_HARDEST = 3;
     private static final int SET_TICKS = 60;
+    /** Ticks the make waits for the drop of the dig to be taken out of the hole before the lava goes in: it would burn it. */
+    private static final int DIG_DROP_WAIT = 40;
+    /** Ticks past the settle the work still waits while the pickup has the drop of what he mined and is walking to it. */
+    private static final int PICKUP_WAIT = 200;
     /** On a site of the player's, at most this many obsidian touching (corners too) are blocks lying about; more are something he builds. */
     private static final int LOOSE = 2;
 
@@ -86,6 +90,8 @@ final class CompanionObsidian {
     private BlockPos made, madeWater, madeLava;
     private int madeStep, fromBuckets;
     private long madeAt;
+    /** Ticks spent waiting for the drop of the hole being dug to be taken before the lava is poured into it. */
+    private int digDropWaited;
     /** The ground block dug out for the hole of his own lava and the drop it gave, kept until the hole is filled back. */
     private BlockState madeFloor;
     private Item madeFloorDrop;
@@ -241,7 +247,7 @@ final class CompanionObsidian {
         if (refusal != null) return CompanionActionResult.failed(refusal);
         reset();
         wanted = count; before = w.items.countCarried(Items.OBSIDIAN); mined = pours = 0; water = null; ending = null; nextLook = settleAt = 0; retried = false;
-        made = madeWater = madeLava = null; madeStep = fromBuckets = 0; madeAt = 0;
+        made = madeWater = madeLava = null; madeStep = fromBuckets = 0; madeAt = 0; digDropWaited = 0;
         madeFloor = null; madeFloorDrop = null; holeCell = null; holeFloor = null; holeDrop = null;
         his.clear(); passed.clear();
         fetch = null; fetchless.clear();
@@ -265,7 +271,14 @@ final class CompanionObsidian {
     void tick(ServerLevel level) {
         // The floor of the hole he dug for his own lava is put back once the block is gone and his water is scooped.
         if (refill(level, true)) return;
-        if (ending != null) { if (takeWaterBack(level)) end(ending); return; }
+        if (ending != null) {
+            if (!takeWaterBack(level)) return;
+            // The hole he dug for his own lava is filled back before the order ends, even from where he stands now: the ground
+            // looks as it did. No way back to it: the hole stays, no block invented (refill gives it up).
+            if (refill(level, true)) return;
+            end(ending);
+            return;
+        }
         site = c.getOwnerId() == null ? pos -> false : CompanionPlayerBuilds.get(level.getServer()).sites(c.getOwnerId(), level);
         int got = got();
         if (got >= wanted) {
@@ -406,6 +419,10 @@ final class CompanionObsidian {
         if (settleAt == 0) { settleAt = now + SETTLE; return; }
         if (now < settleAt) return;
         if (!retried) { retried = true; c.retryHarvestPickup(); return; }
+        // The pickup still has the drop of what he mined and is walking to it (into the hole he dug, from the cell beside it):
+        // the work waits while it runs, as it does for the drops settling in his water — bounded, so a drop the pickup cannot
+        // get ends the order honestly, as before.
+        if (c.hasPendingLoot() && now < settleAt + PICKUP_WAIT) return;
         event("obsidian_drops_lost", "mined", mined, "loot", c.loot.diagnosticState());
         mined = got; settleAt = 0; retried = false;
     }
@@ -432,6 +449,9 @@ final class CompanionObsidian {
 
     private void end(CompanionActionResult result) {
         if (water != null) { ending = result; return; }
+        // The hole of his own lava is filled back first, walking back to it if he has stepped away: the order ends on ground
+        // that looks as it did (the ending step above finishes it once the hole is filled or given up).
+        if (holeCell != null) { ending = result; return; }
         // The lava of a block that did not set goes back into his empty bucket once his water is in its own.
         if (madeLava != null && c.level() instanceof ServerLevel level) {
             boolean back = takeLavaBack(c, level, madeLava);
@@ -656,7 +676,7 @@ final class CompanionObsidian {
                 if (level.getBlockState(made).isAir()) { madeFloor = null; madeFloorDrop = null; madeStep = MADE_LAVA; reset(); return; }
                 // Something else stands there since: another hole is looked for.
                 if (!holeFor(level, made)) { made = null; reset(); return; }
-                if (dig(level, made, got)) { madeStep = MADE_LAVA; reset(); }
+                if (dig(level, made, got)) { madeStep = MADE_LAVA; digDropWaited = 0; reset(); }
             }
             case MADE_LAVA -> {
                 // No lava of his left: the pour step says how far he got. The dug hole is filled back: no block is to be made in it.
@@ -666,7 +686,11 @@ final class CompanionObsidian {
                     made = null; madeStep = 0; reset(); return;
                 }
                 if (!level.getBlockState(made).isAir()) { made = null; madeStep = MADE_DIG; reset(); return; }
-                // The drop of the dig lies in the hole and the pickup walks him down into it: the lava goes in from beside it, never
+                // The drop of the dig lies in the hole and the pickup walks him down into it to take it: poured over it, the lava
+                // would burn it, and that drop is what fills the hole back (refill) — the ground must look as it did. Bounded, so a
+                // drop the pickup cannot get does not hold the lava out for ever.
+                if (digDropWaited < DIG_DROP_WAIT && !level.getEntitiesOfClass(ItemEntity.class, new AABB(made)).isEmpty()) { digDropWaited++; return; }
+                // The lava goes in from beside it, never
                 // under his own feet (the player 20.11: he climbed into the lava and lost health). No cell beside it at all: this
                 // hole is passed over and another dug, and the ground it gave goes back.
                 if (c.blockPosition().equals(made)) {

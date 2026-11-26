@@ -289,33 +289,6 @@ public final class CompanionObsidianTests {
     }
 
     /**
-     * One obsidian lies about, a bucket of lava in his bag and no water at all: he mines the block that lies and then names the water
-     * for the second — not the lava he is holding. Before this he said «Накопал 1 из 2: лава рядом кончилась.» over a bag with a
-     * bucket of lava in it, and the player went for lava he already had.
-     */
-    @GameTest(template = "tall_tree", timeoutTicks = 1200)
-    public static void withHisLavaBucketAndNoWaterHeNamesTheWater(GameTestHelper h) {
-        ground(h);
-        h.setBlock(new BlockPos(12, GROUND + 1, 16), Blocks.OBSIDIAN);
-        CompanionEntity c = spawn(h);
-        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
-        c.setItem(1, new ItemStack(Items.LAVA_BUCKET));
-        // Obsidian lies about, so the plan asks for no water: the second block would be his own, and that is where the water is missed.
-        var plan = c.obtainPlan(OBSIDIAN, 2);
-        h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("mine_obsidian", OBSIDIAN, 2))), "Not the two asked for: " + plan);
-        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":2}]");
-        h.succeedWhen(() -> {
-            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
-            String report = future.join().report();
-            h.assertTrue(report.contains("Нет ведра воды — нечем залить лаву."), "The water is not named: " + report);
-            h.assertTrue(!report.contains("Не нашёл лавы") && !report.contains("лава рядом кончилась"),
-                    "The lava he holds is said to be missing: " + report);
-            h.assertTrue(count(c, Items.OBSIDIAN) == 1 && count(c, Items.LAVA_BUCKET) == 1 && count(c, Items.BUCKET) == 0,
-                    "His lava was spent: " + c.getStoredItemsSummary() + ", " + report);
-        });
-    }
-
-    /**
      * A bag with no room for the bucket the plan counted (20.11): a bucket of lava lies within his hand, «добудь 1 обсидиан»
      * counts it, but begin stores nothing. He says the bag is full and the bucket stays lying where it was dropped — never
      * «Не нашёл лавы рядом» over a bucket at his feet — and no bucket is lost or doubled.
@@ -660,33 +633,6 @@ public final class CompanionObsidianTests {
     }
 
     /**
-     * «Добудь 2 обсидиана» with one bucket of lava and one of water and nothing about to mine or cool: he makes the one block his
-     * buckets give, and the rest is planned again with no lava left — said truthfully, the obsidian he holds and the lava his buckets
-     * spent. Before this the reused refusal said «Рядом нечего копать: ни обсидиана, ни лавы» over a bag that already had one.
-     */
-    @GameTest(template = "tall_tree", timeoutTicks = 2400)
-    public static void afterHisOwnBucketsMadeWhatTheyCouldHeSaysWhatIsMissing(GameTestHelper h) {
-        ground(h);
-        CompanionEntity c = spawn(h);
-        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
-        c.setItem(1, new ItemStack(Items.WATER_BUCKET));
-        c.setItem(2, new ItemStack(Items.LAVA_BUCKET));
-        String route = CompanionLocalCommands.route("Олег, добудь 2 обсидиана", "Олег");
-        var plan = CompanionLocalCommands.actions(route);
-        h.assertTrue(plan != null && plan.size() == 1, "The phrase is not one step: " + route + " -> " + plan);
-        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-buckets", () -> false));
-        h.succeedWhen(() -> {
-            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
-            String report = future.join().report();
-            h.assertTrue(report.contains("Обсидиана у меня 1, а лавы рядом и в вёдрах больше нет"),
-                    "He does not say what he made and what is missing: " + report);
-            h.assertTrue(!report.contains("Рядом нечего копать"), "The old line over a bag that had one: " + report);
-            h.assertTrue(count(c, Items.OBSIDIAN) == 1 && count(c, Items.LAVA_BUCKET) == 0 && count(c, Items.BUCKET) == 1
-                    && count(c, Items.WATER_BUCKET) == 1, "His buckets are lost or doubled: " + c.getStoredItemsSummary() + ", " + report);
-        });
-    }
-
-    /**
      * The player's own case (20.11, world test3): four buckets dropped on the ground at his feet, two of water and two of lava, no
      * lava and no water anywhere about. «добудь 2 обсидиана» is no refusal — a bucket lying within his hand is a source as much as
      * one in his bag. He takes it up when the work starts, and the buckets come out of the make as they went in: his water back in
@@ -993,9 +939,11 @@ public final class CompanionObsidianTests {
     /**
      * The player's own case (20.11, world test3, one lava bucket): «сделай 2 обсидиана» with one bucket of lava and one of water
      * lying on the ground beside him in his own yard — a chest set down there makes it a site of the player's — and no lava in the
-     * world. One bucket of lava makes one block, so the plan promises the one and the order makes it — and the line about it is the
-     * honest one. Before this he picked both buckets up and said «Негде вылить лаву: рядом нет ямки, где она не растечётся.» over
-     * open ground, and made nothing: the site of his own yard was taken for no hole at all.
+     * world. One bucket of lava makes one block, so the plan promises the one and the order makes it — «Накопал обсидиана: 1.»
+     * — and the buckets lie there, counted as the source they are. Before this he picked both buckets up and said «Негде вылить
+     * лаву: рядом нет ямки, где она не растечётся.» over open ground, and made nothing: the site of his own yard was taken for no
+     * hole at all. The rest of the order is not planned again and named as missing: the promise was the one block, and it was
+     * made (PATH7; the older wording said «Обсидиана у меня 1, а лавы рядом и в вёдрах больше нет»).
      */
     @GameTest(template = "tall_tree", timeoutTicks = 2400)
     public static void oneLavaBucketOnTheGroundMakesTheOneBlockItCanAndSaysSo(GameTestHelper h) {
@@ -1016,8 +964,9 @@ public final class CompanionObsidianTests {
             h.assertTrue(count(c, Items.OBSIDIAN) == 1, "Not the one obsidian his lava can make: " + count(c, Items.OBSIDIAN) + ", " + report);
             h.assertTrue(!report.contains("Негде вылить лаву"), "He says there is no hole over open ground: " + report);
             h.assertTrue(!report.contains("не дотянуться") && !report.contains("Не нашёл лавы"), "He says a bucket beside him is missing: " + report);
-            h.assertTrue(report.contains("Обсидиана у меня 1, а лавы рядом и в вёдрах больше нет"),
-                    "He does not say what he made and what is missing: " + report);
+            h.assertTrue(report.contains("Накопал обсидиана: 1."), "He does not say what he made: " + report);
+            h.assertTrue(!report.contains("Рядом нечего копать") && !report.contains("Обсидиана у меня 1, а лавы рядом и в вёдрах больше нет"),
+                    "The old line over the block his buckets made: " + report);
             h.assertTrue(count(c, Items.LAVA_BUCKET) == 0 && count(c, Items.BUCKET) == 1 && count(c, Items.WATER_BUCKET) == 1,
                     "His buckets are lost or doubled: " + c.getStoredItemsSummary() + ", " + report);
         });
@@ -1428,6 +1377,61 @@ public final class CompanionObsidianTests {
             // The lava of his pond is his still: no water poured over it, his bucket in the bag.
             for (BlockPos cell : pond) h.assertBlockPresent(Blocks.LAVA, cell);
             h.assertTrue(count(c, Items.WATER_BUCKET) == 1, "He poured his water over the pond: " + report);
+        });
+    }
+
+    /**
+     * One obsidian lies about, a bucket of lava in his bag and no water at all: «добудь 2 обсидиана» promises only the block that
+     * lies — his lava makes no second without water — so he mines it and the order is what the world gave: «Накопал обсидиана: 1.»
+     * and his lava bucket still in the bag, never spent on a block that was not promised (PATH7: an order promises only what is
+     * there; the old wording named the water for the second block, and the plan promised two over one block and one bucket).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void withHisLavaBucketAndNoWaterTheBlockThatLiesIsTheWholeOrder(GameTestHelper h) {
+        ground(h);
+        h.setBlock(new BlockPos(12, GROUND + 1, 16), Blocks.OBSIDIAN);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.LAVA_BUCKET));
+        var plan = c.obtainPlan(OBSIDIAN, 2);
+        h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("mine_obsidian", OBSIDIAN, 1))), "Not the one block that lies: " + plan);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":2}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Накопал обсидиана: 1."), "Not the one block he mined: " + report);
+            h.assertTrue(!report.contains("Нет ведра воды") && !report.contains("Не нашёл лавы") && !report.contains("лава рядом кончилась"),
+                    "A block that was never promised is said to be missing: " + report);
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1 && count(c, Items.LAVA_BUCKET) == 1 && count(c, Items.BUCKET) == 0,
+                    "His lava was spent: " + c.getStoredItemsSummary() + ", " + report);
+        });
+    }
+
+    /**
+     * «Добудь 2 обсидиана» with one bucket of lava and one of water and nothing about to mine or cool: the buckets make one
+     * block, so the order promises one and makes it — «Накопал обсидиана: 1.» — his lava spent, the empty bucket and his water
+     * back. The order is what the buckets gave, never «не выполнено» for a second block nothing could give (the old wording
+     * planned the rest again and said «Обсидиана у меня 1, а лавы рядом и вёдрах больше нет»).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void afterHisOwnBucketsMadeWhatTheyCouldTheOrderIsTheOneBlockTheyGave(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.WATER_BUCKET));
+        c.setItem(2, new ItemStack(Items.LAVA_BUCKET));
+        String route = CompanionLocalCommands.route("Олег, добудь 2 обсидиана", "Олег");
+        var plan = CompanionLocalCommands.actions(route);
+        h.assertTrue(plan != null && plan.size() == 1, "The phrase is not one step: " + route + " -> " + plan);
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-buckets", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Накопал обсидиана: 1."), "He does not say what he made: " + report);
+            h.assertTrue(!report.contains("Рядом нечего копать") && !report.contains("Обсидиана у меня 1, а лавы рядом и в вёдрах больше нет"),
+                    "The old line over the block his buckets made: " + report);
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1 && count(c, Items.LAVA_BUCKET) == 0 && count(c, Items.BUCKET) == 1
+                    && count(c, Items.WATER_BUCKET) == 1, "His buckets are lost or doubled: " + c.getStoredItemsSummary() + ", " + report);
         });
     }
 
