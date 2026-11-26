@@ -988,9 +988,9 @@ public final class CompanionWayMatrixTests {
 
     // ---- order and the watchdog ----
 
-    /** Mine, come down dismantling the column behind him, take the drop, «готово»: the sequence, not only the end state. */
+    /** Mine, take the drop off the top of his own column, come down dismantling it behind him, «готово»: the sequence, not only the end state. */
     @GameTest(template = "tall_tree", timeoutTicks = 8000)
-    public static void theOrderMinesDescendsTakesTheDropAndSaysGotovo(GameTestHelper h) {
+    public static void theOrderMinesTakesTheDropThenDescendsAndSaysGotovo(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
         BlockPos target = new BlockPos(16, FEET + 10, 16);
         h.setBlock(target, Blocks.PUMPKIN);
@@ -1010,9 +1010,11 @@ public final class CompanionWayMatrixTests {
             String report = future.join().report();
             h.assertTrue(most[0] >= 6, "He never built up: supports " + most[0] + ", " + report);
             h.assertTrue(minedAt[0] >= 0, "The pumpkin above him was never mined: " + report);
-            h.assertTrue(downAt[0] > minedAt[0], "He did not come down after mining: " + report);
-            h.assertTrue(bagAt[0] > downAt[0], "The drop came before the column came down: down " + downAt[0] + ", bag " + bagAt[0] + ", " + report);
-            h.assertTrue(supportsAtBag[0] == 0, "He took the drop with the column still standing: " + supportsAtBag[0]);
+            // The drop comes to rest on the top of his own column, at his feet: it is taken there, and the column comes down after
+            // it is in his bag — never torn down first, leaving the drop above (the owner, 26.11).
+            h.assertTrue(bagAt[0] > minedAt[0], "The drop was not taken after mining: mined " + minedAt[0] + ", bag " + bagAt[0] + ", " + report);
+            h.assertTrue(supportsAtBag[0] > 0, "The drop was taken only after the column came down: " + supportsAtBag[0] + ", " + report);
+            h.assertTrue(downAt[0] > bagAt[0], "The column came down before the drop was taken: bag " + bagAt[0] + ", down " + downAt[0] + ", " + report);
             h.assertTrue(doneAt[0] >= bagAt[0], "The order ended before the drop was in the bag: " + report);
             h.assertTrue(report.contains("Готово"), "Not «готово»: " + report);
             h.assertTrue(!report.contains("не выполнено") && !report.contains("Полторы минуты"), "A wrong end: " + report);
@@ -1020,9 +1022,9 @@ public final class CompanionWayMatrixTests {
         });
     }
 
-    /** The drop waits below while the column comes down: nothing is picked up on top of it. */
+    /** A drop resting on the top of his own column is taken there, at his feet — not left for the ground it would fall to. */
     @GameTest(template = "tall_tree", timeoutTicks = 8000)
-    public static void theDropIsTakenOnlyAfterTheColumnIsDown(GameTestHelper h) {
+    public static void theDropOnHisOwnColumnIsTakenThere(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
         BlockPos target = new BlockPos(16, FEET + 8, 16);
         h.setBlock(target, Blocks.PUMPKIN);
@@ -1036,9 +1038,9 @@ public final class CompanionWayMatrixTests {
         var future = sayModel(h, c, "добудь тыкву", pumpkinPlan(1));
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
-            h.assertTrue(minedAt[0] >= 0 && bagAt[0] > minedAt[0], "The drop was taken before the column came down: " + future.join().report());
-            h.assertTrue(supportsAtBag[0] == 0, "He took the drop with " + supportsAtBag[0] + " supports still standing");
-            h.assertTrue(count(c, Items.PUMPKIN) == 1, "Not the drop: " + future.join().report());
+            h.assertTrue(minedAt[0] >= 0 && bagAt[0] > minedAt[0], "The drop was not taken after mining: " + future.join().report());
+            h.assertTrue(supportsAtBag[0] > 0, "The drop was left for the ground under a column of " + supportsAtBag[0] + " supports");
+            h.assertTrue(count(c, Items.PUMPKIN) == 1 && c.getTemporarySupportCount() == 0, "Not the drop, or the column stayed: " + future.join().report());
         });
     }
 
