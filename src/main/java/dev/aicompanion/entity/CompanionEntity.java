@@ -809,12 +809,12 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         // The order says how much: «подбери 8 брёвен» falls back on 8, the route's 64 («no number») keeps the meaning's own amount.
         int wanted = count < CompanionPickUp.ALL_AT_ONCE ? count : meaning.fallbackCount();
         if (!pickUpNearby && fallback) return startWork(meaning.fallbackAction(), meaning.fallbackItem(), wanted);
-        var found = CompanionPickUp.order(level, blockPosition(), pickUpRadius, meaning, count, getOwnerId());
+        var found = CompanionPickUp.find(level, blockPosition(), pickUpRadius, meaning, count, getOwnerId());
         var room = new java.util.ArrayList<ItemEntity>();
         for (ItemEntity drop : found) if (canStoreDrops(java.util.List.of(drop.getItem().copyWithCount(1)))) room.add(drop);
         if (!room.isEmpty()) {
             CompanionActionResult started = startWork("pick_up_nearby", item, count);
-            if (started.success()) loot.claim(room);
+            if (started.success()) { loot.claim(room); CompanionPickUp.leave(level, blockPosition(), pickUpRadius, meaning); }
             return started;
         }
         if (!found.isEmpty()) {

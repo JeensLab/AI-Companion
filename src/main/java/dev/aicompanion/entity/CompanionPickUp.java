@@ -259,13 +259,18 @@ public final class CompanionPickUp {
         return false;
     }
 
-    /** The drops an order takes ({@link #find}); what the order names to leave is marked first. */
-    static List<ItemEntity> order(ServerLevel level, BlockPos center, int radius, Meaning meaning, int limit, java.util.UUID playerId) {
-        // «Всё, кроме лазурита»: the lapis is marked, or he would take it in passing on the way to the rest.
-        if (meaning.leaving()) for (ItemEntity drop : level.getEntitiesOfClass(ItemEntity.class, new AABB(center).inflate(radius))) {
-            if (!meaning.is(drop.getItem())) drop.getPersistentData().putBoolean(LEFT, true);
+    /**
+     * «Всё, кроме лазурита» has begun: the lapis within the radius is marked, or he would take it in passing on the way
+     * to the rest. What a walk back for lost belongings takes by passing is not marked.
+     */
+    static void leave(ServerLevel level, BlockPos center, int radius, Meaning meaning) {
+        if (!meaning.leaving()) return;
+        for (ItemEntity drop : level.getEntitiesOfClass(ItemEntity.class, new AABB(center).inflate(radius))) {
+            var data = drop.getPersistentData();
+            if (meaning.is(drop.getItem()) || data.hasUUID(CompanionBag.BELONGINGS) || data.hasUUID(CompanionBag.BELONGINGS_SPOT)
+                    || data.getBoolean(CompanionPlayersThings.MARK)) continue;
+            data.putBoolean(LEFT, true);
         }
-        return find(level, center, radius, meaning, limit, playerId);
     }
 
     /**

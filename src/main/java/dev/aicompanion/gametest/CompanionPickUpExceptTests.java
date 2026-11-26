@@ -33,7 +33,8 @@ public final class CompanionPickUpExceptTests {
     @GameTest(template = "large_search")
     public static void thePhraseRoutesToEverythingButTheNamed(GameTestHelper h) {
         for (String phrase : new String[] {"подбери всё кроме лазурита", "Олег, подбери всё, кроме лазурита", "подбери все, но не лазурит",
-                "подними все вещи кроме лазурита", "подбери кроме лазурита"}) {
+                "подними все вещи кроме лазурита", "подбери кроме лазурита", "подбери всё, только не лазурит", "кроме лазурита всё подбери",
+                "подбери\tвсё\tкроме\tлазурита"}) {
             h.assertTrue((ANY + "!minecraft:lapis_lazuli").equals(route(phrase)), "«" + phrase + "» → " + route(phrase));
         }
         for (String phrase : new String[] {"подбери всё кроме лазурита и алмазов", "подбери всё, кроме лазурита, алмазов",
@@ -46,8 +47,15 @@ public final class CompanionPickUpExceptTests {
         // An exception the registry cannot name is not «everything» and not that thing: the phrase is the model's.
         h.assertTrue(route("подбери всё кроме фигнюшки") == null, "Unknown exception → " + route("подбери всё кроме фигнюшки"));
         h.assertTrue(CompanionPickUpCommands.fallback("подбери всё кроме фигнюшки", "Олег") == null, "Unknown exception falls back on everything");
-        // «Everything but everything» is no order.
-        h.assertTrue(!(ANY + "!minecraft:any").equals(route("подбери всё кроме всего")), "«кроме всего» → " + route("подбери всё кроме всего"));
+        // «Everything but things» is no order, and a second order in the phrase is no thing to leave: both are the model's.
+        for (String phrase : new String[] {"подбери всё кроме вещей", "подбери всё кроме лазурита и отнеси в Chest",
+                "подбери всё кроме лазурита, потом сложи в Chest"}) {
+            h.assertTrue(route(phrase) == null, "«" + phrase + "» → " + route(phrase));
+        }
+        // A word for several things alike leaves them all; a thing named before the mark is the pickup it was.
+        String swords = route("подбери всё кроме Sword");
+        h.assertTrue(swords != null && swords.contains("minecraft:iron_sword") && swords.contains("minecraft:diamond_sword"), "«кроме Sword» → " + swords);
+        h.assertTrue("companion work pick_up 64 minecraft:diamond".equals(route("подбери алмазы, но не спеши")), "→ " + route("подбери алмазы, но не спеши"));
         // The line that names the order to the player names the things, not the raw id.
         String shown = dev.aicompanion.client.CompanionDialogue.itemName("minecraft:any!minecraft:stick,minecraft:diamond");
         h.assertTrue("вещи, кроме Stick, Diamond".equals(shown), "Shown as: " + shown);
@@ -93,6 +101,23 @@ public final class CompanionPickUpExceptTests {
                     "The stick was not taken: " + companion.workPhase() + ", " + companion.getLastTaskResult());
             h.assertTrue(!lapis.isRemoved() && !block.isRemoved() && !diamond.isRemoved(), "A named thing was taken: " + companion.getLastTaskResult());
         });
+    }
+
+    /** The lapis left lying by one order is taken by the next one that names it; before that he walks over it and leaves it. */
+    @GameTest(template = "large_search", timeoutTicks = 900)
+    public static void theThingLeftIsTakenWhenAskedFor(GameTestHelper h) {
+        CompanionEntity companion = spawn(h);
+        ItemEntity lapis = item(h, 10, 1, 8, Items.LAPIS_LAZULI, 3);
+        item(h, 13, 1, 8, Items.STICK, 1);
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        PlannedAction step = CompanionLocalCommands.action(route("подбери всё кроме лазурита"));
+        h.assertTrue(CompanionEvents.executeAction(player, step.type(), step.item(), step.count()).success(), "The first order was refused");
+        h.runAfterDelay(200, () -> {
+            h.assertTrue(stored(companion, Items.STICK) == 1 && !lapis.isRemoved(), "After the first order: " + companion.getLastTaskResult());
+            var second = CompanionEvents.executeAction(player, "pick_up", "minecraft:lapis_lazuli", 64);
+            h.assertTrue(second.success(), "The second order was refused: " + second.message());
+        });
+        h.succeedWhen(() -> h.assertTrue(stored(companion, Items.LAPIS_LAZULI) == 3, "The lapis was not taken: " + companion.getLastTaskResult()));
     }
 
     /** Only the named thing lies around: nothing is taken and the answer says what does lie there. */

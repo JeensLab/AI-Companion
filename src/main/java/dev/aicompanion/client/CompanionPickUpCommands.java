@@ -33,8 +33,8 @@ public final class CompanionPickUpCommands {
     /** Words that name everything lying around rather than one thing: «подбери всё», «подбери предметы». */
     private static final Set<String> ALL_WORDS = Set.of("все", "весь", "вся", "вещи", "вещь", "всякое", "предмет", "предметы", "предмета", "предметов");
 
-    /** «…всё кроме лазурита», «…всё, но не лазурит и алмазы»: where the things to leave lying start. */
-    private static final Pattern EXCEPT = Pattern.compile("(?U)[\s,]+(?:кроме|но\s+не|за\s+исключением)\s+(.+)$");
+    /** «…всё кроме лазурита», «…всё, но не лазурит и алмазы», «…всё, только не лазурит»: where the things to leave lying start. */
+    private static final Pattern EXCEPT = Pattern.compile("(?U)(?:^|[\\s,]+)(?:кроме|но\\s+не|только\\s+не|за\\s+исключением)\\s+(.+)$");
 
     /** Words a «ещё» may carry around it: «ещё, пожалуйста», «ещё чуть-чуть», «ещё подбери всё». */
     private static final Pattern MORE_FILLER = Pattern.compile("(?U)\\b(пожалуйста|чуть-чуть|чуть|немного|давай|ну|раз|подбери|подберите|"
@@ -47,9 +47,8 @@ public final class CompanionPickUpCommands {
 
     /** The same, by the names the game shows (or a stand-in for the language in a test). */
     public static PlannedAction parse(String text, String name, Function<net.minecraft.world.item.Item, String> names) {
-        String lower = text.toLowerCase(Locale.ROOT).replace('ё', 'е');
-        var except = EXCEPT.matcher(lower);
-        if (except.find()) return allBut(lower.substring(0, except.start()), except.group(1), name, names);
+        String[] but = allBut(text, name);
+        if (but != null) return allBut(but, name, names);
         Said said = said(text, name);
         if (said == null) return null;
         if (said.noun().isEmpty()) return all(said.count());
@@ -60,23 +59,42 @@ public final class CompanionPickUpCommands {
     }
 
     /**
-     * «Подбери всё кроме лазурита и алмазов»: every drop but the named ones. Null when the part before «кроме» is no
-     * «подбери всё» or a named thing is no item of the registry: neither everything nor that thing is taken on a guess.
+     * «Подбери всё кроме лазурита и алмазов» as its two halves, «подбери всё» and the things to leave; null for any
+     * other phrase. «Подбери камень, но не спеши» names a thing before the mark and stays the pickup it was.
      */
-    private static PlannedAction allBut(String head, String tail, String name, Function<net.minecraft.world.item.Item, String> names) {
+    private static String[] allBut(String text, String name) {
+        String lower = text.toLowerCase(Locale.ROOT).replace('ё', 'е');
+        var except = EXCEPT.matcher(lower);
+        if (!except.find()) return null;
+        String head = lower.substring(0, except.start()), tail = except.group(1);
+        // The verb last: «кроме лазурита всё подбери» is the same order.
+        var last = VERB_TAIL.matcher(tail);
+        if (head.isBlank() && last.matches()) { head = "подбери"; tail = withoutAllWords(last.group(1)); }
         Said said = said(head, name);
-        if (said == null || !said.noun().isEmpty()) return null;
+        return said != null && said.noun().isEmpty() ? new String[] {head, tail} : null;
+    }
+
+    /**
+     * Every drop but the named ones. A word that names several things alike («кроме кирок») leaves them all. Null when a
+     * word of the list is no item of the registry («…и отнеси в сундук» is a plan, «кроме фигнюшки» nothing known):
+     * neither everything nor that thing is taken on a guess, the phrase is the model's.
+     */
+    private static PlannedAction allBut(String[] but, String name, Function<net.minecraft.world.item.Item, String> names) {
         Set<String> left = new java.util.LinkedHashSet<>();
-        for (String part : tail.replaceAll("[.!]+$", "").split("\s*,\s*|\s+и\s+|\s+или\s+")) {
-            String noun = FILLER.matcher(part).replaceAll(" ").replaceAll("\s+", " ").trim();
+        for (String part : but[1].replaceAll("[.!]+$", "").split("\\s*,\\s*|\\s+и\\s+|\\s+или\\s+")) {
+            String noun = FILLER.matcher(part).replaceAll(" ").replaceAll("\\s+", " ").trim();
             if (noun.isEmpty()) continue;
-            String id = hasAllWord(noun) ? null : CompanionItemLookup.itemFor(noun, names);
-            if (id == null) return null;
-            left.add(id);
+            for (String word : noun.split(" ")) if (isAll(word) || CompanionItemLookup.itemFor(word, names) == null) return null;
+            List<net.minecraft.world.item.Item> named = CompanionItemLookup.resolve(noun, names);
+            if (named.isEmpty() || named.size() > MAX_ALIKE) return null;
+            for (net.minecraft.world.item.Item item : named) left.add(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item).toString());
         }
         if (left.isEmpty()) return null;
-        return new PlannedAction("pick_up", 0, count(said.count()), CompanionPickUp.ANY_ITEM + CompanionPickUp.EXCEPT + String.join(",", left));
+        return new PlannedAction("pick_up", 0, count(said(but[0], name).count()), CompanionPickUp.ANY_ITEM + CompanionPickUp.EXCEPT + String.join(",", left));
     }
+
+    /** More things alike under one word than this is no list to leave lying: the word is too wide for the registry to tell. */
+    private static final int MAX_ALIKE = 16;
 
     /** What a «подбери» phrase names and how much, or null for a phrase that is no pickup at all. */
     public record Ask(String noun, int count) { }
@@ -91,7 +109,7 @@ public final class CompanionPickUpCommands {
 
     public static Ask ask(String text, String name, Function<net.minecraft.world.item.Item, String> names) {
         Said said = said(text, name);
-        if (said == null || said.noun().isEmpty() || said.all() || excepts(text)) return null;
+        if (said == null || said.noun().isEmpty() || said.all() || allBut(text, name) != null) return null;
         return CompanionItemLookup.itemFor(said.noun(), names) == null ? new Ask(said.noun(), count(said.count())) : null;
     }
 
@@ -158,10 +176,6 @@ public final class CompanionPickUpCommands {
         return new Said(withoutAllWords(noun), said.count(), hasAllWord(noun));
     }
 
-    private static boolean excepts(String text) {
-        return EXCEPT.matcher(text.toLowerCase(Locale.ROOT).replace('ё', 'е')).find();
-    }
-
     private static boolean hasAllWord(String noun) {
         for (String word : noun.split(" ")) if (isAll(word)) return true;
         return false;
@@ -219,7 +233,7 @@ public final class CompanionPickUpCommands {
      */
     public static PlannedAction fallback(String text, String name) {
         PlannedAction parsed = parse(text, name);
-        if (parsed != null || excepts(text)) return parsed;
+        if (parsed != null || allBut(text, name) != null) return parsed;
         String value = plain(text, name);
         if (!VERB.matcher(value).matches() && !VERB_TAIL.matcher(value).matches()) return null;
         if (CONTAINER.matcher(value).matches()) return null;
