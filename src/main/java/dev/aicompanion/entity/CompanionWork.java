@@ -188,8 +188,8 @@ public final class CompanionWork {
     String dropId() { return ore == null ? "" : BuiltInRegistries.ITEM.getKey(ore.drop).toString(); }
     /** How many of that drop the bag really holds: a block that makes it counts for what it gives (a redstone block is nine). */
     int oreHeld() { return ore == null ? 0 : owner.carriedOfDrop(dropId()); }
-    /** Whether the bag already holds the promise: the drop itself (the cheap count first), or a block that makes it. */
-    boolean oreMet() { return items.countCarried(ore.drop) >= oreWanted || oreHeld() >= oreWanted; }
+    /** What the order has brought: the drop gained in the bag since it began, not what it held before. */
+    int oreGained() { return ore == null ? 0 : Math.max(0, items.countCarried(ore.drop) - oreDropsBefore); }
     CompanionOre.Search oreSearch;
     List<BlockPos> oreCandidates;
     final Set<BlockPos> oreRejected = new HashSet<>();
@@ -595,10 +595,6 @@ public final class CompanionWork {
                 ore = CompanionOre.Kind.of(item);
                 if (ore == null) return CompanionActionResult.failed("Не понял, какую руду добыть: уголь, железо, медь, лазурит, золото, редстоун, алмазы или изумруды.");
                 if (count > MAX_ORE) return CompanionActionResult.failed("За раз добываю до " + MAX_ORE + " блоков руды.");
-                // The bag answers first: what he already holds meets the order — a block that makes the drop counts for what it
-                // gives (a redstone block is nine redstone) — and nothing is dug for it (the owner, 26.11).
-                int have = oreHeld();
-                if (have >= count) { job = Job.ORE; phase = Phase.ORE; oreWanted = count; oreDone = true; break; }
                 // A block that gives the ore's item lies about him — a lapis block is nine lapis, a gold block nine gold, even
                 // one the player set down himself: its material is taken as it lies, and the ore is dug only when no block of
                 // it is here. The one search answers first, as it does for every obtain (a lapis block in the air is no ore).
@@ -611,11 +607,12 @@ public final class CompanionWork {
                     CompanionActionResult started = picking.begin(BuiltInRegistries.ITEM.getKey(lying).toString(), Math.max(1, Math.min(count, blocks.count())));
                     if (started == null) { job = Job.BLOCK; phase = Phase.BLOCK; break; }
                 }
-                // The promise of the mine is what the world really gives — what he carries, what lies on the ground and the blocks
-                // the one search reaches — never the number said when there is less (the owner, 26.11: «добудь редстоуна» over
-                // one block of ore is one, and the work reports that, not four). The mine's own scan grows it to what it finds.
+                // The promise of the mine is what the world really gives — the drops on the ground and the blocks the one search
+                // reaches — never the number said when there is less (the owner, 26.11: «добудь редстоуна» over one block of ore
+                // is one, and the work reports that, not four). The mine's own scan grows it to what it finds. The bag answers at
+                // the end: an order it already holds in full is done, never «не справился» (CompanionOreMining.finishOre).
                 int onGround = CompanionPickUp.lying(level, owner.blockPosition(), owner.pickUpRadius(), dropId(), owner.getOwnerId());
-                job = Job.ORE; phase = Phase.ORE_PICK; oreWanted = Math.max(1, Math.min(count, have + onGround + blocks.count()));
+                job = Job.ORE; phase = Phase.ORE_PICK; oreWanted = Math.max(1, Math.min(count, onGround + blocks.count()));
             }
             case "pick_up_nearby" -> {
                 pickUp = CompanionPickUp.of(item);

@@ -368,11 +368,10 @@ public final class CompanionOreTests {
         });
     }
 
-    /** The bag answers first: four redstone carried, an ore block about him — nothing is dug for it. */
+    /** The bag answers when the ore is not: four redstone carried, nothing to dig — the order is done, not «не справился». */
     @GameTest(template = "tall_tree", timeoutTicks = 1200)
-    public static void anOrderTheBagAlreadyMeetsDigsNothing(GameTestHelper h) {
+    public static void anOrderTheBagAlreadyMeetsIsDoneNotFailed(GameTestHelper h) {
         CompanionEntity companion = flat(h);
-        BlockPos ore = new BlockPos(20, 1, 16); h.setBlock(ore, Blocks.REDSTONE_ORE);
         companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
         companion.setItem(0, new ItemStack(Items.REDSTONE, 4));
         var actions = CompanionLocalCommands.actions("companion work mine_ore 4 minecraft:redstone_ore");
@@ -385,7 +384,6 @@ public final class CompanionOreTests {
             // The line is the bag's own count, not «С рудой закончил» over an order nothing was dug for.
             String said = CompanionDialogue.summarize(actions, report);
             h.assertTrue(said.contains("4") && !said.contains("не справился"), "The met order was not said with its count: " + said);
-            h.assertBlockPresent(Blocks.REDSTONE_ORE, ore);
             h.assertTrue(damage(companion, Items.IRON_PICKAXE) == 0, "A pickaxe was worn for nothing: " + report);
         });
     }
@@ -394,7 +392,6 @@ public final class CompanionOreTests {
     @GameTest(template = "tall_tree", timeoutTicks = 1200)
     public static void aRedstoneBlockInTheBagIsItsNine(GameTestHelper h) {
         CompanionEntity companion = flat(h);
-        BlockPos ore = new BlockPos(20, 1, 16); h.setBlock(ore, Blocks.REDSTONE_ORE);
         companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
         companion.setItem(0, new ItemStack(Items.REDSTONE_BLOCK, 1));
         var actions = CompanionLocalCommands.actions("companion work mine_ore 4 minecraft:redstone_ore");
@@ -404,7 +401,7 @@ public final class CompanionOreTests {
             String report = future.join().report();
             h.assertTrue(!report.contains("План остановлен") && !report.contains("Часть не вышла"), "The nine redstone of the block were not counted: " + report);
             h.assertTrue(count(companion, Items.REDSTONE_BLOCK) == 1, "The redstone block left the bag: " + report);
-            h.assertBlockPresent(Blocks.REDSTONE_ORE, ore);
+            h.assertTrue(report.contains("9 шт."), "The bag's nine were not said: " + report);
         });
     }
 
