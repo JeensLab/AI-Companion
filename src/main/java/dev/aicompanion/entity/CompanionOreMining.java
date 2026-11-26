@@ -93,7 +93,7 @@ final class CompanionOreMining {
             w.goalOre = w.ore; w.goalOreWanted = w.oreWanted; w.goalOreMined = w.oreMined; w.goalOreDropsBefore = w.oreDropsBefore; w.goalOreExit = w.oreExit;
         }
         w.ore = CompanionOre.Kind.IRON; w.oreWanted = missing; w.oreMined = w.oreFound = w.oreUnreachable = w.orePickaxeAttempts = 0;
-        w.oreDone = w.oreChoosing = w.oreLootRetried = false; w.oreSearch = null; w.oreCandidates = null; w.oreRejected.clear(); w.oreOffFoot.clear(); w.oreNoTunnel.clear(); w.oreTunnel.clear(); w.oreExit = null;
+        w.oreDone = w.oreChoosing = w.oreLootRetried = false; w.oreLootWait = 0; w.oreSearch = null; w.oreCandidates = null; w.oreRejected.clear(); w.oreOffFoot.clear(); w.oreNoTunnel.clear(); w.oreTunnel.clear(); w.oreExit = null;
         w.oreDropsBefore = w.items.countCarried(Items.RAW_IRON);
         w.ironPrep = true; w.phase = CompanionWork.Phase.ORE_PICK; w.resetTarget();
         w.owner.workStatus("Для " + tool + " нужно " + w.ironNeeded + " железных слитков. Иду за железной рудой.");
@@ -104,7 +104,7 @@ final class CompanionOreMining {
         w.ironPrep = false;
         if (w.goalOre != null) {
             w.ore = w.goalOre; w.oreWanted = w.goalOreWanted; w.oreMined = w.goalOreMined; w.oreDropsBefore = w.goalOreDropsBefore;
-            w.oreFound = w.oreUnreachable = w.orePickaxeAttempts = 0; w.oreDone = w.oreChoosing = w.oreLootRetried = false;
+            w.oreFound = w.oreUnreachable = w.orePickaxeAttempts = 0; w.oreDone = w.oreChoosing = w.oreLootRetried = false; w.oreLootWait = 0;
             w.oreSearch = null; w.oreCandidates = null; w.oreRejected.clear(); w.oreOffFoot.clear(); w.oreNoTunnel.clear(); w.oreTunnel.clear(); w.oreExit = w.goalOreExit; w.goalOre = null;
         }
         w.phase = CompanionWork.Phase.IRON; w.resetTarget();
@@ -123,6 +123,11 @@ final class CompanionOreMining {
         }
         // A drop that fell into a pocket while the rest of the vein still closed it is reachable now: one more round.
         if (!w.oreLootRetried) { w.oreLootRetried = true; w.owner.retryHarvestPickup(); return; }
+        // The last drop may still be falling, lying below the column that was the way, or on its way to the bag: the order waits
+        // for it, bounded, so it ends with the drop in the bag rather than «выпавшее не достал» while the pickup is still walking
+        // to it (the owner, 27.11: the drop fell below the column, the column stood, and the order stood with it). A drop the
+        // pickup gave up is no pending loot, so an unreachable one costs no wait.
+        if (w.oreGained() < w.oreWanted && w.owner.hasPendingLoot() && w.oreLootWait++ < CompanionPickUp.ORDER_TICKS) return;
         climbOutOfOre(level);
     }
 

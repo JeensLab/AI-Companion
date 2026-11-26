@@ -258,6 +258,8 @@ final class CompanionLoot {
     private boolean wayBridge;
     private int wayTries;
     private long wayAt;
+    /** When another work's way first held the chase back: a way that stands too long must not hold the pickup for ever. */
+    private long wayBlockedAt;
     /** Ticks a way to one drop may take before it is given up, and how many ways one drop may be given (a column that came short). */
     private static final int WAY_PATIENCE = 600, WAY_TRIES = 3;
     /** The soil for the column is being dug: the pickup waits for it, and what the dig interrupted comes back after it. */
@@ -332,9 +334,16 @@ final class CompanionLoot {
         // A column the pickup itself raised for a drop is no reason to stop the chase: it is the way to it (owner, 24.11).
         boolean ownWay = raisingWay();
         // A floor laid from bank to bank is a walk to the drops on the far side: the chase goes over it. A column, or a floor still
-        // being laid, is another work's way: the chase waits (the drop is waited for, not given up).
-        if (!ownWay && (owner.temporaryPillar.isActive() || owner.temporaryBridge.isActive() && !owner.temporaryBridge.isWalk())
-                || owner.isSwingingAtBlock() || owner.creeperGuard.nearby(CREEPER_NEAR)) return false;
+        // being laid, is another work's way: the chase waits (the drop is waited for, not given up) — but not for ever. A column
+        // that stands under a drop it was the way to keeps the chase off (the pickup takes it from the top); a column that stands
+        // too long, as after a mine whose drop fell below it, gives the drop to the chase, walked to from where it lies
+        // (the owner, 27.11: five minutes on top of a column over a drop below it).
+        boolean otherWay = !ownWay && (owner.temporaryPillar.isActive() || owner.temporaryBridge.isActive() && !owner.temporaryBridge.isWalk());
+        if (otherWay) {
+            if (wayBlockedAt == 0) wayBlockedAt = level.getGameTime();
+            if (level.getGameTime() - wayBlockedAt <= WAY_PATIENCE) return false;
+        } else wayBlockedAt = 0;
+        if (owner.isSwingingAtBlock() || owner.creeperGuard.nearby(CREEPER_NEAR)) return false;
         for (UUID id : pending) if (chaseable(level, id)) return true;
         return false;
     }

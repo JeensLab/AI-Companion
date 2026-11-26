@@ -186,11 +186,13 @@ public final class CompanionPlanRequirements {
     /** Steps that carry no count of their own, so a number in the request can only mean the gathering. */
     private static final java.util.Set<String> COUNTLESS = java.util.Set.of("set_home", "follow", "come", "wait", "store_items", "sort_chests", "stop", "protect", "stop_protect", "remember_place", "go_to_place", "campfire_song");
     /**
-     * The number an ore order without one carries: four, the wish the router's own command, the model's step and the spoken count
-     * all read from here (CompanionWorkCommands, CompanionPlanCodec, spokenQuantity). It is a wish, not a promise: the work cuts it
-     * down to what the world really gives before it says anything (CompanionWork.startWork, CompanionOreMining).
+     * The number an ore order without one carries: sixteen, the most one order holds (MAX_ORE). It is the wish the router's own
+     * command, the model's step and the spoken count all read from here (CompanionWorkCommands, CompanionPlanCodec, spokenQuantity),
+     * and it is no promise: the work cuts it down to what the world really gives before it says anything (CompanionWork.startWork,
+     * CompanionOreMining) — so «добудь золота» over three blocks is three, and over twenty is sixteen (the owner, 27.11: the four
+     * of the old wish promised less than he could see).
      */
-    static final int DEFAULT_ORE = 4;
+    static final int DEFAULT_ORE = dev.aicompanion.entity.CompanionWork.MAX_ORE;
     static final int DEFAULT_GAME = 3;
     /** Unnumbered food/hunting requests make a larger, bounded food run. */
     static final int FOOD_RUN = 8;

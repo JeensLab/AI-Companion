@@ -56,6 +56,12 @@ public final class CompanionPillar {
     private static final int WAY_STEP_TICKS = 40;
     private static final int STALLED_TICKS = 80;
     private static final int STEP_INTERVAL = 10;
+    /**
+     * How far below his feet a column's foot may be planned: the way's own steps, so a foot on the ground under a column he
+     * already stands on is found (the owner, 27.11: an ore twenty-three across and four up was refused as «no column he can walk
+     * to» because every foot searched was within two of his feet, and every ground foot was four below them).
+     */
+    private static final int FEET_BELOW = WAY_SUPPORTS + 2;
 
     public enum Outcome { WORKING, READY, FAILED }
 
@@ -483,7 +489,9 @@ public final class CompanionPillar {
         if (!(owner.level() instanceof ServerLevel level) || !level.hasChunkAt(block)) return 0;
         BlockPos origin = owner.blockPosition();
         int least = 0;
-        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = -2; dy <= 2; dy++) {
+        // The feet are searched down the whole span a column may stand below him, not only beside his own level: standing on a
+        // column of four, every foot on the ground is four below his feet, and the way was refused for want of them.
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = -FEET_BELOW; dy <= 2; dy++) {
             BlockPos feet = new BlockPos(block.getX() + dx, origin.getY() + dy, block.getZ() + dz);
             if (feet.distSqr(origin) > (double) COLUMN_WALK * COLUMN_WALK || !footForColumn(feet)) continue;
             int steps = requiredSteps(block, feet);
@@ -600,7 +608,7 @@ public final class CompanionPillar {
             // Directly under the log is allowed: with the trunk chopped away, that is where a hanging crown is reached from.
             // While the trunk still stands, columnClearable rejects that column because the trunk itself is solid.
             for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
-                for (int dy = -2; dy <= 2; dy++) {
+                for (int dy = -FEET_BELOW; dy <= 2; dy++) {
                     BlockPos foot = new BlockPos(log.getX() + dx, origin.getY() + dy, log.getZ() + dz);
                     // A foot a player walks on is a foot: the ground, a stair, a path (CompanionMiningNavigation.standable).
                     if (foot.distSqr(origin) > (double) COLUMN_WALK * COLUMN_WALK || !footForColumn(foot)) continue;

@@ -217,7 +217,7 @@ public final class CompanionOreTests {
         PlannedAction five = CompanionWorkCommands.parse("Олег, добудь 5 железа", "Олег");
         h.assertTrue(five != null && five.type().equals("mine_ore") && five.item().equals("minecraft:iron_ore") && five.count() == 5, "Quick command: " + five);
         PlannedAction coal = CompanionWorkCommands.parse("добудь угля", "Олег");
-        h.assertTrue(coal != null && coal.item().equals("minecraft:coal_ore") && coal.count() == 4, "Coal without number: " + coal);
+        h.assertTrue(coal != null && coal.item().equals("minecraft:coal_ore") && coal.count() == 16, "Coal without number: " + coal);
         PlannedAction stone = CompanionWorkCommands.parse("добудь камень", "Олег");
         h.assertTrue(stone != null && stone.type().equals("gather_stone"), "Stone command broken: " + stone);
         h.assertTrue(CompanionDialogue.describe(plan.getFirst()).startsWith("добыть железо"), "Skipped-step wording");
@@ -315,7 +315,7 @@ public final class CompanionOreTests {
                 companion.teleportTo(home.getX() + .5, home.getY(), home.getZ() + .5);
                 companion.setHealth(companion.getMaxHealth());
                 // The number the router sends for a phrase without one: the wish the work must cut down to what is there.
-                h.assertTrue(companion.startWork("mine_ore", BuiltInRegistries.ITEM.getKey(kind.ore().asItem()).toString(), 4).success(),
+                h.assertTrue(companion.startWork("mine_ore", BuiltInRegistries.ITEM.getKey(kind.ore().asItem()).toString(), 16).success(),
                         "«" + kind.phrase() + "» not accepted");
                 started[0] = true;
                 return;
@@ -379,7 +379,7 @@ public final class CompanionOreTests {
         BlockPos ore = new BlockPos(20, 1, 16); h.setBlock(ore, Blocks.REDSTONE_ORE);
         companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
         String command = CompanionLocalCommands.route("добудь редстоуна", "Олег", item -> new ItemStack(item).getHoverName().getString());
-        h.assertTrue("companion work mine_ore 4 minecraft:redstone_ore".equals(command), "The phrase left the router: " + command);
+        h.assertTrue("companion work mine_ore 16 minecraft:redstone_ore".equals(command), "The phrase left the router: " + command);
         var actions = CompanionLocalCommands.actions(command);
         var future = say(h, companion, actions);
         h.succeedWhen(() -> {
@@ -519,7 +519,132 @@ public final class CompanionOreTests {
         });
     }
 
-    /** The words of the phrase above, through the player's own router, run by the plan runner. */
+    /**
+     * The owner's freeze (27.11): an ore hanging over the ground, taken from a column of his own soil, its drop falling below
+     * the column. The order must end with the drop in the bag and the column taken down — not stand on top of it while the
+     * pending drop gates the work out of its own finish, and not say «полторы минуты стоял».
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 8000)
+    public static void anOreOverAColumnEndsWithTheDropThatFellBelow(GameTestHelper h) {
+        CompanionEntity companion = flat(h);
+        BlockPos ore = new BlockPos(20, 7, 16);
+        h.setBlock(ore, Blocks.GOLD_ORE);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        companion.setItem(0, new ItemStack(Items.DIRT, 16));
+        int[] most = {0};
+        boolean[] below = {false};
+        h.onEachTick(() -> {
+            most[0] = Math.max(most[0], companion.getTemporarySupportCount());
+            for (var item : h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, companion.getBoundingBox().inflate(16)))
+                if (item.getItem().is(Items.RAW_GOLD) && item.getY() < companion.getY()) below[0] = true;
+        });
+        h.assertTrue(companion.startWork("mine_ore", "minecraft:gold_ore", 16).success(), "Ore order not accepted");
+        long id = companion.activeWorkId();
+        h.succeedWhen(() -> {
+            h.assertTrue(!companion.isWorking() && !companion.hasPendingLoot(), "Still running: " + companion.getLastTaskResult());
+            CompanionActionResult result = companion.workResult(id);
+            h.assertTrue(result != null && result.success(), "The order failed over its own drop: " + companion.getLastTaskResult());
+            h.assertTrue(count(companion, Items.RAW_GOLD) >= 1, "The drop that fell below is not in the bag: " + companion.getStoredItemsSummary());
+            h.assertTrue(most[0] >= 1, "No column was raised: the scene did not test the freeze");
+            h.assertTrue(below[0], "The drop never lay below him: the scene did not test the freeze");
+            h.assertTrue(companion.getTemporarySupportCount() == 0, "The column still stands: " + companion.getTemporarySupportCount());
+            h.assertTrue(!companion.getLastTaskResult().contains("Полторы минуты"), "He stood waiting: " + companion.getLastTaskResult());
+            h.assertBlockPresent(Blocks.AIR, ore);
+        });
+    }
+
+    /** The player takes the drop the work waits for: the order goes on at once, never sitting out a timeout for a gone drop. */
+    @GameTest(template = "tall_tree", timeoutTicks = 4000)
+    public static void thePlayerTakingTheDropLetsTheOreOrderGoOn(GameTestHelper h) {
+        CompanionEntity companion = flat(h);
+        wall(h);
+        BlockPos ore = new BlockPos(20, 1, 16);
+        h.setBlock(ore, Blocks.IRON_ORE);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        int[] tick = {0};
+        int[] picked = {0};
+        boolean[] seen = {false};
+        h.onEachTick(() -> {
+            tick[0]++;
+            for (var item : h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, companion.getBoundingBox().inflate(8))) {
+                if (!item.getItem().is(Items.RAW_IRON)) continue;
+                seen[0] = true;
+                item.setPickUpDelay(0);
+                player.teleportTo(item.getX(), item.getY(), item.getZ());
+            }
+            if (seen[0] && picked[0] == 0 && !companion.hasPendingLoot()) picked[0] = tick[0];
+        });
+        h.assertTrue(companion.startWork("mine_ore", "minecraft:iron_ore", 16).success(), "Ore order not accepted");
+        h.succeedWhen(() -> {
+            h.assertTrue(picked[0] > 0, "The drop never left the ground: " + companion.getLastTaskResult());
+            h.assertTrue(tick[0] - picked[0] <= 2, "The order sat " + (tick[0] - picked[0]) + " ticks after the player took the drop");
+            h.assertTrue(!companion.isWorking(), "Still working: " + companion.getLastTaskResult());
+        });
+    }
+
+    /**
+     * The owner's false refusal (27.11): standing on four supports of his own, an ore twenty-three across and four up. Every
+     * foot a column could stand at on the ground is four below his feet, and the way said «no column he can walk to».
+     */
+    @GameTest(template = "tall_tree")
+    public static void aColumnTopFindsTheGroundFootOfAnOreAcross(GameTestHelper h) {
+        CompanionEntity companion = flat(h);
+        for (int y = 1; y <= 4; y++) h.setBlock(new BlockPos(6, y, 16), Blocks.DIRT);
+        BlockPos top = new BlockPos(6, 5, 16);
+        companion.teleportTo(top.getX() + .5D, top.getY(), top.getZ() + .5D);
+        companion.setItem(0, new ItemStack(Items.DIRT, 16));
+        for (var kind : List.of(Blocks.GOLD_ORE, Blocks.LAPIS_ORE, Blocks.DIAMOND_ORE)) {
+            BlockPos ore = new BlockPos(29, top.getY() + 4, 16);
+            h.setBlock(ore, kind);
+            var how = dev.aicompanion.entity.CompanionReach.how(companion, h.getLevel(), ore, 3.5D, true, true,
+                    dev.aicompanion.entity.CompanionPillar.WAY_SUPPORTS);
+            h.assertTrue(how.up() && how.steps() > 0 && how.steps() <= 16,
+                    "The way refused " + kind + " twenty-three across and four up from a column top: " + how.way() + " " + how.why());
+            h.setBlock(ore, Blocks.AIR);
+        }
+        h.succeed();
+    }
+
+    /**
+     * «Добудь золота» with no number: the wish is sixteen, the most one order holds, and the promise is what is really visible
+     * — five blocks are five, twenty are sixteen, never the four of the old wish (the owner, 27.11).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 4000)
+    public static void anUnnumberedOreOrderPromisesWhatIsVisibleUpToSixteen(GameTestHelper h) {
+        CompanionEntity companion = flat(h);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        String command = CompanionLocalCommands.route("добудь золота", "Олег", item -> new ItemStack(item).getHoverName().getString());
+        h.assertTrue("companion work mine_ore 16 minecraft:gold_ore".equals(command), "The phrase still carries four: " + command);
+        h.assertTrue(CompanionWorkCommands.parse("добудь золота", "Олег").count() == 16, "The quick command still carries four");
+        h.assertTrue(CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"mine_ore\",\"item\":\"minecraft:gold_ore\"}]"))
+                .getFirst().count() == 16, "The plan's own default is still four");
+        int[] phase = {0};
+        h.onEachTick(() -> {
+            String activity = companion.getActivityForAi();
+            if (!activity.contains("«золотая руда» (")) return;
+            if (phase[0] == 0) {
+                h.assertTrue(activity.contains("из 5"), "Five visible blocks were not promised: " + activity);
+                h.assertTrue(!activity.contains("из 4"), "Four was promised over five blocks: " + activity);
+                companion.setFollowing(true);
+                for (int x = 20; x <= 23; x++) for (int z = 16; z <= 17; z++) h.setBlock(new BlockPos(x, 1, z), Blocks.AIR);
+                for (int x = 20; x <= 23; x++) for (int z = 10; z <= 14; z++) h.setBlock(new BlockPos(x, 1, z), Blocks.GOLD_ORE);
+                companion.setFollowing(false);
+                h.assertTrue(companion.startWork("mine_ore", "minecraft:gold_ore", 16).success(), "Second ore order not accepted");
+                phase[0] = 1;
+                return;
+            }
+            h.assertTrue(activity.contains("из 16"), "Twenty visible blocks were not capped at sixteen: " + activity);
+            companion.setFollowing(true);
+            h.succeed();
+        });
+        // The first scene: five gold ore blocks about him.
+        for (int x = 20; x <= 23; x++) h.setBlock(new BlockPos(x, 1, 16), Blocks.GOLD_ORE);
+        h.setBlock(new BlockPos(20, 1, 17), Blocks.GOLD_ORE);
+        h.assertTrue(companion.startWork("mine_ore", "minecraft:gold_ore", 16).success(), "Ore order not accepted");
+    }
+
+
     private static CompletableFuture<CompanionPlanRunner.Outcome> say(GameTestHelper h, CompanionEntity companion, List<PlannedAction> actions) {
         return CompanionPlanRunner.run(actions,
                 new CompanionServerPlanPort(h.getLevel().getServer(), companion.getOwnerId(), "gametest-ore", () -> false));

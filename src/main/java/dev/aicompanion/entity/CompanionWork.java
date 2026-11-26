@@ -184,6 +184,8 @@ public final class CompanionWork {
     CompanionOre.Kind ore;
     int oreWanted, oreMined, oreDropsBefore, oreFound, oreUnreachable, orePickaxeAttempts;
     boolean oreDone, oreChoosing, oreLootRetried, stoneLootRetried;
+    /** Ticks the finished mine waited for its own drop to reach the bag: bounded, so a drop it cannot get ends the order honestly. */
+    int oreLootWait;
     /** The autonomy's own ore deed: a batch to add, not the player's total — its bag is no answer and no part of the promise. */
     boolean oreBatch;
     /** The id of the item this ore order is about, as the bag names it. */
@@ -678,7 +680,7 @@ public final class CompanionWork {
         stallTicks = 0; stallAnchor = owner.position(); stallSignature = progressSignature(); stallSeen.clear();
         dryTicks = dryGathered = dryWalkTicks = 0; dryAnchor = null; dug.clear(); offFoot.clear(); stoneMining.endStoneChoice(); stoneTravel = null; stoneTravels = 0; travelFailed.clear(); owner.travel().reset(); trip.reset();
         oreOffFoot.clear(); oreNoTunnel.clear(); oreBlockedCells.clear(); pickaxeSense.reset(); shovelSense.reset();
-        oreMined = oreFound = oreUnreachable = orePickaxeAttempts = 0; oreDone = oreChoosing = oreLootRetried = false;
+        oreMined = oreFound = oreUnreachable = orePickaxeAttempts = 0; oreDone = oreChoosing = oreLootRetried = false; oreLootWait = 0;
         oreSearch = null; oreCandidates = null; oreRejected.clear(); oreTunnel.clear(); oreExit = null;
         if (job == Job.ORE) {
             oreDropsBefore = items.countCarried(ore.drop);
@@ -745,8 +747,11 @@ public final class CompanionWork {
         if (job != Job.HOUSE && owner.actionAnimation() != 0) return;
         // Breaking does not wait for the last drop: the next block goes while the drop is still on its way to him, and the
         // pickup settles after the breaking. Waiting per block is what made a crown one block at a time.
+        // The drop of the last block does not hold the work back: ORE, BLOCK and OBSIDIAN break on while their drops fall, and
+        // their own descent (requestCleanup) and bounded wait for the drop come after (the owner, 27.11: the ore order stood on
+        // its column for five minutes because the pending drop gated it out of finishMine, and no cleanup was ever asked).
         if (job != Job.BLOCK && job != Job.COME && job != Job.COURSE && job != Job.HUNT && job != Job.PICK_UP && job != Job.PLACE
-                && job != Job.OBSIDIAN
+                && job != Job.OBSIDIAN && job != Job.ORE
                 && owner.hasPendingLoot() && !(job == Job.HOUSE && templateJob && templateHouse.scaffolding())) return;
         if (owner.getOwnerId() == null || level.getServer().getPlayerList().getPlayer(owner.getOwnerId()) == null) {
             finish(false, "Потерял связь с игроком, остановился."); return;

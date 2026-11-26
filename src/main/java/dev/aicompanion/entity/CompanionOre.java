@@ -181,9 +181,13 @@ public final class CompanionOre {
         private final List<BlockPos> found = new ArrayList<>();
 
         Search(ServerLevel level, BlockPos origin, int radius, Kind kind) {
-            this.kind = kind; this.origin = origin.immutable(); this.radius = Math.clamp(radius, 8, 48);
-            minY = Math.max(level.getMinBuildHeight(), origin.getY() - MAX_DROP - 1);
-            maxY = Math.min(level.getMaxBuildHeight() - 1, origin.getY() + 16);
+            this.kind = kind; this.origin = origin.immutable();
+            // The same box the general search uses (CompanionWaySearch): sixty-four across and sixty-four up and down, cut by the
+            // player's own search radius. The old forty-eight across and sixteen above refused ore he could see (the owner, 27.11).
+            this.radius = Math.clamp(Math.min(radius, CompanionWaySearch.RADIUS), 8, CompanionWaySearch.RADIUS);
+            int depth = CompanionWaySearch.DEPTH;
+            minY = Math.max(level.getMinBuildHeight(), origin.getY() - depth);
+            maxY = Math.min(level.getMaxBuildHeight() - 1, origin.getY() + depth);
             for (int cx = (origin.getX() - this.radius) >> 4; cx <= (origin.getX() + this.radius) >> 4; cx++)
                 for (int cz = (origin.getZ() - this.radius) >> 4; cz <= (origin.getZ() + this.radius) >> 4; cz++) {
                     var chunk = level.getChunkSource().getChunkNow(cx, cz);

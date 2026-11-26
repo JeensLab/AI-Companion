@@ -8,12 +8,31 @@ package dev.aicompanion.client;
  */
 public final class CompanionSwitchLayout {
     public static final int ROW_WIDTH = 300, ROW_HEIGHT = 20, ROW_STEP = 30, HIGHEST_ROW = 64, NOTE_FROM_BOTTOM = 64, PAGED_STEP = 24;
-    /** The rows the behaviour screen adds: the model entry first, then the gameplay switches. */
-    public static final int MODEL_ENTRY_ROW = 0, BEHAVIOUR_ROWS = 20;
+    /** The rows the behaviour screen adds: the model entry first, then the gameplay switches and the two distance rows. */
+    public static final int MODEL_ENTRY_ROW = 0, BEHAVIOUR_ROWS = 27;
     /** The label of that first row: it opens the model screen, and the screen is not loaded where a GameTest runs. */
     public static final String MODEL_ENTRY_LABEL = "Модель и ответы…";
+    /** The row that names the search distance instead of a switch: beside «Строить себе путь», the same distance the settings screen holds. */
+    public static final String SEARCH_RADIUS_LABEL = "Дальность поиска";
+    /** The distances that row turns through: the setting's own 16..128, so 128 is reachable as 32 is. */
+    public static final int[] SEARCH_RADIUS_STEPS = {16, 32, 64, 128};
+    public static final int SEARCH_RADIUS_MIN = 16, SEARCH_RADIUS_MAX = 128;
+    /** The pickup radius the row beside it turns through: every step of the setting's 4..32, so 32 is reached (the old step of eight skipped 8 and 16 and never came to 32). */
+    public static final int PICK_UP_RADIUS_MIN = 4, PICK_UP_RADIUS_MAX = 32, PICK_UP_RADIUS_STEP = 4;
 
     private CompanionSwitchLayout() { }
+
+    /** The next pickup radius a press of that row shows: the whole range, 32 included, then round to 4. */
+    public static int nextPickUpRadius(int current) {
+        int next = current + PICK_UP_RADIUS_STEP;
+        return next > PICK_UP_RADIUS_MAX ? PICK_UP_RADIUS_MIN : next;
+    }
+
+    /** The next search distance a press of that row shows: 16, 32, 64, 128, then round to 16. */
+    public static int nextSearchRadius(int current) {
+        for (int step : SEARCH_RADIUS_STEPS) if (step > current) return step;
+        return SEARCH_RADIUS_MIN;
+    }
 
     /** The y the rows would start at by the screen's own centring; never above the title and the top of the screen. */
     public static int top(int height) { return Math.max(HIGHEST_ROW, height / 2 - 90); }
