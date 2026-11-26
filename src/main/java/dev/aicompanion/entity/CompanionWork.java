@@ -184,6 +184,8 @@ public final class CompanionWork {
     CompanionOre.Kind ore;
     int oreWanted, oreMined, oreDropsBefore, oreFound, oreUnreachable, orePickaxeAttempts;
     boolean oreDone, oreChoosing, oreLootRetried, stoneLootRetried;
+    /** The autonomy's own ore deed: a batch to add, not the player's total — its bag is no answer and no part of the promise. */
+    boolean oreBatch;
     /** The id of the item this ore order is about, as the bag names it. */
     String dropId() { return ore == null ? "" : BuiltInRegistries.ITEM.getKey(ore.drop).toString(); }
     /** How many of that drop the bag really holds: a block that makes it counts for what it gives (a redstone block is nine). */
@@ -596,8 +598,10 @@ public final class CompanionWork {
                 if (ore == null) return CompanionActionResult.failed("Не понял, какую руду добыть: уголь, железо, медь, лазурит, золото, редстоун, алмазы или изумруды.");
                 if (count > MAX_ORE) return CompanionActionResult.failed("За раз добываю до " + MAX_ORE + " блоков руды.");
                 // The bag answers first, as every obtain does: an order it already holds in full — a redstone block is nine
-                // redstone — is done without a dig, though an ore block lies about.
-                int held = oreHeld();
+                // redstone — is done without a dig, though an ore block lies about. The autonomy's own deed is a batch (gather
+                // this many more), so what he already holds is no answer for it and no part of its promise.
+                boolean batch = CompanionEvents.autonomous();
+                int held = batch ? 0 : oreHeld();
                 // A block that gives the ore's item lies about him — a lapis block is nine lapis, a gold block nine gold, even
                 // one the player set down himself: its material is taken as it lies, and the ore is dug only when no block of
                 // it is here. The one search answers first, as it does for every obtain (a lapis block in the air is no ore).
@@ -617,7 +621,8 @@ public final class CompanionWork {
                 // what it finds, and the bag answers at the end: the promise met in it is the order done, never «не справился»
                 // (CompanionOreMining.finishOre).
                 int onGround = CompanionPickUp.lying(level, owner.blockPosition(), owner.pickUpRadius(), dropId(), owner.getOwnerId());
-                job = Job.ORE; phase = Phase.ORE_PICK; oreWanted = Math.max(1, Math.min(count, held + onGround + blocks.count()));
+                job = Job.ORE; phase = Phase.ORE_PICK; oreBatch = batch;
+                oreWanted = Math.max(1, Math.min(count, held + onGround + blocks.count()));
             }
             case "pick_up_nearby" -> {
                 pickUp = CompanionPickUp.of(item);

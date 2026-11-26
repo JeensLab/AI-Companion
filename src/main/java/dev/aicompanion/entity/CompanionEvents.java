@@ -420,6 +420,8 @@ public final class CompanionEvents {
 
     /** True while a deed of his own is being given (not an order of the player: it does not end itself). Server thread only. */
     private static boolean autonomousDispatch;
+    /** Whether the order being started is the autonomy's own batch (gather this many more), not the player's total. */
+    static boolean autonomous() { return autonomousDispatch; }
     private static boolean goalDispatch;
     /** A long goal's own step is being given (CompanionWaterFill tells its journal a goal's water from an order's). */
     static boolean goalDispatching() { return goalDispatch; }
@@ -437,7 +439,8 @@ public final class CompanionEvents {
     }
 
     /** A deed of his own (CompanionAutonomy), given the same way as the player's order, with its own trace and workId. */
-    static CompanionActionResult executeAutonomous(ServerPlayer player, String action, String item, int count) {
+    /** The autonomy's own deed: a batch to add (public for the GameTests that pin what a batch is, unlike a player's total). */
+    public static CompanionActionResult executeAutonomous(ServerPlayer player, String action, String item, int count) {
         autonomousDispatch = true;
         try {
             return executeAction(player, action, item, count, "auto", dev.aicompanion.CompanionDiagnostics.newTrace(), "near_player");

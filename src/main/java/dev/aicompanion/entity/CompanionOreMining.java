@@ -144,10 +144,12 @@ final class CompanionOreMining {
             // never past the number said (the owner, 26.11: one ore block over an order without a number is one, not four).
             if (!w.ironPrep) {
                 int onGround = CompanionPickUp.lying(level, w.owner.blockPosition(), w.owner.pickUpRadius(), w.dropId(), w.owner.getOwnerId());
-                w.oreWanted = Math.max(1, Math.min(w.requestedCount, w.oreHeld() + onGround + w.oreFound));
+                // The autonomy's own deed is a batch: what he holds is no part of its promise.
+                int held = w.oreBatch ? 0 : w.oreHeld();
+                w.oreWanted = Math.max(1, Math.min(w.requestedCount, held + onGround + w.oreFound));
                 // The search has now said what the world gives: an order the bag already meets in that promise is done without a
                 // dig, as every obtain is (the owner, 26.11: a redstone block in the bag, an ore about, and nothing to swing at).
-                if (w.oreHeld() >= w.oreWanted) { finishMine(level); return; }
+                if (held >= w.oreWanted) { finishMine(level); return; }
             }
         }
         if (!w.oreTunnel.isEmpty()) { digOreTunnel(level); return; }
@@ -486,7 +488,8 @@ final class CompanionOreMining {
         // one ore mined, its drop in the bag, and no «1 из 4»). An order the bag already holds in full — a redstone block is nine
         // redstone — is done too, never «не справился». The blocks the promise names are the answer while their drop came: a vein
         // taken with Silk Touch gives the blocks, and they are the order's.
-        boolean met = gained >= w.oreWanted || have >= w.oreWanted || w.oreMined >= w.oreWanted && anyDrop;
+        // A batch deed is met by what it gained: the bag it already had is no answer for it (the autonomy's stock deeds).
+        boolean met = gained >= w.oreWanted || (!w.oreBatch && have >= w.oreWanted) || w.oreMined >= w.oreWanted && anyDrop;
         if (!w.ironPrep && met) {
             w.finish(true, gained > 0 ? "Добыл " + CompanionWorkItems.blocks(w.oreMined) + " " + got + below + bag
                     : "«" + CompanionWork.itemName(w.ore.drop) + "» у меня: " + have + " шт." + below + bag);

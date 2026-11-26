@@ -498,6 +498,27 @@ public final class CompanionOreTests {
         });
     }
 
+    /**
+     * The autonomy's own ore deed is a batch (gather this many more), not the player's total: «добыть угля» for eight more with
+     * eight coal already in the bag still digs the ore about him. A bag that answers a batch would end it with nothing gained, and
+     * the autonomy's stock deed would ask for it again and again.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void anAutonomyBatchStillDigsWithTheBagAlreadyFull(GameTestHelper h) {
+        CompanionEntity companion = flat(h);
+        BlockPos ore = new BlockPos(20, 1, 16); h.setBlock(ore, Blocks.COAL_ORE);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        companion.setItem(0, new ItemStack(Items.COAL, 8));
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        var said = CompanionEvents.executeAutonomous(owner, "mine_ore", "minecraft:coal", 8);
+        h.assertTrue(said.success(), "The batch was not taken: " + said.message());
+        h.succeedWhen(() -> {
+            h.assertTrue(!companion.isWorking(), "Still working: " + companion.getLastTaskResult());
+            h.assertTrue(count(companion, Items.COAL) > 8, "The batch gained nothing, the bag answered it: " + companion.getLastTaskResult());
+            h.assertBlockPresent(Blocks.AIR, ore);
+        });
+    }
+
     /** The words of the phrase above, through the player's own router, run by the plan runner. */
     private static CompletableFuture<CompanionPlanRunner.Outcome> say(GameTestHelper h, CompanionEntity companion, List<PlannedAction> actions) {
         return CompanionPlanRunner.run(actions,
