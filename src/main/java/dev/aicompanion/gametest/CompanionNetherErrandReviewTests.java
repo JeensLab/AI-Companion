@@ -99,6 +99,9 @@ public final class CompanionNetherErrandReviewTests {
                 nether.addFreshEntity(there); added[0] = true;
             }
             if (phase[0] == 0) {
+                // The bag answers first: an order it already meets is no dig (CompanionWork.startWork), and each step here is meant
+                // to dig its quartz again — so the quartz of the last one is put away before this one.
+                for (int slot = 0; slot < there.getContainerSize(); slot++) if (there.getItem(slot).is(Items.QUARTZ)) there.setItem(slot, ItemStack.EMPTY);
                 nether.setBlockAndUpdate(ore, Blocks.NETHER_QUARTZ_ORE.defaultBlockState());
                 var said = CompanionEvents.executeAction(owner, "mine_ore", "minecraft:quartz_ore", 1);
                 h.assertTrue(said.success() && there.hasActiveWorkOrder(), "The step was not taken: " + said.message() + " / " + CompanionNetherErrandTests.describe(h, nether, id));
