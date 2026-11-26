@@ -627,9 +627,12 @@ public final class CompanionPillar {
         for (int asked = 0; asked < FEET_TRIES && feetAsked < feet.size(); asked++) {
             Column candidate = feet.get(feetAsked);
             int busy = owner.work.route.busyAnswers();
+            int notSearched = owner.work.route.notSearchedAnswers();
             Path path = owner.work.route.toCells(Set.of(candidate.feet()));
             if (path == null) {
-                if (owner.work.route.busyAnswers() != busy) { footUnknown = true; return null; }
+                // A foot the route could not answer for this tick (the cells went elsewhere, no search came about) is no foot
+                // refused: it is asked again next tick, as the column's own planning does (tickToward).
+                if (owner.work.route.busyAnswers() != busy || owner.work.route.notSearchedAnswers() != notSearched) { footUnknown = true; return null; }
                 sayFoot(target, candidate.feet(), "к опоре не пройти");
                 feetAsked++;
                 continue;
