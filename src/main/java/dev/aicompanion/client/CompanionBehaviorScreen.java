@@ -12,10 +12,11 @@ final class CompanionBehaviorScreen extends Screen {
     CompanionBehaviorScreen(Screen parent) { super(Component.literal("Поведение компаньона")); this.parent = parent; }
     @Override protected void init() {
         int left = width / 2 - 150, top = CompanionSwitchLayout.top(height);
-        // The only row here that is not a gameplay switch: the model's own settings live on their own screen now.
         addRenderableWidget(Button.builder(Component.literal(CompanionSwitchLayout.MODEL_ENTRY_LABEL), b -> minecraft.setScreen(new CompanionModelScreen(this)))
                 .bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                         "Размышление модели, температура и top_p: что и как он отвечает."))).build());
+        addRenderableWidget(Button.builder(Component.literal("Свой питомец"), b -> minecraft.setScreen(new CompanionPetSettingsScreen(this)))
+                .bounds(left, top, ROW_WIDTH, ROW_HEIGHT).build());
         addRenderableWidget(Button.builder(speechLabel(), b -> {
             OpenRouterConfig.AUTONOMOUS_SPEECH.set(!OpenRouterConfig.AUTONOMOUS_SPEECH.get()); OpenRouterConfig.AUTONOMOUS_SPEECH.save();
             b.setMessage(speechLabel()); CompanionPreferences.sync();

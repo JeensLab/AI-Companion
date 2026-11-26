@@ -7,6 +7,7 @@ import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionMusicLibrary;
 import dev.aicompanion.entity.CompanionPickUp;
 import dev.aicompanion.entity.CompanionMarkerBoard;
+import dev.aicompanion.entity.CompanionPet;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
@@ -125,13 +126,83 @@ public final class CompanionChatScreen extends Screen {
         }));
     }
 
-    private static String companionAction(String text) { return CompanionLocalCommands.route(text, companionName()); }
+    private static String companionAction(String text) {
+        var speaker = CompanionVoiceAudio.speaker();
+        if (speaker != null) {
+            for (var kind : CompanionPet.values()) {
+                long workId = speaker.petQuestion(kind);
+                if (workId <= 0) continue;
+                var question = speaker.petQuestionMode();
+                String answer = switch (question) {
+                    case VILLAGE_PERMISSION -> CompanionWorkCommands.petVillageAnswer(text, companionName());
+                    case VILLAGE_SEARCH -> CompanionWorkCommands.villageSighting(text, kind, companionName());
+                    case BAIT, BAIT_PERMISSION -> CompanionWorkCommands.petAnswer(text, kind, companionName(), speaker.awaitsPetSearchPermission());
+                };
+                if (question == CompanionPet.Question.VILLAGE_PERMISSION && answer.isEmpty()) {
+                    String local = CompanionLocalCommands.route(text, companionName());
+                    if (local != null && !local.startsWith("companion work walk_heading ")) return local;
+                    answer = "clarify";
+                }
+                if (!answer.isEmpty()) return "companion pet_reply " + speaker.getUUID() + " " + kind.name() + " " + workId + " " + answer;
+            }
+        }
+        return CompanionLocalCommands.route(text, companionName());
+    }
 
     static void runLocalCommand(String command, String trace) {
+        if (command.startsWith("companion pet_reply ")) {
+            var parts = command.split(" ");
+            answerPet(java.util.UUID.fromString(parts[2]), CompanionPet.valueOf(parts[3]), Long.parseLong(parts[4]), parts[5]);
+            return;
+        }
         CompanionDiagnostics.event(trace, "message_route", "route", "local_parser", "command", command);
         List<PlannedAction> actions = CompanionLocalCommands.actions(command);
+        if (actions.size() == 1) {
+            if (actions.getFirst().type().equals("pet_location")) {
+                readPetLocation(actions.getFirst(), trace);
+                return;
+            }
+            for (var kind : CompanionPet.values()) {
+                if (!actions.getFirst().type().equals(kind.id + "_cancel")) continue;
+                var speaker = CompanionVoiceAudio.speaker();
+                if (speaker != null) answerPet(speaker.getUUID(), kind, 0, "cancel");
+                return;
+            }
+        }
         if ("build_house".equals(actions.getFirst().type())) addVoiceReply(CompanionDialogue.acknowledge(actions), trace, "local_acknowledgement");
         runLocalActions(actions, trace);
+    }
+
+    private static void readPetLocation(PlannedAction action, String trace) {
+        var client = Minecraft.getInstance();
+        var server = client.getSingleplayerServer();
+        if (server == null || client.player == null || client.level == null) return;
+        var playerId = client.player.getUUID();
+        var world = client.level;
+        server.execute(() -> {
+            var player = server.getPlayerList().getPlayer(playerId);
+            if (player == null) return;
+            var result = dev.aicompanion.entity.CompanionEvents.executeAction(player, action.type(), action.item(), action.count());
+            client.execute(() -> {
+                if (client.level == world) {
+                    OpenRouterClient.recordSpokenLine(result.message());
+                    addVoiceReply(result.message(), trace, "pet_location");
+                }
+            });
+        });
+    }
+
+    private static void answerPet(java.util.UUID companionId, CompanionPet kind, long workId, String answer) {
+        var client = Minecraft.getInstance();
+        var server = client.getSingleplayerServer();
+        if (client.player == null || server == null || client.level == null) return;
+        var playerId = client.player.getUUID();
+        var dimension = client.level.dimension();
+        server.execute(() -> {
+            var player = server.getPlayerList().getPlayer(playerId);
+            if (player != null && dimension.equals(player.level().dimension()))
+                dev.aicompanion.entity.CompanionEvents.answerPetQuestion(player, companionId, kind, workId, answer);
+        });
     }
 
     private static void runLocalActions(List<PlannedAction> actions, String trace) {
@@ -398,6 +469,11 @@ public final class CompanionChatScreen extends Screen {
     public static void autonomousReply(String text, String trace, boolean voiced) {
         OpenRouterClient.recordSpokenLine(text);
         addVoiceReply(text, trace, "autonomous", voiced);
+    }
+
+    static void petReport(String text, boolean voiced) {
+        OpenRouterClient.recordSpokenLine(text);
+        addVoiceReply(text, CompanionDiagnostics.newTrace(), "pet_reply", voiced);
     }
 
     /** A topic of his own: unlike a remark on an event, it goes to the memory journal with the player's answers to it. */

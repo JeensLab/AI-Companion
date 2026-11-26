@@ -32,6 +32,7 @@ public final class CompanionEvents {
     }
 
     public static void onEntityJoin(EntityJoinLevelEvent event) {
+        CompanionPetBonds.joined(event);
         if (!event.getLevel().isClientSide() && event.getEntity() instanceof net.minecraft.world.entity.monster.Creeper creeper)
             CompanionHostiles.join(creeper);
         if (!(event.getEntity() instanceof CompanionEntity companion) || companion.getOwnerId() == null) return;
@@ -53,6 +54,36 @@ public final class CompanionEvents {
                 }
             }
         }
+    }
+
+    public static void onPetDeath(net.neoforged.neoforge.event.entity.living.LivingDeathEvent event) {
+        if (!event.isCanceled()) CompanionPetBonds.died(event);
+    }
+
+    static CompanionEntity loadedCompanion(ServerLevel level, UUID owner, UUID previous) {
+        var player = level.getServer().getPlayerList().getPlayer(owner);
+        UUID id = player != null && player.getPersistentData().hasUUID(CANONICAL_COMPANION)
+                ? player.getPersistentData().getUUID(CANONICAL_COMPANION) : previous;
+        return id != null && level.getEntity(id) instanceof CompanionEntity companion
+                && companion.isAlive() && owner.equals(companion.getOwnerId()) ? companion : null;
+    }
+
+    public static void answerPetQuestion(ServerPlayer player, UUID companionId, CompanionPet kind, long workId, String answer) {
+        var companion = loadedCompanion(player.serverLevel(), player.getUUID(), companionId);
+        if (companion == null || !companion.getUUID().equals(companionId)) return;
+        var pet = companion.work.activePet;
+        if (pet == null || pet.kind != kind) return;
+        if (workId == 0 && "cancel".equals(answer)) {
+            companion.stopGatheringForPlayer();
+            companion.petSay(pet.cancelLine());
+        } else pet.answer(workId, answer);
+    }
+
+    public static void switchPetQuestion(ServerPlayer player, CompanionPet requested) {
+        var companion = getOwnedCompanion(player);
+        if (companion == null || companion.level() != player.level()) return;
+        var pet = companion.work.activePet;
+        if (pet != null && pet.kind != requested) pet.dismissQuestion();
     }
 
     public static void registerCommands(RegisterCommandsEvent event) {
@@ -278,6 +309,7 @@ public final class CompanionEvents {
 
     public static CompanionActionResult executeAction(ServerPlayer player, String action, String item, int count, String slot, String trace, String location) {
         dev.aicompanion.CompanionDiagnostics.event(trace, "server_dispatch", "action", action, "item", item, "count", count, "slot", slot);
+        if ("pet_location".equals(action)) return petLocation(player, item, count);
         CompanionEntity companion = resolveCanonical(player, true);
         // On the errand in the Nether the plan's own steps reach him there with the player in the overworld (CompanionErrand); any other order is answered there.
         if (companion != null && companion.level() != player.level() && companion.errand.away() && !companion.errand.runs(action)) return companion.errand.orderAway(action);
@@ -285,6 +317,10 @@ public final class CompanionEvents {
             dev.aicompanion.CompanionDiagnostics.event(trace, "server_rejected", "reason", "companion_unloaded_or_other_dimension");
             return CompanionActionResult.failed("Компаньон не загружен рядом с тобой.");
         }
+        if ("cat_status".equals(action) || "dog_status".equals(action))
+            return companion.work.pet(action.equals("cat_status") ? CompanionPet.CAT : CompanionPet.DOG).status(player.serverLevel());
+        if ("walk_heading".equals(action) && companion.work.activePet != null && companion.work.activePet.waitingForVillage())
+            return CompanionActionResult.failed("Сначала ответь, идём ли искать деревню.");
         // An order of the player comes before the walk back for his own things too: the walk gives way and waits (CompanionDeathTrip).
         // An order of his own (a goal step, a deed), naming the home and asking about a goal are not orders.
         if (!autonomousDispatch && !goalDispatch && !action.equals("set_home") && !action.equals("remember_place") && !action.equals("goal_status")
@@ -344,6 +380,8 @@ public final class CompanionEvents {
             case "place_block" -> companion.startWork("place_block", item, count, location);
             case "gather_stone", "gather_dirt", "gather_loose", "store_items", "take_items", "sort_chests", "build_house", "build_pen", "breed_animals", "scout_traders", "trade_items", "fill_bucket", "mine_obsidian", "gather_block", "hunt_drop", "compost_meal", "build_portal", "build_cobble_gen", "build_golem", "disenchant_item", "compost_items",
                  "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block", "nether_go", "nether_back", "fish" -> companion.startWork(action, item, count, location);
+            case "tame_cat", "find_cat", "sit_cat", "follow_cat", "tame_dog", "find_dog", "sit_dog", "follow_dog" ->
+                    companion.startWork(action, item, count, location);
             case "hunt_mobs" -> {
                 companion.setFollowing(false);
                 yield companion.startWork(action, item, count);
@@ -417,6 +455,27 @@ public final class CompanionEvents {
         if (wasWorking && companion.hasActiveWorkOrder() && (!dispatchResult.success() || action.equals("equip_item") || action.equals("unequip_item")))
             companion.diagnosticBind(previousTrace);
         return dispatchResult;
+    }
+
+    private static CompanionActionResult petLocation(ServerPlayer player, String item, int count) {
+        if (count != 1 || item == null || !Set.of("cat", "dog", "all").contains(item))
+            return CompanionActionResult.failed("Не понял, о каком питомце ты спрашиваешь.");
+        var server = player.getServer();
+        var locations = new ArrayList<String>();
+        for (var kind : CompanionPet.values()) {
+            if (!item.equals("all") && !item.equals(kind.id)) continue;
+            var lastSeen = CompanionPetBonds.get(server, kind).lastSeen(server, player.getUUID());
+            if (lastSeen != null) {
+                locations.add("Последний раз я видел " + kind.whom + " у " + lastSeen.pos().toShortString()
+                        + ", измерение " + lastSeen.dimension().location() + ".");
+            }
+        }
+        if (!locations.isEmpty()) return CompanionActionResult.ok(String.join(" ", locations));
+        return CompanionActionResult.ok(switch (item) {
+            case "cat" -> "Своего кота у меня пока нет.";
+            case "dog" -> "Своей собаки у меня пока нет.";
+            default -> "Своих питомцев у меня пока нет.";
+        });
     }
 
     /** True while a deed of his own is being given (not an order of the player: it does not end itself). Server thread only. */

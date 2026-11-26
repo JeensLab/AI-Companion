@@ -9,6 +9,7 @@ import net.minecraft.world.entity.ai.attributes.DefaultAttributes;
 import java.util.Optional;
 
 final class CompanionEntityNbt {
+    private static final String PET_STARTER_BAIT_GRANTED = "PetStarterBaitGranted";
     final CompanionEntity c;
 
     CompanionEntityNbt(CompanionEntity c) { this.c = c; }
@@ -31,6 +32,7 @@ final class CompanionEntityNbt {
         tag.putInt("RequestedLogs", c.requestedLogs);
         tag.putString("LastTaskResult", c.getLastTaskResult());
         tag.putInt("Satiety", c.satiety);
+        tag.putBoolean(PET_STARTER_BAIT_GRANTED, c.petStarterBaitGranted);
         ContainerHelper.saveAllItems(tag, c.companionInventory, c.level().registryAccess());
         c.playersThings.save(tag);
         c.temporaryPillar.save(tag);
@@ -84,6 +86,7 @@ final class CompanionEntityNbt {
         c.getEntityData().set(CompanionEntity.DATA_LOGS_REMAINING, c.logsRemaining);
         c.requestedLogs = Math.max(0, Math.min(64, tag.getInt("RequestedLogs")));
         c.satiety = Math.max(0, Math.min(40, tag.getInt("Satiety"))); // absent in older saves: 0
+        c.petStarterBaitGranted = tag.getBoolean(PET_STARTER_BAIT_GRANTED);
         ContainerHelper.loadAllItems(tag, c.companionInventory, c.level().registryAccess());
         c.playersThings.load(tag);
         c.recovery.load(tag);
@@ -148,7 +151,7 @@ final class CompanionEntityNbt {
         CompoundTag full = new CompoundTag(), memory = new CompoundTag();
         c.addAdditionalSaveData(full);
         for (String key : new String[]{"CompanionName", "SearchRadius", "ChunkLoading", "AutonomousSpeech", "KnownPlaces", "HomePlace", CompanionTraders.KEY, "Deeds",
-                "SmallHouse", CompanionHouse.TEMPLATE_KEY, "StorageChest", "StorageDimension", "Autonomy", CompanionGoals.KEY, "WorkSequence", CompanionFurnaceBatchNbt.KEY}) if (full.contains(key)) memory.put(key, full.get(key).copy());
+                "SmallHouse", CompanionHouse.TEMPLATE_KEY, "StorageChest", "StorageDimension", "Autonomy", PET_STARTER_BAIT_GRANTED, CompanionGoals.KEY, "WorkSequence", CompanionFurnaceBatchNbt.KEY}) if (full.contains(key)) memory.put(key, full.get(key).copy());
         return memory;
     }
 
@@ -157,6 +160,7 @@ final class CompanionEntityNbt {
         if (memory.contains("SearchRadius")) c.setSearchRadius(memory.getInt("SearchRadius"));
         c.chunkLoading = !memory.contains("ChunkLoading") || memory.getBoolean("ChunkLoading");
         c.autonomousSpeech = !memory.contains("AutonomousSpeech") || memory.getBoolean("AutonomousSpeech");
+        c.petStarterBaitGranted = memory.getBoolean(PET_STARTER_BAIT_GRANTED);
         c.deeds.load(memory); c.places.load(memory); c.traders().load(memory); c.refreshTraders(); c.work.load(memory); c.batches().load(memory); c.autonomy.load(memory); c.refreshPlaces();
         c.goals.load(memory);
         c.noteDeed("Вернулся к тебе после гибели. Вещи, что были при мне, остались там, где я погиб.", true);

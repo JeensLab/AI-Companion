@@ -30,7 +30,8 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     public static final int WORK_LIMIT_SECONDS = 660;
     public static final int GATHER_LIMIT_SECONDS = 185;
     private static final Set<String> TRACKED_WORK = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests",
-            "build_house", "craft_item", "place_block", "come", "hunt_mobs", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "collect_smelt", "build_pen", "breed_animals", "scout_traders", "trade_items", "farm_crops", "harvest_crops", "use_bone_meal", "compost_meal", "walk_heading", "fill_bucket", "mine_obsidian", "gather_block", "hunt_drop", "build_portal", "build_cobble_gen", "build_golem", "pick_up", "go_to_place", "disenchant_item", "compost_items", "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block", "nether_go", "nether_back");
+            "build_house", "craft_item", "place_block", "come", "hunt_mobs", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "collect_smelt", "build_pen", "breed_animals", "scout_traders", "trade_items", "farm_crops", "harvest_crops", "use_bone_meal", "compost_meal", "walk_heading", "fill_bucket", "mine_obsidian", "gather_block", "hunt_drop", "build_portal", "build_cobble_gen", "build_golem", "pick_up", "go_to_place", "disenchant_item", "compost_items", "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block", "nether_go", "nether_back",
+            "tame_cat", "find_cat", "sit_cat", "tame_dog", "find_dog", "sit_dog");
     private static final Set<String> PARKABLE_WORK = Set.of("smelt_items", "collect_smelt");
     /** A leaf order's refusals: no leaf of any tree he can come at, a crown above him that only soil would let him reach, or one too high for even a full column. */
     private static final String NO_LEAVES = "Рядом листвы не вижу.";
@@ -352,6 +353,9 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
         if ("collect_smelt".equals(action.type())) return WORK_LIMIT_SECONDS + 10 * 64 + 120 + 180;
         // A walk until «стоп» ends on the server by its own bound (CompanionCourse.LIMIT_SECONDS).
         if ("walk_heading".equals(action.type())) return dev.aicompanion.entity.CompanionCourse.LIMIT_SECONDS + 120;
+        if (("tame_cat".equals(action.type()) || "tame_dog".equals(action.type()))
+                && dev.aicompanion.entity.CompanionCourse.petVillageCourse(action.item()) != null)
+            return dev.aicompanion.entity.CompanionCourse.LIMIT_SECONDS + WORK_LIMIT_SECONDS + 60;
         // Fishing until «стоп» the same (CompanionFishing.LIMIT_SECONDS).
         if ("fish".equals(action.type())) return dev.aicompanion.entity.CompanionFishing.LIMIT_SECONDS + 120;
         // A scout of a remembered village: the walk there has its own eight minutes on the server, the round three more (CompanionScouting).

@@ -206,7 +206,7 @@ public final class CompanionEndCrystals {
     /** Someone the blast would hurt is near the crystal: a player, Oleg himself or another, a pet of his player. */
     private boolean nearBlast() {
         return !c.level().getEntitiesOfClass(LivingEntity.class, crystal.getBoundingBox().inflate(BLAST), one -> one.isAlive() && !one.isSpectator()
-                && (one instanceof Player || one instanceof CompanionEntity || one instanceof OwnableEntity pet && c.ownerId != null
+                && (one instanceof Player || one instanceof CompanionEntity || CompanionPetBonds.belongsTo(c, one) || one instanceof OwnableEntity pet && c.ownerId != null
                 && c.ownerId.equals(pet.getOwnerUUID())) && one.distanceTo(crystal) < BLAST).isEmpty();
     }
 

@@ -59,7 +59,10 @@ final class CompanionAmbientClient {
         lineSerial = serial;
         String text = speaker.autonomyLine();
         if (text.isBlank() || client.level.getGameTime() - speaker.autonomyLineTime() > 200) return;
-        CompanionChatScreen.autonomyLine(text);
+        if (speaker.isPetLine()) {
+            // A question about the pet's bait can arrive while the acknowledgement is still playing.
+            CompanionChatScreen.petReport(text, !client.isPaused() && CompanionVoiceAudio.audible(speaker));
+        } else CompanionChatScreen.autonomyLine(text);
     }
     private static net.minecraft.world.phys.Vec3 lastSpot;
     private static long sampledAt, travelUntil, idleSince;

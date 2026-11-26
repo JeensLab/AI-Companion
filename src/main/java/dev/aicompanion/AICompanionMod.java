@@ -57,6 +57,7 @@ public final class AICompanionMod {
         modEventBus.addListener(CompanionEntity::createAttributes);
         NeoForge.EVENT_BUS.addListener(CompanionEvents::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(CompanionEvents::onEntityJoin);
+        NeoForge.EVENT_BUS.addListener(net.neoforged.bus.api.EventPriority.LOWEST, CompanionEvents::onPetDeath);
         NeoForge.EVENT_BUS.addListener(CompanionEvents::onLivingDrops);
         NeoForge.EVENT_BUS.addListener(CompanionEvents::onFarmlandTrample);
         NeoForge.EVENT_BUS.addListener(net.neoforged.bus.api.EventPriority.LOWEST, CompanionEvents::onBlockPlaced);

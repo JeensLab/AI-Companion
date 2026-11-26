@@ -1,20 +1,26 @@
 package dev.aicompanion.client;
 
 import dev.aicompanion.entity.CompanionContainers;
+import dev.aicompanion.entity.CompanionCourse;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 /** Preserve explicit placement constraints even when a provider omits fields or whole conjuncts.
  * Only a positive placement imperative enables supplementation; questions and negations never do. */
 public final class CompanionPlanRequirements {
+    private static final Pattern CAT_WORD = Pattern.compile("(?U)\\b(?:кот(?:а|у|ом|е|ы|ов)?|ката|котик\\p{L}*|котен\\p{L}*|котят\\p{L}*|кошк\\p{L}*|кошеч\\p{L}*)\\b");
+    private static final Pattern DOG_WORD = Pattern.compile("(?U)\\b(?:пес|пс[аеуы]|псом|собак\\p{L}*|собач\\p{L}*|волк\\p{L}*|волч\\p{L}*|щен\\p{L}*)\\b");
+    private static final Pattern JOINT_SEARCH = Pattern.compile("(?U)\\b(?:пойдем|пошли|идем|погнали|сходим|поищем|давай(?:те)?(?:-ка)? (?:искать|поискать))\\b");
     private CompanionPlanRequirements() { }
 
     public static CompanionReply apply(String request, CompanionReply decoded) {
         // A long goal is the whole plan: the wording of the request adds no step beside it.
         if (decoded.actions().stream().anyMatch(step -> step.type().equals("pursue_goal"))) return decoded;
         String text = request.toLowerCase(Locale.ROOT).replace('ё', 'е');
+        decoded = protectPetVillageTrip(text, decoded);
         decoded = recipientsAndScope(text, decoded);
         decoded = smeltEverything(text, decoded);
         decoded = harvestEverything(text, decoded);
@@ -54,6 +60,32 @@ public final class CompanionPlanRequirements {
         if (result.equals(decoded.actions())) return decoded;
         return result.isEmpty() ? decoded : new CompanionReply(CompanionDialogue.acknowledge(result, decoded.repeat()), List.copyOf(result), decoded.repeat());
     }
+
+    private static CompanionReply protectPetVillageTrip(String text, CompanionReply decoded) {
+        var steps = decoded.actions();
+        var tame = steps.stream().filter(step -> step.type().equals("tame_cat") || step.type().equals("tame_dog")).findFirst().orElse(null);
+        String petAction;
+        if (tame != null) petAction = tame.type();
+        else if (CAT_WORD.matcher(text).find()) petAction = "tame_cat";
+        else if (DOG_WORD.matcher(text).find()) petAction = "tame_dog";
+        else return decoded;
+        var walk = steps.stream().filter(step -> step.type().equals("walk_heading")).findFirst().orElse(null);
+        if (walk == null && (tame == null || CompanionCourse.petVillageCourse(tame.item()) != null || !JOINT_SEARCH.matcher(text).find()))
+            return decoded;
+
+        // A model-selected compass heading is an offer. Only the server's pending question can turn it into a walk.
+        String proposal = walk == null ? "village" : "village:" + walk.item().split(":", 2)[0];
+        var result = new ArrayList<PlannedAction>();
+        boolean placed = false;
+        for (var step : steps) {
+            if (step.type().equals("walk_heading") || step.type().equals(petAction)) {
+                if (!placed) result.add(new PlannedAction(petAction, 0, 1, proposal));
+                placed = true;
+            } else result.add(step);
+        }
+        return new CompanionReply(CompanionDialogue.acknowledge(result), List.copyOf(result));
+    }
+
     private static final String TOOL = ".*_(pickaxe|axe|shovel|sword|hoe|helmet|chestplate|leggings|boots)";
 
     /**

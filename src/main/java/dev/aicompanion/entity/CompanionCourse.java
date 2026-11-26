@@ -111,7 +111,7 @@ public final class CompanionCourse {
     private CompanionGame.Kind animal;
     private double startX, startZ, dirX, dirZ, best;
     private int blocks, aside, failed;
-    private BlockPos point;
+    private BlockPos point, villageApproach;
     private long began, lastAdvance, waitingSince, nextScan;
     /** The eye's walk: where it flies, eyes thrown so far, whether the last was thrown over the place, ways laid anew to it. */
     private BlockPos goal;
@@ -146,6 +146,20 @@ public final class CompanionCourse {
         return heading == null ? "" : "на " + heading.name;
     }
 
+    /** A pet search may carry the proposed heading. The direction alone never starts a walk. */
+    public static String petVillageCourse(String item) {
+        if ("village".equals(item)) return "south:village";
+        if (item == null || !item.startsWith("village:")) return null;
+        String heading = item.substring("village:".length());
+        return HEADINGS.containsKey(heading) ? heading + ":village" : null;
+    }
+
+    static boolean atVillage(ServerLevel level, CompanionEntity owner) {
+        return level.structureManager().getStructureWithPieceAt(owner.blockPosition(), StructureTags.VILLAGE).isValid()
+                || !level.getEntitiesOfClass(Villager.class, owner.getBoundingBox().inflate(8),
+                        villager -> villager.isAlive() && owner.distanceToSqr(villager) <= 8 * 8).isEmpty();
+    }
+
     /** {@code count}: blocks to walk, 0 for «until told to stop». Null when it can begin, else the refusal. */
     CompanionActionResult begin(String item, int count) {
         if (!valid(item)) return CompanionActionResult.failed("Не понял направление: север, юг, запад, восток или между ними.");
@@ -170,12 +184,12 @@ public final class CompanionCourse {
         double length = Math.hypot(heading.x, heading.z);
         dirX = heading.x / length; dirZ = heading.z / length;
         startX = w.owner.getX(); startZ = w.owner.getZ();
-        blocks = count; best = 0; aside = 0; failed = 0; point = null; closed = null;
+        blocks = count; best = 0; aside = 0; failed = 0; point = villageApproach = null; closed = null;
         began = lastAdvance = nextScan = w.owner.level().getGameTime(); waitingSince = -1;
         return null;
     }
 
-    void cancel() { heading = null; point = null; goal = null; }
+    void cancel() { heading = null; point = villageApproach = null; goal = null; }
 
     String jobName() { return goal != null ? "путь к крепости Края" : heading == null ? "путь" : "путь на " + heading.name; }
 
@@ -301,10 +315,21 @@ public final class CompanionCourse {
             else w.finish(true, "Идём на " + heading.name + " уже двадцать минут, остановился передохнуть.");
             return;
         }
-        // What was in sight at the start is not what was looked for: «пока не найдём воду» by a pond means another water.
-        if (target != null && now >= nextScan && along >= SCAN_RADIUS) {
+        boolean petTrip = w.activePet != null && "village".equals(target);
+        // Ordinary courses skip what was in sight at the start. The pet search begins as soon as they enter a village.
+        if (target != null && now >= nextScan && (petTrip || along >= SCAN_RADIUS)) {
             nextScan = now + 20;
-            if (found(level)) { w.route.stop(); w.finish(true, "Нашли " + (animal != null ? animal.many : TARGETS.get(target)) + ", вон там."); return; }
+            if (petTrip) {
+                if (atVillage(level, owner)) { w.beginPetSearchInVillage(level); return; }
+                if (villageApproach == null) {
+                    villageApproach = level.getEntitiesOfClass(Villager.class, owner.getBoundingBox().inflate(SCAN_RADIUS, 8, SCAN_RADIUS),
+                                    Villager::isAlive).stream().min(java.util.Comparator.comparingDouble(owner::distanceToSqr))
+                            .map(Villager::blockPosition).orElse(null);
+                    if (villageApproach != null) { owner.travel().reset(); point = null; lastAdvance = now; }
+                }
+            } else if (found(level)) {
+                w.route.stop(); w.finish(true, "Нашли " + (animal != null ? animal.many : TARGETS.get(target)) + ", вон там."); return;
+            }
         }
         if (owner.fighting()) { lastAdvance = now; return; }
         var player = owner.getOwnerPlayer();
@@ -325,6 +350,18 @@ public final class CompanionCourse {
             return;
         }
         if (waitingSince >= 0) { waitingSince = -1; owner.workStatus("Веду на " + heading.name + "."); }
+        if (villageApproach != null) {
+            var step = w.route.legs(villageApproach, 5);
+            if (step == CompanionTravel.Step.NEAR) {
+                w.route.legsEnd(true);
+                if (atVillage(level, owner)) w.beginPetSearchInVillage(level);
+                else villageApproach = null;
+            } else if (step == CompanionTravel.Step.FAILED) {
+                w.route.legsEnd(false);
+                w.finish(false, "Вижу жителя, но до деревни добраться не удалось.");
+            }
+            return;
+        }
         if (now - lastAdvance > STUCK_TICKS) { closedWay(level, along); return; }
         if (point == null) {
             point = nextPoint(level, along);

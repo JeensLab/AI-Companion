@@ -1,5 +1,6 @@
 package dev.aicompanion;
 
+import dev.aicompanion.entity.CompanionPet;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 /** Client-local settings for the OpenRouter connection and companion personality. */
@@ -14,6 +15,15 @@ public final class OpenRouterConfig {
             .comment("Maximum independent resource-search and roaming distance, in loaded chunks.")
             .defineInRange("searchRadius", 64, 16, 128);
     public static final ModConfigSpec.BooleanValue AUTONOMOUS_SPEECH = BUILDER.define("autonomousSpeech", true);
+    public static final ModConfigSpec.BooleanValue PET_CAT = BUILDER.define("petCat", true);
+    public static final ModConfigSpec.BooleanValue PET_DOG = BUILDER.define("petDog", true);
+    public static final ModConfigSpec.IntValue PET_SEARCH_RADIUS = BUILDER
+            .comment("How far Oleg looks for stray cats and wild wolves in loaded chunks, in blocks.")
+            .defineInRange("catSearchRadius", CompanionPet.DEFAULT_SEARCH_RADIUS,
+                    CompanionPet.MIN_SEARCH_RADIUS, CompanionPet.MAX_SEARCH_RADIUS);
+    public static final ModConfigSpec.BooleanValue PET_STARTER_BAIT = BUILDER
+            .comment("Give Oleg three raw salmon and three bones once per world.")
+            .define("petStarterBait", false);
     public static final ModConfigSpec.BooleanValue JOKES = BUILDER
             .comment("Occasional short local jokes in quiet moments, without a model request.")
             .define("jokes", true);
