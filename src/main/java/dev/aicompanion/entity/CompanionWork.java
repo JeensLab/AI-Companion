@@ -188,6 +188,8 @@ public final class CompanionWork {
     String dropId() { return ore == null ? "" : BuiltInRegistries.ITEM.getKey(ore.drop).toString(); }
     /** How many of that drop the bag really holds: a block that makes it counts for what it gives (a redstone block is nine). */
     int oreHeld() { return ore == null ? 0 : owner.carriedOfDrop(dropId()); }
+    /** Whether the bag already holds the promise: the drop itself (the cheap count first), or a block that makes it. */
+    boolean oreMet() { return items.countCarried(ore.drop) >= oreWanted || oreHeld() >= oreWanted; }
     CompanionOre.Search oreSearch;
     List<BlockPos> oreCandidates;
     final Set<BlockPos> oreRejected = new HashSet<>();

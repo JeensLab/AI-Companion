@@ -113,7 +113,7 @@ final class CompanionOreMining {
     void mineOre(ServerLevel level) {
         // The bag answers, not the blocks broken: a drop it holds in the promise met is the order done, and a block that makes
         // the item counts for what it gives (the owner, 26.11: the ore mined, its drop picked up, and «с этим пока не справился»).
-        if (w.oreDone || w.oreMined >= w.oreWanted || (!w.ironPrep && w.oreHeld() >= w.oreWanted)) {
+        if (w.oreDone || w.oreMined >= w.oreWanted || (!w.ironPrep && w.oreMet())) {
             w.oreDone = true;
             // The way's own column comes down before the drop is looked for (PATH7): he steps down dismantling it behind him,
             // and a bridge of his stays standing as any bridge does. The pickup waits while the way is his.

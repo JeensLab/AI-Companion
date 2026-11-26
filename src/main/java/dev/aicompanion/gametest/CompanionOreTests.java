@@ -382,6 +382,9 @@ public final class CompanionOreTests {
             String report = future.join().report();
             h.assertTrue(!report.contains("План остановлен") && !report.contains("Часть не вышла"), "The met order failed: " + report);
             h.assertTrue(count(companion, Items.REDSTONE) == 4, "The bag changed: " + count(companion, Items.REDSTONE) + ", " + report);
+            // The line is the bag's own count, not «С рудой закончил» over an order nothing was dug for.
+            String said = CompanionDialogue.summarize(actions, report);
+            h.assertTrue(said.contains("4") && !said.contains("не справился"), "The met order was not said with its count: " + said);
             h.assertBlockPresent(Blocks.REDSTONE_ORE, ore);
             h.assertTrue(damage(companion, Items.IRON_PICKAXE) == 0, "A pickaxe was worn for nothing: " + report);
         });
@@ -402,6 +405,31 @@ public final class CompanionOreTests {
             h.assertTrue(!report.contains("План остановлен") && !report.contains("Часть не вышла"), "The nine redstone of the block were not counted: " + report);
             h.assertTrue(count(companion, Items.REDSTONE_BLOCK) == 1, "The redstone block left the bag: " + report);
             h.assertBlockPresent(Blocks.REDSTONE_ORE, ore);
+        });
+    }
+
+    /**
+     * The owner's exact scene (26.11): a redstone block lies about and «добудь 4 редстоуна» was asked. The block is the order —
+     * it is taken as one block, and its nine redstone are what the bag holds; the line is «Собрал: «Блок редстоуна», 1 шт.»,
+     * never «1 из 4» and never «с этим пока не справился».
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void aRedstoneBlockLyingAboutIsTheWholeOrder(GameTestHelper h) {
+        CompanionEntity companion = flat(h);
+        BlockPos block = new BlockPos(20, 1, 16);
+        h.setBlock(block, Blocks.REDSTONE_BLOCK);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        var actions = CompanionLocalCommands.actions("companion work mine_ore 4 minecraft:redstone_ore");
+        var future = say(h, companion, actions);
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + companion.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(companion, Items.REDSTONE_BLOCK) == 1, "The block lying about is not in the bag: " + report);
+            h.assertTrue(!report.contains("План остановлен") && !report.contains("Часть не вышла"), "Failed over the block: " + report);
+            h.assertTrue(!report.contains("из 4"), "The four redstone were promised over one block: " + report);
+            String said = CompanionDialogue.summarize(actions, report);
+            h.assertTrue(!said.contains("не справился") && !said.contains("из 4"), "The player heard: " + said);
+            h.assertBlockPresent(Blocks.AIR, block);
         });
     }
 

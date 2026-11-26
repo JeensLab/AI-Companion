@@ -265,10 +265,12 @@ final class CompanionBag {
      */
     int carriedOfDrop(ServerLevel level, net.minecraft.world.item.Item wanted) {
         int have = 0;
+        List<CompanionPickable.Source> storage = null;
         for (ItemStack stack : carriedForPlan()) {
             if (stack.isEmpty()) continue;
             if (stack.is(wanted)) { have += stack.getCount(); continue; }
-            for (CompanionPickable.Source source : CompanionPickable.storage(level, wanted))
+            if (storage == null) storage = CompanionPickable.storage(level, wanted);
+            for (CompanionPickable.Source source : storage)
                 if (stack.is(source.block().asItem())) { have += stack.getCount() * source.yield(); break; }
         }
         return have;

@@ -561,7 +561,7 @@ public final class CompanionDialogue {
             var kind = dev.aicompanion.entity.CompanionOre.Kind.of(ore.get().item());
             String what = kind == null ? "руды" : kind.genitive;
             String still = report.contains("Наверх пока не выбрался") ? " Я пока внизу, в своём ходе." : "";
-            if (blocks <= 0) return "С рудой закончил." + still;
+            if (blocks <= 0) return report.contains("» у меня: ") ? speakable(last) : "С рудой закончил." + still;
             return (blocks == 1 ? "Готово, накопал " + what + " — один блок руды." : "Готово, накопал " + what + ": " + blocks(blocks) + " руды.") + still;
         }
         if (actions.stream().anyMatch(action -> "gather_wood".equals(action.type()))) {
