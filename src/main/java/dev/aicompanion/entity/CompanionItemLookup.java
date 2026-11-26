@@ -119,6 +119,19 @@ public final class CompanionItemLookup {
     public static String groupFor(String phrase, Function<Item, String> names) {
         List<Item> tied = resolve(phrase, names);
         if (tied.size() < 2) return null;
+        // A kind is one and the same name but for one word: «еловый забор» and «дубовый забор» are fences, while «тыква» and
+        // «вырезанная тыква» are one thing and its carving, and «ведро» and «ведро воды» one thing and its filling — the
+        // plainer name is the answer there, as it always was.
+        int words = -1;
+        java.util.Set<String> shared = null;
+        for (Item item : tied) {
+            List<String> name = words(names.apply(item));
+            if (name.isEmpty()) return null;
+            if (words == -1) { words = name.size(); shared = new java.util.HashSet<>(name); }
+            else if (name.size() != words) return null;
+            else shared.retainAll(name);
+        }
+        if (shared.size() < words - 1) return null;
         java.util.Set<TagKey<Item>> common = null;
         for (Item item : tied) {
             java.util.Set<TagKey<Item>> tags = BuiltInRegistries.ITEM.wrapAsHolder(item).tags().collect(java.util.stream.Collectors.toSet());
