@@ -31,7 +31,7 @@ final class CompanionWorkCrafting {
     void craftRequested() {
         if (w.cutter != null && approachCutter()) return;
         // At the stonecutter the order counted on, the bench of the plain recipe is not walked to.
-        if (w.cutter == null && needsWorkbench(w.requestedItem) && approachCraftingTable()) return;
+        if (w.cutter == null && needsWorkbench(w.requestedItem) && approachCraftingTable(!w.craftOnly)) return;
         if (!w.items.moveHandMaterialsToBag()) return;
         int remainder = w.owner.goals().craftRemainder(w.taskId);
         if (remainder == 0) { w.finish(true, "Нужные пригодные кирки уже есть."); return; }
@@ -161,7 +161,10 @@ final class CompanionWorkCrafting {
         return CompanionCrafting.needsBench(level, targetItem);
     }
 
-    boolean approachCraftingTable() {
+    boolean approachCraftingTable() { return approachCraftingTable(true); }
+
+    /** {@code woodFollows}: the order goes for wood after this (a craft only from the bag, a composter or a grindstone do not, so a tree in sight is no wood for them). */
+    boolean approachCraftingTable(boolean woodFollows) {
         // Afloat he goes on, as to the stonecutter (game 15.11, a pit under dark oak crowns: 90 s of «Сейчас подготовлюсь»).
         if (!w.owner.onGround() && !w.owner.isInWater()) return true;
         if (!(w.owner.level() instanceof ServerLevel level) || w.owner.hasCraftingTableNearby()) return false;
@@ -187,7 +190,7 @@ final class CompanionWorkCrafting {
                 // would, rather than refusing a craft the bag can do (the owner, 20.11: «сделай лопату мне» over a bench
                 // remembered across a wall and two logs in the bag). With the bag empty, a tree in sight does the same: he cuts it
                 // first (a bench seen over the edge of the next GameTest arena ended the house order with the oak beside him).
-                if (!atHand && (hasWoodForABench() || woodInSight(level))) return useOwnBench("к известному верстаку сейчас нет пути");
+                if (!atHand && (hasWoodForABench() || woodFollows && woodInSight(level))) return useOwnBench("к известному верстаку сейчас нет пути");
                 if (atHand) { w.finish(false, "Помню верстак в двух шагах, но пройти к нему сейчас не могу. Вещи сохранил."); return true; }
                 w.finish(false, "Помню верстак неподалёку, но пройти к нему сейчас не могу, а дерева на новый не хватает."); return true;
             }

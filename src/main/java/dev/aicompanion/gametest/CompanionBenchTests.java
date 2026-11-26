@@ -38,25 +38,50 @@ public final class CompanionBenchTests {
         });
     }
 
-    /**
-     * The bench of a neighbouring test arena stands twelve blocks beyond the edge of his own: within his sight, with no way to it.
-     * With an empty bag the house order ended «Помню верстак неподалёку, но пройти к нему сейчас не могу, а дерева на новый не
-     * хватает» instead of cutting the tree beside him.
-     */
-    @GameTest(template = "tall_tree", timeoutTicks = 1200)
-    public static void benchBeyondTheEdgeOfTheArenaDoesNotStopTheHouseFromAnEmptyBag(GameTestHelper h) {
+    /** Where the sealed bench of the next two tests stands: six blocks east of him, shut in bedrock on every side, so that no way leads to it. */
+    private static final BlockPos SEALED = new BlockPos(22, 2, 3);
+
+    /** At the north edge of the arena, an oak beside him and a bench he remembers (it is seen, as the neighbouring arena's was) but cannot reach. */
+    private static CompanionEntity sealedBenchAndAnOak(GameTestHelper h) {
         CompanionEntity companion = CompanionHouseTests.groundedSetup(h);
         CompanionHouseTests.noTrees(h);
         CompanionHouseTests.tools(companion);
         CompanionHouseTests.playerAway(h);
-        // He stands at the north edge of his arena with an oak beside him; the bench is twelve blocks past the edge, in the arena next door.
         BlockPos start = h.absolutePos(new BlockPos(16, CompanionHouseTests.GROUND + 1, 3));
         companion.teleportTo(start.getX() + .5, start.getY(), start.getZ() + .5);
         for (int y = 2; y <= 5; y++) h.setBlock(new BlockPos(20, y, 4), Blocks.OAK_LOG);
         for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(19, 5, 3), new BlockPos(21, 6, 5))) if (h.getBlockState(pos).isAir()) h.setBlock(pos, Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT, true));
-        h.getLevel().setBlock(h.absolutePos(new BlockPos(16, 2, -9)), Blocks.CRAFTING_TABLE.defaultBlockState(), 3);
-        h.assertTrue(companion.startWork("build_house", "", 1).success(), "House work rejected");
-        h.succeedWhen(() -> h.assertTrue(count(companion, Items.OAK_LOG) > 0, "No log cut yet: " + companion.getLastTaskResult()));
+        h.setBlock(SEALED, Blocks.CRAFTING_TABLE);
+        companion.rememberPlaced(h.absolutePos(SEALED));
+        for (net.minecraft.core.Direction side : net.minecraft.core.Direction.values()) h.setBlock(SEALED.relative(side), Blocks.BEDROCK);
+        return companion;
+    }
+
+    /**
+     * A bench he remembers but no way leads to (in the game a table behind a wall, in the tests the next arena's, seen over the edge),
+     * an empty bag and an oak beside him: the order ended «Помню верстак неподалёку, но пройти к нему сейчас не могу, а дерева на новый
+     * не хватает» instead of cutting the tree. Now he cuts it and makes the pickaxe (a 3×3 recipe: at a bench of his own).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void unreachableBenchDoesNotStopTheOrderFromAnEmptyBagBesideATree(GameTestHelper h) {
+        CompanionEntity companion = sealedBenchAndAnOak(h);
+        h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "craft_item", "minecraft:wooden_pickaxe", 1).success(), "Craft order refused");
+        h.succeedWhen(() -> {
+            h.assertTrue(!companion.isGatheringTask() && !companion.isWorking(), "Work still active: " + companion.getLastTaskResult());
+            h.assertTrue(companion.didLastTaskSucceed() && count(companion, Items.WOODEN_PICKAXE) == 1, companion.getLastTaskResult());
+        });
+    }
+
+    /** A craft at a bench has no wood trip to follow: the tree in sight changes nothing, the refusal still names the bench, not the planks. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void unreachableBenchWithATreeInSightIsStillSaidAsTheBenchForABenchCraft(GameTestHelper h) {
+        CompanionEntity companion = sealedBenchAndAnOak(h);
+        companion.setItem(0, new ItemStack(Items.WHEAT, 3));
+        h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "craft_item", "minecraft:bread", 1).success(), "Craft order refused");
+        h.succeedWhen(() -> {
+            h.assertTrue(!companion.isGatheringTask() && !companion.isWorking(), "Work still active: " + companion.getLastTaskResult());
+            h.assertTrue(companion.getLastTaskResult().contains("Помню верстак неподалёку"), "The refusal is not the bench's: " + companion.getLastTaskResult());
+        });
     }
 
     /** A bench eight blocks away: he walks to it and makes the ladder, instead of «go to the known bench» and a list of places. */
