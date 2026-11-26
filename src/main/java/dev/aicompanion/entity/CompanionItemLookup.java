@@ -126,11 +126,19 @@ public final class CompanionItemLookup {
             else common.retainAll(tags);
             if (common.isEmpty()) return null;
         }
+        // The tag that names exactly this group is the kind asked for; else the widest tag that holds every member, so a
+        // name only some of the kind answer to (a test's stand-in language, a mod's own fence) still names the kind.
+        TagKey<Item> exact = null, widest = null;
+        long widestSize = 0;
         for (TagKey<Item> tag : common) {
             var named = BuiltInRegistries.ITEM.getTag(tag).orElse(null);
-            if (named != null && named.stream().count() == tied.size()) return "#" + tag.location();
+            if (named == null) continue;
+            long size = named.stream().count();
+            if (size == tied.size() && exact == null) exact = tag;
+            if (size > widestSize) { widestSize = size; widest = tag; }
         }
-        return null;
+        TagKey<Item> picked = exact != null ? exact : widest;
+        return picked == null ? null : "#" + picked.location();
     }
 
     /** The items a tag names («#minecraft:fences» every fence), in the registry's own order; empty for an unknown tag. */

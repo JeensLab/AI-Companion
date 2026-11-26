@@ -146,19 +146,29 @@ public final class CompanionOrderWorldFirstTests {
         for (BlockPos pos : fences) placedByPlayer(h, c, pos, Blocks.CHERRY_FENCE);
         String first = CompanionLocalCommands.route("добудь блок забора", "Олег", RU);
         h.assertTrue(first != null, "«добудь блок забора» went to the model");
-        h.assertTrue(CompanionPlanRunner.run(CompanionLocalCommands.actions(first), port(h, c)).join() != null,
-                "The first fence order did not finish");
-        h.assertTrue(count(c, Items.CHERRY_FENCE) >= 1, "The first order left no fence in the bag: " + c.getLastTaskResult());
         String command = CompanionLocalCommands.route("все такие блоки добудь что видишь", "Олег", RU);
         h.assertTrue(command != null, "«все такие блоки добудь что видишь» went to the model");
         h.assertTrue(command.startsWith("companion work obtain_item "), "The all-order is no obtain: " + command);
-        var future = CompanionPlanRunner.run(CompanionLocalCommands.actions(command), port(h, c));
-        h.succeedWhen(() -> {
-            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
-            String report = future.join().report();
-            for (BlockPos pos : fences) h.assertTrue(h.getBlockState(pos).isAir(), "A fence of the kind still stands: " + report);
-            h.assertTrue(count(c, Items.CHERRY_FENCE) >= 4, "Not every fence is in the bag: " + report);
+        int[] at = {0};
+        java.util.concurrent.atomic.AtomicReference<CompletableFuture<CompanionPlanRunner.Outcome>> future = new java.util.concurrent.atomic.AtomicReference<>();
+        h.onEachTick(() -> {
+            if (at[0] > 1) return;
+            if (future.get() == null) {
+                future.set(CompanionPlanRunner.run(CompanionLocalCommands.actions(at[0] == 0 ? first : command), port(h, c)));
+                return;
+            }
+            if (!future.get().isDone()) return;
+            String report = future.get().isCompletedExceptionally() ? "exception" : future.get().join().report();
+            if (at[0] == 0) {
+                h.assertTrue(count(c, Items.CHERRY_FENCE) >= 1, "The first order left no fence in the bag: " + report);
+            } else {
+                for (BlockPos pos : fences) h.assertTrue(h.getBlockState(pos).isAir(), "A fence of the kind still stands: " + report);
+                h.assertTrue(count(c, Items.CHERRY_FENCE) >= 4, "Not every fence is in the bag: " + report);
+            }
+            future.set(null);
+            at[0]++;
         });
+        h.succeedWhen(() -> h.assertTrue(at[0] > 1, "Still on the fence orders: " + c.getLastTaskResult()));
     }
 
     /** «Добудь блок забора» still takes the fence that stands, the measure word being no part of the rule. */
