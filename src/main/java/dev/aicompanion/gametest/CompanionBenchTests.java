@@ -38,6 +38,27 @@ public final class CompanionBenchTests {
         });
     }
 
+    /**
+     * The bench of a neighbouring test arena stands twelve blocks beyond the edge of his own: within his sight, with no way to it.
+     * With an empty bag the house order ended «Помню верстак неподалёку, но пройти к нему сейчас не могу, а дерева на новый не
+     * хватает» instead of cutting the tree beside him.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void benchBeyondTheEdgeOfTheArenaDoesNotStopTheHouseFromAnEmptyBag(GameTestHelper h) {
+        CompanionEntity companion = CompanionHouseTests.groundedSetup(h);
+        CompanionHouseTests.noTrees(h);
+        CompanionHouseTests.tools(companion);
+        CompanionHouseTests.playerAway(h);
+        // He stands at the north edge of his arena with an oak beside him; the bench is twelve blocks past the edge, in the arena next door.
+        BlockPos start = h.absolutePos(new BlockPos(16, CompanionHouseTests.GROUND + 1, 3));
+        companion.teleportTo(start.getX() + .5, start.getY(), start.getZ() + .5);
+        for (int y = 2; y <= 5; y++) h.setBlock(new BlockPos(20, y, 4), Blocks.OAK_LOG);
+        for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(19, 5, 3), new BlockPos(21, 6, 5))) if (h.getBlockState(pos).isAir()) h.setBlock(pos, Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT, true));
+        h.getLevel().setBlock(h.absolutePos(new BlockPos(16, 2, -9)), Blocks.CRAFTING_TABLE.defaultBlockState(), 3);
+        h.assertTrue(companion.startWork("build_house", "", 1).success(), "House work rejected");
+        h.succeedWhen(() -> h.assertTrue(count(companion, Items.OAK_LOG) > 0, "No log cut yet: " + companion.getLastTaskResult()));
+    }
+
     /** A bench eight blocks away: he walks to it and makes the ladder, instead of «go to the known bench» and a list of places. */
     @GameTest(template = "tall_tree", timeoutTicks = 800)
     public static void benchAFewStepsAwayIsWalkedToForAnyRecipe(GameTestHelper h) {
