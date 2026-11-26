@@ -184,6 +184,10 @@ public final class CompanionWork {
     CompanionOre.Kind ore;
     int oreWanted, oreMined, oreDropsBefore, oreFound, oreUnreachable, orePickaxeAttempts;
     boolean oreDone, oreChoosing, oreLootRetried, stoneLootRetried;
+    /** The id of the item this ore order is about, as the bag names it. */
+    String dropId() { return ore == null ? "" : BuiltInRegistries.ITEM.getKey(ore.drop).toString(); }
+    /** How many of that drop the bag really holds: a block that makes it counts for what it gives (a redstone block is nine). */
+    int oreHeld() { return ore == null ? 0 : owner.carriedOfDrop(dropId()); }
     CompanionOre.Search oreSearch;
     List<BlockPos> oreCandidates;
     final Set<BlockPos> oreRejected = new HashSet<>();
@@ -329,13 +333,13 @@ public final class CompanionWork {
     }
     /**
      * gather_block and mine_obsidian take the drop of what they broke only after stepping down their own column, dismantling it
-     * behind them (PATH7): a drop resting on the column waits for the descent. A drop on a block beside it is no column's —
-     * it is taken from where he stands, or it is out of reach once he is down (19.11).
+     * behind them (PATH7): a drop resting on the column waits while the column comes down — it falls with the soil. A column held
+     * for a drop (CompanionPillar.tickHeld) stands instead, and the drop on it is taken from its top now. A drop on a block beside
+     * the column is no column's — it is taken from where he stands, or it is out of reach once he is down (19.11).
      */
     boolean holdsDropsForItsColumn() {
         return job != null && (job == Job.OBSIDIAN || job == Job.BLOCK)
-                && (owner.temporaryPillar.isActive() || owner.temporaryPillar.isRecovering()
-                    || owner.temporaryBridge.isActive() || owner.temporaryBridge.isRecovering());
+                && (owner.temporaryPillar.isRecovering() || owner.temporaryBridge.isRecovering());
     }
 
     String currentDescription() {
@@ -589,16 +593,27 @@ public final class CompanionWork {
                 ore = CompanionOre.Kind.of(item);
                 if (ore == null) return CompanionActionResult.failed("Не понял, какую руду добыть: уголь, железо, медь, лазурит, золото, редстоун, алмазы или изумруды.");
                 if (count > MAX_ORE) return CompanionActionResult.failed("За раз добываю до " + MAX_ORE + " блоков руды.");
+                // The bag answers first: what he already holds meets the order — a block that makes the drop counts for what it
+                // gives (a redstone block is nine redstone) — and nothing is dug for it (the owner, 26.11).
+                int have = oreHeld();
+                if (have >= count) { job = Job.ORE; phase = Phase.ORE; oreWanted = count; oreDone = true; break; }
                 // A block that gives the ore's item lies about him — a lapis block is nine lapis, a gold block nine gold, even
                 // one the player set down himself: its material is taken as it lies, and the ore is dug only when no block of
                 // it is here. The one search answers first, as it does for every obtain (a lapis block in the air is no ore).
                 List<CompanionPickable.Source> storage = CompanionPickable.storage(level, ore.drop);
                 Item lying = storage.isEmpty() ? ore.drop : storage.getFirst().block().asItem();
-                if (CompanionWaySearch.available(owner, level, lying, CompanionPicking.requested(owner, level, lying)).some()) {
-                    CompanionActionResult started = picking.begin(BuiltInRegistries.ITEM.getKey(lying).toString(), Math.max(1, Math.min(count, MAX_ORE)));
+                CompanionReach.Available blocks = CompanionWaySearch.available(owner, level, lying, CompanionPicking.requested(owner, level, lying));
+                if (blocks.some()) {
+                    // The promise is what lies there, never more than the number said: one redstone block over a four-redstone
+                    // order is one block of it, and the nine it gives meet the order in the bag.
+                    CompanionActionResult started = picking.begin(BuiltInRegistries.ITEM.getKey(lying).toString(), Math.max(1, Math.min(count, blocks.count())));
                     if (started == null) { job = Job.BLOCK; phase = Phase.BLOCK; break; }
                 }
-                job = Job.ORE; phase = Phase.ORE_PICK; oreWanted = count;
+                // The promise of the mine is what the world really gives — what he carries, what lies on the ground and the blocks
+                // the one search reaches — never the number said when there is less (the owner, 26.11: «добудь редстоуна» over
+                // one block of ore is one, and the work reports that, not four). The mine's own scan grows it to what it finds.
+                int onGround = CompanionPickUp.lying(level, owner.blockPosition(), owner.pickUpRadius(), dropId(), owner.getOwnerId());
+                job = Job.ORE; phase = Phase.ORE_PICK; oreWanted = Math.max(1, Math.min(count, have + onGround + blocks.count()));
             }
             case "pick_up_nearby" -> {
                 pickUp = CompanionPickUp.of(item);
@@ -787,9 +802,10 @@ public final class CompanionWork {
      */
     private boolean stalled() {
         if (phase == Phase.COOK || awaitingHouse() != null || building() != null && building().waitingForRoom()) { stallTicks = 0; return false; }
-        // Coming down his own column, or walking to the drop of what he just broke, is not standing still (PATH7: the order
-        // stood on top of its column for ninety seconds waiting for a drop that lay below).
-        if (owner.temporaryPillar.isRecovering() || owner.temporaryBridge.isRecovering() || obsidian.waitingForHisDrop() || picking.waitingForHisDrop()) { stallTicks = 0; return false; }
+        // Coming down his own column, walking to the drop of what he just broke, or holding that column standing under the drop it
+        // was the way to, is not standing still (PATH7: the order stood on top of its column for ninety seconds waiting for a drop
+        // that lay below).
+        if (owner.temporaryPillar.isRecovering() || owner.temporaryPillar.isHeld() || owner.temporaryBridge.isRecovering() || obsidian.waitingForHisDrop() || picking.waitingForHisDrop()) { stallTicks = 0; return false; }
         long signature = progressSignature();
         boolean news = stallSeen.size() < 256 && stallSeen.add(phase + "|" + owner.getLastTaskResult());
         if (news || signature != stallSignature || stallAnchor == null || owner.position().distanceToSqr(stallAnchor) >= 2 * 2) {

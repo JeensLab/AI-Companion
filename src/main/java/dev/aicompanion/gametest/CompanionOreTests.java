@@ -362,7 +362,9 @@ public final class CompanionOreTests {
             String report = future.join().report();
             h.assertTrue(count(companion, Items.REDSTONE) >= 4, "Not four redstone: " + count(companion, Items.REDSTONE) + ", " + report);
             h.assertTrue(!report.contains("План остановлен") && !report.contains("Часть не вышла"), "Failed over four blocks: " + report);
-            for (int x = 20; x <= 23; x++) h.assertBlockPresent(Blocks.AIR, new BlockPos(x, 1, 16));
+            // The bag met the promise: a block of redstone ore gives four or five of it, so some blocks may stand — one was taken.
+            h.assertTrue(java.util.stream.IntStream.rangeClosed(20, 23).anyMatch(x -> h.getBlockState(new BlockPos(x, 1, 16)).isAir()),
+                    "No ore block was mined: " + report);
         });
     }
 

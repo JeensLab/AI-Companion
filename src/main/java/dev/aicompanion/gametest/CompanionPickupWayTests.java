@@ -117,10 +117,16 @@ public final class CompanionPickupWayTests {
     @GameTest(template = "way_wide", timeoutTicks = 2400)
     public static void theDropOfHisOwnColumnIsTakenFromIt(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
-        BlockPos stone = new BlockPos(HOME_X + 2, FEET + 5, HOME_Z);
+        BlockPos stone = new BlockPos(HOME_X + 1, FEET + 5, HOME_Z);
         h.setBlock(stone, Blocks.STONE);
         h.setBlock(stone.above(), Blocks.WHITE_WOOL);
         h.assertBlockPresent(Blocks.AIR, stone.above(2));
+        // Walls two steps from the block's own column on every side: a column to it stands within one step of the drop's cell (a
+        // foot two across cannot touch the drop at any height), so the column he stood on is the way to the drop.
+        for (int y = FEET; y <= FEET + 5; y++) {
+            for (int x = HOME_X - 1; x <= HOME_X + 3; x++) for (int z : new int[]{HOME_Z - 2, HOME_Z + 2}) h.setBlock(new BlockPos(x, y, z), Blocks.STONE);
+            for (int z = HOME_Z - 2; z <= HOME_Z + 2; z++) for (int x : new int[]{HOME_X - 1, HOME_X + 3}) h.setBlock(new BlockPos(x, y, z), Blocks.STONE);
+        }
         CompanionEntity c = spawn(h, HOME_X, HOME_Z);
         c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
         c.setItem(1, new ItemStack(Items.DIRT, 12));

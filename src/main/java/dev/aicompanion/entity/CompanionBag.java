@@ -257,6 +257,22 @@ final class CompanionBag {
         if (wanted != null) for (ItemStack stack : carriedForPlan()) if (stack.is(wanted)) have += stack.getCount();
         return have;
     }
+
+    /**
+     * How many of the item he really holds: the item itself, and every block that makes it counted for what it gives — a redstone
+     * block is nine redstone, a lapis block nine lapis. What an order met by the bag answers with (the owner, 26.11: a redstone
+     * block in the bag is no «0 из 4»).
+     */
+    int carriedOfDrop(ServerLevel level, net.minecraft.world.item.Item wanted) {
+        int have = 0;
+        for (ItemStack stack : carriedForPlan()) {
+            if (stack.isEmpty()) continue;
+            if (stack.is(wanted)) { have += stack.getCount(); continue; }
+            for (CompanionPickable.Source source : CompanionPickable.storage(level, wanted))
+                if (stack.is(source.block().asItem())) { have += stack.getCount() * source.yield(); break; }
+        }
+        return have;
+    }
     List<ItemStack> carriedForPlan() {
         List<ItemStack> carried = new java.util.ArrayList<>();
         for (int slot = 0; slot < c.getContainerSize(); slot++) carried.add(c.getItem(slot));

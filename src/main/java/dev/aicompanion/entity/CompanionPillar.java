@@ -92,6 +92,17 @@ public final class CompanionPillar {
     /** A foot could not be answered this tick (the cells went elsewhere, or no search came about): not a failure, ask again. */
     private boolean footUnknown;
     private boolean recovering;
+    /**
+     * A cleanup asked while the drop this column was the way to is still not in his bag: the column stands under it and climbs
+     * the steps it still needs to it (tickHeld), and comes down once the drop is in the bag (the owner, 26.11: the column came
+     * down before the drop was taken, the drop stayed high, and a second column had to be raised for it).
+     */
+    private boolean held;
+    private int heldTicks;
+    /** The held climb could not come at the drop: the column comes down as asked, and the pickup's own way is the drop's. */
+    private boolean holdGivenUp;
+    /** Ticks a held column may stand before the cleanup asked for goes on (another player may need the ground). */
+    private static final int HOLD_TICKS = 600;
     /** The steps this climb may take: a leaf crown's six, a way up's sixteen (set by tickToward). */
     private int limit = LEAF_SUPPORTS;
     /** Whether this column is a way up to a block no walk reaches (PATH7), not a leaf crown's climb. */
@@ -123,6 +134,8 @@ public final class CompanionPillar {
         return false;
     }
     public boolean isRecovering() { return recovering; }
+    /** Whether the column stands held for the drop it was the way to: no descent until that drop is in his bag. */
+    public boolean isHeld() { return held; }
     public int supportCount() { return supports.size(); }
     public String failureReason() { return failureReason; }
 
@@ -175,6 +188,7 @@ public final class CompanionPillar {
             unplannedTicks = 0;
             base = column.feet();
             approach = column.path();
+            holdGivenUp = false;
             resetWatchdog(block);
         } else if (!block.equals(target)) {
             resetWatchdog(block);
@@ -302,6 +316,8 @@ public final class CompanionPillar {
      * gather replaced waits for the end of the gather (the owner, 19.11).
      */
     public void requestCleanup(boolean keepTool) {
+        // Asked again while the column is held for a drop: it stays, and nothing of the hand it kept is changed.
+        if (held) { owner.getNavigation().stop(); return; }
         breaking.reset();
         this.keepTool = keepTool && isActive();
         if (this.keepTool) {
@@ -311,12 +327,40 @@ public final class CompanionPillar {
             keptHand = null;
             owner.putToolAway();
         }
+        // A column that was the way to a drop still not in his bag stays standing under it: the pickup takes the drop from its
+        // top, and the descent goes on once it is in (tickHeld). Asked again each tick by the work's own down(), so the wait is
+        // bounded here, and a cleanup asked by a follow or a cancel does not wait for ever either.
+        if (!recovering && !supports.isEmpty() && holdForDrop()) {
+            held = true; heldTicks = 0;
+            jumpCell = null; approach = null;
+            owner.getNavigation().stop();
+            return;
+        }
         if (!recovering) cleanupTicks = 0;
         recovering = isActive();
         jumpCell = null;
         approach = null;
         owner.getNavigation().stop();
         if (!recovering || supports.isEmpty() && owner.onGround()) clearColumn();
+    }
+
+    /** Whether the column standing is the way to a drop of his still on or above his feet, with the way's own switch on. */
+    private boolean holdForDrop() {
+        return !holdGivenUp && owner.buildWay() && owner.loot.dropAtOrAbove() != null;
+    }
+
+    /**
+     * Called every tick: a column held for the drop it was the way to climbs the steps it still needs from the same foot and
+     * comes back once the drop is in his bag. A drop it cannot come at gives the column up: the pickup's own way is the drop's,
+     * as before.
+     */
+    public void tickHeld() {
+        if (!held) return;
+        net.minecraft.world.entity.item.ItemEntity drop = owner.loot.dropAtOrAbove();
+        if (drop == null || ++heldTicks > HOLD_TICKS || !owner.buildWay()) { held = false; requestCleanup(keepTool); return; }
+        // The drop is in touch where he stands: the pickup takes it, the column has nothing more to do.
+        if (owner.loot.touches(owner.position(), drop)) return;
+        if (tickTowardCell(drop.blockPosition(), WAY_SUPPORTS) == Outcome.FAILED) { held = false; holdGivenUp = true; requestCleanup(keepTool); }
     }
 
     /** Called every tick by the recovery goal, including while falling between two supports. */
@@ -867,6 +911,7 @@ public final class CompanionPillar {
         lastProgress = null;
         attemptTicks = stalledTicks = jumpTicks = failedJumps = cooldown = cleanupTicks = unplannedTicks = 0;
         recovering = false;
+        held = false; heldTicks = 0; holdGivenUp = false;
         limit = LEAF_SUPPORTS;
         way = false;
         cellWay = false;

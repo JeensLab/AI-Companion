@@ -111,7 +111,9 @@ final class CompanionOreMining {
     }
 
     void mineOre(ServerLevel level) {
-        if (w.oreDone || w.oreMined >= w.oreWanted) {
+        // The bag answers, not the blocks broken: a drop it holds in the promise met is the order done, and a block that makes
+        // the item counts for what it gives (the owner, 26.11: the ore mined, its drop picked up, and «с этим пока не справился»).
+        if (w.oreDone || w.oreMined >= w.oreWanted || (!w.ironPrep && w.oreHeld() >= w.oreWanted)) {
             w.oreDone = true;
             // The way's own column comes down before the drop is looked for (PATH7): he steps down dismantling it behind him,
             // and a bridge of his stays standing as any bridge does. The pickup waits while the way is his.
@@ -135,6 +137,12 @@ final class CompanionOreMining {
             }
             if (!w.oreSearch.scan(level)) { w.owner.workStatus("Ищу «" + w.ore.oreName + "» в пределах " + w.oreSearch.radius() + " блоков."); return; }
             w.oreCandidates = new ArrayList<>(w.oreSearch.results(level)); w.oreCandidates.removeIf(pos -> !w.owner.errand.within(pos)); w.oreFound = w.oreCandidates.size();
+            // The promise is what the search really sees — the bag, the drops on the ground and these blocks — never past the
+            // number said (the owner, 26.11: one ore block over an order without a number is one, not four).
+            if (!w.ironPrep) {
+                int onGround = CompanionPickUp.lying(level, w.owner.blockPosition(), w.owner.pickUpRadius(), w.dropId(), w.owner.getOwnerId());
+                w.oreWanted = Math.max(1, Math.min(w.requestedCount, w.oreHeld() + onGround + w.oreFound));
+            }
         }
         if (!w.oreTunnel.isEmpty()) { digOreTunnel(level); return; }
         if (w.target == null) {
@@ -456,6 +464,7 @@ final class CompanionOreMining {
     private void finishOre() {
         w.route.legsEnd(w.oreExit == null || w.owner.getY() >= w.oreExit.getY() - .5); w.route.abandon();
         int gained = Math.max(0, w.items.countCarried(w.ore.drop) - w.oreDropsBefore);
+        int have = w.oreHeld();
         String got = "«" + w.ore.oreName + "»: в сумке прибавилось " + gained + " «" + CompanionWork.itemName(w.ore.drop) + "».";
         String below = w.oreExit != null && w.owner.getY() < w.oreExit.getY() - .5
                 ? " Наверх пока не выбрался: стою на " + w.owner.blockPosition().toShortString() + "." : "";
@@ -467,8 +476,16 @@ final class CompanionOreMining {
         // The block is broken but its drop is not in the bag (it floated off, it lies where he cannot get at it): not «done».
         // Any drop of the ore counts (nuggets, the ore block under Silk Touch, more under Fortune), not only the usual one; iron for a tool counts only as raw iron.
         boolean anyDrop = gained > 0 || oreDrops.entrySet().stream().anyMatch(drop -> w.items.countCarried(drop.getKey()) > drop.getValue());
+        // The bag answers, not the blocks broken: the drop it holds in the promise met is the order done, and a block that makes the
+        // item counts for what it gives (the owner, 26.11: the one ore mined, its drop in the bag, and no «1 из 4»). The blocks the
+        // promise names are the answer too while their drop came — a vein taken with Silk Touch gives the blocks, and they are the order's.
+        boolean met = have >= w.oreWanted || w.oreMined >= w.oreWanted && anyDrop;
+        if (!w.ironPrep && met) {
+            w.finish(true, gained > 0 ? "Добыл " + CompanionWorkItems.blocks(w.oreMined) + " " + got + below + bag
+                    : "«" + CompanionWork.itemName(w.ore.drop) + "» у меня: " + have + " шт." + below + bag);
+            return;
+        }
         boolean lost = w.oreMined >= w.oreWanted && !anyDrop;
-        if (w.oreMined >= w.oreWanted && !lost && !w.ironPrep) { w.finish(true, "Добыл " + CompanionWorkItems.blocks(w.oreMined) + " " + got + below + bag); return; }
         int radius = w.oreSearch == null ? w.owner.getSearchRadius() : w.oreSearch.radius(), depth = w.oreSearch == null ? CompanionOre.MAX_DROP : w.oreSearch.depth();
         String why = lost ? " Выпавшее не достал: оно осталось там, где мне его не взять."
                 : w.ironPrep && w.oreMined >= w.oreWanted ? " Руда выпала целыми блоками: кирка с «Шёлковым касанием» не даёт сырого железа."

@@ -271,6 +271,24 @@ final class CompanionLoot {
     /** Whether the pickup itself is raising a column or a floor to a drop: the chase goes on while it stands (canChase). */
     boolean raisingWay() { return wayFor != null; }
 
+    /**
+     * The drop still to be taken that lies on or above his feet: a column standing under him is the way to it, not in its way —
+     * its top puts his body level with the drop (CompanionPillar.tickHeld). Null when every drop still to be taken lies below him:
+     * that one waits for the ground, as before.
+     */
+    ItemEntity dropAtOrAbove() {
+        if (!(owner.level() instanceof ServerLevel level)) return null;
+        ItemEntity nearest = null;
+        double best = Double.MAX_VALUE;
+        for (UUID id : pending) {
+            if (unreachable.contains(id) || !(level.getEntity(id) instanceof ItemEntity item) || !item.isAlive()) continue;
+            if (item.blockPosition().getY() < owner.blockPosition().getY()) continue;
+            double distance = owner.distanceToSqr(item);
+            if (distance < best) { best = distance; nearest = item; }
+        }
+        return nearest;
+    }
+
     private void giveUpFromHere(ServerLevel level, UUID id) {
         unreachable.add(id); unreachableFrom.put(id, owner.blockPosition());
         // The drop is no destination any more: a self-rescue must not dig towards it.

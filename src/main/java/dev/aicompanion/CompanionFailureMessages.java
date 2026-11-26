@@ -8,6 +8,10 @@ public final class CompanionFailureMessages {
     /** A quoted name in an engine line («Метка «дом»…»): the player's own word, which a short line may repeat. */
     private static final java.util.regex.Pattern QUOTED = java.util.regex.Pattern.compile("«([^»]{1,24})»");
     /**
+     * «Собрал «Блок редстоуна»: 1 из 4, больше рядом нет.» — a gather that gave its part: what came, of what was asked, and why.
+     */
+    private static final java.util.regex.Pattern GATHERED = java.util.regex.Pattern.compile("(?iu)Собрал «([^»]{1,40})»: (\\d+) из (\\d+)(?:, ([^.]*))?\\.");
+    /**
      * The walk note CompanionWork.finish appends after another order's own reason («Домой дойти не смог: нет пути.»,
      * «До места на 1, 64, 2 дойти не смог: нет пути.»): it tells of the walk home or to a station, not of the order.
      */
@@ -55,6 +59,8 @@ public final class CompanionFailureMessages {
         if (text.contains("мяса") || text.contains("животн") || text.contains("никого не добыл")) return Kind.FOOD;
         if (text.contains("поставить") || text.contains("место для") || text.contains("помех")) return Kind.PLACE;
         if (text.contains("тайм-аут") || text.contains("не успел")) return Kind.TIMEOUT;
+        // A gather that gave its part («Собрал «…»: 1 из 4, …»): the count it names is the answer, not a flat refusal.
+        if (GATHERED.matcher(primary(report)).find()) return Kind.GATHER;
         return Kind.OTHER;
     }
     public static String explain(String action, String report) {
@@ -85,8 +91,16 @@ public final class CompanionFailureMessages {
             // The ore broken but its drop left where he cannot get at it (CompanionOreMining.finishOre).
             case OTHER -> primary(report).contains("Выпавшее не достал") ? "Руду сломал, но выпавшее не достал." : "С этим пока не справился.";
             // A gather that gave its part («Собрал «…»: 1 из 4, …»): the count it names is the answer, not a flat refusal.
-            case GATHER -> "С этим пока не справился.";
+            case GATHER -> gatheredLine(report);
         };
+    }
+
+    /** «Собрал «Блок редстоуна» 1 из 4 — больше рядом нет.»: what came, of what was asked, and why, as the engine said it. */
+    private static String gatheredLine(String report) {
+        var found = GATHERED.matcher(primary(report));
+        if (!found.find()) return "Собрал не всё, что просили.";
+        String why = found.group(4) == null || found.group(4).isBlank() ? "" : " — " + found.group(4).strip();
+        return "Собрал «" + found.group(1) + "» " + found.group(2) + " из " + found.group(3) + why + ".";
     }
 
     /** «Метка «дом» в другом измерении (world), пешком отсюда туда не дойти.»: the world's name in brackets is no word for the player. */

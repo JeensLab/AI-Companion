@@ -954,6 +954,13 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         return wanted == null ? null : bag.available(level, wanted);
     }
     public int carriedCount(String item) { return bag.carriedCount(item); }
+    /** How many of the item the bag really holds: a block that makes it counts for what it gives (a redstone block is nine). */
+    public int carriedOfDrop(String item) {
+        if (!(level() instanceof ServerLevel level)) return 0;
+        var id = net.minecraft.resources.ResourceLocation.tryParse(item == null ? "" : item);
+        var wanted = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
+        return wanted == null ? 0 : bag.carriedOfDrop(level, wanted);
+    }
     public CompanionActionResult carriedCheck(String item, int count) { return bag.carriedCheck(item, count); }
     public String getStoredItemsSummary() { return bag.getStoredItemsSummary(); }
     public String getStoredItemsForAi() { return bag.getStoredItemsForAi(); }
@@ -1132,8 +1139,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         pushOutOfBlocks();
         meals.tickEating();
         loot.tickNearby();
-        // A floor held for the drops it was the walk to comes back once they are in his bag.
+        // A floor held for the drops it was the walk to comes back once they are in his bag; a column held for the drop it was
+        // the way to climbs to it and comes back once it is in his bag (CompanionPillar.tickHeld).
         temporaryBridge.tickHeld();
+        temporaryPillar.tickHeld();
         if (level() instanceof ServerLevel serverLevel) playersThings.tick(serverLevel);
         recovery.observe();
         work.watchChase();
