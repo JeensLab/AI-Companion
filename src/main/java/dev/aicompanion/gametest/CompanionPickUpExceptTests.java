@@ -55,6 +55,8 @@ public final class CompanionPickUpExceptTests {
         // A word for several things alike leaves them all; a thing named before the mark is the pickup it was.
         String swords = route("подбери всё кроме Sword");
         h.assertTrue(swords != null && swords.contains("minecraft:iron_sword") && swords.contains("minecraft:diamond_sword"), "«кроме Sword» → " + swords);
+        var many = dev.aicompanion.entity.CompanionPickUp.of(swords.substring(swords.lastIndexOf(' ') + 1));
+        h.assertTrue(many != null && many.name().contains(" и ещё ") && many.name().split("«").length == 4, "A long list is named as: " + (many == null ? null : many.name()));
         h.assertTrue("companion work pick_up 64 minecraft:diamond".equals(route("подбери алмазы, но не спеши")), "→ " + route("подбери алмазы, но не спеши"));
         // The line that names the order to the player names the things, not the raw id.
         String shown = dev.aicompanion.client.CompanionDialogue.itemName("minecraft:any!minecraft:stick,minecraft:diamond");

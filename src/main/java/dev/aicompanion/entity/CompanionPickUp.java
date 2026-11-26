@@ -110,6 +110,9 @@ public final class CompanionPickUp {
         return single(named);
     }
 
+    /** How many of the things left lying a line names before «и ещё N». */
+    private static final int NAMED = 3;
+
     /** Every drop but the named meanings; null when one of them is no item, so nothing is taken on a guess. */
     private static Meaning allBut(String ids) {
         List<Meaning> left = new ArrayList<>();
@@ -119,8 +122,10 @@ public final class CompanionPickUp {
             if (meaning == null || meaning == ANY) return null;
             left.add(meaning);
             // «кроме «…»»: the frame word of a single thing («предмета») reads badly in a list.
-            names.append(names.length() == 0 ? ", кроме " : ", ").append(meaning.genitive().replace("предмета ", ""));
+            if (left.size() <= NAMED) names.append(names.length() == 0 ? ", кроме " : ", ").append(meaning.genitive().replace("предмета ", ""));
         }
+        // «Кроме редстоуна» is the dust, the ore, the block, the torch…: the line names the first few.
+        if (left.size() > NAMED) names.append(" и ещё ").append(left.size() - NAMED);
         return new Meaning("вещи" + names, "вещи" + names, "вещей" + names, stack -> {
             for (Meaning meaning : left) if (meaning.is(stack)) return false;
             return true;
