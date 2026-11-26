@@ -595,24 +595,29 @@ public final class CompanionWork {
                 ore = CompanionOre.Kind.of(item);
                 if (ore == null) return CompanionActionResult.failed("Не понял, какую руду добыть: уголь, железо, медь, лазурит, золото, редстоун, алмазы или изумруды.");
                 if (count > MAX_ORE) return CompanionActionResult.failed("За раз добываю до " + MAX_ORE + " блоков руды.");
+                // The bag answers first, as every obtain does: an order it already holds in full — a redstone block is nine
+                // redstone — is done without a dig, though an ore block lies about.
+                int held = oreHeld();
                 // A block that gives the ore's item lies about him — a lapis block is nine lapis, a gold block nine gold, even
                 // one the player set down himself: its material is taken as it lies, and the ore is dug only when no block of
                 // it is here. The one search answers first, as it does for every obtain (a lapis block in the air is no ore).
                 List<CompanionPickable.Source> storage = CompanionPickable.storage(level, ore.drop);
                 Item lying = storage.isEmpty() ? ore.drop : storage.getFirst().block().asItem();
                 CompanionReach.Available blocks = CompanionWaySearch.available(owner, level, lying, CompanionPicking.requested(owner, level, lying));
+                if (held >= count) { job = Job.ORE; phase = Phase.ORE_PICK; oreWanted = count; break; }
                 if (blocks.some()) {
-                    // The promise is what lies there, never more than the number said: one redstone block over a four-redstone
-                    // order is one block of it, and the nine it gives meet the order in the bag.
-                    CompanionActionResult started = picking.begin(BuiltInRegistries.ITEM.getKey(lying).toString(), Math.max(1, Math.min(count, blocks.count())));
+                    // The promise is what lies there, never more than what is still missing: one redstone block over a four-redstone
+                    // order with two redstone in the bag is one block of it, and the nine it gives meet the order in the bag.
+                    CompanionActionResult started = picking.begin(BuiltInRegistries.ITEM.getKey(lying).toString(), Math.max(1, Math.min(count - held, blocks.count())));
                     if (started == null) { job = Job.BLOCK; phase = Phase.BLOCK; break; }
                 }
-                // The promise of the mine is what the world really gives — the drops on the ground and the blocks the one search
-                // reaches — never the number said when there is less (the owner, 26.11: «добудь редстоуна» over one block of ore
-                // is one, and the work reports that, not four). The mine's own scan grows it to what it finds. The bag answers at
-                // the end: an order it already holds in full is done, never «не справился» (CompanionOreMining.finishOre).
+                // The promise of the mine is what the world and the bag really give — what he already holds, the drops on the ground
+                // and the blocks the one search reaches — never the number said when there is less (the owner, 26.11: «добудь
+                // редстоуна» over one block of ore is one, and the work reports that, not four). The mine's own scan grows it to
+                // what it finds, and the bag answers at the end: the promise met in it is the order done, never «не справился»
+                // (CompanionOreMining.finishOre).
                 int onGround = CompanionPickUp.lying(level, owner.blockPosition(), owner.pickUpRadius(), dropId(), owner.getOwnerId());
-                job = Job.ORE; phase = Phase.ORE_PICK; oreWanted = Math.max(1, Math.min(count, onGround + blocks.count()));
+                job = Job.ORE; phase = Phase.ORE_PICK; oreWanted = Math.max(1, Math.min(count, held + onGround + blocks.count()));
             }
             case "pick_up_nearby" -> {
                 pickUp = CompanionPickUp.of(item);

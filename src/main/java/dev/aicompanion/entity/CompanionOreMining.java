@@ -110,23 +110,26 @@ final class CompanionOreMining {
         w.phase = CompanionWork.Phase.IRON; w.resetTarget();
     }
 
+    /** The mine is done by its promise met in the bag or by its blocks broken: the way comes down, the drops are looked for, he climbs out. */
+    private void finishMine(ServerLevel level) {
+        w.oreDone = true;
+        // The way's own column comes down before the drop is looked for (PATH7): he steps down dismantling it behind him,
+        // and a bridge of his stays standing as any bridge does. The pickup waits while the way is his.
+        if (w.owner.temporaryPillar.isActive() || w.owner.temporaryPillar.isRecovering()
+                || w.owner.temporaryBridge.isActive() || w.owner.temporaryBridge.isRecovering()) {
+            w.owner.temporaryPillar.requestCleanup();
+            w.owner.temporaryBridge.requestCleanup();
+            return;
+        }
+        // A drop that fell into a pocket while the rest of the vein still closed it is reachable now: one more round.
+        if (!w.oreLootRetried) { w.oreLootRetried = true; w.owner.retryHarvestPickup(); return; }
+        climbOutOfOre(level);
+    }
+
     void mineOre(ServerLevel level) {
         // The bag answers, not the blocks broken: the drop it gained in the promise met is the order done (the owner, 26.11:
         // the ore mined, its drop picked up, and «с этим пока не справился»).
-        if (w.oreDone || w.oreMined >= w.oreWanted || (!w.ironPrep && w.oreGained() >= w.oreWanted)) {
-            w.oreDone = true;
-            // The way's own column comes down before the drop is looked for (PATH7): he steps down dismantling it behind him,
-            // and a bridge of his stays standing as any bridge does. The pickup waits while the way is his.
-            if (w.owner.temporaryPillar.isActive() || w.owner.temporaryPillar.isRecovering()
-                    || w.owner.temporaryBridge.isActive() || w.owner.temporaryBridge.isRecovering()) {
-                w.owner.temporaryPillar.requestCleanup();
-                w.owner.temporaryBridge.requestCleanup();
-                return;
-            }
-            // A drop that fell into a pocket while the rest of the vein still closed it is reachable now: one more round.
-            if (!w.oreLootRetried) { w.oreLootRetried = true; w.owner.retryHarvestPickup(); return; }
-            climbOutOfOre(level); return;
-        }
+        if (w.oreDone || w.oreMined >= w.oreWanted || (!w.ironPrep && w.oreGained() >= w.oreWanted)) { finishMine(level); return; }
         // The way's own climb is ticked every tick of its arc, the jump included: a body in the air is no reason to skip it.
         if (!w.owner.onGround() && !w.owner.isInWater()
                 && !w.owner.temporaryPillar.isWayActive() && !w.owner.temporaryBridge.isActive()) return;
@@ -137,11 +140,14 @@ final class CompanionOreMining {
             }
             if (!w.oreSearch.scan(level)) { w.owner.workStatus("Ищу «" + w.ore.oreName + "» в пределах " + w.oreSearch.radius() + " блоков."); return; }
             w.oreCandidates = new ArrayList<>(w.oreSearch.results(level)); w.oreCandidates.removeIf(pos -> !w.owner.errand.within(pos)); w.oreFound = w.oreCandidates.size();
-            // The promise is what the search really sees — the drops on the ground and these blocks — never past the number said
-            // (the owner, 26.11: one ore block over an order without a number is one, not four).
+            // The promise is what the world and the bag really give — what he holds, the drops on the ground and these blocks —
+            // never past the number said (the owner, 26.11: one ore block over an order without a number is one, not four).
             if (!w.ironPrep) {
                 int onGround = CompanionPickUp.lying(level, w.owner.blockPosition(), w.owner.pickUpRadius(), w.dropId(), w.owner.getOwnerId());
-                w.oreWanted = Math.max(1, Math.min(w.requestedCount, onGround + w.oreFound));
+                w.oreWanted = Math.max(1, Math.min(w.requestedCount, w.oreHeld() + onGround + w.oreFound));
+                // The search has now said what the world gives: an order the bag already meets in that promise is done without a
+                // dig, as every obtain is (the owner, 26.11: a redstone block in the bag, an ore about, and nothing to swing at).
+                if (w.oreHeld() >= w.oreWanted) { finishMine(level); return; }
             }
         }
         if (!w.oreTunnel.isEmpty()) { digOreTunnel(level); return; }
@@ -480,7 +486,7 @@ final class CompanionOreMining {
         // one ore mined, its drop in the bag, and no «1 из 4»). An order the bag already holds in full — a redstone block is nine
         // redstone — is done too, never «не справился». The blocks the promise names are the answer while their drop came: a vein
         // taken with Silk Touch gives the blocks, and they are the order's.
-        boolean met = gained >= w.oreWanted || have >= w.requestedCount || w.oreMined >= w.oreWanted && anyDrop;
+        boolean met = gained >= w.oreWanted || have >= w.oreWanted || w.oreMined >= w.oreWanted && anyDrop;
         if (!w.ironPrep && met) {
             w.finish(true, gained > 0 ? "Добыл " + CompanionWorkItems.blocks(w.oreMined) + " " + got + below + bag
                     : "«" + CompanionWork.itemName(w.ore.drop) + "» у меня: " + have + " шт." + below + bag);
