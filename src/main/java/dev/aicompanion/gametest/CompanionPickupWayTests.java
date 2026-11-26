@@ -109,6 +109,39 @@ public final class CompanionPickupWayTests {
     }
 
     /**
+     * The owner's own sequence (26.11): up his own column to a wool block on a stone over his head, the block broken, and the drop
+     * comes to rest on that stone two above his feet. The column he stood on is the way to the drop: it stays standing until the
+     * wool is in his bag, grows the steps more it needs from the same foot, and only then comes down — the pickup raises no second
+     * column of its own, and the soil of both columns is back in his bag.
+     */
+    @GameTest(template = "way_wide", timeoutTicks = 2400)
+    public static void theDropOfHisOwnColumnIsTakenFromIt(GameTestHelper h) {
+        flat(h, Blocks.GRASS_BLOCK);
+        BlockPos stone = new BlockPos(HOME_X + 2, FEET + 5, HOME_Z);
+        h.setBlock(stone, Blocks.STONE);
+        h.setBlock(stone.above(), Blocks.WHITE_WOOL);
+        h.assertBlockPresent(Blocks.AIR, stone.above(2));
+        CompanionEntity c = spawn(h, HOME_X, HOME_Z);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.DIRT, 12));
+        int[] stoodAtRest = {-1};
+        h.onEachTick(() -> {
+            if (stoodAtRest[0] < 0 && dropAtRest(h, c, Items.WHITE_WOOL)) stoodAtRest[0] = c.getTemporarySupportCount();
+        });
+        var future = say(h, c, "добудь белую шерсть");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
+            h.assertTrue(count(c, Items.WHITE_WOOL) >= 1, "The wool on the stone is not in the bag: " + future.join().report());
+            h.assertTrue(stoodAtRest[0] > 0, "The column came down before the drop was taken: " + stoodAtRest[0]);
+            h.assertTrue(journal(c, "pickup_way").stream().noneMatch(line -> line.contains("\"item\":\"minecraft:white_wool\"")
+                    && line.contains("\"shape\":\"column\"")), "A second column was raised for the drop: " + journal(c, "pickup_way"));
+            h.assertTrue(c.getTemporarySupportCount() == 0 && !c.isRecoveringSupports(), "The column still stands: " + c.getTemporarySupportCount());
+            h.assertTrue(count(c, Items.DIRT) == 12, "The soil of the columns is not back in the bag: " + count(c, Items.DIRT));
+            h.assertBlockPresent(Blocks.AIR, stone.above());
+        });
+    }
+
+    /**
      * A real trench: its floor is air from bank to bank, five deep, so no walk crosses it and the cells at the walking level have
      * nothing under them. A wool block five above the far bank's edge is mined up a column of his own (the pillar's, not the
      * pickup's), and its drop comes to rest on a stone block standing in the trench. The soil the mining's column gives back is

@@ -750,7 +750,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Like a player, finish the block under the axe before walking off to a drop; walking away would reset its cracks. */
     boolean isSwingingAtBlock() { return woodBreaking.swinging() || dirtBreaking.swinging() || work.swinging(); }
     public int abandonedWoodSwings() { return woodBreaking.abandoned(); }
-    boolean hasPendingLoot() { return loot.hasPending(); }
+    public boolean hasPendingLoot() { return loot.hasPending(); }
     /** What an animal or monster he killed drops is his to pick up, like his harvest (public for the GameTests that lay a drop). */
     public void claimDrops(java.util.Collection<net.minecraft.world.entity.item.ItemEntity> drops) { loot.claim(drops); }
     void storeLoot(ItemStack offered) { storeInCompanionInventory(offered); refreshInventorySummary(); }

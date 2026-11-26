@@ -4,7 +4,7 @@ import java.util.Locale;
 
 /** Spoken problems describe what matters to the player; engine receipts stay in the task journal. */
 public final class CompanionFailureMessages {
-    public enum Kind { BAG, WOOD, MATERIALS, LAVA, WATER, ROUTE, ORE, STONE, FOOD, PLACE, TIMEOUT, HANDOVER, DIMENSION, NOT_LOADED, NO_PATH, OTHER }
+    public enum Kind { BAG, WOOD, MATERIALS, LAVA, WATER, ROUTE, ORE, STONE, FOOD, PLACE, TIMEOUT, HANDOVER, DIMENSION, NOT_LOADED, NO_PATH, GATHER, OTHER }
     /** A quoted name in an engine line («Метка «дом»…»): the player's own word, which a short line may repeat. */
     private static final java.util.regex.Pattern QUOTED = java.util.regex.Pattern.compile("«([^»]{1,24})»");
     /**
@@ -84,6 +84,8 @@ public final class CompanionFailureMessages {
                     : primary(report).contains("к тебе пройти") ? "Не могу к тебе пройти, вещи остались у меня." : "Не дошёл до тебя, вещи остались у меня.";
             // The ore broken but its drop left where he cannot get at it (CompanionOreMining.finishOre).
             case OTHER -> primary(report).contains("Выпавшее не достал") ? "Руду сломал, но выпавшее не достал." : "С этим пока не справился.";
+            // A gather that gave its part («Собрал «…»: 1 из 4, …»): the count it names is the answer, not a flat refusal.
+            case GATHER -> "С этим пока не справился.";
         };
     }
 

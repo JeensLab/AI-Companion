@@ -3,6 +3,7 @@ package dev.aicompanion.gametest;
 import com.google.gson.JsonParser;
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.client.CompanionDialogue;
+import dev.aicompanion.client.CompanionLocalCommands;
 import dev.aicompanion.client.CompanionPlanCodec;
 import dev.aicompanion.client.CompanionPlanRunner;
 import dev.aicompanion.client.CompanionServerPlanPort;
@@ -12,6 +13,7 @@ import dev.aicompanion.entity.CompanionActionResult;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
@@ -19,9 +21,13 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 /** Ore like a player: the right pickaxe, ore in sight or behind a short tunnel, the whole vein, back up, nothing lost. */
 @GameTestHolder(AICompanionMod.MOD_ID)
@@ -269,6 +275,138 @@ public final class CompanionOreTests {
             h.assertTrue(damage(companion, Items.IRON_PICKAXE) >= 1, "The iron pickaxe in the bag did not take the ore: " + companion.getStoredItemsSummary());
             h.assertTrue(damage(companion, Items.STONE_PICKAXE) == 0, "The stone pickaxe from his hand took the ore: " + companion.getStoredItemsSummary());
         });
+    }
+
+    // ---- the promise is what is really there, and the bag decides (the owner, 26.11) ----
+
+    /** The words of the orders below, the ore blocks and the drops they give; every kind is taken with the same iron pickaxe. */
+    private record Ore(String word, Block ore, Item drop, String phrase) { }
+
+    private static final List<Ore> KINDS = List.of(
+            new Ore("угля", Blocks.COAL_ORE, Items.COAL, "добудь угля"),
+            new Ore("железа", Blocks.IRON_ORE, Items.RAW_IRON, "добудь железа"),
+            new Ore("лазурита", Blocks.LAPIS_ORE, Items.LAPIS_LAZULI, "добудь лазурита"),
+            new Ore("редстоуна", Blocks.REDSTONE_ORE, Items.REDSTONE, "добудь редстоуна"),
+            new Ore("алмазов", Blocks.DIAMOND_ORE, Items.DIAMOND, "добудь алмазов"));
+
+    /**
+     * The owner's own report (26.11): «добудь редстоуна» over the one ore block the world gives said «добыть редстоун (4 бл.
+     * руды)», mined the block, took it, and answered «с этим пока не справился». An order without a number promises what is really
+     * there — one block is one — and it is done by the bag: the drop is in it, the work succeeded, and the player is not told «из 4».
+     * Every ore kind is taken the same way, not only redstone.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 8000)
+    public static void everyOreOrderOverOneBlockIsDoneNotFailed(GameTestHelper h) {
+        CompanionEntity companion = flat(h);
+        BlockPos ore = new BlockPos(20, 1, 16);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        int[] at = {0};
+        boolean[] started = {false};
+        h.onEachTick(() -> {
+            if (at[0] >= KINDS.size()) return;
+            if (companion.isWorking() || companion.hasPendingLoot()) return;
+            Ore kind = KINDS.get(at[0]);
+            if (!started[0]) {
+                // The scene of this kind: its block, the bag as it was, him at his place.
+                h.setBlock(ore, kind.ore());
+                for (int slot = 0; slot < companion.getContainerSize(); slot++)
+                    if (companion.getItem(slot).is(kind.drop())) companion.setItem(slot, ItemStack.EMPTY);
+                BlockPos home = h.absolutePos(new BlockPos(16, 1, 16));
+                companion.teleportTo(home.getX() + .5, home.getY(), home.getZ() + .5);
+                companion.setHealth(companion.getMaxHealth());
+                // The number the router sends for a phrase without one: the wish the work must cut down to what is there.
+                h.assertTrue(companion.startWork("mine_ore", BuiltInRegistries.ITEM.getKey(kind.ore().asItem()).toString(), 4).success(),
+                        "«" + kind.phrase() + "» not accepted");
+                started[0] = true;
+                return;
+            }
+            String report = companion.getLastTaskResult();
+            h.assertTrue(companion.didLastTaskSucceed(), "«" + kind.phrase() + "» failed over the one block: " + report);
+            h.assertTrue(count(companion, kind.drop()) >= 1, "«" + kind.phrase() + "»: no " + kind.drop() + " in the bag: " + report);
+            h.assertTrue(!report.contains("из 4"), "«" + kind.phrase() + "» promised the wish, not the block: " + report);
+            h.assertBlockPresent(Blocks.AIR, ore);
+            started[0] = false;
+            at[0]++;
+        });
+        h.succeedWhen(() -> h.assertTrue(at[0] >= KINDS.size(), "Only " + at[0] + " of " + KINDS.size() + " ore kinds ran"));
+    }
+
+    /** «Добудь 4 редстоуна» over the one block the world gives: the promise is that block, and the bag meets it. */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void fourRedstoneOverOneBlockPromisesOne(GameTestHelper h) {
+        CompanionEntity companion = flat(h);
+        BlockPos ore = new BlockPos(20, 1, 16); h.setBlock(ore, Blocks.REDSTONE_ORE);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        var actions = CompanionLocalCommands.actions("companion work mine_ore 4 minecraft:redstone_ore");
+        var future = say(h, companion, actions);
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + companion.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(companion, Items.REDSTONE) >= 1, "No redstone in the bag: " + report);
+            h.assertTrue(!report.contains("План остановлен") && !report.contains("Часть не вышла"), "Failed over the one block: " + report);
+            h.assertTrue(!report.contains("из 4"), "Four was promised over one block: " + report);
+            h.assertBlockPresent(Blocks.AIR, ore);
+        });
+    }
+
+    /** «Добудь 4 редстоуна» with four blocks about him: the promise is four, and four is in the bag. */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void fourRedstoneOverFourBlocksIsFour(GameTestHelper h) {
+        CompanionEntity companion = flat(h);
+        for (int x = 20; x <= 23; x++) h.setBlock(new BlockPos(x, 1, 16), Blocks.REDSTONE_ORE);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        var actions = CompanionLocalCommands.actions("companion work mine_ore 4 minecraft:redstone_ore");
+        var future = say(h, companion, actions);
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + companion.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(companion, Items.REDSTONE) >= 4, "Not four redstone: " + count(companion, Items.REDSTONE) + ", " + report);
+            h.assertTrue(!report.contains("План остановлен") && !report.contains("Часть не вышла"), "Failed over four blocks: " + report);
+            for (int x = 20; x <= 23; x++) h.assertBlockPresent(Blocks.AIR, new BlockPos(x, 1, 16));
+        });
+    }
+
+    /** The bag answers first: four redstone carried, an ore block about him — nothing is dug for it. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void anOrderTheBagAlreadyMeetsDigsNothing(GameTestHelper h) {
+        CompanionEntity companion = flat(h);
+        BlockPos ore = new BlockPos(20, 1, 16); h.setBlock(ore, Blocks.REDSTONE_ORE);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        companion.setItem(0, new ItemStack(Items.REDSTONE, 4));
+        var actions = CompanionLocalCommands.actions("companion work mine_ore 4 minecraft:redstone_ore");
+        var future = say(h, companion, actions);
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + companion.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(!report.contains("План остановлен") && !report.contains("Часть не вышла"), "The met order failed: " + report);
+            h.assertTrue(count(companion, Items.REDSTONE) == 4, "The bag changed: " + count(companion, Items.REDSTONE) + ", " + report);
+            h.assertBlockPresent(Blocks.REDSTONE_ORE, ore);
+            h.assertTrue(damage(companion, Items.IRON_PICKAXE) == 0, "A pickaxe was worn for nothing: " + report);
+        });
+    }
+
+    /** A redstone block in the bag is its nine: «добудь 4 редстоуна» is met by it, and no ore is dug. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void aRedstoneBlockInTheBagIsItsNine(GameTestHelper h) {
+        CompanionEntity companion = flat(h);
+        BlockPos ore = new BlockPos(20, 1, 16); h.setBlock(ore, Blocks.REDSTONE_ORE);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        companion.setItem(0, new ItemStack(Items.REDSTONE_BLOCK, 1));
+        var actions = CompanionLocalCommands.actions("companion work mine_ore 4 minecraft:redstone_ore");
+        var future = say(h, companion, actions);
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + companion.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(!report.contains("План остановлен") && !report.contains("Часть не вышла"), "The nine redstone of the block were not counted: " + report);
+            h.assertTrue(count(companion, Items.REDSTONE_BLOCK) == 1, "The redstone block left the bag: " + report);
+            h.assertBlockPresent(Blocks.REDSTONE_ORE, ore);
+        });
+    }
+
+    /** The words of the phrase above, through the player's own router, run by the plan runner. */
+    private static CompletableFuture<CompanionPlanRunner.Outcome> say(GameTestHelper h, CompanionEntity companion, List<PlannedAction> actions) {
+        return CompanionPlanRunner.run(actions,
+                new CompanionServerPlanPort(h.getLevel().getServer(), companion.getOwnerId(), "gametest-ore", () -> false));
     }
 
     private static CompanionEntity flat(GameTestHelper h) {

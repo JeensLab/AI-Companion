@@ -101,6 +101,10 @@ public final class CompanionItemOrderTests {
                 "«добудь лазурит» lost the ore's own work");
         h.assertTrue("companion work gather_stone 4 resources".equals(CompanionLocalCommands.route("добудь 4 булыжника", "Олег", RU)),
                 "«добудь 4 булыжника» lost the stone order");
+        h.assertTrue("companion work gather_stone 10 resources".equals(CompanionLocalCommands.route("добудь 10 камня", "Олег", RU)),
+                "«добудь 10 камня» lost its ten");
+        h.assertTrue("companion work gather_stone 8 resources".equals(CompanionLocalCommands.route("добудь камня", "Олег", RU)),
+                "«добудь камня» lost its eight");
         h.assertTrue(CompanionLocalCommands.route("принеси воды", "Олег", RU).startsWith("companion work obtain_item 1 minecraft:water_bucket"),
                 "«принеси воды» lost its water order");
         h.succeed();

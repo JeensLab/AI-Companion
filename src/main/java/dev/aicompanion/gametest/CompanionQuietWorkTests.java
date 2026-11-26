@@ -25,6 +25,26 @@ public final class CompanionQuietWorkTests {
         h.assertTrue(!spoken.contains("Не успел")&&!spoken.contains("сумке")&&!spoken.contains("понож")&&!spoken.contains("Скрафтил"),"Technical roll call leaked: "+spoken);
         h.succeed();
     }
+    /**
+     * Game 26.11: a gather that gave its part — «Собрал «Блок редстоуна»: 1 из 4, больше рядом нет.» — was heard as «С этим пока
+     * не справился». The line says what came, of what was asked, and why; one of one is no refusal either.
+     */
+    @GameTest(template="empty")
+    public static void aGatherThatGaveItsPartSaysWhatItGave(GameTestHelper h) {
+        String report = "Собрал «Блок редстоуна»: 1 из 4, больше рядом нет.";
+        String said = CompanionFailureMessages.explain("mine_ore", report);
+        h.assertTrue(said.contains("1 из 4") && said.contains("Блок редстоуна"), "The count or the thing is hidden: " + said);
+        h.assertTrue(!said.contains("не справился"), "The old refusal came back: " + said);
+        h.assertTrue(CompanionFailureMessages.kind(report) == CompanionFailureMessages.Kind.GATHER, "Not a gather: " + CompanionFailureMessages.kind(report));
+        String one = CompanionFailureMessages.explain("mine_ore", "Собрал «Блок редстоуна»: 1 из 1, больше рядом нет.");
+        h.assertTrue(one.contains("1 из 1") && !one.contains("не справился"), "One of one was refused: " + one);
+        var plan = List.of(new PlannedAction("mine_ore", 0, 4, "minecraft:redstone_ore"));
+        String spoken = CompanionDialogue.summarize(plan, "План остановлен: " + report);
+        h.assertTrue(spoken.contains("1 из 4") && spoken.contains("Блок редстоуна"), "The plan hid the count: " + spoken);
+        h.assertTrue(!spoken.contains("не справился"), "The plan said the old refusal: " + spoken);
+        h.succeed();
+    }
+
     @GameTest(template="empty")
     public static void repeatedFailuresIgnoreChangingCountsAndInventory(GameTestHelper h) throws Exception {
         var c=companion(h);finish(c,"IRON",CompanionActionResult.failed(IRON));int serial=c.autonomyLineSerial();
