@@ -8,6 +8,7 @@ import dev.aicompanion.client.CompanionPlanCodec;
 import dev.aicompanion.client.CompanionPlanRunner;
 import dev.aicompanion.client.CompanionServerPlanPort;
 import dev.aicompanion.client.CompanionWorkCommands;
+import dev.aicompanion.client.PlannedAction;
 import dev.aicompanion.entity.CompanionBobber;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
@@ -229,7 +230,9 @@ public final class CompanionFishingTests {
                 && invite.due(24100, 20, 0), "First invitation ignored its delay");
         invite.checked(24100);
         h.assertTrue(!invite.due(24699, 20, 0) && invite.due(24700, 20, 0), "Dry bank check was repeated too soon");
-        for (String text : List.of("дада емае", "да погнали тогда", "да, идём рыбачить, брат")) {
+        for (String text : List.of("дада емае", "да погнали тогда", "да, идём рыбачить, брат",
+                "Нууу, давай.", "Идём, идём.", "Да, идём, идём.", "Поехали, коллега.")) {
+            h.assertTrue(invite.answer(text, 24700) == CompanionFishingInvitation.Answer.OTHER, "Consent worked without an invitation");
             invite.offered(24700, 20, 0);
             h.assertTrue(invite.answer(text, 24701) == CompanionFishingInvitation.Answer.ACCEPT, "Missed consent: " + text);
             h.assertTrue(invite.answer("да", 24702) == CompanionFishingInvitation.Answer.OTHER, "Reused consent");
@@ -245,9 +248,16 @@ public final class CompanionFishingTests {
             String route = CompanionLocalCommands.route(words, "Олег");
             h.assertTrue(CompanionFishingInvitation.ORDER.equals(route), "Missed informal fishing order: " + words + " -> " + route);
         }
-        for (String words : List.of("вчера мы рыбачили", "не пойдём на рыбалку", "может, порыбачим потом")) {
+        for (String words : List.of("вчера мы рыбачили", "не пойдём на рыбалку", "может, порыбачим потом",
+                "Вот вода рядом.", "[щелчок]", "Чё ты заладил?", "Ты понимаешь, что я говорю или нет?", "Поехали завтра.", "Идём, идём?")) {
             h.assertTrue(!CompanionFishingInvitation.proposesTrip(words), "Discussion became an order: " + words);
+            h.assertTrue(!CompanionFishingInvitation.asksAboutTrip(words), "Discussion reopened an invitation: " + words);
+            invite.offered(24700, 20, 0);
+            h.assertTrue(invite.answer(words, 24701) == CompanionFishingInvitation.Answer.OTHER, "Discussion accepted an invitation: " + words);
+            h.assertTrue(!invite.due(24702, 20, 0), "Discussion skipped the invitation cooldown: " + words);
         }
+        var direct = CompanionLocalCommands.actions(CompanionLocalCommands.route("Порыбачь", "Олег")).getFirst();
+        h.assertTrue(direct.type().equals("fish") && direct.count() == PlannedAction.ALL_CARRIED, "The direct command lost its ordinary fishing mode");
         h.assertTrue(!CompanionLocalCommands.cancelsPlans("companion fishing_ask"), "A question cancelled an order");
         h.succeed();
     }

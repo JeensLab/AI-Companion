@@ -42,10 +42,11 @@ public final class CompanionFishingInvitation {
         cancel();
         if (!waiting || text.contains("?")) return Answer.OTHER;
         String value = normalize(text)
-                .replaceFirst("^ну ", "")
-                .replaceFirst("(?: +(?:брат|бро|тогда|уже|емае|блин))+$", "")
-                .replaceFirst("^да(?: +да)+(?= |$)|^дада(?= |$)", "да");
-        if (value.matches("да|ага|угу|конечно|согласен|(?:да )?(?:давай|погнали|пойдем|идем|пошли)(?: (?:рыбачить|порыбачить|на рыбалку))?"))
+                .replaceFirst("^ну+ ", "")
+                .replaceFirst("(?: +(?:брат|бро|коллега|олег|олеж|тогда|уже|емае|блин))+$", "")
+                .replaceFirst("^да(?: +да)+(?= |$)|^дада(?= |$)", "да")
+                .replaceFirst("^(да )?(давай|погнали|пойдем|идем|пошли|поехали)(?: +\\2)+(?= |$)", "$1$2");
+        if (value.matches("да|ага|угу|конечно|согласен|(?:да )?(?:давай|погнали|пойдем|идем|пошли|поехали)(?: (?:рыбачить|порыбачить|на рыбалку))?"))
             return Answer.ACCEPT;
         if (value.matches("нет|неа|не сейчас|потом|не хочу(?: рыбачить)?|передумал|да но не сейчас")) return Answer.DECLINE;
         return Answer.OTHER;

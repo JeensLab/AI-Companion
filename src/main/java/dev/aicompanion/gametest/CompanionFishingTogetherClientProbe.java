@@ -97,13 +97,19 @@ public final class CompanionFishingTogetherClientProbe {
         } else if (phase == 2 && historyContains("Составишь компанию?")) {
             if (hookVisible(mc)) throw new IllegalStateException("An invitation started fishing without consent");
             phase = 3;
-            say(mc, "дада емае");
+            say(mc, "Поехали, коллега.");
         } else if (phase == 3 && hookVisible(mc)) {
             phase = 4;
             say(mc, "стоп");
         } else if (phase == 4 && !hookVisible(mc)) {
             phase = 5;
-            AICompanionMod.LOGGER.info("FISHING_TOGETHER_CLIENT_PASS: ambient invitation, typed casual consent, client bobber, stop");
+            say(mc, "Порыбачь");
+        } else if (phase == 5 && hookVisible(mc)) {
+            phase = 6;
+            say(mc, "стоп");
+        } else if (phase == 6 && !hookVisible(mc)) {
+            phase = 7;
+            AICompanionMod.LOGGER.info("FISHING_TOGETHER_CLIENT_PASS: ambient invitation, typed casual consent, direct fishing, both casts stopped");
             mc.stop();
         }
     }
