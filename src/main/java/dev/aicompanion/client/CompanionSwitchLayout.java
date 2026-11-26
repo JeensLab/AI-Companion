@@ -4,7 +4,7 @@ package dev.aicompanion.client;
  * The geometry of the behaviour screen's switch rows. Kept out of the screen so that a GameTest can check it without a
  * client: the rows stand one under another, closer together when they would reach the note under them, and go on pages
  * when they do not all fit — every switch must stay reachable on a small GUI (854×480 is 427×240 at GUI scale 2).
- * The first two rows open the model and pet settings.
+ * The first row opens the model settings and the last row opens the pet settings.
  */
 public final class CompanionSwitchLayout {
     public static final int ROW_WIDTH = 300, ROW_HEIGHT = 20, ROW_STEP = 30, HIGHEST_ROW = 64, NOTE_FROM_BOTTOM = 64, PAGED_STEP = 24;

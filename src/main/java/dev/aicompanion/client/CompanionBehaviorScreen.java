@@ -15,8 +15,6 @@ final class CompanionBehaviorScreen extends Screen {
         addRenderableWidget(Button.builder(Component.literal(CompanionSwitchLayout.MODEL_ENTRY_LABEL), b -> minecraft.setScreen(new CompanionModelScreen(this)))
                 .bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                         "Размышление модели, температура и top_p: что и как он отвечает."))).build());
-        addRenderableWidget(Button.builder(Component.literal("Свой питомец"), b -> minecraft.setScreen(new CompanionPetSettingsScreen(this)))
-                .bounds(left, top, ROW_WIDTH, ROW_HEIGHT).build());
         addRenderableWidget(Button.builder(speechLabel(), b -> {
             OpenRouterConfig.AUTONOMOUS_SPEECH.set(!OpenRouterConfig.AUTONOMOUS_SPEECH.get()); OpenRouterConfig.AUTONOMOUS_SPEECH.save();
             b.setMessage(speechLabel()); CompanionPreferences.sync();
@@ -144,6 +142,8 @@ final class CompanionBehaviorScreen extends Screen {
             b.setMessage(jokeIntervalLabel());
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).build());
         addRenderableWidget(Button.builder(Component.literal("Свои анекдоты: файл и перезагрузка"), b -> minecraft.setScreen(new CompanionJokeScreen(this)))
+                .bounds(left, top, ROW_WIDTH, ROW_HEIGHT).build());
+        addRenderableWidget(Button.builder(Component.literal("Свой питомец"), b -> minecraft.setScreen(new CompanionPetSettingsScreen(this)))
                 .bounds(left, top, ROW_WIDTH, ROW_HEIGHT).build());
         fitRows(top);
     }
