@@ -608,7 +608,7 @@ public final class CompanionWork {
                 List<CompanionPickable.Source> storage = CompanionPickable.storage(level, ore.drop);
                 Item lying = storage.isEmpty() ? ore.drop : storage.getFirst().block().asItem();
                 CompanionReach.Available blocks = CompanionWaySearch.available(owner, level, lying, CompanionPicking.requested(owner, level, lying));
-                if (held >= count) { job = Job.ORE; phase = Phase.ORE_PICK; oreWanted = count; break; }
+                if (held >= count) { job = Job.ORE; phase = Phase.ORE_PICK; oreBatch = batch; oreWanted = count; break; }
                 if (blocks.some()) {
                     // The promise is what lies there, never more than what is still missing: one redstone block over a four-redstone
                     // order with two redstone in the bag is one block of it, and the nine it gives meet the order in the bag.
