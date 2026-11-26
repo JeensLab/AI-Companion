@@ -37,6 +37,11 @@ public final class CompanionElevenLabsVoiceTests {
                 "Multipart fields or PCM framing changed");
         h.assertTrue(ElevenLabsVoiceClient.transcript("{\"text\":\"  Добудь 5 брёвен  \"}").equals("Добудь 5 брёвен"),
                 "Transcript was not returned to the dialogue as text");
+        // A malformed header value keeps this client-path check offline even if the duration guard regresses.
+        var shortRecording = CompanionSpeech.transcribe(new byte[3199], SpeechProvider.ELEVENLABS, "\ninvalid");
+        var error = shortRecording.handle((text, failure) -> failure).join();
+        h.assertTrue(error != null && error.getMessage().contains("Запись слишком короткая"),
+                "A recording under the ElevenLabs minimum reached credential validation");
         h.succeed();
     }
 

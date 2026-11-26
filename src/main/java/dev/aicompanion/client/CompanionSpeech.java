@@ -27,7 +27,9 @@ public final class CompanionSpeech {
             return CompletableFuture.failedFuture(new IllegalStateException(
                     "Добавь ключ " + provider.displayName() + " в настройках мода."));
         }
-        if (audio.length < 1600) {
+        // ElevenLabs requires 100 ms of audio, or 3200 bytes of our mono 16 kHz input.
+        int minimumBytes = provider == SpeechProvider.ELEVENLABS ? 3200 : 1600;
+        if (audio.length < minimumBytes) {
             return CompletableFuture.failedFuture(new IllegalStateException(
                     "Запись слишком короткая. Удерживай клавишу микрофона, пока говоришь."));
         }
