@@ -155,6 +155,8 @@ final class CompanionLoot {
             if (item.getPersistentData().hasUUID(HARVESTER)) continue;
             // Junk he let go to make room for his own things: taking it back would fill the freed slot with it again.
             if (item.getPersistentData().getBoolean(CompanionBag.JUNK)) continue;
+            // «Подбери всё, кроме лазурита»: the lapis stays where it lies until an order takes it.
+            if (item.getPersistentData().getBoolean(CompanionPickUp.LEFT)) continue;
             if (!touches(owner.position(), item)) continue;
             ItemStack offered = item.getItem().copy();
             int before = offered.getCount();

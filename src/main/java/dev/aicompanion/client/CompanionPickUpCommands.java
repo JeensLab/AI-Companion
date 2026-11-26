@@ -33,6 +33,9 @@ public final class CompanionPickUpCommands {
     /** Words that name everything lying around rather than one thing: «подбери всё», «подбери предметы». */
     private static final Set<String> ALL_WORDS = Set.of("все", "весь", "вся", "вещи", "вещь", "всякое", "предмет", "предметы", "предмета", "предметов");
 
+    /** «…всё кроме лазурита», «…всё, но не лазурит и алмазы»: where the things to leave lying start. */
+    private static final Pattern EXCEPT = Pattern.compile("(?U)[\s,]+(?:кроме|но\s+не|за\s+исключением)\s+(.+)$");
+
     /** Words a «ещё» may carry around it: «ещё, пожалуйста», «ещё чуть-чуть», «ещё подбери всё». */
     private static final Pattern MORE_FILLER = Pattern.compile("(?U)\\b(пожалуйста|чуть-чуть|чуть|немного|давай|ну|раз|подбери|подберите|"
             + "все|весь|вся|всё|вещи|вещь|предмет|предметы|предмета|предметов)\\b");
@@ -44,6 +47,9 @@ public final class CompanionPickUpCommands {
 
     /** The same, by the names the game shows (or a stand-in for the language in a test). */
     public static PlannedAction parse(String text, String name, Function<net.minecraft.world.item.Item, String> names) {
+        String lower = text.toLowerCase(Locale.ROOT).replace('ё', 'е');
+        var except = EXCEPT.matcher(lower);
+        if (except.find()) return allBut(lower.substring(0, except.start()), except.group(1), name, names);
         Said said = said(text, name);
         if (said == null) return null;
         if (said.noun().isEmpty()) return all(said.count());
@@ -51,6 +57,25 @@ public final class CompanionPickUpCommands {
         // «Подбери все вещи в воде»: the all-word still names the whole ground when the rest names nothing.
         if (id == null) return said.all() ? all(said.count()) : null;
         return new PlannedAction("pick_up", 0, count(said.count()), id);
+    }
+
+    /**
+     * «Подбери всё кроме лазурита и алмазов»: every drop but the named ones. Null when the part before «кроме» is no
+     * «подбери всё» or a named thing is no item of the registry: neither everything nor that thing is taken on a guess.
+     */
+    private static PlannedAction allBut(String head, String tail, String name, Function<net.minecraft.world.item.Item, String> names) {
+        Said said = said(head, name);
+        if (said == null || !said.noun().isEmpty()) return null;
+        Set<String> left = new java.util.LinkedHashSet<>();
+        for (String part : tail.replaceAll("[.!]+$", "").split("\s*,\s*|\s+и\s+|\s+или\s+")) {
+            String noun = FILLER.matcher(part).replaceAll(" ").replaceAll("\s+", " ").trim();
+            if (noun.isEmpty()) continue;
+            String id = hasAllWord(noun) ? null : CompanionItemLookup.itemFor(noun, names);
+            if (id == null) return null;
+            left.add(id);
+        }
+        if (left.isEmpty()) return null;
+        return new PlannedAction("pick_up", 0, count(said.count()), CompanionPickUp.ANY_ITEM + CompanionPickUp.EXCEPT + String.join(",", left));
     }
 
     /** What a «подбери» phrase names and how much, or null for a phrase that is no pickup at all. */
@@ -66,7 +91,7 @@ public final class CompanionPickUpCommands {
 
     public static Ask ask(String text, String name, Function<net.minecraft.world.item.Item, String> names) {
         Said said = said(text, name);
-        if (said == null || said.noun().isEmpty() || said.all()) return null;
+        if (said == null || said.noun().isEmpty() || said.all() || excepts(text)) return null;
         return CompanionItemLookup.itemFor(said.noun(), names) == null ? new Ask(said.noun(), count(said.count())) : null;
     }
 
@@ -133,6 +158,10 @@ public final class CompanionPickUpCommands {
         return new Said(withoutAllWords(noun), said.count(), hasAllWord(noun));
     }
 
+    private static boolean excepts(String text) {
+        return EXCEPT.matcher(text.toLowerCase(Locale.ROOT).replace('ё', 'е')).find();
+    }
+
     private static boolean hasAllWord(String noun) {
         for (String word : noun.split(" ")) if (isAll(word)) return true;
         return false;
@@ -190,7 +219,7 @@ public final class CompanionPickUpCommands {
      */
     public static PlannedAction fallback(String text, String name) {
         PlannedAction parsed = parse(text, name);
-        if (parsed != null) return parsed;
+        if (parsed != null || excepts(text)) return parsed;
         String value = plain(text, name);
         if (!VERB.matcher(value).matches() && !VERB_TAIL.matcher(value).matches()) return null;
         if (CONTAINER.matcher(value).matches()) return null;
