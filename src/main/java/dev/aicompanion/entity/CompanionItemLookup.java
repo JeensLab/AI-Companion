@@ -111,10 +111,10 @@ public final class CompanionItemLookup {
     }
 
     /**
-     * The item tag the phrase names as a group, or null when it names one thing: «забор» is every fence, «ступеньки» every
-     * stair, «шерсть» every wool, so an order for the kind takes any of them that stands. The tag is the one whose members
-     * are exactly the items the phrase names — the game's own data, never a list here. A tie no tag names exactly («стекло»,
-     * which stained glass answers as well) is one item, as it always was.
+     * The item tag the phrase names as a kind, or null when it names one thing: «забор» is every fence, «ступеньки» every
+     * stair, «шерсть» every wool, so an order for the kind takes any of them that stands. The tag is the game's own — the one
+     * whose members the phrase names together — never a list here. A tie that is one thing and a longer name of it («тыква»
+     * and «вырезанная тыква», «ведро» and «ведро воды») is one item, as it always was.
      */
     public static String groupFor(String phrase, Function<Item, String> names) {
         List<Item> tied = resolve(phrase, names);

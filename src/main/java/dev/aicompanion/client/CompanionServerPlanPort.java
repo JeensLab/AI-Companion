@@ -272,12 +272,17 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             }
             // «Все такие блоки добудь что видишь»: every block of the kind that really stands in the search box, resolved
             // against the world — the client guessed no number, and none is invented here. Nothing of it about is said.
+            // Leaves are no blocks of an item (their own chain sizes the crown): an all-order for them is a stack, as any
+            // leaf order without a number is.
             int asked = action.count();
             if (all) {
-                CompanionReach.Available seen = companion.obtainAvailable(item);
-                asked = seen == null ? 0 : seen.count();
-                if (asked <= 0) return new CompanionPlanRunner.Expansion(java.util.List.of(),
-                        "Рядом не вижу «" + itemName(item) + "»: нечего добывать.");
+                if (leafOrder) asked = 64;
+                else {
+                    CompanionReach.Available seen = companion.obtainAvailable(item);
+                    asked = seen == null ? 0 : seen.count();
+                    if (asked <= 0) return new CompanionPlanRunner.Expansion(java.util.List.of(),
+                            "Рядом не вижу «" + itemName(item) + "»: нечего добывать.");
+                }
             }
             // A bag of several kinds meets the leaf order as one count: the check counts them all, and no tree is cut for it.
             if (byTheBag && dev.aicompanion.entity.CompanionLeaves.isFamily(item))
