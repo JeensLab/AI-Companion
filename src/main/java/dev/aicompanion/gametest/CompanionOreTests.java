@@ -659,6 +659,26 @@ public final class CompanionOreTests {
     }
 
 
+    /**
+     * The ore search is the same box as every other search (CompanionWaySearch): sixty-four across and sixty-four up and down,
+     * cut by the player's own radius — not the old forty-eight across and nine down that refused ore he could see (the owner, 27.11).
+     */
+    @GameTest(template = "tall_tree")
+    public static void theOreSearchUsesTheSameBoxAsEveryOtherSearch(GameTestHelper h) {
+        var origin = h.absolutePos(new BlockPos(16, 1, 16));
+        var search = new dev.aicompanion.entity.CompanionOre.Search(h.getLevel(), origin, 128,
+                dev.aicompanion.entity.CompanionOre.Kind.GOLD);
+        // The box is the general one: sixty-four across, and down to sixty-four (or the world's own floor, which is nearer here).
+        int depth = origin.getY() - Math.max(h.getLevel().getMinBuildHeight(), origin.getY() - 64);
+        h.assertTrue(search.radius() == 64 && search.depth() == depth,
+                "The ore search box is " + search.radius() + " across and " + search.depth() + " down, not the general 64 and " + depth);
+        var small = new dev.aicompanion.entity.CompanionOre.Search(h.getLevel(), origin, 16,
+                dev.aicompanion.entity.CompanionOre.Kind.GOLD);
+        h.assertTrue(small.radius() == 16, "The player's own search radius is not kept: " + small.radius());
+        h.succeed();
+    }
+
+    /** The words of the phrase above, through the player's own router, run by the plan runner. */
     private static CompletableFuture<CompanionPlanRunner.Outcome> say(GameTestHelper h, CompanionEntity companion, List<PlannedAction> actions) {
         return CompanionPlanRunner.run(actions,
                 new CompanionServerPlanPort(h.getLevel().getServer(), companion.getOwnerId(), "gametest-ore", () -> false));

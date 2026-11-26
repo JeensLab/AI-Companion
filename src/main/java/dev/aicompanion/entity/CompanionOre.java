@@ -170,7 +170,7 @@ public final class CompanionOre {
     }
 
     /** Incremental search of loaded sections for one kind of ore around the start, nearest first; exposed ore is cheaper. */
-    static final class Search {
+    public static final class Search {
         private record Section(int cx, int cz, int index) { }
         private final Kind kind;
         private final BlockPos origin;
@@ -180,7 +180,7 @@ public final class CompanionOre {
         private final Deque<Section> pending = new ArrayDeque<>();
         private final List<BlockPos> found = new ArrayList<>();
 
-        Search(ServerLevel level, BlockPos origin, int radius, Kind kind) {
+        public Search(ServerLevel level, BlockPos origin, int radius, Kind kind) {
             this.kind = kind; this.origin = origin.immutable();
             // The same box the general search uses (CompanionWaySearch): sixty-four across and sixty-four up and down, cut by the
             // player's own search radius. The old forty-eight across and sixteen above refused ore he could see (the owner, 27.11).
@@ -219,8 +219,8 @@ public final class CompanionOre {
         List<BlockPos> results(ServerLevel level) {
             return found.stream().sorted(Comparator.comparingDouble(pos -> Math.sqrt(pos.distSqr(origin)) + (exposed(level, pos) ? 0 : 6))).limit(512).toList();
         }
-        int radius() { return radius; }
-        int depth() { return origin.getY() - minY; }
+        public int radius() { return radius; }
+        public int depth() { return origin.getY() - minY; }
 
         private static boolean exposed(ServerLevel level, BlockPos pos) {
             for (Direction side : Direction.values())
