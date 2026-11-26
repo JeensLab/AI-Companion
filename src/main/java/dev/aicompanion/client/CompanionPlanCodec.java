@@ -188,7 +188,9 @@ public final class CompanionPlanCodec {
                 // stack each, and the plan carries the order in the same steps below.
                 int most = "obtain_item".equals(type) ? dev.aicompanion.entity.CompanionWork.MAX_LEAVES
                         : "trade_items".equals(type) ? dev.aicompanion.entity.CompanionTradeOrder.MAX_COUNT : 64;
-                if ("walk_heading".equals(type) ? count < 0 || count > dev.aicompanion.entity.CompanionCourse.MAX_BLOCKS : count < 1 || count > most) throw invalid();
+                // obtain_item alone may carry ALL_VISIBLE: every block of the kind in the search box, counted by the server.
+                if ("walk_heading".equals(type) ? count < 0 || count > dev.aicompanion.entity.CompanionCourse.MAX_BLOCKS
+                        : count < 1 && !("obtain_item".equals(type) && count == dev.aicompanion.entity.CompanionWork.ALL_VISIBLE) || count > most) throw invalid();
                 // "Smelt the iron" names no number: all of it, not a single piece (game log 22.10).
                 if ("smelt_items".equals(type) && !step.has("count")) count = PlannedAction.ALL_CARRIED;
                 // «Закинь саженцы в компостер» names no number: all of them, not one (as the smelting above).
@@ -245,7 +247,9 @@ public final class CompanionPlanCodec {
                 if ("compost_items".equals(type) && !item.isEmpty() && !dev.aicompanion.entity.CompanionComposting.GROUPS.contains(item)
                         && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
                 if (("craft_item".equals(type) || "place_block".equals(type) || "equip_item".equals(type) || "smelt_items".equals(type) || "obtain_item".equals(type)
-                        || "pick_up".equals(type)) && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
+                        || "pick_up".equals(type)) && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")
+                        // obtain_item may name a kind («#minecraft:fences»), which the server answers with the member that stands.
+                        && !("obtain_item".equals(type) && item.matches("#[a-z0-9_.-]+:[a-z0-9/._-]+"))) throw invalid();
                 String slot = step.has("slot") ? step.get("slot").getAsString() : "auto";
                 if (!Set.of("auto", "mainhand", "offhand", "head", "chest", "legs", "feet").contains(slot)) throw invalid();
                 String location = step.has("location") ? step.get("location").getAsString() : "near_player";

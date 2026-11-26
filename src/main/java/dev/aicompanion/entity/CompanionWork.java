@@ -242,6 +242,11 @@ public final class CompanionWork {
     /** smelt_items without a number: everything of the raw material carried, at most a stack (client PlannedAction.ALL_CARRIED). */
     public static final int ALL_CARRIED = 0;
     /**
+     * An order for every block of a kind («все заборы», «все такие блоки»): the count is not guessed on the client — the
+     * server resolves it against the search box, so it is every such block that really stands there, and none is invented.
+     */
+    public static final int ALL_VISIBLE = -1;
+    /**
      * store_items of a deed of his own (CompanionAutonomy): like «resources» (tools, armour, food, bench and chest stay), and the
      * stock he keeps stays too — logs and stone up to his stock, soil for supports. Never sent by the model.
      */

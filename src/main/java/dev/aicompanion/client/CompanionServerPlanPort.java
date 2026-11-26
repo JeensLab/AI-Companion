@@ -262,6 +262,23 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             if (item == null) item = dev.aicompanion.entity.CompanionLeaves.resolve(companion, level, action.item());
             // Nothing to take and not enough carried: the reason and the count he holds — never a flat refusal that hides the part he did bring.
             if (item == null) return new CompanionPlanRunner.Expansion(java.util.List.of(), leavesRefusal(companion, level, action.count()));
+            // A kind order («добудь забор», «все заборы») names a group, not a species: the member of the kind that stands here
+            // is the one taken, so the cherry fence that stands answers an order for a fence, as the game's own tag says.
+            boolean all = action.count() == dev.aicompanion.entity.CompanionWork.ALL_VISIBLE;
+            if (item.startsWith("#")) {
+                String member = memberOf(companion, item, all ? 0 : action.count(), all);
+                if (member == null) return new CompanionPlanRunner.Expansion(java.util.List.of(), "Не понял, какой предмет нужен.");
+                item = member;
+            }
+            // «Все такие блоки добудь что видишь»: every block of the kind that really stands in the search box, resolved
+            // against the world — the client guessed no number, and none is invented here. Nothing of it about is said.
+            int asked = action.count();
+            if (all) {
+                CompanionReach.Available seen = companion.obtainAvailable(item);
+                asked = seen == null ? 0 : seen.count();
+                if (asked <= 0) return new CompanionPlanRunner.Expansion(java.util.List.of(),
+                        "Рядом не вижу «" + itemName(item) + "»: нечего добывать.");
+            }
             // A bag of several kinds meets the leaf order as one count: the check counts them all, and no tree is cut for it.
             if (byTheBag && dev.aicompanion.entity.CompanionLeaves.isFamily(item))
                 return new CompanionPlanRunner.Expansion(java.util.List.of(
@@ -269,9 +286,9 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             // A leaf order short of its count takes only the part the bag lacks — the leaves of every kind he carries count
             // toward it — and is checked as one count of leaves, not as the species of the tree he came at.
             String check = item;
-            int need = action.count();
+            int need = asked;
             if (leafOrder && !byTheBag) {
-                need = action.count() - dev.aicompanion.entity.CompanionLeaves.carried(companion) + companion.carriedCount(item);
+                need = asked - dev.aicompanion.entity.CompanionLeaves.carried(companion) + companion.carriedCount(item);
                 check = dev.aicompanion.entity.CompanionLeaves.FAMILY;
             }
             // An order is done when the thing is in the bag, in the count asked — never because a block of it still stands in the
@@ -281,8 +298,8 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             // In the Nether on the errand the way home is part of the chain (nether_back): the bag's answer must not drop it, so
             // there the plan is made as before and its own steps carry him out.
             boolean away = level.dimension() == net.minecraft.world.level.Level.NETHER;
-            if (have >= action.count() && !away)
-                return new CompanionPlanRunner.Expansion(java.util.List.of(new PlannedAction("verify_item", 0, action.count(), check)), null);
+            if (have >= asked && !away)
+                return new CompanionPlanRunner.Expansion(java.util.List.of(new PlannedAction("verify_item", 0, asked, check)), null);
             // What lies about him of the thing is taken before anything is made or dug for it — the same rule a block lying there
             // follows: a drop still waiting is fetched by the pickup, and the bag is checked after it. A re-search that finds no
             // block of the item is no reason to give the order up while its drop lies on the ground.
@@ -315,7 +332,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             // No gather left in the chain (the bag meets the order): the soil for a column is not dug for nothing.
             if (soil > 0 && !plan.steps().isEmpty()) steps.add(new PlannedAction("gather_dirt", 0, soil, ""));
             for (var step : plan.steps()) steps.add(new PlannedAction(step.type(), 0, step.count(), step.item()));
-            steps.add(new PlannedAction("verify_item", 0, world == null ? action.count() : promised, check));
+            steps.add(new PlannedAction("verify_item", 0, world == null ? asked : promised, check));
             return new CompanionPlanRunner.Expansion(java.util.List.copyOf(steps), null);
         });
     }
@@ -333,6 +350,42 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
         String why = soil ? "до листвы не достану, дай земли."
                 : tooHigh ? "до листвы не достану даже со столбом." : "рядом листвы не вижу.";
         return "У меня " + have + " из " + count + " — " + why;
+    }
+
+    /**
+     * The one item a kind order takes («#minecraft:fences»): what he already carries of the kind answers first — the bag that
+     * meets the order is the answer — then the member of the kind that stands in his search box, and only then a member the
+     * chain can make of what he carries. Null when the game's tag names nothing.
+     */
+    private static String memberOf(CompanionEntity companion, String group, int count, boolean all) {
+        java.util.List<net.minecraft.world.item.Item> members = dev.aicompanion.entity.CompanionItemLookup.members(group);
+        if (members.isEmpty()) return null;
+        // Every block of the kind is what an all-order wants: the bag is no answer there, the world is.
+        if (!all && count > 0) for (var member : members) {
+            String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(member).toString();
+            if (companion.carriedCount(id) >= count) return id;
+        }
+        String standing = null;
+        int most = 0;
+        for (var member : members) {
+            String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(member).toString();
+            var seen = companion.obtainAvailable(id);
+            if (seen != null && seen.count() > most) { most = seen.count(); standing = id; }
+        }
+        if (standing != null) return standing;
+        // None of the kind about: a member the chain can make of what he carries, else the first of the kind.
+        for (int at = 0; at < Math.min(members.size(), 16); at++) {
+            String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(members.get(at)).toString();
+            if (!companion.obtainPlan(id, Math.max(1, count)).refused()) return id;
+        }
+        return net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(members.getFirst()).toString();
+    }
+
+    /** The name the game shows for an item id, for a refusal that names it. */
+    private static String itemName(String id) {
+        var key = net.minecraft.resources.ResourceLocation.tryParse(id);
+        var item = key == null ? null : net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(key).orElse(null);
+        return item == null ? id : new net.minecraft.world.item.ItemStack(item).getHoverName().getString();
     }
 
     @Override public CompletableFuture<Integer> carried(String item) {

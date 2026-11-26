@@ -121,7 +121,11 @@ public final class CompanionLocalCommands {
         if (grind != null) return grind;
         String compost = CompanionWorkCommands.compost(text, companionName);
         if (compost != null) return compost;
-        // «Добудь тыкву», «сорви блок тыквы», «принеси 2 тыквы»: any thing the game's own registry names, by the same obtain
+        // «Все такие блоки добудь что видишь», «все заборы сломай»: every block of the kind in his search box, a count the
+        // server resolves against the world — before the single order, which would read «все заборы» as one thing named.
+        String all = CompanionWorkCommands.allItems(text, companionName, names);
+        if (all != null) return all;
+        // «Добудь тыкву», «сорви блок тыквы», «принеси 2 тыквы», «сломай вишнёвый забор»: any thing the game's own registry names, by the same obtain
         // path the ore and obsidian take. After the orders above, so «добудь обсидиан» keeps its ten and «принеси воды» its
         // hand-over; before the places, so «принеси мне тыкву» is no walk to a marker.
         String item = CompanionWorkCommands.itemOrder(text, companionName, names);

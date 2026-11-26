@@ -2,6 +2,7 @@ package dev.aicompanion.entity;
 
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -107,6 +108,37 @@ public final class CompanionItemLookup {
             if (score > best) { best = score; picked = item; }
         }
         return picked == null ? null : BuiltInRegistries.ITEM.getKey(picked).toString();
+    }
+
+    /**
+     * The item tag the phrase names as a group, or null when it names one thing: «забор» is every fence, «ступеньки» every
+     * stair, «шерсть» every wool, so an order for the kind takes any of them that stands. The tag is the one whose members
+     * are exactly the items the phrase names — the game's own data, never a list here. A tie no tag names exactly («стекло»,
+     * which stained glass answers as well) is one item, as it always was.
+     */
+    public static String groupFor(String phrase, Function<Item, String> names) {
+        List<Item> tied = resolve(phrase, names);
+        if (tied.size() < 2) return null;
+        java.util.Set<TagKey<Item>> common = null;
+        for (Item item : tied) {
+            java.util.Set<TagKey<Item>> tags = BuiltInRegistries.ITEM.wrapAsHolder(item).tags().collect(java.util.stream.Collectors.toSet());
+            if (common == null) common = new java.util.HashSet<>(tags);
+            else common.retainAll(tags);
+            if (common.isEmpty()) return null;
+        }
+        for (TagKey<Item> tag : common) {
+            var named = BuiltInRegistries.ITEM.getTag(tag).orElse(null);
+            if (named != null && named.stream().count() == tied.size()) return "#" + tag.location();
+        }
+        return null;
+    }
+
+    /** The items a tag names («#minecraft:fences» every fence), in the registry's own order; empty for an unknown tag. */
+    public static List<Item> members(String tag) {
+        ResourceLocation id = ResourceLocation.tryParse(tag.startsWith("#") ? tag.substring(1) : tag);
+        if (id == null) return List.of();
+        var named = BuiltInRegistries.ITEM.getTag(TagKey.create(net.minecraft.core.registries.Registries.ITEM, id)).orElse(null);
+        return named == null ? List.of() : named.stream().map(net.minecraft.core.Holder::value).toList();
     }
 
     /**

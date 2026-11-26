@@ -175,6 +175,11 @@ public final class CompanionObtain {
         // What lies about him of this very item is taken by the one geometry way before anything is made of it — a planks
         // block, a lapis block, a pumpkin in the air, a stripped block as it lies: the same rule for every block, no names
         // (PATH7, #105). It comes before a chain of his own skills: what is already in the world is no work to make.
+        // This is the one place the choice «take it or craft it» is made, and the world makes it, never the phrase: a fence,
+        // a stair, a slab, wool and glass that stand about him are gathered, and only what is nowhere in the search box is
+        // crafted below. The word «блок» is no part of it — it only asks for the block of a thing — and a bare kind («забор»)
+        // reaches here as the member of the kind that stands (CompanionServerPlanPort#memberOf), so neither a species nor
+        // the measure word decides what is done.
         // Obsidian keeps its own work, which also cools lava and takes the water back, but its blocks are counted by that answer.
         if (carried(carried, item) >= count) return new Plan(List.of(), null);
         // What lies about him of this very item is asked of the one search before anything is made of it — a gourd, a storage

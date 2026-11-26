@@ -51,7 +51,7 @@ public final class CompanionWorkCommands {
      * The thing is one or two words — «блок тыквы», «золотой блок» — and the words after it are the ones that only say where
      * to look. Anything else in the phrase («и вернись», «потом домой») is no plain order of one thing: the model's.
      */
-    private static final Pattern ANY_ORDER = Pattern.compile("^(?:(?<verb>(?:до|да)будь(?:ка)?|накопай|выкопай|собери|сорви|нарви|набери|принеси|дай|достань|поищи|найди))"
+    private static final Pattern ANY_ORDER = Pattern.compile("^(?:(?<verb>(?:до|да)будь(?:ка)?|сломай(?:ка)?|разбей|ломай|выломай|накопай|выкопай|собери|сорви|нарви|набери|принеси|дай|достань|поищи|найди))"
             + "(?: мне| нам| себе)?\\s+(?:(?<measure>блоков|блока|блок|штук|штуки|шт)\\s+)?(?<thing>\\p{L}+(?: \\p{L}+)?)"
             + "(?:\\s+(?:рядом|поблизости|с земли|с дерева|тут|здесь))?$", Pattern.UNICODE_CHARACTER_CLASS);
 
@@ -59,14 +59,22 @@ public final class CompanionWorkCommands {
     private static final java.util.Set<String> GIVING = java.util.Set.of("принеси", "дай");
 
     /**
-     * «Добудь тыкву», «сорви блок тыквы», «принеси мне 2 тыквы» (owner, 24.11): the thing by the name the game shows,
-     * whatever it is — the registry answers ({@link dev.aicompanion.entity.CompanionItemLookup}), never a list here, so a
-     * mod's own thing answers to its own name too. The order is the same obtain path obsidian and the ore take (obtain_item),
-     * never a sentence of the model that leaves nothing done. Null when the verb is none of these or the registry cannot name
-     * the thing («кура», «тухлое мясо»): then the model decides, as for every name it knows better.
+     * «Добудь тыкву», «сорви блок тыквы», «принеси мне 2 тыквы», «сломай вишнёвый забор» (owner, 24.11, 26.11): the thing by
+     * the name the game shows, whatever it is — the registry answers ({@link dev.aicompanion.entity.CompanionItemLookup}),
+     * never a list here, so a mod's own thing answers to its own name too. The order is the same obtain path obsidian and the
+     * ore take (obtain_item), never a sentence of the model that leaves nothing done.
+     *
+     * The order is answered by the world first, whatever it names: a fence, a stair, a slab, wool or glass that stands about
+     * him is broken and picked up, and only a thing that is nowhere in the search box is crafted (CompanionObtain). The word
+     * «блок» is no part of that rule — it only asks for the block OF a thing («блок лазурита» is the lapis block, not the
+     * lapis) — and a bare kind («забор») names the whole group by the game's own tag, so any member of it that stands answers
+     * the order. «Сломай» is a mining order like «добудь»: only «принеси» and «дай» add the hand-over after it.
+     *
+     * Null when the verb is none of these or the registry cannot name the thing («кура», «тухлое мясо»): then the model
+     * decides, as for every name it knows better.
      */
     public static String itemOrder(String text, String name, java.util.function.Function<net.minecraft.world.item.Item, String> names) {
-        String value = plain(text, name).replaceAll("\\s+", " ").trim();
+        String value = plain(text, name).replace("-ка", "ка").replaceAll("\\s+", " ").trim();
         var said = CompanionNumbers.parse(value);
         if (said.count() == CompanionNumbers.UNCLEAR) return null;
         var order = ANY_ORDER.matcher(said.rest());
@@ -78,14 +86,57 @@ public final class CompanionWorkCommands {
         // thing, and only when no block answers the name is the thing itself the answer («блок тыквы» is the pumpkin).
         if (measure != null && measure.startsWith("блок")) {
             id = dev.aicompanion.entity.CompanionItemLookup.blockFor(thing, names);
-            if (id == null) id = dev.aicompanion.entity.CompanionItemLookup.itemFor(thing, names);
-        } else id = dev.aicompanion.entity.CompanionItemLookup.itemFor(thing, names);
+            if (id == null) id = named(thing, names);
+        } else id = named(thing, names);
         if (id == null) return null;
         // One when no number is said, a stack for «сколько сможешь», a few for «побольше»; more than a stack is the model's,
         // which splits it into steps of a stack each.
         int count = amount(said.count(), 1, 64, 8);
         if (count < 1 || count > 64) return null;
+        lastItem = id;
         return "companion work obtain_item " + count + " " + id + (GIVING.contains(order.group("verb")) ? " give" : "");
+    }
+
+    /** The thing by its name: a group («забор» — every fence) when the game's own tag names exactly that group, else one item. */
+    private static String named(String thing, java.util.function.Function<net.minecraft.world.item.Item, String> names) {
+        String group = dev.aicompanion.entity.CompanionItemLookup.groupFor(thing, names);
+        return group != null ? group : dev.aicompanion.entity.CompanionItemLookup.itemFor(thing, names);
+    }
+
+    /** The verbs of an order for every block of a kind, and the words that only fill the phrase. */
+    private static final java.util.Set<String> ALL_VERBS = java.util.Set.of("добудь", "дабудь", "добудька", "сломай", "сломайка",
+            "разбей", "ломай", "выломай", "накопай", "выкопай", "собери", "нарви", "набери", "достань", "поищи", "найди");
+    private static final java.util.Set<String> ALL_WORDS = java.util.Set.of("все", "всё", "такие", "такой", "такая", "такое",
+            "эти", "этот", "это", "что", "видишь", "найдешь", "мне", "нам", "себе", "рядом", "поблизости", "тут", "здесь", "и", "же");
+    private static final java.util.Set<String> ALL_MEASURES = java.util.Set.of("блоков", "блока", "блок", "блоки", "штук", "штуки", "шт");
+    /** The thing the last item order named: «все такие блоки» names no thing of its own. */
+    private static String lastItem;
+
+    /**
+     * «Все такие блоки добудь что видишь», «все заборы сломай», «добудь все заборы» (owner, 26.11): every block of the kind
+     * the phrase names — or of the last item order, when the words only say «такие» — that stands in his search box, as one
+     * order. The count is {@link dev.aicompanion.entity.CompanionWork#ALL_VISIBLE}, which the server resolves against the
+     * world, so no number is guessed here and none is invented. Null for anything else, which is the model's.
+     */
+    public static String allItems(String text, String name, java.util.function.Function<net.minecraft.world.item.Item, String> names) {
+        String value = plain(text, name).replace("-ка", "ка").replaceAll("\\s+", " ").trim();
+        java.util.List<String> tokens = java.util.List.of(value.split(" "));
+        if (!tokens.contains("все") && !tokens.contains("всё")) return null;
+        var said = CompanionNumbers.parse(value);
+        if (said.count() == CompanionNumbers.UNCLEAR) return null;
+        String verb = null;
+        StringBuilder thing = new StringBuilder();
+        for (String word : said.rest().split(" ")) {
+            if (ALL_VERBS.contains(word)) { if (verb != null) return null; verb = word; }
+            else if (ALL_WORDS.contains(word) || ALL_MEASURES.contains(word)) continue;
+            else thing.append(thing.isEmpty() ? "" : " ").append(word);
+        }
+        String words = thing.toString();
+        if (verb == null || words.split(" ").length > 2) return null;
+        String id = words.isEmpty() ? lastItem : named(words, names);
+        if (id == null) return null;
+        lastItem = id;
+        return "companion work obtain_item " + dev.aicompanion.entity.CompanionWork.ALL_VISIBLE + " " + id;
     }
 
     /** Lower case, ё as е, without his name in front and the full stop or «!» at the end. */
