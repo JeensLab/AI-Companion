@@ -4,6 +4,7 @@ import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.client.MacOsVoice;
 import dev.aicompanion.client.MacOsVoiceHint;
 import dev.aicompanion.client.SpeechEngine;
+import dev.aicompanion.client.SpeechProvider;
 import dev.aicompanion.client.VoicePcm;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -17,12 +18,12 @@ import java.util.concurrent.CompletionException;
 public final class CompanionMacOsVoiceTests {
     @GameTest(template = "empty")
     public static void macosVoiceNeedsNoKeyButRespectsTheSwitch(GameTestHelper h) {
-        h.assertTrue(SpeechEngine.choose("", true, false, true) == SpeechEngine.MACOS, "No local voice on macOS");
-        h.assertTrue(SpeechEngine.choose(" ", true, false, true) == SpeechEngine.MACOS, "Blank key selected Inworld");
-        h.assertTrue(SpeechEngine.choose("", false, false, true) == SpeechEngine.NONE, "Disabled local voice spoke");
-        h.assertTrue(SpeechEngine.choose("key", true, false, true) == SpeechEngine.INWORLD, "Local voice replaced Inworld");
-        h.assertTrue(SpeechEngine.choose("key", false, false, true) == SpeechEngine.INWORLD, "Local switch disabled Inworld");
-        h.assertTrue(SpeechEngine.choose("", true, false, false) == SpeechEngine.NONE, "Local voice selected on Linux");
+        h.assertTrue(SpeechEngine.choose(SpeechProvider.INWORLD, "", true, false, true) == SpeechEngine.MACOS, "No local voice on macOS");
+        h.assertTrue(SpeechEngine.choose(SpeechProvider.INWORLD, " ", true, false, true) == SpeechEngine.MACOS, "Blank key selected Inworld");
+        h.assertTrue(SpeechEngine.choose(SpeechProvider.INWORLD, "", false, false, true) == SpeechEngine.NONE, "Disabled local voice spoke");
+        h.assertTrue(SpeechEngine.choose(SpeechProvider.INWORLD, "key", true, false, true) == SpeechEngine.INWORLD, "Local voice replaced Inworld");
+        h.assertTrue(SpeechEngine.choose(SpeechProvider.INWORLD, "key", false, false, true) == SpeechEngine.INWORLD, "Local switch disabled Inworld");
+        h.assertTrue(SpeechEngine.choose(SpeechProvider.INWORLD, "", true, false, false) == SpeechEngine.NONE, "Local voice selected on Linux");
         h.succeed();
     }
     @GameTest(template = "empty")
@@ -37,7 +38,7 @@ public final class CompanionMacOsVoiceTests {
     public static void missingVoiceExplainsItselfOnlyOnce(GameTestHelper h) {
         var hint = new MacOsVoiceHint();
         String first = hint.take();
-        h.assertTrue(first != null && first.contains("русск") && first.contains("Inworld"), "No useful missing voice hint");
+        h.assertTrue(first != null && first.contains("русск") && first.contains("голосовой сервис"), "No useful missing voice hint");
         h.assertTrue(hint.take() == null && hint.take() == null, "Hint repeated");
         h.assertTrue("no_russian_voice".equals(MacOsVoice.unavailableReason(new CompletionException(
                 new MacOsVoice.Unavailable("no_russian_voice")))), "Wrapped unavailable voice not recognized");

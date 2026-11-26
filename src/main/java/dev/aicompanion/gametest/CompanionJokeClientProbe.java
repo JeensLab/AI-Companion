@@ -5,7 +5,7 @@ import dev.aicompanion.CompanionConversation;
 import dev.aicompanion.CompanionJokes;
 import dev.aicompanion.OpenRouterConfig;
 import dev.aicompanion.client.CompanionVoiceAudio;
-import dev.aicompanion.client.InworldTtsClient;
+import dev.aicompanion.client.CompanionSpeech;
 import dev.aicompanion.client.OpenRouterClient;
 import dev.aicompanion.entity.CompanionEntity;
 import net.minecraft.client.Minecraft;
@@ -99,7 +99,7 @@ public final class CompanionJokeClientProbe {
                 var wav = CompanionFaceRenderProbe.class.getDeclaredMethod("wav", int.class, boolean.class);
                 wav.setAccessible(true);
                 audio = CompanionVoiceAudio.play((byte[]) wav.invoke(null, 6, false), speaker.getUUID(), mc.level);
-                field(InworldTtsClient.class, "playbackQueue").set(null, audio);
+                field(CompanionSpeech.class, "playbackQueue").set(null, audio);
                 beforeAudio = lastJoke();
                 phase = 1;
             } else if (phase == 1 && soundStarted) {
@@ -107,7 +107,7 @@ public final class CompanionJokeClientProbe {
                 check(lastJoke() == beforeAudio, "Joke interrupted playback before the probe observed it");
                 invokeTick();
                 check(lastJoke() == beforeAudio, "Joke interrupted actual local audio playback");
-                audio.cancel(false); InworldTtsClient.resetPlaybackQueue();
+                audio.cancel(false); CompanionSpeech.resetPlaybackQueue();
                 java.util.Locale.setDefault(java.util.Locale.ENGLISH);
                 mc.getLanguageManager().setSelected("en_us");
                 var files = Class.forName("dev.aicompanion.client.CompanionJokeFiles");
@@ -121,7 +121,7 @@ public final class CompanionJokeClientProbe {
                 deliveryStarted = mc.level.getGameTime(); soundStarted = false; invokeTick(); phase = 4;
             } else if (phase == 4 && lastJoke() >= deliveryStarted) {
                 check(field(OpenRouterClient.class, "HISTORY").get(null).toString().contains("Внимание, анекдот. " + LONG_STORY), "Custom story announcement or full text missing from history");
-                audio = (CompletableFuture<Void>) field(InworldTtsClient.class, "playbackQueue").get(null);
+                audio = (CompletableFuture<Void>) field(CompanionSpeech.class, "playbackQueue").get(null);
                 phase = 5;
             } else if (phase == 5 && audio.isDone()) {
                 audio.join(); check(soundStarted, "Long story did not reach actual local speech playback");

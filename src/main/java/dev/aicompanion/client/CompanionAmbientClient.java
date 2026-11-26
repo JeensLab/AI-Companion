@@ -145,7 +145,7 @@ final class CompanionAmbientClient {
         var client = Minecraft.getInstance();
         return !CompanionJokeFiles.loading() && OpenRouterConfig.JOKES.get() && OpenRouterConfig.AUTONOMOUS_SPEECH.get()
                 && client.player != null && !client.isPaused() && client.screen == null
-                && conversation.ready(now()) && !busy() && !InworldTtsClient.isSpeaking() && safe(speaker)
+                && conversation.ready(now()) && !busy() && !CompanionSpeech.isSpeaking() && safe(speaker)
                 && !speaker.isGatheringTask() && !speaker.isVisiblyBusy() && !speaker.fighting()
                 && (OpenRouterConfig.SHORT_MURMURS.get() || CompanionVoiceAudio.audible(speaker));
     }
