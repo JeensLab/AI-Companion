@@ -723,6 +723,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether a shut wooden fence gate on his route is opened, walked through and shut behind him (the player can turn it off in the settings). */
     public boolean fenceGates() { return fenceGatesOn; }
     public void setFenceGates(boolean on) { fenceGatesOn = on; }
+    /** A shut gate in the cell he stands in, opened before the game's movement control reads its 1.5-high shape as a step. */
+    boolean openGateUnder() { return gateGoal.openUnder(); }
     /** Whether he builds a way up to a block no walk reaches (the player can turn it off in the settings). */
     public boolean buildWay() { return buildWayOn; }
     public void setBuildWay(boolean on) {
@@ -1138,6 +1140,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         swimming.climbOutOfWater();
         pushOutOfBlocks();
         meals.tickEating();
+        // His eye of ender in the air, and the one that fell: every tick, whatever has his legs (CompanionCourse.watch).
+        work.course.watch();
         loot.tickNearby();
         // A floor held for the drops it was the walk to comes back once they are in his bag; a column held for the drop it was
         // the way to climbs to it and comes back once it is in his bag (CompanionPillar.tickHeld).
@@ -1350,6 +1354,12 @@ public final class CompanionEntity extends PathfinderMob implements Container {
 
     /** The game tells every mob to leave a ghast alone; who may be fought is decided in fairTarget, and a ghast is for the bow. */
     @Override public boolean canAttackType(net.minecraft.world.entity.EntityType<?> type) { return true; }
+
+    /**
+     * A silverfish come by lava is let go by every goal of the game that holds a target: they ask this every tick they keep one
+     * (TargetGoal.canContinueToUse), and the hit-back goal would else hand it back each tick and keep all others off (CompanionCombat.wakesLava).
+     */
+    @Override public boolean canAttack(LivingEntity target) { return super.canAttack(target) && !CompanionCombat.wakesLava(target); }
 
     /** A last guard: whatever goal picked them, the player and his pets are never a target. */
     @Override public void setTarget(LivingEntity target) {

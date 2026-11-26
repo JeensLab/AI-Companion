@@ -5,7 +5,7 @@ import java.util.regex.Pattern;
 
 /**
  * «Веди на северо-восток», «пройди 200 блоков на запад», «веди на юг, пока не найдём деревню» (issue #71): the whole phrase is
- * the order, so a request with more in it («…и добудь дерево») goes to the model.
+ * the order, so a request with more in it («…и добудь дерево») goes to the model. «Веди к крепости», «брось око» the same.
  */
 final class CompanionHeadingCommands {
     private static final String DISTANCE = "(\\d{1,4})\\s*(?:блок\\p{L}*|шаг\\p{L}*|метр\\p{L}*)?";
@@ -16,6 +16,10 @@ final class CompanionHeadingCommands {
             + "(?:\\s+" + DISTANCE + ")?"
             + "(?:[\\s,]+(?:пока|покуда)\\s+не\\s+(?:(?:найдем|найдешь|увидим|увидишь|встретим)\\s+(\\p{L}+)|скажу\\s+стоп))?"
             + "[\\s,.!]*(?:пожалуйста)?[\\s.!]*");
+    /** «Веди к крепости», «брось око»: the walk where his eye of ender flies. */
+    private static final Pattern EYE = Pattern.compile("(?sU)(?:(?:ну|а|давай|пожалуйста)[\\s,]+)*"
+            + "(?:(?:веди|поведи|отведи|проведи|иди|пойди|пошли|пойдем|идем)(?:\\s+(?:нас|меня))?\\s+к\\s+крепости(?:\\s+края)?"
+            + "|(?:брось|бросай|кинь|кидай|запусти)\\s+око(?:\\s+края)?)[\\s,.!]*(?:пожалуйста)?[\\s.!]*");
     private static final Map<String, String> TARGETS = Map.ofEntries(Map.entry("деревн", "village"), Map.entry("вод", "water"),
             Map.entry("озер", "water"), Map.entry("рек", "water"), Map.entry("мор", "water"), Map.entry("лес", "forest"),
             Map.entry("деревь", "forest"), Map.entry("животн", "animals"), Map.entry("коров", "cow"), Map.entry("свин", "pig"),
@@ -28,6 +32,7 @@ final class CompanionHeadingCommands {
         String rest = normalized.strip();
         String name = companionName == null ? "" : companionName.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е').strip();
         if (!name.isEmpty() && rest.startsWith(name)) rest = rest.substring(name.length()).replaceFirst("(?sU)^[\\s\\p{Punct}—]+", "");
+        if (EYE.matcher(rest).matches()) return "companion work walk_heading 0 stronghold";
         var matcher = ORDER.matcher(rest);
         if (!matcher.matches()) return null;
         String heading = heading(matcher.group(2));

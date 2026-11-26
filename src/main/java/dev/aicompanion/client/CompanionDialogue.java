@@ -76,6 +76,7 @@ public final class CompanionDialogue {
             case "take_items" -> "Сейчас заберу " + CompanionContainers.from(actions.getFirst().location()) + ".";
             case "build_house" -> actions.getFirst().item().isEmpty() ? "Окей, построю нам небольшой деревянный дом." : actions.getFirst().item().startsWith("resume") ? "Окей, дострою." : "Окей, построю: " + dev.aicompanion.entity.CompanionBuildPlacement.Site.nameOf(actions.getFirst().item()) + ".";
             case "build_portal" -> "Окей, займусь порталом в Незер.";
+            case "open_end_portal" -> "Окей, вставлю очи в портал Края.";
             case "build_cobble_gen" -> "Окей, сделаю генератор булыжника.";
             case "build_golem" -> "snow".equals(actions.getFirst().item()) ? "Окей, слеплю снеговика." : "Окей, сделаю железного голема.";
             case "craft_item" -> "Сейчас сделаю.";
@@ -116,6 +117,7 @@ public final class CompanionDialogue {
             case "repair_item" -> "Сейчас сложу две в одну.";
             case "disenchant_item" -> "Ага, сниму чары на точиле.";
             case "compost_items" -> "Ага, займусь компостером.";
+            case "fish" -> "Ага, пойду порыбачу.";
             case "pursue_goal" -> "Дело долгое. Прикину, докуда смогу дойти.";
             default -> "Окей.";
         };
@@ -212,6 +214,7 @@ public final class CompanionDialogue {
             case "nether_go" -> "сходить в Незер через портал у " + action.item();
             case "nether_back" -> "вернуться из Незера через портал";
             case "scoop_mob" -> "зачерпнуть ведром «" + itemName(action.item()) + "» (" + action.count() + " шт.)";
+            case "fish" -> "порыбачить" + (action.count() > 0 ? " (" + action.count() + " шт.)" : "");
             case "strip_log" -> "обтесать топором: «" + itemName(action.item()) + "» (" + action.count() + " шт.)";
             case "craft_item" -> "сделать «" + itemName(action.item()) + "»";
             case "place_block" -> "поставить «" + itemName(action.item()) + "»";
@@ -222,6 +225,7 @@ public final class CompanionDialogue {
             case "take_items" -> "забрать вещи " + CompanionContainers.from(action.location());
             case "build_house" -> "построить дом";
             case "build_portal" -> "построить портал в Незер";
+            case "open_end_portal" -> "вставить очи в портал Края";
             case "build_cobble_gen" -> "построить генератор булыжника";
             case "build_golem" -> "snow".equals(action.item()) ? "слепить снеговика" : "сделать железного голема";
             case "hunt_mobs" -> "разобраться с монстрами";
@@ -511,15 +515,23 @@ public final class CompanionDialogue {
         }
         if (last.contains("План остановлен:")) {
             String failure = dev.aicompanion.CompanionFailureMessages.primary(last);
+            // The End portal's eyes: how many he put in and how many are missing is the answer, not «не хватает материалов».
+            if (actions.stream().anyMatch(action -> "open_end_portal".equals(action.type()))) return speakable(failure);
             // A pen or a breeding order says its own facts (what stands, who is inside, what is missing), not a general excuse.
             if (actions.stream().anyMatch(action -> "build_pen".equals(action.type()) || "breed_animals".equals(action.type()) || "scout_traders".equals(action.type()) || "trade_items".equals(action.type()))) return speakable(failure);
             String partial = partialGather(actions, failure);
             if (partial != null) return partial;
             if (failure.contains("Для подъёма не хватает земли")) return "До верхушки без опоры не достану. Дай мне немного земли.";
             if (failure.contains("сумке нет места") || failure.contains("сумка заполнена")) return "Бля, сумка забита. Нужно освободить место.";
+            // A place that would not take a thing («…безопасное место…», «…не хватает свободного места»): said as the place,
+            // before the materials line its «не хватает» would otherwise take.
+            if (dev.aicompanion.CompanionFailureMessages.kind(failure) == dev.aicompanion.CompanionFailureMessages.Kind.PLACE)
+                return dev.aicompanion.CompanionFailureMessages.explain(actions.isEmpty() ? "" : actions.getFirst().type(), failure);
+            // A bench with no wood for a new one says the bench, not the materials its «не хватает» would name.
+            if (dev.aicompanion.CompanionFailureMessages.benchWithoutWood(failure))
+                return dev.aicompanion.CompanionFailureMessages.explain(actions.isEmpty() ? "" : actions.getFirst().type(), failure);
             if (failure.contains("недостаточно") || failure.contains("не хватает") || failure.contains("Не хватает")) return "На всё пока не хватает материалов.";
             if (failure.contains("дерев") || failure.contains("брёвен")) return "Доступного дерева больше не нашёл. Давай поищем в другом месте.";
-            if (failure.contains("безопасное место")) return "Здесь не получается поставить. Нужно место посвободнее.";
             // The farm's own words carry what is missing and why: no water, no seeds, no ripe crops.
             if (actions.stream().anyMatch(action -> "farm_crops".equals(action.type()) || "harvest_crops".equals(action.type()) || "use_bone_meal".equals(action.type()))) return speakable(failure);
             // The engine's own words for a reason that has no kind, if short, as in failedParts (game 29.10: «Не нашёл ровную свободную

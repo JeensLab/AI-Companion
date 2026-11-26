@@ -243,6 +243,11 @@ public final class CompanionWorkCommands {
             return new PlannedAction("build_portal", 0, 1,
                     value.matches(".*(?:новый|другой|еще один|не хочу|не пойду|не надо).*") ? "new"
                             : value.matches(".*(?:здесь|тут|возле меня|рядом со мной).*") ? "here" : "");
+        // «Открой портал Края», «вставь очи» (decided 24.11): his eyes of ender into the empty frames near him. A bare «открой портал»
+        // is the model's: an unlit frame of the Nether's may stand by.
+        if (value.matches("^(?:открой|активируй|зажги|запусти|включи)(?: мне| нам)? портал (?:края|в край|в энд|в эндер|энда)$"
+                + "|^(?:вставь|поставь|вложи|положи)(?: свои| все)? (?:очи|око|глаза)(?: края| эндера)?(?: в (?:портал|рамки|рамку|рамки портала)(?: края)?)?$"))
+            return new PlannedAction("open_end_portal", 0, 1);
         // «Сделай генератор булыжника»: lava, stone and water set in a dug channel from his buckets; the buckets are not got by it.
         if (value.matches("^(?:построй|сделай|сооруди)(?: мне| нам| себе)? (?:(?:каменный|булыжниковый) генератор|генератор (?:булыжника|булыжников|булыжник|камня|камней))"
                 + "(?: рядом| здесь| тут)?$"))
@@ -254,6 +259,14 @@ public final class CompanionWorkCommands {
         var said = CompanionNumbers.parse(value);
         if (said.count() == CompanionNumbers.UNCLEAR) return null;
         String bare = said.rest().replace("-ка", "ка").replaceAll("\\s+", " ").trim();
+        // «Порыбачь», «налови рыбы»: until he is stopped; «налови 5 рыб» so many, «поймай рыбу» one (CompanionFishing). A fish by its name and «0 рыб» are the model's.
+        boolean zero = said.count() == 0 && !said.rest().equals(value);
+        if (said.count() == 0 && bare.matches("^(?:порыбачь(?:ка)?|рыбачь|(?:иди|сходи|пойди) (?:порыбачь|на рыбалку)|полови(?:ка)? (?:рыбу|рыбы|рыбку))(?: рядом| тут| здесь)?$"))
+            return new PlannedAction("fish", 0, PlannedAction.ALL_CARRIED, dev.aicompanion.entity.CompanionFishing.ANY);
+        var fishing = Pattern.compile("^(налови|поймай|вылови)(?:ка)?(?: мне| нам| себе)? (?:рыбу|рыбы|рыб|рыбку|рыбки|рыбок|рыбину|рыбин)(?: удочкой| на удочку)?$").matcher(bare);
+        if (fishing.matches() && !zero && said.count() <= 64 && said.count() != CompanionNumbers.MORE)
+            return new PlannedAction("fish", 0, said.count() > 0 ? said.count() : said.count() == CompanionNumbers.AS_MANY || "налови".equals(fishing.group(1)) ? PlannedAction.ALL_CARRIED : 1,
+                    dev.aicompanion.entity.CompanionFishing.ANY);
         String dig = "(?:(?:до|да)будь(?:ка)?|накопай|наковыряй|собери|найди|поищи|ищи)";
         if (bare.matches("^" + dig + "(?: мне| нам| себе)?\\s+(?:камень|камня|камней|булыжник|булыжника)(?:\\s+(?:блоков|штук))?(?:\\s+(?:рядом|поблизости))?$")) {
             int count = amount(said.count(), 8, 64, 32);

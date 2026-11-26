@@ -21,6 +21,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.common.util.BlockSnapshot;
@@ -29,12 +30,15 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
  * Obsidian like a player gets it (decided 08.11): lava he can walk to, his bucket of water over it, the obsidian mined with a pickaxe
- * that takes it and picked up, his water back in the bucket; another's portal and the player's buildings left alone.
+ * that takes it and picked up, his water back in the bucket; another's portal left alone always, and the player's buildings only
+ * while free-standing obsidian is about (the second tier, 20.11).
  */
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
@@ -94,190 +98,6 @@ public final class CompanionObsidianTests {
             h.assertTrue(count(c, Items.OBSIDIAN) == 2, "Not two obsidian: " + count(c, Items.OBSIDIAN) + ", " + future.join().report());
             for (BlockPos cell : blocks) h.assertBlockPresent(Blocks.AIR, cell);
             h.assertTrue(count(c, Items.BUCKET) == 0 && count(c, Items.WATER_BUCKET) == 0, "A bucket was made for nothing: " + future.join().report());
-        });
-    }
-
-    /**
-     * The live bug of #105 (PATH7): an obsidian ten blocks above his feet, nothing under it, so no stand cell reaches it.
-     * With a diamond pickaxe and soil in his bag, «Олег, добудь обсидиан»: he builds a column of his own soil up to the block,
-     * mines it from the top, and comes down with every block of the column back in the bag — the ground left as it was.
-     */
-    @GameTest(template = "tall_tree", timeoutTicks = 5000)
-    public static void obsidianTenAboveHisFeetIsMinedFromAColumnOfHisOwnSoil(GameTestHelper h) {
-        ground(h);
-        BlockPos obsidian = new BlockPos(12, GROUND + 11, 16);
-        h.setBlock(obsidian, Blocks.OBSIDIAN);
-        CompanionEntity c = spawn(h);
-        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
-        c.setItem(1, new ItemStack(Items.DIRT, 20));
-        double groundY = c.getY();
-        int[] supports = {0};
-        double[] highest = {0};
-        h.onEachTick(() -> { supports[0] = Math.max(supports[0], c.getTemporarySupportCount()); highest[0] = Math.max(highest[0], c.getY()); });
-        String command = CompanionLocalCommands.route("Олег, добудь обсидиан", "Олег");
-        h.assertTrue(command != null, "«Олег, добудь обсидиан» went to the model");
-        var plan = CompanionLocalCommands.actions(command);
-        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-way", () -> false));
-        h.succeedWhen(() -> {
-            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
-            String report = future.join().report();
-            h.assertTrue(count(c, Items.OBSIDIAN) == 1, "Not the obsidian above him: " + count(c, Items.OBSIDIAN) + ", " + report);
-            h.assertBlockPresent(Blocks.AIR, obsidian);
-            h.assertTrue(supports[0] >= 7, "He never built up to it: supports " + supports[0] + ", highest y " + highest[0] + ", " + report);
-            h.assertTrue(highest[0] > groundY + 5, "He never stood above the ground: highest y " + highest[0] + ", " + report);
-            h.assertTrue(c.onGround() && Math.abs(c.getY() - groundY) < 0.6, "He did not come back down: y " + c.getY() + ", " + report);
-            h.assertTrue(c.getTemporarySupportCount() == 0, "The column is still standing: " + c.getTemporarySupportCount());
-            h.assertTrue(dirtAboveGround(h) == 0, "A block of his column was left standing");
-            h.assertTrue(count(c, Items.DIRT) == 20, "The soil of his column was lost: " + count(c, Items.DIRT));
-            h.assertBlockPresent(Blocks.GRASS_BLOCK, new BlockPos(12, GROUND, 16));
-        });
-    }
-
-    /**
-     * The live report of PATH7: «добудь обсидиан» without his name and «олег добудь обсидиан» are the same order of ten
-     * (a portal frame), and one obsidian hangs ten blocks above each of two identical scenes. The phrasing must not decide
-     * the outcome: both promise only what is there — one block — mine it, come down, take the drop and end with
-     * «Накопал обсидиана: 1.» instead of refusing for the nine blocks that are not.
-     */
-    @GameTest(template = "tall_tree", timeoutTicks = 8000)
-    public static void thePhraseWithAndWithoutHisNameGivesTheSameOutcome(GameTestHelper h) {
-        ground(h);
-        BlockPos bareBlock = new BlockPos(8, GROUND + 11, 8);
-        BlockPos namedBlock = new BlockPos(24, GROUND + 11, 24);
-        h.setBlock(bareBlock, Blocks.OBSIDIAN);
-        h.setBlock(namedBlock, Blocks.OBSIDIAN);
-        CompanionEntity bare = spawnAt(h, 6, 8);
-        CompanionEntity named = spawnAt(h, 22, 24);
-        for (CompanionEntity c : List.of(bare, named)) {
-            c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
-            c.setItem(1, new ItemStack(Items.DIRT, 20));
-        }
-        String bareCommand = CompanionLocalCommands.route("добудь обсидиан", "Олег");
-        String namedCommand = CompanionLocalCommands.route("Олег, добудь обсидиан", "Олег");
-        h.assertTrue(bareCommand != null && namedCommand != null, "A phrase went to the model: " + bareCommand + " / " + namedCommand);
-        h.assertTrue(bareCommand.equals(namedCommand), "The phrasing decides the command: " + bareCommand + " / " + namedCommand);
-        var bareFuture = CompanionPlanRunner.run(CompanionLocalCommands.actions(bareCommand),
-                new CompanionServerPlanPort(h.getLevel().getServer(), bare.getOwnerId(), "gametest-obsidian-bare", () -> false));
-        var namedFuture = CompanionPlanRunner.run(CompanionLocalCommands.actions(namedCommand),
-                new CompanionServerPlanPort(h.getLevel().getServer(), named.getOwnerId(), "gametest-obsidian-named", () -> false));
-        h.succeedWhen(() -> {
-            h.assertTrue(bareFuture.isDone() && namedFuture.isDone() && !bareFuture.isCompletedExceptionally() && !namedFuture.isCompletedExceptionally(),
-                    "A plan still running: " + bare.getLastTaskResult() + " / " + named.getLastTaskResult());
-            String bareReport = bareFuture.join().report(), namedReport = namedFuture.join().report();
-            h.assertTrue(bareReport.equals(namedReport), "The phrasing changed the outcome:\n" + bareReport + "\n---\n" + namedReport);
-            h.assertTrue(bareReport.contains("Накопал обсидиана: 1"), "Not the one block that was there: " + bareReport);
-            h.assertTrue(!bareReport.contains("Не нашёл лавы") && !bareReport.contains("Полторы минуты"), "A wrong end: " + bareReport);
-            h.assertTrue(count(bare, Items.OBSIDIAN) == 1 && count(named, Items.OBSIDIAN) == 1,
-                    "The drop is not in the bag: " + count(bare, Items.OBSIDIAN) + " / " + count(named, Items.OBSIDIAN) + ", " + bareReport);
-            h.assertBlockPresent(Blocks.AIR, bareBlock);
-            h.assertBlockPresent(Blocks.AIR, namedBlock);
-            h.assertTrue(bare.getTemporarySupportCount() == 0 && named.getTemporarySupportCount() == 0,
-                    "A column stands: " + bare.getTemporarySupportCount() + " / " + named.getTemporarySupportCount());
-            h.assertTrue(count(bare, Items.DIRT) == 20 && count(named, Items.DIRT) == 20,
-                    "The soil of a column was lost: " + count(bare, Items.DIRT) + " / " + count(named, Items.DIRT));
-            h.assertTrue(dirtAboveGround(h) == 0, "A block of a column was left standing");
-            h.assertBlockPresent(Blocks.GRASS_BLOCK, new BlockPos(8, GROUND, 8));
-            h.assertBlockPresent(Blocks.GRASS_BLOCK, new BlockPos(24, GROUND, 24));
-        });
-    }
-
-    /**
-     * The live order of PATH7, with the owner's own correction (26.11): mine, the drop comes to rest on the top of the column he
-     * stands on and is taken there, then he steps down dismantling the column behind him, then done. Standing on his own column
-     * while the drop lies below is not progress, and the watchdog must not close the order for it: no «Полторы минуты» and no
-     * «Не нашёл лавы» for the nine blocks that were never there.
-     */
-    @GameTest(template = "tall_tree", timeoutTicks = 5000)
-    public static void obsidianAboveIsTakenFromHisColumnThenItComesDown(GameTestHelper h) {
-        ground(h);
-        BlockPos obsidian = new BlockPos(12, GROUND + 11, 16);
-        h.setBlock(obsidian, Blocks.OBSIDIAN);
-        CompanionEntity c = spawn(h);
-        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
-        c.setItem(1, new ItemStack(Items.DIRT, 20));
-        long[] minedAt = {-1}, downAt = {-1}, bagAt = {-1}, doneAt = {-1}; int[] supportsAtBag = {-1}, most = {0};
-        String command = CompanionLocalCommands.route("добудь обсидиан", "Олег");
-        h.assertTrue(command != null, "«добудь обсидиан» went to the model");
-        var future = CompanionPlanRunner.run(CompanionLocalCommands.actions(command),
-                new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-order", () -> false));
-        h.onEachTick(() -> {
-            most[0] = Math.max(most[0], c.getTemporarySupportCount());
-            if (minedAt[0] < 0 && h.getBlockState(obsidian).is(Blocks.AIR)) minedAt[0] = h.getTick();
-            if (minedAt[0] >= 0 && downAt[0] < 0 && c.getTemporarySupportCount() < most[0]) downAt[0] = h.getTick();
-            if (bagAt[0] < 0 && count(c, Items.OBSIDIAN) > 0) { bagAt[0] = h.getTick(); supportsAtBag[0] = c.getTemporarySupportCount(); }
-            if (doneAt[0] < 0 && future.isDone()) doneAt[0] = h.getTick();
-        });
-        h.succeedWhen(() -> {
-            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
-            String report = future.join().report();
-            h.assertTrue(most[0] >= 7, "He never built up to it: supports " + most[0] + ", " + report);
-            h.assertTrue(minedAt[0] >= 0, "The obsidian above him was never mined: " + report);
-            h.assertTrue(bagAt[0] > minedAt[0], "The drop was not taken after mining: mined " + minedAt[0] + ", bag " + bagAt[0] + ", " + report);
-            // The drop rests on the top of his own column, at his feet: it is taken there, and only then the column comes down.
-            h.assertTrue(supportsAtBag[0] > 0, "He took the drop only after the column came down: " + supportsAtBag[0] + ", " + report);
-            h.assertTrue(downAt[0] > bagAt[0], "The column came down before the drop was taken: bag " + bagAt[0] + ", down " + downAt[0] + ", " + report);
-            h.assertTrue(doneAt[0] >= bagAt[0], "The order ended before the drop was in the bag: " + report);
-            h.assertTrue(report.contains("Накопал обсидиана: 1"), "Not an honest count: " + report);
-            h.assertTrue(!report.contains("Полторы минуты") && !report.contains("Не нашёл лавы"), "A wrong end: " + report);
-            h.assertTrue(count(c, Items.OBSIDIAN) == 1, "The drop is not in the bag: " + count(c, Items.OBSIDIAN) + ", " + report);
-            h.assertTrue(c.getTemporarySupportCount() == 0 && dirtAboveGround(h) == 0, "A block of the column was left standing");
-            h.assertTrue(count(c, Items.DIRT) == 20, "The soil of the column was lost: " + count(c, Items.DIRT));
-        });
-    }
-
-    /**
-     * An obsidian two blocks up on a stone ledge beside him, its drop resting on the ledge: a walk reaches a stand cell, so no
-     * column is built and none of his soil is spent.
-     */
-    @GameTest(template = "tall_tree", timeoutTicks = 2400)
-    public static void obsidianHeCanWalkToIsNotBuiltUpTo(GameTestHelper h) {
-        ground(h);
-        BlockPos ledge = new BlockPos(12, GROUND + 1, 16);
-        BlockPos obsidian = ledge.above();
-        h.setBlock(ledge, Blocks.STONE);
-        h.setBlock(obsidian, Blocks.OBSIDIAN);
-        CompanionEntity c = spawn(h);
-        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
-        c.setItem(1, new ItemStack(Items.DIRT, 20));
-        int[] supports = {0};
-        h.onEachTick(() -> supports[0] = Math.max(supports[0], c.getTemporarySupportCount()));
-        String command = CompanionLocalCommands.route("Олег, добудь обсидиан", "Олег");
-        h.assertTrue(command != null, "«Олег, добудь обсидиан» went to the model");
-        var plan = CompanionLocalCommands.actions(command);
-        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-walkable", () -> false));
-        h.succeedWhen(() -> {
-            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
-            String report = future.join().report();
-            h.assertTrue(count(c, Items.OBSIDIAN) == 1, "Not the obsidian he could walk to: " + count(c, Items.OBSIDIAN) + ", " + report);
-            h.assertBlockPresent(Blocks.AIR, obsidian);
-            h.assertTrue(supports[0] == 0, "A column was built to a block the walk reached: " + supports[0]);
-            h.assertTrue(dirtAboveGround(h) == 0, "A block of his column was left standing");
-            h.assertTrue(count(c, Items.DIRT) == 20, "The soil was spent on a reachable block: " + count(c, Items.DIRT));
-        });
-    }
-
-    /** The switch off: the same obsidian above him is left, no column is raised and none of his soil is spent. */
-    @GameTest(template = "tall_tree", timeoutTicks = 1200)
-    public static void withTheWaySwitchedOffTheObsidianAboveIsLeft(GameTestHelper h) {
-        ground(h);
-        BlockPos obsidian = new BlockPos(12, GROUND + 11, 16);
-        h.setBlock(obsidian, Blocks.OBSIDIAN);
-        CompanionEntity c = spawn(h);
-        c.setBuildWay(false);
-        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
-        c.setItem(1, new ItemStack(Items.DIRT, 20));
-        int[] supports = {0};
-        h.onEachTick(() -> supports[0] = Math.max(supports[0], c.getTemporarySupportCount()));
-        String command = CompanionLocalCommands.route("Олег, добудь обсидиан", "Олег");
-        h.assertTrue(command != null, "«Олег, добудь обсидиан» went to the model");
-        var plan = CompanionLocalCommands.actions(command);
-        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-way-off", () -> false));
-        h.succeedWhen(() -> {
-            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
-            h.assertTrue(count(c, Items.OBSIDIAN) == 0, "The obsidian above was taken with the switch off: " + count(c, Items.OBSIDIAN));
-            h.assertBlockPresent(Blocks.OBSIDIAN, obsidian);
-            h.assertTrue(supports[0] == 0, "A column was built with the switch off: " + supports[0]);
-            h.assertTrue(count(c, Items.DIRT) == 20, "The soil was spent with the switch off: " + count(c, Items.DIRT));
         });
     }
 
@@ -376,6 +196,46 @@ public final class CompanionObsidianTests {
         });
     }
 
+    /**
+     * A portal's frame and a dry block over lava, both on a site of the player's (20.11): under the second tier — no free-standing
+     * obsidian about, so the player's own blocks are his to take — the frame is still a portal's and the block over lava still has
+     * its drop unsafe. Both stay, and only the plain block of the site is mined.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1800, batch = CompanionPortalBuildTests.PORTALS)
+    public static void aPortalFrameAndObsidianOverLavaOnHisSiteStayUntouched(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        placedByPlayer(h, c, new BlockPos(14, GROUND + 1, 20), Blocks.CHEST);
+        List<BlockPos> frame = new ArrayList<>();
+        for (int x = 8; x <= 11; x++) for (int y = GROUND + 1; y <= GROUND + 5; y++)
+            if (x == 8 || x == 11 || y == GROUND + 1 || y == GROUND + 5) { h.setBlock(new BlockPos(x, y, 21), Blocks.OBSIDIAN); frame.add(new BlockPos(x, y, 21)); }
+        h.setBlock(new BlockPos(9, GROUND + 2, 21), Blocks.FIRE);
+        h.assertBlockPresent(Blocks.NETHER_PORTAL, new BlockPos(10, GROUND + 4, 21));
+        // A dry block over lava on the site: its drop would burn, so it is no obsidian lying about.
+        BlockPos lava = new BlockPos(16, GROUND, 24);
+        BlockPos overLava = lava.above();
+        h.setBlock(lava, Blocks.LAVA);
+        h.setBlock(overLava, Blocks.OBSIDIAN);
+        BlockPos plain = new BlockPos(12, GROUND + 1, 16);
+        placedByPlayer(h, c, plain, Blocks.OBSIDIAN);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        var plan = c.obtainPlan(OBSIDIAN, 1);
+        h.assertTrue(!plan.refused() && plan.steps().equals(List.of(new CompanionObtain.Step("mine_obsidian", OBSIDIAN, 1))),
+                "Not the one plain block of his site: " + plan);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1, "Not the one plain block: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertBlockPresent(Blocks.AIR, plain);
+            for (BlockPos cell : frame) h.assertBlockPresent(Blocks.OBSIDIAN, cell);
+            for (int x = 9; x <= 10; x++) for (int y = GROUND + 2; y <= GROUND + 4; y++) h.assertBlockPresent(Blocks.NETHER_PORTAL, new BlockPos(x, y, 21));
+            h.assertBlockPresent(Blocks.OBSIDIAN, overLava);
+            h.assertBlockPresent(Blocks.LAVA, lava);
+            CompanionPortalBuildTests.putOut(h);
+        });
+    }
+
     /** No lava and no obsidian within his reach: he says so at once, before any bucket is made, and pours nothing. */
     @GameTest(template = "tall_tree", timeoutTicks = 400)
     public static void withNoLavaAboutHeSaysSoAndKeepsHisWater(GameTestHelper h) {
@@ -429,29 +289,59 @@ public final class CompanionObsidianTests {
     }
 
     /**
-     * One obsidian lies about, a bucket of lava in his bag and no water at all: the order for two promises only the block that
-     * lies — the bucket cannot be used without water — so he mines it, ends with «Накопал обсидиана: 1.» and his lava bucket
-     * stays in the bag, never spent on a block that was not promised (PATH7: an order promises only what is there).
+     * One obsidian lies about, a bucket of lava in his bag and no water at all: he mines the block that lies and then names the water
+     * for the second — not the lava he is holding. Before this he said «Накопал 1 из 2: лава рядом кончилась.» over a bag with a
+     * bucket of lava in it, and the player went for lava he already had.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 1200)
-    public static void oneObsidianAndALavaBucketWithoutWaterPromisesOnlyTheBlock(GameTestHelper h) {
+    public static void withHisLavaBucketAndNoWaterHeNamesTheWater(GameTestHelper h) {
         ground(h);
         h.setBlock(new BlockPos(12, GROUND + 1, 16), Blocks.OBSIDIAN);
         CompanionEntity c = spawn(h);
         c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
         c.setItem(1, new ItemStack(Items.LAVA_BUCKET));
-        // Obsidian lies about, so the plan asks for no water and promises only that one block.
+        // Obsidian lies about, so the plan asks for no water: the second block would be his own, and that is where the water is missed.
         var plan = c.obtainPlan(OBSIDIAN, 2);
-        h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("mine_obsidian", OBSIDIAN, 1))), "Not the one that lies: " + plan);
+        h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("mine_obsidian", OBSIDIAN, 2))), "Not the two asked for: " + plan);
         var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":2}]");
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
             String report = future.join().report();
-            h.assertTrue(report.contains("Накопал обсидиана: 1."), "Not an honest count: " + report);
-            h.assertTrue(!report.contains("Нет ведра воды") && !report.contains("Не нашёл лавы") && !report.contains("лава рядом кончилась"),
-                    "A block that was never promised is said to be missing: " + report);
+            h.assertTrue(report.contains("Нет ведра воды — нечем залить лаву."), "The water is not named: " + report);
+            h.assertTrue(!report.contains("Не нашёл лавы") && !report.contains("лава рядом кончилась"),
+                    "The lava he holds is said to be missing: " + report);
             h.assertTrue(count(c, Items.OBSIDIAN) == 1 && count(c, Items.LAVA_BUCKET) == 1 && count(c, Items.BUCKET) == 0,
                     "His lava was spent: " + c.getStoredItemsSummary() + ", " + report);
+        });
+    }
+
+    /**
+     * A bag with no room for the bucket the plan counted (20.11): a bucket of lava lies within his hand, «добудь 1 обсидиан»
+     * counts it, but begin stores nothing. He says the bag is full and the bucket stays lying where it was dropped — never
+     * «Не нашёл лавы рядом» over a bucket at his feet — and no bucket is lost or doubled.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void aFullBagLeavesTheBucketAtHisFeetAndSaysSo(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.WATER_BUCKET));
+        for (int slot = 2; slot < c.getContainerSize(); slot++) c.setItem(slot, new ItemStack(Items.STONE, 64));
+        lying(h, h.absolutePos(new BlockPos(10, GROUND + 1, 16)), Items.LAVA_BUCKET, 1);
+        var plan = c.obtainPlan(OBSIDIAN, 1);
+        h.assertTrue(!plan.refused() && plan.steps().equals(List.of(new CompanionObtain.Step("mine_obsidian", OBSIDIAN, 1))),
+                "The bucket at his feet was not counted: " + plan);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Сумка забита") && report.contains("ведро лавы осталось лежать"),
+                    "He does not say the bag is full and the bucket stays: " + report);
+            h.assertTrue(!report.contains("Не нашёл лавы"), "The lava at his feet is said to be missing: " + report);
+            h.assertTrue(count(c, Items.LAVA_BUCKET) == 0 && count(c, Items.WATER_BUCKET) == 1,
+                    "His bag changed: " + c.getStoredItemsSummary() + ", " + report);
+            h.assertTrue(lyingCount(h, c, Items.LAVA_BUCKET) == 1,
+                    "The bucket at his feet was lost or doubled: " + lyingCount(h, c, Items.LAVA_BUCKET) + ", " + report);
         });
     }
 
@@ -530,40 +420,43 @@ public final class CompanionObsidianTests {
             for (BlockPos cell : taken) h.assertBlockPresent(Blocks.CHEST, cell);
             // The player's own hole under his feet is not dug either.
             h.assertBlockPresent(Blocks.GRASS_BLOCK, new BlockPos(10, GROUND, 17));
-            // The next free hole was dug, the block made in it and mined out of it.
-            h.assertBlockPresent(Blocks.AIR, new BlockPos(9, GROUND, 15));
+            // The next free hole was dug, the block made in it and mined out, and its grass filled back in.
+            h.assertBlockPresent(Blocks.GRASS_BLOCK, new BlockPos(9, GROUND, 15));
         });
     }
 
     /**
-     * The obsidian the player set down himself is the order's target: his wall by the chest of his is mined for «добудь 2
-     * обсидиана», while the lava pond on his site is still his — no water is poured over it and his bucket comes back untouched
-     * (the rule that flipped with PATH7: «do not break the player's build» keeps the soil a way lays and the lava of his pond,
-     * never the block the order named).
+     * Lava where the player builds is his: no water poured over it and no block made of it. The obsidian standing there is taken
+     * only because nothing free-standing is about — his building is protected while other obsidian exists
+     * (freeObsidianBesideTheSiteIsTakenFirst), and the blocks he set down himself are still minable when he asks for them — blocks
+     * lying apart, not a wall: three and more touching are something he builds (aFrameHalfSetOnHisSiteIsLeftAndALoneBlockTaken).
      */
-    @GameTest(template = "tall_tree", timeoutTicks = 1200)
-    public static void obsidianThePlayerSetDownIsMinedForHisOrder(GameTestHelper h) {
+    @GameTest(template = "tall_tree", timeoutTicks = 1800)
+    public static void lavaOnThePlayersSiteIsLeftAloneAndItsObsidianTakenOnlyWhenNothingElseIsAbout(GameTestHelper h) {
         ground(h);
         List<BlockPos> pond = lava(h, 18, 15, 3, 1);
         CompanionEntity c = spawn(h);
-        // A chest of his on the surface makes it a building of his (CompanionPlayerBuilds.HOME_SCORE), the obsidian wall is part of it.
+        // A chest of his on the surface makes it a building of his (CompanionPlayerBuilds.HOME_SCORE); three blocks he set down apart lie in it.
         placedByPlayer(h, c, new BlockPos(16, GROUND + 1, 22), Blocks.CHEST);
-        List<BlockPos> wall = List.of(new BlockPos(14, GROUND + 1, 20), new BlockPos(15, GROUND + 1, 20), new BlockPos(16, GROUND + 1, 20), new BlockPos(17, GROUND + 1, 20));
+        List<BlockPos> wall = List.of(new BlockPos(12, GROUND + 1, 20), new BlockPos(14, GROUND + 1, 20), new BlockPos(16, GROUND + 1, 20));
         for (BlockPos cell : wall) placedByPlayer(h, c, cell, Blocks.OBSIDIAN);
         c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
         c.setItem(1, new ItemStack(Items.WATER_BUCKET));
+        var plan = c.obtainPlan(OBSIDIAN, 2);
+        h.assertTrue(!plan.refused() && plan.steps().equals(List.of(new CompanionObtain.Step("mine_obsidian", OBSIDIAN, 2))),
+                "Not the obsidian standing on his site: " + plan);
         var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":2}]");
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
             String report = future.join().report();
-            h.assertTrue(count(c, Items.OBSIDIAN) == 2, "Not two obsidian from the wall he set down: " + report);
-            h.assertTrue(!report.contains("Рядом нечего копать"), "He refused over a wall of his own obsidian: " + report);
-            // The two blocks nearest him came off his own wall; the other two still stand.
-            long standing = wall.stream().filter(cell -> h.getBlockState(cell).is(Blocks.OBSIDIAN)).count();
-            h.assertTrue(standing == 2, "The wall was not mined twice: " + standing + " standing, " + report);
-            // The lava of his pond is his still: no water poured over it, his bucket in the bag.
+            h.assertTrue(count(c, Items.OBSIDIAN) == 2, "Not two obsidian from the wall: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertTrue(!report.contains("Рядом нечего копать"), "The old line over obsidian that stood there: " + report);
+            // No more than the two asked for: the rest of the wall stands.
+            long standing = wall.stream().filter(cell -> h.getLevel().getBlockState(h.absolutePos(cell)).is(Blocks.OBSIDIAN)).count();
+            h.assertTrue(standing == 1, standing + " of the three stand: he took more or less than the two asked for");
+            // The lava of the site is not his: no water over it, none of it cooled, his water still in its bucket.
+            h.assertTrue(count(c, Items.WATER_BUCKET) == 1 && count(c, Items.BUCKET) == 0, "He poured or made a bucket: " + report);
             for (BlockPos cell : pond) h.assertBlockPresent(Blocks.LAVA, cell);
-            h.assertTrue(count(c, Items.WATER_BUCKET) == 1, "He poured his water over the pond: " + report);
         });
     }
 
@@ -759,12 +652,729 @@ public final class CompanionObsidianTests {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
             String report = future.join().report();
             h.assertTrue(count(c, Items.OBSIDIAN) == 1, "Not one obsidian: " + count(c, Items.OBSIDIAN) + ", " + report);
-            // The hole with no way to it is left as it was; the next one is dug and the block made in it and mined out.
+            // The hole with no way to it is left as it was; the next one is dug, the block made in it and mined out, and its dirt
+            // goes back into the hole so the ground is as it was.
             h.assertBlockPresent(Blocks.DIRT, walled);
-            h.assertBlockPresent(Blocks.AIR, reachable);
+            h.assertBlockPresent(Blocks.DIRT, reachable);
         });
     }
 
+    /**
+     * «Добудь 2 обсидиана» with one bucket of lava and one of water and nothing about to mine or cool: he makes the one block his
+     * buckets give, and the rest is planned again with no lava left — said truthfully, the obsidian he holds and the lava his buckets
+     * spent. Before this the reused refusal said «Рядом нечего копать: ни обсидиана, ни лавы» over a bag that already had one.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void afterHisOwnBucketsMadeWhatTheyCouldHeSaysWhatIsMissing(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.WATER_BUCKET));
+        c.setItem(2, new ItemStack(Items.LAVA_BUCKET));
+        String route = CompanionLocalCommands.route("Олег, добудь 2 обсидиана", "Олег");
+        var plan = CompanionLocalCommands.actions(route);
+        h.assertTrue(plan != null && plan.size() == 1, "The phrase is not one step: " + route + " -> " + plan);
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-buckets", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Обсидиана у меня 1, а лавы рядом и в вёдрах больше нет"),
+                    "He does not say what he made and what is missing: " + report);
+            h.assertTrue(!report.contains("Рядом нечего копать"), "The old line over a bag that had one: " + report);
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1 && count(c, Items.LAVA_BUCKET) == 0 && count(c, Items.BUCKET) == 1
+                    && count(c, Items.WATER_BUCKET) == 1, "His buckets are lost or doubled: " + c.getStoredItemsSummary() + ", " + report);
+        });
+    }
+
+    /**
+     * The player's own case (20.11, world test3): four buckets dropped on the ground at his feet, two of water and two of lava, no
+     * lava and no water anywhere about. «добудь 2 обсидиана» is no refusal — a bucket lying within his hand is a source as much as
+     * one in his bag. He takes it up when the work starts, and the buckets come out of the make as they went in: his water back in
+     * its own buckets and the empty ones of his lava, none lost and none doubled, nothing left lying.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void bucketsLyingOnTheGroundAreASourceForTheOrder(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        BlockPos feet = h.absolutePos(new BlockPos(10, GROUND + 1, 16));
+        lying(h, feet, Items.LAVA_BUCKET, 2);
+        lying(h, feet.offset(1, 0, 0), Items.WATER_BUCKET, 2);
+        var plan = c.obtainPlan(OBSIDIAN, 2);
+        h.assertTrue(!plan.refused() && plan.steps().equals(List.of(new CompanionObtain.Step("mine_obsidian", OBSIDIAN, 2))),
+                "Refused over four buckets lying at his feet: " + plan);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":2}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 2, "Not two obsidian: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertTrue(count(c, Items.WATER_BUCKET) == 2 && count(c, Items.BUCKET) == 2 && count(c, Items.LAVA_BUCKET) == 0,
+                    "His buckets are lost or doubled: " + c.getStoredItemsSummary() + ", " + report);
+            for (var drop : h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                    new net.minecraft.world.phys.AABB(c.blockPosition()).inflate(8)))
+                h.assertTrue(!drop.getItem().is(Items.LAVA_BUCKET) && !drop.getItem().is(Items.WATER_BUCKET) && !drop.getItem().is(Items.BUCKET),
+                        "A bucket is left on the ground: " + drop.getItem());
+        });
+    }
+
+    /**
+     * The player's own case (20.11, world test3): «добудь 2 обсидиана» with two buckets of water and two of lava lying at his feet and
+     * no lava about. The hole is dug beside him, his lava goes into it while he stands beside it and his water is poured from beside
+     * it too: he never steps into the lava cell, so his health stays full for the whole make («зачем то туда сам залезает в неё
+     * теряя здоровье, когда нужно просто рядом воду разлить не заходя в лаву»).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void heNeverStepsIntoHisLavaHoleAndTakesNoDamage(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        BlockPos feet = h.absolutePos(new BlockPos(10, GROUND + 1, 16));
+        lying(h, feet, Items.LAVA_BUCKET, 2);
+        lying(h, feet.offset(1, 0, 0), Items.WATER_BUCKET, 2);
+        float full = c.getHealth();
+        int grassBefore = 0;
+        for (int x = 1; x <= 30; x++) for (int z = 1; z <= 30; z++)
+            if (h.getLevel().getBlockState(h.absolutePos(new BlockPos(x, GROUND, z))).is(Blocks.GRASS_BLOCK)) grassBefore++;
+        final int grassWhole = grassBefore;
+        String route = CompanionLocalCommands.route("Олег, добудь 2 обсидиана", "Олег");
+        var plan = CompanionLocalCommands.actions(route);
+        h.assertTrue(plan != null && plan.size() == 1, "The phrase is not one step: " + route + " -> " + plan);
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-beside", () -> false));
+        h.succeedWhen(() -> {
+            BlockPos at = c.blockPosition();
+            h.assertTrue(!h.getLevel().getFluidState(at).is(FluidTags.LAVA),
+                    "He stands in the lava at " + at.toShortString() + ", health " + c.getHealth() + " of " + full + ": " + c.getLastTaskResult());
+            h.assertTrue(c.getHealth() == full, "He lost health in the make: " + c.getHealth() + " of " + full + " at " + at.toShortString());
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 2, "Not two obsidian: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertTrue(count(c, Items.WATER_BUCKET) == 2 && count(c, Items.BUCKET) == 2 && count(c, Items.LAVA_BUCKET) == 0,
+                    "His buckets are lost or doubled: " + c.getStoredItemsSummary() + ", " + report);
+            for (BlockPos pos : BlockPos.betweenClosed(h.absolutePos(new BlockPos(1, GROUND - 3, 1)), h.absolutePos(new BlockPos(30, GROUND + 4, 30)))) {
+                h.assertTrue(!h.getLevel().getFluidState(pos).is(FluidTags.WATER), "His water is left at " + pos.toShortString() + ": " + report);
+                h.assertTrue(!h.getLevel().getFluidState(pos).is(FluidTags.LAVA), "His lava is left at " + pos.toShortString() + ": " + report);
+            }
+            // The holes he dug are filled back with their grass: the drop of the dig was not burnt in the poured lava, it went back
+            // into the ground, and nothing of it lies about.
+            int grassAfter = 0;
+            for (int x = 1; x <= 30; x++) for (int z = 1; z <= 30; z++)
+                if (h.getLevel().getBlockState(h.absolutePos(new BlockPos(x, GROUND, z))).is(Blocks.GRASS_BLOCK)) grassAfter++;
+            h.assertTrue(grassAfter == grassWhole,
+                    "A hole is left in the ground: " + grassAfter + " grass of " + grassWhole + ", " + c.getStoredItemsSummary() + ", " + report);
+            for (var drop : h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                    new net.minecraft.world.phys.AABB(c.blockPosition()).inflate(30)))
+                h.assertTrue(!drop.getItem().is(Items.DIRT) && !drop.getItem().is(Items.GRASS_BLOCK),
+                        "The hole's drop is left lying at " + drop.blockPosition().toShortString() + ": " + report);
+        });
+    }
+
+    /**
+     * The player's own case (20.11, world test3, the live test after #208): two buckets of water and two of lava lying two to four
+     * blocks away on open ground, no lava in the world. «добудь 2 обсидиана» by the phrase is no refusal and no «не дотянуться»:
+     * the buckets lie within his sight and a way leads to them, so he walks to each, takes it up, and makes the two blocks of them.
+     * The buckets come out of the make as they went in — his water back in its bucket, the empty ones of the two lava buckets he
+     * poured out — none lost, none doubled; the second water bucket is not needed (one serves both blocks) and lies where the player
+     * dropped it.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void bucketsLyingWithinSightAreWalkedToAndTakenUp(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        BlockPos start = c.blockPosition();
+        lying(h, h.absolutePos(new BlockPos(12, GROUND + 1, 16)), Items.LAVA_BUCKET, 1);
+        lying(h, h.absolutePos(new BlockPos(12, GROUND + 1, 18)), Items.WATER_BUCKET, 1);
+        lying(h, h.absolutePos(new BlockPos(13, GROUND + 1, 14)), Items.LAVA_BUCKET, 1);
+        lying(h, h.absolutePos(new BlockPos(14, GROUND + 1, 16)), Items.WATER_BUCKET, 1);
+        String route = CompanionLocalCommands.route("Олег, добудь 2 обсидиана", "Олег");
+        var plan = CompanionLocalCommands.actions(route);
+        h.assertTrue(plan != null && plan.size() == 1, "The phrase is not one step: " + route + " -> " + plan);
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-fetch", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 2, "Not two obsidian: " + count(c, Items.OBSIDIAN) + ", " + report);
+            // Both buckets of lava he fetched were poured out: two empty ones are his, none of it is lost or doubled.
+            h.assertTrue(count(c, Items.BUCKET) == 2 && count(c, Items.LAVA_BUCKET) == 0,
+                    "His lava buckets are lost or doubled: " + c.getStoredItemsSummary() + ", " + report);
+            // One bucket of water is enough for both blocks (it is scooped back each time): the other lies where the player dropped it,
+            // so his water is still two buckets, one in the bag and one on the ground — none lost, none doubled.
+            int lyingWater = 0;
+            for (var drop : h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                    new net.minecraft.world.phys.AABB(c.blockPosition()).inflate(16))) {
+                if (drop.getItem().is(Items.WATER_BUCKET)) lyingWater += drop.getItem().getCount();
+                h.assertTrue(!drop.getItem().is(Items.LAVA_BUCKET) && !drop.getItem().is(Items.BUCKET),
+                        "A lava or empty bucket is left on the ground: " + drop.getItem());
+            }
+            h.assertTrue(count(c, Items.WATER_BUCKET) + lyingWater == 2,
+                    "His water is lost or doubled: " + c.getStoredItemsSummary() + ", lying " + lyingWater + ", " + report);
+            h.assertTrue(c.blockPosition().distSqr(start) >= 4, "He did not walk to the buckets: " + c.blockPosition());
+        });
+    }
+
+    /**
+     * A stack of two buckets lying at his feet with room for one (20.11): the plan counts both, and taking them up leaves the rest
+     * of the stack lying where it was dropped, out of the loose pickup's way until the order is done — the bag and the ground
+     * together hold both buckets, none lost and none doubled. The bag has no free cell after the take, so the dirt of the hole and
+     * the mined obsidian go into the part stacks he already carries.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void theRestOfAStackAtHisFeetStaysLyingAndIsNotLost(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.WATER_BUCKET));
+        c.setItem(2, new ItemStack(Items.OBSIDIAN));
+        c.setItem(3, new ItemStack(Items.DIRT));
+        for (int slot = 4; slot < 26; slot++) c.setItem(slot, new ItemStack(Items.STONE, 64));
+        BlockPos stack = h.absolutePos(new BlockPos(11, GROUND + 1, 16));
+        lying(h, stack, Items.LAVA_BUCKET, 2).setPickUpDelay(20 * 300);
+        var plan = c.obtainPlan(OBSIDIAN, 2);
+        h.assertTrue(!plan.refused() && plan.steps().equals(List.of(new CompanionObtain.Step("mine_obsidian", OBSIDIAN, 1))),
+                "The stack was not counted: " + plan);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":2}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 2, "Not the one more obsidian: " + count(c, Items.OBSIDIAN) + ", " + report);
+            // The stack was two lava buckets: one poured out (its empty bucket is his) and one still lying, so the bag and the ground
+            // hold two buckets together, never one lost or doubled.
+            int buckets = count(c, Items.LAVA_BUCKET) + count(c, Items.BUCKET) + lyingCount(h, c, Items.LAVA_BUCKET) + lyingCount(h, c, Items.BUCKET);
+            h.assertTrue(buckets == 2, "His buckets are lost or doubled: " + buckets + ", " + c.getStoredItemsSummary()
+                    + ", lying " + lyingCount(h, c, Items.LAVA_BUCKET) + ", " + report);
+            h.assertTrue(lyingCount(h, c, Items.LAVA_BUCKET) == 1, "The rest of the stack is not lying where it was: "
+                    + lyingCount(h, c, Items.LAVA_BUCKET) + ", " + report);
+            h.assertTrue(count(c, Items.WATER_BUCKET) == 1, "His water is lost or doubled: " + c.getStoredItemsSummary() + ", " + report);
+        });
+    }
+
+    /**
+     * The same buckets, but no way to them: two and two lying behind a wall across the arena, within his search radius. No walk
+     * leads there (a climb of three is no step of his, and the bedrock border closes both ends of the wall), so the order says the
+     * buckets are there and he cannot walk to them — «Вижу рядом вёдра лавы и воды, но не дотянуться» — never «Рядом нечего
+     * копать: ни обсидиана, ни лавы», and no bucket is made or spent for nothing.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void bucketsWithNoWayToThemAreNamedInsteadOfNothingToDig(GameTestHelper h) {
+        ground(h);
+        // A wall three high across the whole arena: the bedrock border closes both its ends, so there is no way round.
+        for (int z = 1; z <= 30; z++) for (int y = GROUND + 1; y <= GROUND + 3; y++) h.setBlock(new BlockPos(14, y, z), Blocks.STONE);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        BlockPos far = h.absolutePos(new BlockPos(18, GROUND + 1, 16));
+        lying(h, far, Items.LAVA_BUCKET, 2);
+        lying(h, far.offset(0, 0, 2), Items.WATER_BUCKET, 2);
+        var plan = c.obtainPlan(OBSIDIAN, 2);
+        h.assertTrue(!plan.refused(), "Refused before he walked up to the wall: " + plan);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":2}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("не дотянуться") && !report.contains("Рядом нечего копать"), "He does not name the buckets: " + report);
+            h.assertTrue(count(c, Items.WATER_BUCKET) == 0 && count(c, Items.LAVA_BUCKET) == 0 && count(c, Items.BUCKET) == 0,
+                    "A bucket was made or spent for nothing: " + c.getStoredItemsSummary() + ", " + report);
+        });
+    }
+
+    /**
+     * The same buckets at the bottom of a pit four blocks deep and one wide: his walk takes a drop of three blocks at most, so no
+     * way leads down to them. The order says «не дотянуться» — the buckets are there, his hand is not — and nothing is spent.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void bucketsAtTheBottomOfAPitAreNamedInsteadOfNothingToDig(GameTestHelper h) {
+        ground(h);
+        for (int y = GROUND; y >= GROUND - 3; y--) {
+            h.setBlock(new BlockPos(18, y, 16), Blocks.AIR);
+            h.setBlock(new BlockPos(18, y, 18), Blocks.AIR);
+        }
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        lying(h, h.absolutePos(new BlockPos(18, GROUND - 3, 16)), Items.LAVA_BUCKET, 2);
+        lying(h, h.absolutePos(new BlockPos(18, GROUND - 3, 18)), Items.WATER_BUCKET, 2);
+        var plan = c.obtainPlan(OBSIDIAN, 2);
+        h.assertTrue(!plan.refused(), "Refused before he walked up to the pit: " + plan);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":2}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("не дотянуться") && !report.contains("Рядом нечего копать"), "He does not name the buckets: " + report);
+            h.assertTrue(count(c, Items.WATER_BUCKET) == 0 && count(c, Items.LAVA_BUCKET) == 0 && count(c, Items.BUCKET) == 0,
+                    "A bucket was made or spent for nothing: " + c.getStoredItemsSummary() + ", " + report);
+        });
+    }
+
+    /**
+     * The player's own obsidian set down in his base (20.11, world test3): two blocks standing inside a building of his — a chest on
+     * the surface makes the place a site (CompanionPlayerBuilds.HOME_SCORE) — and no free-standing obsidian about. The plan mines
+     * them and both come into his bag. Before this every block on a site was left alone, so the obsidian the player had placed
+     * himself was invisible to him.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1800)
+    public static void obsidianOnThePlayersSiteIsMinedWhenNoOtherIsAbout(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        placedByPlayer(h, c, new BlockPos(14, GROUND + 1, 20), Blocks.CHEST);
+        List<BlockPos> site = List.of(new BlockPos(12, GROUND + 1, 16), new BlockPos(13, GROUND + 1, 16));
+        for (BlockPos cell : site) placedByPlayer(h, c, cell, Blocks.OBSIDIAN);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        var plan = c.obtainPlan(OBSIDIAN, 2);
+        h.assertTrue(!plan.refused() && plan.steps().equals(List.of(new CompanionObtain.Step("mine_obsidian", OBSIDIAN, 2))),
+                "Not the obsidian standing on his site: " + plan);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":2}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 2, "Not two obsidian from his site: " + count(c, Items.OBSIDIAN) + ", " + report);
+            for (BlockPos cell : site) h.assertBlockPresent(Blocks.AIR, cell);
+        });
+    }
+
+    /**
+     * A portal's frame the player is still setting on his site, nine of its ten blocks, is no obsidian lying about: it is not yet a
+     * whole frame, so the frame check does not see it, and the site's blocks were his to take — he took two of the frame (review in
+     * game 24.11). Three blocks and more touching, corners too, are something being built; a lone block of the site farther off is
+     * taken instead, and the frame stands.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1800, batch = CompanionPortalBuildTests.PORTALS)
+    public static void aFrameHalfSetOnHisSiteIsLeftAndALoneBlockTaken(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        placedByPlayer(h, c, new BlockPos(14, GROUND + 1, 20), Blocks.CHEST);
+        List<BlockPos> frame = new ArrayList<>();
+        for (int x = 9; x <= 12; x++) for (int y = GROUND + 1; y <= GROUND + 5; y++) {
+            boolean side = x == 9 || x == 12, edge = y == GROUND + 1 || y == GROUND + 5;
+            // No corners, and the last block of the top not set yet.
+            if (side == edge || x == 11 && y == GROUND + 5) continue;
+            placedByPlayer(h, c, new BlockPos(x, y, 21), Blocks.OBSIDIAN);
+            frame.add(new BlockPos(x, y, 21));
+        }
+        BlockPos lone = new BlockPos(20, GROUND + 1, 8);
+        placedByPlayer(h, c, lone, Blocks.OBSIDIAN);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            for (BlockPos cell : frame) h.assertBlockPresent(Blocks.OBSIDIAN, cell);
+            h.assertTrue(frame.size() == 9, "Not a frame of nine: " + frame.size());
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1, "Not the lone block: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertBlockPresent(Blocks.AIR, lone);
+        });
+    }
+
+    /**
+     * Free-standing obsidian beside the site is taken first: the player's building is protected while other obsidian exists, and the
+     * two blocks he set down inside it are left standing. The site here reaches sixteen blocks around its chest, so the free blocks
+     * lie outside it and still within his search radius.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1800)
+    public static void freeObsidianBesideTheSiteIsTakenFirst(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        placedByPlayer(h, c, new BlockPos(10, GROUND + 1, 30), Blocks.CHEST);
+        List<BlockPos> site = List.of(new BlockPos(10, GROUND + 1, 29), new BlockPos(11, GROUND + 1, 29));
+        for (BlockPos cell : site) placedByPlayer(h, c, cell, Blocks.OBSIDIAN);
+        List<BlockPos> free = List.of(new BlockPos(10, GROUND + 1, 2), new BlockPos(11, GROUND + 1, 2));
+        for (BlockPos cell : free) h.setBlock(cell, Blocks.OBSIDIAN);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        var plan = c.obtainPlan(OBSIDIAN, 2);
+        h.assertTrue(!plan.refused() && plan.steps().equals(List.of(new CompanionObtain.Step("mine_obsidian", OBSIDIAN, 2))),
+                "Not the free obsidian: " + plan);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":2}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 2, "Not two obsidian: " + count(c, Items.OBSIDIAN) + ", " + report);
+            for (BlockPos cell : free) h.assertBlockPresent(Blocks.AIR, cell);
+            for (BlockPos cell : site) h.assertBlockPresent(Blocks.OBSIDIAN, cell);
+        });
+    }
+
+    /**
+     * The player's own case (20.11, world test3, one lava bucket): «сделай 2 обсидиана» with one bucket of lava and one of water
+     * lying on the ground beside him in his own yard — a chest set down there makes it a site of the player's — and no lava in the
+     * world. One bucket of lava makes one block, so the plan promises the one and the order makes it — and the line about it is the
+     * honest one. Before this he picked both buckets up and said «Негде вылить лаву: рядом нет ямки, где она не растечётся.» over
+     * open ground, and made nothing: the site of his own yard was taken for no hole at all.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void oneLavaBucketOnTheGroundMakesTheOneBlockItCanAndSaysSo(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        placedByPlayer(h, c, new BlockPos(14, GROUND + 1, 20), Blocks.CHEST);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        BlockPos feet = h.absolutePos(new BlockPos(10, GROUND + 1, 16));
+        lying(h, feet.offset(2, 0, 0), Items.LAVA_BUCKET, 1);
+        lying(h, feet.offset(0, 0, 2), Items.WATER_BUCKET, 1);
+        String route = CompanionLocalCommands.route("Олег, сделай 2 обсидиана", "Олег");
+        var plan = CompanionLocalCommands.actions(route);
+        h.assertTrue(plan != null && plan.size() == 1, "«сделай 2 обсидиана» is not one step: " + route + " -> " + plan);
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-one-lava", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1, "Not the one obsidian his lava can make: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertTrue(!report.contains("Негде вылить лаву"), "He says there is no hole over open ground: " + report);
+            h.assertTrue(!report.contains("не дотянуться") && !report.contains("Не нашёл лавы"), "He says a bucket beside him is missing: " + report);
+            h.assertTrue(report.contains("Обсидиана у меня 1, а лавы рядом и в вёдрах больше нет"),
+                    "He does not say what he made and what is missing: " + report);
+            h.assertTrue(count(c, Items.LAVA_BUCKET) == 0 && count(c, Items.BUCKET) == 1 && count(c, Items.WATER_BUCKET) == 1,
+                    "His buckets are lost or doubled: " + c.getStoredItemsSummary() + ", " + report);
+        });
+    }
+
+    /**
+     * The same scene after the player drops a second bucket of lava, as in world test3: the repeated «сделай 2 обсидиана» takes
+     * the new bucket, makes the second block in a hole again and the bag holds both. The first order made the one block its lava
+     * gave and said what was missing; the second one is what the player brings for it.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void afterASecondLavaBucketAppearsTheOrderMakesBoth(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        placedByPlayer(h, c, new BlockPos(14, GROUND + 1, 20), Blocks.CHEST);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        BlockPos feet = h.absolutePos(new BlockPos(10, GROUND + 1, 16));
+        lying(h, feet.offset(2, 0, 0), Items.LAVA_BUCKET, 1);
+        lying(h, feet.offset(0, 0, 2), Items.WATER_BUCKET, 1);
+        String route = CompanionLocalCommands.route("Олег, сделай 2 обсидиана", "Олег");
+        var plan = CompanionLocalCommands.actions(route);
+        h.assertTrue(plan != null && plan.size() == 1, "«сделай 2 обсидиана» is not one step: " + route + " -> " + plan);
+        var first = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-one-lava", () -> false));
+        var second = new java.util.concurrent.atomic.AtomicReference<CompletableFuture<CompanionPlanRunner.Outcome>>();
+        h.succeedWhen(() -> {
+            h.assertTrue(first.isDone() && !first.isCompletedExceptionally(), "First plan still running: " + c.getLastTaskResult());
+            if (second.get() == null) {
+                h.assertTrue(count(c, Items.OBSIDIAN) == 1, "The first order did not make the one block its lava gives: "
+                        + count(c, Items.OBSIDIAN) + ", " + first.join().report());
+                lying(h, feet.offset(-2, 0, 0), Items.LAVA_BUCKET, 1);
+                second.set(CompanionPlanRunner.run(CompanionLocalCommands.actions(route),
+                        new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-second-lava", () -> false)));
+            }
+            h.assertTrue(second.get().isDone() && !second.get().isCompletedExceptionally(), "Second plan still running: " + c.getLastTaskResult());
+            String report = second.get().join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 2, "Not two obsidian after the second bucket of lava: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertTrue(!report.contains("Негде вылить лаву"), "He says there is no hole over open ground: " + report);
+            h.assertTrue(count(c, Items.LAVA_BUCKET) == 0 && count(c, Items.BUCKET) == 2 && count(c, Items.WATER_BUCKET) == 1,
+                    "His buckets are lost or doubled: " + c.getStoredItemsSummary() + ", " + report);
+        });
+    }
+
+    /**
+     * The hole the first block was made in is the hole the second one is made in: the arena has one cell of ground he can dig, the
+     * rest bedrock. The block is mined out of the hole first, the hole is filled back with its dirt, and the next make digs that
+     * same cell again — never refused because obsidian stood in it a moment ago. Two buckets of lava make two blocks in that one
+     * hole, and the ground is whole again at the end.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void theHoleOfTheFirstBlockIsUsedForTheSecond(GameTestHelper h) {
+        ground(h);
+        for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) h.setBlock(new BlockPos(10 + dx, GROUND, 16 + dz), Blocks.BEDROCK);
+        BlockPos hole = new BlockPos(12, GROUND, 16);
+        h.setBlock(hole, Blocks.DIRT);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.WATER_BUCKET));
+        c.setItem(2, new ItemStack(Items.LAVA_BUCKET, 2));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":2}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 2, "Not two obsidian out of the one hole: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertTrue(!report.contains("Негде вылить лаву"), "He says there is no hole with the one he used standing empty: " + report);
+            h.assertBlockPresent(Blocks.DIRT, hole);
+        });
+    }
+
+    /**
+     * The same yard of the player's site with the buckets in his bag instead of lying: the site is the whole yard round his home,
+     * so every cell beside him lies on it, and that was taken for no hole at all — «Негде вылить лаву» over the open ground he
+     * stands on. The hole is dug there as anywhere else, and one bucket of lava makes the one block.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void thePlayersSiteIsNoReasonToSayThereIsNoHole(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        placedByPlayer(h, c, new BlockPos(14, GROUND + 1, 20), Blocks.CHEST);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.WATER_BUCKET));
+        c.setItem(2, new ItemStack(Items.LAVA_BUCKET));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1, "Not one obsidian in the yard of his site: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertTrue(!report.contains("Негде вылить лаву"), "He says there is no hole in the yard of the player's site: " + report);
+            h.assertTrue(report.contains("Накопал обсидиана: 1."), "He does not say the one block is made: " + report);
+            h.assertBlockPresent(Blocks.CHEST, new BlockPos(14, GROUND + 1, 20));
+        });
+    }
+
+    /**
+     * «Добудь 1 обсидиан» inside the player's own house: a chest makes the yard his site, the floor is planks, and the one block
+     * comes of his own buckets. The hole he digs in that floor is filled back with the very plank the dig gave him once the
+     * obsidian is mined and his water is scooped, so the floor is whole again and no plank is gained or lost. The judge's nit
+     * on #208: a bare floor cell of the player's was fair game for the lava hole, and the pit stayed after the make.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void theHoleInThePlayersFloorIsFilledBackAfterTheMake(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        plankRoom(h, c, new BlockPos(12, GROUND + 1, 12));
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.WATER_BUCKET));
+        c.setItem(2, new ItemStack(Items.LAVA_BUCKET));
+        int planksBefore = count(c, Items.OAK_PLANKS);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1, "Not one obsidian: " + count(c, Items.OBSIDIAN) + ", " + report);
+            for (int x = 4; x <= 16; x++) for (int z = 10; z <= 22; z++)
+                h.assertBlockPresent(Blocks.OAK_PLANKS, new BlockPos(x, GROUND, z));
+            h.assertTrue(count(c, Items.OAK_PLANKS) == planksBefore,
+                    "A plank was gained or lost: " + count(c, Items.OAK_PLANKS) + " of " + planksBefore + ", " + c.getStoredItemsSummary() + ", " + report);
+        });
+    }
+
+    /**
+     * The same house: no plank of the floor ignites or burns while the block is made. Lava in a plank hole can set the planks
+     * around it alight for the tick it stands there; his water must go over it before that tick ends. No fire is allowed anywhere
+     * in the room at any tick, and after the make every floor cell must be the very block it was before.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void noPlankOfTheFloorBurnsWhileTheBlockIsMade(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        plankRoom(h, c, new BlockPos(12, GROUND + 1, 12));
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.WATER_BUCKET));
+        c.setItem(2, new ItemStack(Items.LAVA_BUCKET));
+        Map<BlockPos, BlockState> before = new HashMap<>();
+        for (int x = 4; x <= 16; x++) for (int z = 10; z <= 22; z++) {
+            BlockPos floor = new BlockPos(x, GROUND, z);
+            before.put(floor, h.getLevel().getBlockState(h.absolutePos(floor)));
+        }
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(4, GROUND, 10), new BlockPos(16, GROUND + 4, 22)))
+                h.assertTrue(!h.getLevel().getBlockState(h.absolutePos(pos)).is(Blocks.FIRE),
+                        "A plank is on fire at " + pos.toShortString() + ": " + c.getLastTaskResult());
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1, "Not one obsidian: " + count(c, Items.OBSIDIAN) + ", " + report);
+            for (Map.Entry<BlockPos, BlockState> floor : before.entrySet())
+                h.assertTrue(h.getLevel().getBlockState(h.absolutePos(floor.getKey())).equals(floor.getValue()),
+                        "The floor at " + floor.getKey().toShortString() + " is not what it was: "
+                                + h.getLevel().getBlockState(h.absolutePos(floor.getKey())) + ", was " + floor.getValue());
+        });
+    }
+
+    /**
+     * The live bug of #105 (PATH7): an obsidian ten blocks above his feet, nothing under it, so no stand cell reaches it.
+     * With a diamond pickaxe and soil in his bag, «Олег, добудь обсидиан»: he builds a column of his own soil up to the block,
+     * mines it from the top, and comes down with every block of the column back in the bag — the ground left as it was.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 5000)
+    public static void obsidianTenAboveHisFeetIsMinedFromAColumnOfHisOwnSoil(GameTestHelper h) {
+        ground(h);
+        BlockPos obsidian = new BlockPos(12, GROUND + 11, 16);
+        h.setBlock(obsidian, Blocks.OBSIDIAN);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.DIRT, 20));
+        double groundY = c.getY();
+        int[] supports = {0};
+        double[] highest = {0};
+        h.onEachTick(() -> { supports[0] = Math.max(supports[0], c.getTemporarySupportCount()); highest[0] = Math.max(highest[0], c.getY()); });
+        String command = CompanionLocalCommands.route("Олег, добудь обсидиан", "Олег");
+        h.assertTrue(command != null, "«Олег, добудь обсидиан» went to the model");
+        var plan = CompanionLocalCommands.actions(command);
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-way", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1, "Not the obsidian above him: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertBlockPresent(Blocks.AIR, obsidian);
+            h.assertTrue(supports[0] >= 7, "He never built up to it: supports " + supports[0] + ", highest y " + highest[0] + ", " + report);
+            h.assertTrue(highest[0] > groundY + 5, "He never stood above the ground: highest y " + highest[0] + ", " + report);
+            h.assertTrue(c.onGround() && Math.abs(c.getY() - groundY) < 0.6, "He did not come back down: y " + c.getY() + ", " + report);
+            h.assertTrue(c.getTemporarySupportCount() == 0, "The column is still standing: " + c.getTemporarySupportCount());
+            h.assertTrue(dirtAboveGround(h) == 0, "A block of his column was left standing");
+            h.assertTrue(count(c, Items.DIRT) == 20, "The soil of his column was lost: " + count(c, Items.DIRT));
+            h.assertBlockPresent(Blocks.GRASS_BLOCK, new BlockPos(12, GROUND, 16));
+        });
+    }
+    /**
+     * The live report of PATH7: «добудь обсидиан» without his name and «олег добудь обсидиан» are the same order of ten
+     * (a portal frame), and one obsidian hangs ten blocks above each of two identical scenes. The phrasing must not decide
+     * the outcome: both promise only what is there — one block — mine it, come down, take the drop and end with
+     * «Накопал обсидиана: 1.» instead of refusing for the nine blocks that are not.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 8000)
+    public static void thePhraseWithAndWithoutHisNameGivesTheSameOutcome(GameTestHelper h) {
+        ground(h);
+        BlockPos bareBlock = new BlockPos(8, GROUND + 11, 8);
+        BlockPos namedBlock = new BlockPos(24, GROUND + 11, 24);
+        h.setBlock(bareBlock, Blocks.OBSIDIAN);
+        h.setBlock(namedBlock, Blocks.OBSIDIAN);
+        CompanionEntity bare = spawnAt(h, 6, 8);
+        CompanionEntity named = spawnAt(h, 22, 24);
+        for (CompanionEntity c : List.of(bare, named)) {
+            c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+            c.setItem(1, new ItemStack(Items.DIRT, 20));
+        }
+        String bareCommand = CompanionLocalCommands.route("добудь обсидиан", "Олег");
+        String namedCommand = CompanionLocalCommands.route("Олег, добудь обсидиан", "Олег");
+        h.assertTrue(bareCommand != null && namedCommand != null, "A phrase went to the model: " + bareCommand + " / " + namedCommand);
+        h.assertTrue(bareCommand.equals(namedCommand), "The phrasing decides the command: " + bareCommand + " / " + namedCommand);
+        var bareFuture = CompanionPlanRunner.run(CompanionLocalCommands.actions(bareCommand),
+                new CompanionServerPlanPort(h.getLevel().getServer(), bare.getOwnerId(), "gametest-obsidian-bare", () -> false));
+        var namedFuture = CompanionPlanRunner.run(CompanionLocalCommands.actions(namedCommand),
+                new CompanionServerPlanPort(h.getLevel().getServer(), named.getOwnerId(), "gametest-obsidian-named", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(bareFuture.isDone() && namedFuture.isDone() && !bareFuture.isCompletedExceptionally() && !namedFuture.isCompletedExceptionally(),
+                    "A plan still running: " + bare.getLastTaskResult() + " / " + named.getLastTaskResult());
+            String bareReport = bareFuture.join().report(), namedReport = namedFuture.join().report();
+            h.assertTrue(bareReport.equals(namedReport), "The phrasing changed the outcome:\n" + bareReport + "\n---\n" + namedReport);
+            h.assertTrue(bareReport.contains("Накопал обсидиана: 1"), "Not the one block that was there: " + bareReport);
+            h.assertTrue(!bareReport.contains("Не нашёл лавы") && !bareReport.contains("Полторы минуты"), "A wrong end: " + bareReport);
+            h.assertTrue(count(bare, Items.OBSIDIAN) == 1 && count(named, Items.OBSIDIAN) == 1,
+                    "The drop is not in the bag: " + count(bare, Items.OBSIDIAN) + " / " + count(named, Items.OBSIDIAN) + ", " + bareReport);
+            h.assertBlockPresent(Blocks.AIR, bareBlock);
+            h.assertBlockPresent(Blocks.AIR, namedBlock);
+            h.assertTrue(bare.getTemporarySupportCount() == 0 && named.getTemporarySupportCount() == 0,
+                    "A column stands: " + bare.getTemporarySupportCount() + " / " + named.getTemporarySupportCount());
+            h.assertTrue(count(bare, Items.DIRT) == 20 && count(named, Items.DIRT) == 20,
+                    "The soil of a column was lost: " + count(bare, Items.DIRT) + " / " + count(named, Items.DIRT));
+            h.assertTrue(dirtAboveGround(h) == 0, "A block of a column was left standing");
+            h.assertBlockPresent(Blocks.GRASS_BLOCK, new BlockPos(8, GROUND, 8));
+            h.assertBlockPresent(Blocks.GRASS_BLOCK, new BlockPos(24, GROUND, 24));
+        });
+    }
+    /**
+     * The live order of PATH7, with the owner's own correction (26.11): mine, the drop comes to rest on the top of the column he
+     * stands on and is taken there, then he steps down dismantling the column behind him, then done. Standing on his own column
+     * while the drop lies below is not progress, and the watchdog must not close the order for it: no «Полторы минуты» and no
+     * «Не нашёл лавы» for the nine blocks that were never there.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 5000)
+    public static void obsidianAboveIsTakenFromHisColumnThenItComesDown(GameTestHelper h) {
+        ground(h);
+        BlockPos obsidian = new BlockPos(12, GROUND + 11, 16);
+        h.setBlock(obsidian, Blocks.OBSIDIAN);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.DIRT, 20));
+        long[] minedAt = {-1}, downAt = {-1}, bagAt = {-1}, doneAt = {-1}; int[] supportsAtBag = {-1}, most = {0};
+        String command = CompanionLocalCommands.route("добудь обсидиан", "Олег");
+        h.assertTrue(command != null, "«добудь обсидиан» went to the model");
+        var future = CompanionPlanRunner.run(CompanionLocalCommands.actions(command),
+                new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-order", () -> false));
+        h.onEachTick(() -> {
+            most[0] = Math.max(most[0], c.getTemporarySupportCount());
+            if (minedAt[0] < 0 && h.getBlockState(obsidian).is(Blocks.AIR)) minedAt[0] = h.getTick();
+            if (minedAt[0] >= 0 && downAt[0] < 0 && c.getTemporarySupportCount() < most[0]) downAt[0] = h.getTick();
+            if (bagAt[0] < 0 && count(c, Items.OBSIDIAN) > 0) { bagAt[0] = h.getTick(); supportsAtBag[0] = c.getTemporarySupportCount(); }
+            if (doneAt[0] < 0 && future.isDone()) doneAt[0] = h.getTick();
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(most[0] >= 7, "He never built up to it: supports " + most[0] + ", " + report);
+            h.assertTrue(minedAt[0] >= 0, "The obsidian above him was never mined: " + report);
+            h.assertTrue(bagAt[0] > minedAt[0], "The drop was not taken after mining: mined " + minedAt[0] + ", bag " + bagAt[0] + ", " + report);
+            // The drop rests on the top of his own column, at his feet: it is taken there, and only then the column comes down.
+            h.assertTrue(supportsAtBag[0] > 0, "He took the drop only after the column came down: " + supportsAtBag[0] + ", " + report);
+            h.assertTrue(downAt[0] > bagAt[0], "The column came down before the drop was taken: bag " + bagAt[0] + ", down " + downAt[0] + ", " + report);
+            h.assertTrue(doneAt[0] >= bagAt[0], "The order ended before the drop was in the bag: " + report);
+            h.assertTrue(report.contains("Накопал обсидиана: 1"), "Not an honest count: " + report);
+            h.assertTrue(!report.contains("Полторы минуты") && !report.contains("Не нашёл лавы"), "A wrong end: " + report);
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1, "The drop is not in the bag: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertTrue(c.getTemporarySupportCount() == 0 && dirtAboveGround(h) == 0, "A block of the column was left standing");
+            h.assertTrue(count(c, Items.DIRT) == 20, "The soil of the column was lost: " + count(c, Items.DIRT));
+        });
+    }
+    /**
+     * An obsidian two blocks up on a stone ledge beside him, its drop resting on the ledge: a walk reaches a stand cell, so no
+     * column is built and none of his soil is spent.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void obsidianHeCanWalkToIsNotBuiltUpTo(GameTestHelper h) {
+        ground(h);
+        BlockPos ledge = new BlockPos(12, GROUND + 1, 16);
+        BlockPos obsidian = ledge.above();
+        h.setBlock(ledge, Blocks.STONE);
+        h.setBlock(obsidian, Blocks.OBSIDIAN);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.DIRT, 20));
+        int[] supports = {0};
+        h.onEachTick(() -> supports[0] = Math.max(supports[0], c.getTemporarySupportCount()));
+        String command = CompanionLocalCommands.route("Олег, добудь обсидиан", "Олег");
+        h.assertTrue(command != null, "«Олег, добудь обсидиан» went to the model");
+        var plan = CompanionLocalCommands.actions(command);
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-walkable", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1, "Not the obsidian he could walk to: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertBlockPresent(Blocks.AIR, obsidian);
+            h.assertTrue(supports[0] == 0, "A column was built to a block the walk reached: " + supports[0]);
+            h.assertTrue(dirtAboveGround(h) == 0, "A block of his column was left standing");
+            h.assertTrue(count(c, Items.DIRT) == 20, "The soil was spent on a reachable block: " + count(c, Items.DIRT));
+        });
+    }
+    /** The switch off: the same obsidian above him is left, no column is raised and none of his soil is spent. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void withTheWaySwitchedOffTheObsidianAboveIsLeft(GameTestHelper h) {
+        ground(h);
+        BlockPos obsidian = new BlockPos(12, GROUND + 11, 16);
+        h.setBlock(obsidian, Blocks.OBSIDIAN);
+        CompanionEntity c = spawn(h);
+        c.setBuildWay(false);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.DIRT, 20));
+        int[] supports = {0};
+        h.onEachTick(() -> supports[0] = Math.max(supports[0], c.getTemporarySupportCount()));
+        String command = CompanionLocalCommands.route("Олег, добудь обсидиан", "Олег");
+        h.assertTrue(command != null, "«Олег, добудь обсидиан» went to the model");
+        var plan = CompanionLocalCommands.actions(command);
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-obsidian-way-off", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            h.assertTrue(count(c, Items.OBSIDIAN) == 0, "The obsidian above was taken with the switch off: " + count(c, Items.OBSIDIAN));
+            h.assertBlockPresent(Blocks.OBSIDIAN, obsidian);
+            h.assertTrue(supports[0] == 0, "A column was built with the switch off: " + supports[0]);
+            h.assertTrue(count(c, Items.DIRT) == 20, "The soil was spent with the switch off: " + count(c, Items.DIRT));
+        });
+    }
+    /**
+     * One obsidian lies about, a bucket of lava in his bag and no water at all: the order for two promises only the block that
+     * lies — the bucket cannot be used without water — so he mines it, ends with «Накопал обсидиана: 1.» and his lava bucket
+     * stays in the bag, never spent on a block that was not promised (PATH7: an order promises only what is there).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void oneObsidianAndALavaBucketWithoutWaterPromisesOnlyTheBlock(GameTestHelper h) {
+        ground(h);
+        h.setBlock(new BlockPos(12, GROUND + 1, 16), Blocks.OBSIDIAN);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.LAVA_BUCKET));
+        // Obsidian lies about, so the plan asks for no water and promises only that one block.
+        var plan = c.obtainPlan(OBSIDIAN, 2);
+        h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("mine_obsidian", OBSIDIAN, 1))), "Not the one that lies: " + plan);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":2}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Накопал обсидиана: 1."), "Not an honest count: " + report);
+            h.assertTrue(!report.contains("Нет ведра воды") && !report.contains("Не нашёл лавы") && !report.contains("лава рядом кончилась"),
+                    "A block that was never promised is said to be missing: " + report);
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1 && count(c, Items.LAVA_BUCKET) == 1 && count(c, Items.BUCKET) == 0,
+                    "His lava was spent: " + c.getStoredItemsSummary() + ", " + report);
+        });
+    }
     /**
      * «Добудь 2 обсидиана» with one bucket of lava and one of water and nothing about to mine or cool: the buckets make one
      * block, so the order promises one, makes it and ends with «Накопал обсидиана: 1.» — his lava spent, the empty bucket and
@@ -789,6 +1399,95 @@ public final class CompanionObsidianTests {
             h.assertTrue(count(c, Items.OBSIDIAN) == 1 && count(c, Items.LAVA_BUCKET) == 0 && count(c, Items.BUCKET) == 1
                     && count(c, Items.WATER_BUCKET) == 1, "His buckets are lost or doubled: " + c.getStoredItemsSummary() + ", " + report);
         });
+    }
+    /**
+     * The obsidian the player set down himself is the order's target: the two blocks he set down on his site, lying apart by the
+     * chest of his, are mined for «добудь 2 обсидиана», while the lava pond on his site is still his — no water is poured over it
+     * and his bucket comes back untouched (PATH7: «do not break the player's build» keeps the soil a way lays and the lava of his
+     * pond, never the block the order named). A wall of three and more touching is his building and keeps it (#208), so the
+     * blocks here lie apart as his lone ones do.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void obsidianThePlayerSetDownIsMinedForHisOrder(GameTestHelper h) {
+        ground(h);
+        List<BlockPos> pond = lava(h, 18, 15, 3, 1);
+        CompanionEntity c = spawn(h);
+        // A chest of his on the surface makes it a building of his (CompanionPlayerBuilds.HOME_SCORE), the two blocks lie in it.
+        placedByPlayer(h, c, new BlockPos(16, GROUND + 1, 22), Blocks.CHEST);
+        List<BlockPos> wall = List.of(new BlockPos(14, GROUND + 1, 20), new BlockPos(16, GROUND + 1, 20));
+        for (BlockPos cell : wall) placedByPlayer(h, c, cell, Blocks.OBSIDIAN);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.WATER_BUCKET));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":2}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 2, "Not two obsidian from the blocks he set down: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertTrue(!report.contains("Рядом нечего копать"), "He refused over obsidian of his own: " + report);
+            for (BlockPos cell : wall) h.assertBlockPresent(Blocks.AIR, cell);
+            // The lava of his pond is his still: no water poured over it, his bucket in the bag.
+            for (BlockPos cell : pond) h.assertBlockPresent(Blocks.LAVA, cell);
+            h.assertTrue(count(c, Items.WATER_BUCKET) == 1, "He poured his water over the pond: " + report);
+        });
+    }
+
+    /** The soil of a column above the ground of the test: what a column of his leaves behind if it is not taken back. */
+    private static int dirtAboveGround(GameTestHelper h) {
+        int count = 0;
+        for (int x = 1; x < 31; x++) for (int z = 1; z < 31; z++) for (int y = GROUND + 1; y <= GROUND + 12; y++)
+            if (h.getBlockState(new BlockPos(x, y, z)).is(Blocks.DIRT)) count++;
+        return count;
+    }
+
+    /** The same companion of a scene of its own, at this cell, with a player of its own beside it (two scenes in one test). */
+    private static CompanionEntity spawnAt(GameTestHelper h, int x, int z) {
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), x, GROUND + 1, z);
+        bind(h, c, x - 2, z);
+        c.setSearchRadius(16);
+        return c;
+    }
+
+    private static void bind(GameTestHelper h, CompanionEntity c, int playerX, int playerZ) {
+        var owner = h.makeMockServerPlayerInLevel();
+        BlockPos stand = h.absolutePos(new BlockPos(playerX, GROUND + 1, playerZ));
+        owner.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
+        c.setOwnerId(owner.getUUID());
+        owner.getPersistentData().putUUID("aicompanion:canonical_companion", c.getUUID());
+        CompanionEvents.getOwnedCompanion(owner);
+    }
+
+    /**
+     * A room of the player's in the test ground: a plank floor, plank walls three high and a plank roof, with a chest set down by
+     * the player so the yard is his site. The floor is what the companion stands on and what his own lava hole is dug in.
+     */
+    private static void plankRoom(GameTestHelper h, CompanionEntity c, BlockPos chest) {
+        for (int x = 4; x <= 16; x++) for (int z = 10; z <= 22; z++) {
+            h.setBlock(new BlockPos(x, GROUND, z), Blocks.OAK_PLANKS);
+            h.setBlock(new BlockPos(x, GROUND + 4, z), Blocks.OAK_PLANKS);
+            for (int y = GROUND + 1; y <= GROUND + 3; y++)
+                if (x == 4 || x == 16 || z == 10 || z == 22) h.setBlock(new BlockPos(x, y, z), Blocks.OAK_PLANKS);
+        }
+        placedByPlayer(h, c, chest, Blocks.CHEST);
+    }
+
+    /**
+     * Buckets of the item lying at this cell, as the player drops them: with the game's pickup delay, so his passing pickup leaves
+     * them for the order to take up. The entity is returned, so a test may hold it past the loose pickup.
+     */
+    private static net.minecraft.world.entity.item.ItemEntity lying(GameTestHelper h, BlockPos at, Item item, int count) {
+        var drop = new net.minecraft.world.entity.item.ItemEntity(h.getLevel(), at.getX() + .5, at.getY() + .2, at.getZ() + .5, new ItemStack(item, count));
+        drop.setPickUpDelay(40);
+        h.getLevel().addFreshEntity(drop);
+        return drop;
+    }
+
+    /** Buckets of this item lying about him, as the world holds them now (the bag is counted apart). */
+    private static int lyingCount(GameTestHelper h, CompanionEntity c, Item item) {
+        int count = 0;
+        for (var drop : h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                new net.minecraft.world.phys.AABB(c.blockPosition()).inflate(16)))
+            if (drop.isAlive() && drop.getItem().is(item)) count += drop.getItem().getCount();
+        return count;
     }
 
     /** The lava of the make in the world beside him, or null while it is not poured yet. */
@@ -854,37 +1553,17 @@ public final class CompanionObsidianTests {
         }
     }
 
-    /** The soil of a column above the ground of the test: what a column of his leaves behind if it is not taken back. */
-    private static int dirtAboveGround(GameTestHelper h) {
-        int count = 0;
-        for (int x = 1; x < 31; x++) for (int z = 1; z < 31; z++) for (int y = GROUND + 1; y <= GROUND + 12; y++)
-            if (h.getBlockState(new BlockPos(x, y, z)).is(Blocks.DIRT)) count++;
-        return count;
-    }
-
     private static CompanionEntity spawn(GameTestHelper h) {
         CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 10, GROUND + 1, 16);
-        bind(h, c, 8, 14);
-        // The least radius: the lava and obsidian of the tests beside this one, beyond its walls, would be out of his way.
-        c.setSearchRadius(16);
-        return c;
-    }
-
-    /** The same companion of a scene of its own, at this cell, with a player of its own beside it (two scenes in one test). */
-    private static CompanionEntity spawnAt(GameTestHelper h, int x, int z) {
-        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), x, GROUND + 1, z);
-        bind(h, c, x - 2, z);
-        c.setSearchRadius(16);
-        return c;
-    }
-
-    private static void bind(GameTestHelper h, CompanionEntity c, int playerX, int playerZ) {
         var owner = h.makeMockServerPlayerInLevel();
-        BlockPos stand = h.absolutePos(new BlockPos(playerX, GROUND + 1, playerZ));
+        BlockPos stand = h.absolutePos(new BlockPos(8, GROUND + 1, 14));
         owner.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
         c.setOwnerId(owner.getUUID());
         owner.getPersistentData().putUUID("aicompanion:canonical_companion", c.getUUID());
         CompanionEvents.getOwnedCompanion(owner);
+        // The least radius: the lava and obsidian of the tests beside this one, beyond its walls, would be out of his way.
+        c.setSearchRadius(16);
+        return c;
     }
 
     private static CompletableFuture<CompanionPlanRunner.Outcome> run(GameTestHelper h, CompanionEntity c, String json) {

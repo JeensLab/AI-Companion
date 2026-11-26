@@ -120,6 +120,25 @@ public final class CompanionCourseTests {
         });
     }
 
+    /**
+     * Game 24.11 (AgentTest, «пройди 200 блоков на запад» from 1993 72 1297): a ravine across the way, a waterfall from the lake in
+     * the north running down it. Pressed by the current against a birch at its edge (1883 62 1299, where he starts here), he bobbed
+     * in the water for a minute and said «не пройти: обойти не вышло». The template is that piece of the world as it is,
+     * x 1826..1897, y 36..75, z 1280..1318. The route on the line fails; a point aside leads across.
+     */
+    @GameTest(template = "heading_waterfall", timeoutTicks = 4000, skyAccess = true)
+    public static void crossesTheRavineOfTheWaterfall(GameTestHelper h) {
+        CompanionEntity companion = spawn(h, new BlockPos(57, 26, 19), new BlockPos(61, 27, 19));
+        ServerPlayer player = owner(h, companion);
+        h.assertTrue(CompanionEvents.executeAction(player, "walk_heading", "west", 40).success(), "Walk not accepted: " + companion.getLastTaskResult());
+        long id = companion.activeWorkId();
+        h.onEachTick(() -> player.teleportTo(companion.getX() + 3, companion.getY(), companion.getZ()));
+        h.succeedWhen(() -> {
+            CompanionActionResult result = finished(h, companion, id);
+            h.assertTrue(result.success() && at(h, companion).getX() <= 20, result.message() + " at " + at(h, companion).toShortString());
+        });
+    }
+
     @GameTest(template = "large_search", timeoutTicks = 2400, skyAccess = true)
     public static void offersAWayRoundALake(GameTestHelper h) {
         CompanionEntity companion = arena(h, null);
@@ -218,6 +237,10 @@ public final class CompanionCourseTests {
                 {"давай пошли в сторону севера", "companion work walk_heading 0 north"},
                 {"веди на юг, пока не найдем деревню", "companion work walk_heading 0 south:village"},
                 {"веди на север, пока не скажу стоп", "companion work walk_heading 0 north"},
+                {"Олег, веди к крепости", "companion work walk_heading 0 stronghold"},
+                {"отведи меня к крепости края", "companion work walk_heading 0 stronghold"},
+                {"брось око", "companion work walk_heading 0 stronghold"},
+                {"кинь око края", "companion work walk_heading 0 stronghold"},
                 {"стоп", "companion stop"}};
         for (String[] pair : said) {
             String routed = CompanionLocalCommands.route(pair[0], "Олег");
@@ -227,10 +250,22 @@ public final class CompanionCourseTests {
             String routed = CompanionLocalCommands.route(other, "Олег");
             h.assertTrue(routed == null || !routed.contains("walk_heading"), "«" + other + "» routed as " + routed);
         }
+        // «Веди к крепости» is the eye's walk only while no marker bears that name: the player's own «крепость» is walked to.
+        var noMarker = dev.aicompanion.client.CompanionPlaceSpeech.parse("Олег, веди к крепости", "Олег", java.util.List.of("дача"), true);
+        h.assertTrue(noMarker.kind() == dev.aicompanion.client.CompanionPlaceSpeech.Kind.NONE, "Asked about a marker: " + noMarker.question());
+        var marker = dev.aicompanion.client.CompanionPlaceSpeech.parse("Олег, веди к крепости", "Олег", java.util.List.of("крепость"), true);
+        h.assertTrue(marker.kind() == dev.aicompanion.client.CompanionPlaceSpeech.Kind.GO, "The marker «крепость» is not walked to: " + marker.kind());
+        var which = dev.aicompanion.client.CompanionPlaceSpeech.parse("Олег, веди к крепости", "Олег", java.util.List.of("крепость2", "дача"), true);
+        h.assertTrue(which.kind() != dev.aicompanion.client.CompanionPlaceSpeech.Kind.NONE, "With a marker «крепость2» the eye is thrown, no question asked");
+        String thrown = CompanionLocalCommands.route("брось око", "Олег", java.util.List.of("крепость"), true);
+        h.assertTrue("companion work walk_heading 0 stronghold".equals(thrown), "«брось око» with a marker «крепость» routed as " + thrown);
+        String toMarker = CompanionLocalCommands.route("Олег, веди к крепости", "Олег", java.util.List.of("крепость"), true);
+        h.assertTrue(toMarker != null && toMarker.startsWith("companion place go"), "With a marker «крепость» routed as " + toMarker);
         var walk = CompanionPlanCodec.decode(message("{\"action\":\"walk_heading\",\"item\":\"northeast\"}")).actions();
         h.assertTrue(walk.size() == 1 && walk.getFirst().count() == 0 && "northeast".equals(walk.getFirst().item()), "Decoded " + walk);
         h.assertTrue(CompanionPlanCodec.decode(message("{\"action\":\"walk_heading\",\"item\":\"west:village\",\"count\":500}")).actions().getFirst().count() == 500, "500 blocks refused");
-        for (String bad : new String[]{"{\"action\":\"walk_heading\",\"item\":\"up\"}", "{\"action\":\"walk_heading\",\"item\":\"east:dragon\"}",
+        h.assertTrue("stronghold".equals(CompanionPlanCodec.decode(message("{\"action\":\"walk_heading\",\"item\":\"stronghold\"}")).actions().getFirst().item()), "The eye's walk refused");
+        for (String bad : new String[]{"{\"action\":\"walk_heading\",\"item\":\"up\"}", "{\"action\":\"walk_heading\",\"item\":\"east:dragon\"}", "{\"action\":\"walk_heading\",\"item\":\"stronghold:village\"}",
                 "{\"action\":\"walk_heading\",\"item\":\"east\",\"count\":501}"})
             h.assertTrue(rejects(() -> CompanionPlanCodec.decode(message(bad))), "Decoded " + bad);
         h.succeed();
@@ -247,9 +282,14 @@ public final class CompanionCourseTests {
             h.setBlock(new BlockPos(x, 1, z), border ? Blocks.BEDROCK.defaultBlockState() : water != null && x >= 40 ? water : Blocks.STONE.defaultBlockState());
             if (border) for (int y = 2; y <= 4; y++) h.setBlock(new BlockPos(x, y, z), Blocks.BEDROCK);
         }
-        CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), START_X, 2, LINE);
+        return spawn(h, new BlockPos(START_X, 2, LINE), new BlockPos(START_X - 3, 2, LINE));
+    }
+
+    /** He at {@code at}, his player at {@code player} (relative), owning him. */
+    private static CompanionEntity spawn(GameTestHelper h, BlockPos at, BlockPos player) {
+        CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), at.getX(), at.getY(), at.getZ());
         var owner = h.makeMockServerPlayerInLevel();
-        BlockPos stand = h.absolutePos(new BlockPos(START_X - 3, 2, LINE));
+        BlockPos stand = h.absolutePos(player);
         owner.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
         companion.setOwnerId(owner.getUUID());
         owner.getPersistentData().putUUID("aicompanion:canonical_companion", companion.getUUID());

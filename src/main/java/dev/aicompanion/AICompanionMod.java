@@ -44,6 +44,10 @@ public final class AICompanionMod {
     public static final DeferredHolder<EntityType<?>, EntityType<dev.aicompanion.entity.CompanionSeat>> SEAT = ENTITY_TYPES.register(
             "seat", () -> EntityType.Builder.<dev.aicompanion.entity.CompanionSeat>of(dev.aicompanion.entity.CompanionSeat::new, MobCategory.MISC)
                     .sized(0.2F, 0.1F).noSummon().fireImmune().clientTrackingRange(10).build("aicompanion:seat"));
+    /** The bobber of his fishing rod (entity/CompanionBobber): the game's own lives only on a player's line. Never saved, as the game's is not. */
+    public static final DeferredHolder<EntityType<?>, EntityType<dev.aicompanion.entity.CompanionBobber>> BOBBER = ENTITY_TYPES.register(
+            "bobber", () -> EntityType.Builder.<dev.aicompanion.entity.CompanionBobber>of(dev.aicompanion.entity.CompanionBobber::new, MobCategory.MISC)
+                    .noSave().noSummon().sized(0.25F, 0.25F).clientTrackingRange(4).updateInterval(1).build("aicompanion:bobber"));
 
     public AICompanionMod(IEventBus modEventBus, ModContainer modContainer) {
         modContainer.registerConfig(net.neoforged.fml.config.ModConfig.Type.CLIENT, OpenRouterConfig.SPEC);

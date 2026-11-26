@@ -17,6 +17,7 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -34,11 +35,12 @@ import java.util.concurrent.CompletableFuture;
 public final class CompanionMobDropsTests {
     private static final int GROUND = 5;
 
-    /** Plan only: what a monster about him drops is fought for; what only a player's kill, a witch's luck or the water gives is not. */
+    /** Plan only: what a monster about him drops is fought for, a player's kill being his too (CompanionKillCredit); what a witch's luck or the water gives is not. */
     @GameTest(template = "empty", timeoutTicks = 40)
     public static void whatAMonsterDropsIsPlannedAsAHunt(GameTestHelper h) {
         var level = h.getLevel();
-        for (String item : List.of("minecraft:string", "minecraft:bone", "minecraft:gunpowder", "minecraft:ender_pearl", "minecraft:slime_ball", "minecraft:rotten_flesh")) {
+        for (String item : List.of("minecraft:string", "minecraft:bone", "minecraft:gunpowder", "minecraft:ender_pearl", "minecraft:slime_ball", "minecraft:rotten_flesh",
+                "minecraft:spider_eye", "minecraft:phantom_membrane")) {
             var plan = CompanionObtain.plan(level, List.of(new ItemStack(Items.STONE_AXE)), false, item, 3, thing -> false, thing -> true);
             h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("hunt_drop", item, 3))), item + ": " + plan);
         }
@@ -60,9 +62,8 @@ public final class CompanionMobDropsTests {
         // Cod is the fish's own: neither a dolphin, nor a polar bear, nor a guardian is named for it.
         var nobody = CompanionObtain.plan(level, List.of(), false, "minecraft:cod", 1, thing -> false, thing -> false);
         h.assertTrue(nobody.refused() && nobody.refusal().contains("Cod") && !nobody.refusal().contains("Dolphin") && !nobody.refusal().contains("Polar") && !nobody.refusal().contains("Guardian"), "Cod: " + nobody);
-        // A player's kill only (spider eye, blaze rod), a witch's odds and ends, a guardian's, a piglin's: no monster is fought for them.
-        for (String item : List.of("minecraft:spider_eye", "minecraft:blaze_rod", "minecraft:glowstone_dust", "minecraft:glass_bottle",
-                "minecraft:prismarine_shard", "minecraft:gold_nugget", "minecraft:nether_star")) {
+        // A witch's odds and ends, a guardian's, a piglin's, a ghast's (it hangs over lava) and a breeze's (it turns arrows back): no monster is fought for them.
+        for (String item : List.of("minecraft:ghast_tear", "minecraft:breeze_rod", "minecraft:glowstone_dust", "minecraft:glass_bottle", "minecraft:prismarine_shard", "minecraft:gold_nugget", "minecraft:nether_star")) {
             var plan = CompanionObtain.plan(level, List.of(), true, item, 1, thing -> true, thing -> true);
             h.assertTrue(plan.steps().stream().noneMatch(step -> step.type().equals("hunt_drop")), item + " is not hunted for: " + plan);
         }
@@ -144,6 +145,82 @@ public final class CompanionMobDropsTests {
             h.assertTrue(count(c, Items.COD) >= 2 && count(c, Items.INK_SAC) >= 1, "Cod " + count(c, Items.COD) + ", ink " + count(c, Items.INK_SAC) + ": " + report);
             h.assertTrue(dolphin.isAlive() && dolphin.getHealth() == dolphin.getMaxHealth(), "The dolphin was struck");
             h.assertTrue(pet.isAlive() && pet.getHealth() == pet.getMaxHealth(), "The player's cod was struck");
+        });
+    }
+
+    /**
+     * Plan only: a blaze about him is fought for its rod, and an eye of ender is made of that rod and a pearl he carries. Alone in the
+     * Nether on his errand he hunts none: the rod falls only with his player there, and the rest of such a plan is made at home. Nor in the End.
+     */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void aBlazeRodIsPlannedAsAHuntButNotOnHisErrand(GameTestHelper h) {
+        var nether = h.getLevel().getServer().getLevel(Level.NETHER);
+        h.assertTrue(nether != null, "No Nether to test with");
+        var sword = List.of(new ItemStack(Items.IRON_SWORD), new ItemStack(Items.ENDER_PEARL, 2));
+        var rods = CompanionObtain.plan(nether, sword, false, "minecraft:blaze_rod", 3, thing -> false, thing -> true);
+        h.assertTrue(rods.steps().equals(List.of(new CompanionObtain.Step("hunt_drop", "minecraft:blaze_rod", 3))), "Rods: " + rods);
+        var eyes = CompanionObtain.plan(nether, sword, false, "minecraft:ender_eye", 2, thing -> false, thing -> true);
+        h.assertTrue(eyes.steps().equals(List.of(new CompanionObtain.Step("hunt_drop", "minecraft:blaze_rod", 1), new CompanionObtain.Step("craft_item", "minecraft:blaze_powder", 2),
+                new CompanionObtain.Step("craft_item", "minecraft:ender_eye", 2))), "Eyes of ender: " + eyes);
+        var alone = CompanionObtain.plan(nether, sword, false, "minecraft:blaze_rod", 3, thing -> false, thing -> true, new CompanionObtain.Trip(null, true));
+        h.assertTrue(alone.refused() && alone.steps().isEmpty() && alone.refusal().contains("Blaze"), "Rods on his errand: " + alone);
+        // The End is not hunted in yet: an enderman's pearl there is no order of his (over the void his bag would be lost with him).
+        var end = h.getLevel().getServer().getLevel(Level.END);
+        h.assertTrue(end != null, "No End to test with");
+        var pearl = new CompanionEntity(AICompanionMod.COMPANION.get(), end).startWork("hunt_drop", "minecraft:ender_pearl", 1);
+        h.assertTrue(!pearl.success() && pearl.message().contains("не добываю"), "A pearl in the End: " + pearl.message());
+        h.succeed();
+    }
+
+    /** «Сделай око Края» in the Nether with his player by him, a pearl in his bag and blazes about: a blaze is fought, its rod ground, the eye made. */
+    @GameTest(template = "empty", timeoutTicks = 2400)
+    public static void anEyeOfEnderIsMadeOfABlazeFoughtInTheNether(GameTestHelper h) {
+        var nether = h.getLevel().getServer().getLevel(Level.NETHER);
+        h.assertTrue(nether != null, "No Nether to test with");
+        // Above the Nether's roof, a bedrock box: nothing of the Nether's own walks in.
+        BlockPos base = new BlockPos(3008, 150, 3104);
+        var chunk = new net.minecraft.world.level.ChunkPos(base);
+        nether.setChunkForced(chunk.x, chunk.z, true);
+        var owner = h.makeMockServerPlayerInLevel();
+        owner.setInvulnerable(true);
+        BlockPos back = owner.blockPosition();
+        CompanionEntity[] c = {null};
+        List<CompletableFuture<CompanionPlanRunner.Outcome>> future = new java.util.ArrayList<>();
+        h.onEachTick(() -> {
+            if (c[0] != null || !nether.areEntitiesLoaded(chunk.toLong())) return;
+            nether.getEntities((net.minecraft.world.entity.Entity) null, new net.minecraft.world.phys.AABB(base).inflate(16, 0, 16).expandTowards(0, 12, 0),
+                    e -> !(e instanceof net.minecraft.world.entity.player.Player)).forEach(net.minecraft.world.entity.Entity::discard);
+            for (int x = 0; x < 16; x++) for (int z = 0; z < 16; z++) for (int y = 0; y <= 9; y++) {
+                boolean shell = x == 0 || x == 15 || z == 0 || z == 15 || y == 0 || y == 9;
+                nether.setBlockAndUpdate(base.offset(x, y, z), (shell ? Blocks.BEDROCK : Blocks.AIR).defaultBlockState());
+            }
+            // A rod falls from every second blaze: ten of them, one rod wanted.
+            for (int i = 0; i < 10; i++) {
+                var blaze = EntityType.BLAZE.create(nether);
+                blaze.moveTo(base.getX() + 9.5 + i % 5, base.getY() + 1, base.getZ() + 4.5 + i / 5 * 7, 0, 0);
+                blaze.removeFreeWill();
+                nether.addFreshEntity(blaze);
+                blaze.setHealth(1);
+            }
+            c[0] = new CompanionEntity(AICompanionMod.COMPANION.get(), nether);
+            c[0].moveTo(base.getX() + 4.5, base.getY() + 1, base.getZ() + 8.5, 0, 0);
+            c[0].setOwnerId(owner.getUUID());
+            owner.getPersistentData().putUUID("aicompanion:canonical_companion", c[0].getUUID());
+            c[0].setSearchRadius(16);
+            nether.addFreshEntity(c[0]);
+            owner.teleportTo(nether, base.getX() + 2.5, base.getY() + 1, base.getZ() + 2.5, 0, 0);
+            CompanionEvents.getOwnedCompanion(owner);
+            c[0].setItem(0, new ItemStack(Items.IRON_SWORD));
+            c[0].setItem(1, new ItemStack(Items.ENDER_PEARL));
+            future.add(run(h, c[0], "[{\"action\":\"obtain_item\",\"item\":\"minecraft:ender_eye\",\"count\":1}]"));
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(!future.isEmpty(), "The Nether's entities are not loaded yet");
+            h.assertTrue(future.getFirst().isDone() && !future.getFirst().isCompletedExceptionally(), "Plan still running: " + c[0].getLastTaskResult());
+            h.assertTrue(count(c[0], Items.ENDER_EYE) == 1, "No eye of ender: " + future.getFirst().join().report());
+            c[0].discard();
+            owner.teleportTo(h.getLevel(), back.getX() + .5, back.getY(), back.getZ() + .5, 0, 0);
+            nether.setChunkForced(chunk.x, chunk.z, false);
         });
     }
 

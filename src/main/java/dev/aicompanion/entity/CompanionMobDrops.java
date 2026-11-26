@@ -34,8 +34,10 @@ import java.util.UUID;
  * order he strikes first at a spider or an enderman he otherwise leaves alone. With none about he says so before anything starts:
  * he does not wait for the night nor go down a cave for them.
  *
- * Only what falls without a player's hand in the kill and often enough to count on (a witch's odds and ends are not); only the
- * overworld, on land; never a named mob (somebody's), a piglin (the whole group rises) or the warden. Of what lives in the water only
+ * Only what falls often enough to count on (a witch's odds and ends are not), his kill being his player's (CompanionKillCredit:
+ * a spider's eye, a blaze's rod); on land; never a named mob (somebody's), a piglin (the whole group rises), a ghast or
+ * the warden; not in the End, over the void (what he carries would be lost with him). Under the Nether's roof no surface is
+ * known, so there only one in his sight is about. Of what lives in the water only
  * a fish and a squid (cod, salmon, ink): fought in the water, as for a drowned (CompanionSwimming dives with a blade in hand); a
  * dolphin, an axolotl, a turtle and a guardian never.
  */
@@ -93,9 +95,11 @@ final class CompanionMobDrops {
                     && category != MobCategory.UNDERGROUND_WATER_CREATURE || !(type.create(level) instanceof Mob mob)) continue;
             if (!swims(mob) && (category != MobCategory.MONSTER || !(mob instanceof Enemy) || spared(mob))) continue;
             var table = level.getServer().reloadableRegistries().getLootTable(mob.getLootTable());
-            // No player in the kill: what only a player's blow brings (a spider's eye, a blaze rod) does not fall for him.
+            // A player in the kill, as his own is counted for his player (CompanionKillCredit): a spider's eye, a phantom's membrane.
+            // ponytail: with his player in another dimension these do not fall, and he says so after the kills; planned as if at hand.
             LootParams params = new LootParams.Builder(level).withParameter(LootContextParams.THIS_ENTITY, mob).withParameter(LootContextParams.ORIGIN, Vec3.ZERO)
-                    .withParameter(LootContextParams.DAMAGE_SOURCE, level.damageSources().generic()).create(LootContextParamSets.ENTITY);
+                    .withParameter(LootContextParams.DAMAGE_SOURCE, level.damageSources().generic())
+                    .withParameter(LootContextParams.LAST_DAMAGE_PLAYER, net.neoforged.neoforge.common.util.FakePlayerFactory.getMinecraft(level)).create(LootContextParamSets.ENTITY);
             Map<Item, Integer> seen = new HashMap<>();
             // From one: a seed of nought means «none», and the roll would come from the world's own sequence.
             for (int seed = 1; seed <= ROLLS; seed++) {
@@ -108,11 +112,15 @@ final class CompanionMobDrops {
         return found;
     }
 
-    /** Kinds never hunted for a drop: the warden and the wither are no game, a piglin struck raises its group, a guardian lives under water. */
+    /**
+     * Kinds never hunted for a drop: the warden and the wither are no game, a piglin struck raises its group, a guardian lives under
+     * water, a breeze turns his arrows back at him, and a ghast hangs over the lava its drops fall into.
+     */
     private static boolean spared(Mob mob) {
         return mob instanceof net.minecraft.world.entity.monster.warden.Warden || mob instanceof net.minecraft.world.entity.boss.wither.WitherBoss
                 || mob instanceof net.minecraft.world.entity.monster.piglin.AbstractPiglin || mob instanceof net.minecraft.world.entity.monster.ZombifiedPiglin
-                || mob instanceof net.minecraft.world.entity.monster.Guardian;
+                || mob instanceof net.minecraft.world.entity.monster.Guardian || mob instanceof net.minecraft.world.entity.monster.breeze.Breeze
+                || mob instanceof net.minecraft.world.entity.monster.Ghast;
     }
 
     /** What is fished for its drop: a fish (a tadpole drops nothing) or a squid, glowing or not. */
@@ -135,7 +143,7 @@ final class CompanionMobDrops {
      * spiders had gone round the trees while he made his sword) or is in his sight: not the cave under the hill.
      */
     private static List<Mob> targets(CompanionEntity c, ServerLevel level, List<EntityType<?>> kinds, Set<UUID> passed, Set<UUID> engaged) {
-        if (kinds.isEmpty() || level.dimension() != Level.OVERWORLD) return List.of();
+        if (kinds.isEmpty() || level.dimension() == Level.END) return List.of();
         return level.getEntitiesOfClass(Mob.class, around(c), mob -> !passed.contains(mob.getUUID()) && fought(c, kinds, mob)
                 // Under the hill only a fish or a squid of the sea about him (or one struck, gone under a ledge), never the cave.
                 && (mob.getBlockY() < c.getBlockY() - DEPTH ? swims(mob) && (engaged.contains(mob.getUUID()) || open(level, mob))
@@ -199,7 +207,7 @@ final class CompanionMobDrops {
         c = w.owner;
         ResourceLocation key = ResourceLocation.tryParse(id == null ? "" : id);
         Item asked = key == null ? null : BuiltInRegistries.ITEM.getOptional(key).orElse(null);
-        kinds = asked == null || !(c.level() instanceof ServerLevel level) || level.dimension() != Level.OVERWORLD ? List.of() : sources(level, asked);
+        kinds = asked == null || !(c.level() instanceof ServerLevel level) || level.dimension() == Level.END ? List.of() : sources(level, asked);
         if (kinds.isEmpty()) return CompanionActionResult.failed("Такое я с монстров не добываю: " + id + ".");
         if (c.getHealth() <= CompanionCreeperGuard.FIGHT_HEALTH) return CompanionActionResult.blocked("Я ранен: в бой за «" + new ItemStack(asked).getHoverName().getString() + "» сейчас не пойду. Поем — тогда.");
         item = asked; wanted = count; before = w.items.countCarried(item);

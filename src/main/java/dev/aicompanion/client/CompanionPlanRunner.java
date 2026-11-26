@@ -79,6 +79,9 @@ public final class CompanionPlanRunner {
 
     private CompanionPlanRunner() { }
 
+    /** {@link #WORK}, and fish: a rod's work is such an order too. */
+    private static boolean isWork(String type) { return WORK.contains(type) || "fish".equals(type) || "open_end_portal".equals(type); }
+
     public static Verdict decide(PlannedAction action, Attempt attempt, State before, State after, List<PlannedAction> later,
                                  boolean retried, int recoveries, boolean cancelled) {
         CompanionActionResult result = attempt.result();
@@ -92,7 +95,7 @@ public final class CompanionPlanRunner {
             return new Verdict(Decision.CONTINUE, null, "target_collected_before_timeout");
         if (retried) return stop("step_already_repeated");
         if (recoveries >= MAX_RECOVERIES) return stop("plan_recovery_budget_spent");
-        if (!attempt.started() && after.busy() && WORK.contains(action.type()) && !NO_BUSY_RETRY.contains(action.type())) return new Verdict(Decision.RETRY, action, "companion_busy");
+        if (!attempt.started() && after.busy() && isWork(action.type()) && !NO_BUSY_RETRY.contains(action.type())) return new Verdict(Decision.RETRY, action, "companion_busy");
         if (result.status() == Status.TIMEOUT && GATHER.contains(action.type())) {
             if (gained <= 0) return stop("timeout_without_progress");
             return new Verdict(Decision.RETRY, new PlannedAction(action.type(), action.seconds(), action.count() - gained,
@@ -181,7 +184,7 @@ public final class CompanionPlanRunner {
         Port port = run.port;
         int number = index + 1;
         // Pillar descent, loot pickup and similar tails of the previous step end before the next order.
-        boolean settle = WORK.contains(action.type()) && (index > 0 || retried);
+        boolean settle = isWork(action.type()) && (index > 0 || retried);
         return (settle ? idle(port, action, IDLE_WAIT_SECONDS) : port.state(action)).thenCompose(before -> {
             CompanionDiagnostics.event(port.trace(), "step_started", "step", number, "action", action, "attempt", retried ? 2 : 1);
             return port.run(action).thenCompose(attempt -> after(run, index, action, retried, before, attempt));
@@ -231,14 +234,15 @@ public final class CompanionPlanRunner {
             // so an obtain_item given up drops it too; each thing is got once for each count: the same shortage again stops the plan,
             // a larger one (another frame, the player walked off meanwhile) is got once more.
             var short_ = result.evidence();
-            // A cobble generator short of water fills his empty bucket the same way (CompanionCobbleGen), a golem gets its blocks and head (CompanionGolem).
+            // A cobble generator short of water fills his empty bucket the same way (CompanionCobbleGen), a golem gets its blocks and head (CompanionGolem),
+            // fishing its rod (CompanionFishing).
             if (!inObtain && !attempt.started() && result.status() == Status.SHORTAGE && ("build_portal".equals(action.type()) || "build_cobble_gen".equals(action.type())
-                    || "build_golem".equals(action.type())) && short_ != null
+                    || "build_golem".equals(action.type()) || "fish".equals(action.type())) && short_ != null
                     && run.gotForPortal.add(short_.item() + " " + short_.count())) {
                 PlannedAction obtain = new PlannedAction("obtain_item", 0, short_.count(), short_.item());
                 CompanionDiagnostics.event(port.trace(), "portal_to_obtain", "step", number, "action", action, "obtain", obtain);
-                // «Новый» or «здесь» said stays, and a golem's kind; else the step names what it lacked, so an obtain_item given up drops it.
-                String kept = "new".equals(action.item()) || "here".equals(action.item()) || "build_golem".equals(action.type()) ? action.item() : short_.item();
+                // «Новый» or «здесь» said stays, a golem's kind and the fish asked for; else the step names what it lacked, so an obtain_item given up drops it.
+                String kept = "new".equals(action.item()) || "here".equals(action.item()) || "build_golem".equals(action.type()) || "fish".equals(action.type()) ? action.item() : short_.item();
                 PlannedAction built = new PlannedAction(action.type(), 0, action.count(), kept);
                 run.plan.set(index, built);
                 run.builtAfter = built; run.builtFor = short_.item();

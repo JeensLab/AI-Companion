@@ -343,7 +343,7 @@ public final class CompanionEvents {
             }
             case "place_block" -> companion.startWork("place_block", item, count, location);
             case "gather_stone", "gather_dirt", "gather_loose", "store_items", "take_items", "sort_chests", "build_house", "build_pen", "breed_animals", "scout_traders", "trade_items", "fill_bucket", "mine_obsidian", "gather_block", "hunt_drop", "compost_meal", "build_portal", "build_cobble_gen", "build_golem", "disenchant_item", "compost_items",
-                 "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block", "nether_go", "nether_back" -> companion.startWork(action, item, count, location);
+                 "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block", "nether_go", "nether_back", "fish" -> companion.startWork(action, item, count, location);
             case "hunt_mobs" -> {
                 companion.setFollowing(false);
                 yield companion.startWork(action, item, count);
@@ -368,6 +368,7 @@ public final class CompanionEvents {
             case "follow" -> { companion.setFollowing(true); yield CompanionActionResult.ok("Следую за тобой."); }
             case "wait" -> { companion.setFollowing(false); yield CompanionActionResult.ok("Остановился и жду."); }
             case "wander" -> { companion.startRoaming(); yield CompanionActionResult.ok("Осмотрюсь вокруг."); }
+            case "open_end_portal" -> companion.startWork(action, item, count, location);
             case "enter_portal" -> companion.portals.enter((ServerLevel) companion.level());
             case "stop" -> { companion.stopGatheringForPlayer(); yield CompanionActionResult.ok(wasPlaying ? "Ладно, убираю гитару." : "Ладно, остановился."); }
             // By a lit fire near the player, or by his own one set down from the bag: he sits down and plays (CompanionCampfire).

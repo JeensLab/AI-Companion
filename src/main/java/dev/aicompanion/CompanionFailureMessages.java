@@ -42,6 +42,9 @@ public final class CompanionFailureMessages {
         if (text.contains("к тебе подойти") || text.contains("отдать не могу") || text.contains("несу тебе вещи") || text.contains("к тебе пройти, вещи")) return Kind.HANDOVER;
         if (text.contains("доступного дерева") || text.contains("доступное дерево") || text.contains("доступных деревьев") || text.contains("бревна не удалось")
                 || text.contains("не хватает дерева") || text.contains("не хватает бревен")) return Kind.WOOD;
+        // The stone dig's own line names the faces it checked («Проверил доступные выходы камня … безопасного подхода … не
+        // нашёл»): the stone was short, not the way to it (the owner, 20.11: a shovel's stone said as «не нашёл безопасного пути»).
+        if (text.contains("выходы камня")) return Kind.STONE;
         // Not yet up from his own tunnel: said before any ore reason, the player should know he is still down there.
         if (text.contains("выбрался")) return Kind.ROUTE;
         // A walk that proved there is no way at all («нет пути»): said as no way, short, not as a lost one.
@@ -51,6 +54,13 @@ public final class CompanionFailureMessages {
         if (text.contains("родник") && !mentionsLava(text)) return Kind.WATER;
         // Ahead of the route: the engine puts the lava reason beside «не нашёл безопасного хода», and lava is the one to name.
         if (text.contains("заткнуть нечем") || text.contains("над лавой") || text.contains("лавопад")) return Kind.LAVA;
+        // A space that would not take a thing («Не нашёл безопасное место для …», «… не хватает свободного места»): the
+        // place is the reason, not a way to it. The bench in such a line is what was being set down, not a bench to walk to.
+        // A «ровное свободное место» of a golem or a portal keeps its own words, as any reason with no kind does.
+        if (text.contains("безопасное место") || text.contains("безопасного места") || text.contains("не хватает свободного места")) return Kind.PLACE;
+        // «Помню верстак неподалёку, но пройти к нему сейчас не могу, а дерева на новый не хватает.»: the bench was not
+        // walked to, not the materials; its «не хватает» is the wood for a new bench, said before the materials line below.
+        if (benchWithoutWoodNormalized(text)) return Kind.ROUTE;
         if (text.contains("безопасного хода") || text.contains("безопасно") || text.contains("не нашел пути")
                 || text.contains("не добраться") || text.contains("подъем") || text.contains("выбрался") || text.contains("к тебе пройти")) return Kind.ROUTE;
         if (text.contains("не хватает") || text.contains("недостаточно")) return Kind.MATERIALS;
@@ -62,6 +72,17 @@ public final class CompanionFailureMessages {
         // A gather that gave its part («Собрал «…»: 1 из 4, …»): the count it names is the answer, not a flat refusal.
         if (GATHERED.matcher(primary(report)).find()) return Kind.GATHER;
         return Kind.OTHER;
+    }
+    /**
+     * «Помню верстак неподалёку, но пройти к нему сейчас не могу, а дерева на новый не хватает.»: the bench was not walked
+     * to, and its «не хватает» is the wood for a new bench, not the materials of the order. Said as the bench, whether by the
+     * player's answer or by autonomy.
+     */
+    public static boolean benchWithoutWood(String report) {
+        return benchWithoutWoodNormalized(primary(report).toLowerCase(Locale.ROOT).replace('ё', 'е'));
+    }
+    private static boolean benchWithoutWoodNormalized(String text) {
+        return text.contains("верстак") && text.contains("дерева на новый");
     }
     public static String explain(String action, String report) {
         return switch (kind(report)) {
@@ -76,6 +97,10 @@ public final class CompanionFailureMessages {
             // No way at all to the player, as the wide search proved it: said as such, not as a lost way.
             case ROUTE -> primary(report).contains("выбрался") ? "Я пока внизу, ищу безопасный выход."
                     : primary(report).contains("к тебе пройти") ? "Не могу к тебе пройти."
+                    // The bench was not walked to: said as the bench, not as a path the world has none of. With no wood
+                    // for a new one, the line's own sentence says why it was not set down here.
+                    : primary(report).contains("дерева на новый") ? "Помню верстак неподалёку, но пройти к нему сейчас не могу, а дерева на новый не хватает."
+                    : primary(report).contains("верстак") ? "Не смог дойти до верстака, вещи сохранил."
                     : action.equals("mine_ore") ? "До оставшейся руды безопасно не добраться."
                     : "Здесь не нашёл безопасного пути.";
             case ORE -> "Больше доступной руды поблизости не нашёл.";

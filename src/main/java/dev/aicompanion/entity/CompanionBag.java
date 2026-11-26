@@ -112,8 +112,11 @@ final class CompanionBag {
         }
         for (int slot = 0; slot < c.companionInventory.size() && !remaining.isEmpty(); slot++) {
             if (c.companionInventory.get(slot).isEmpty()) {
-                c.companionInventory.set(slot, remaining.copy());
-                remaining.setCount(0);
+                // One cell holds what the item stacks to: a stack of two unstackable buckets takes two cells, and what finds
+                // none stays with the caller (the drop on the ground), never lost and never doubled.
+                int moved = Math.min(remaining.getCount(), remaining.getMaxStackSize());
+                c.companionInventory.set(slot, remaining.copyWithCount(moved));
+                remaining.shrink(moved);
             }
         }
         refreshInventorySummary();
@@ -163,13 +166,15 @@ final class CompanionBag {
         net.minecraft.world.item.Item wanted0 = ordered == null ? null : BuiltInRegistries.ITEM.getOptional(ordered).orElse(null);
         return CompanionObtain.plan(serverLevel, carriedForPlan(), c.hasCraftingTableNearby() || c.hasKnownCraftingTableWithin(16), item, count,
                 wanted -> wanted == net.minecraft.world.item.Items.COMPOSTER ? CompanionComposting.find(c, true) != null
+                        : wanted == net.minecraft.world.item.Items.FISHING_ROD ? CompanionFishing.about(c, serverLevel)
                         : (wanted == net.minecraft.world.item.Items.OBSIDIAN && CompanionObsidian.liesAbout(c, serverLevel, c.work.portal::laid))
                         || CompanionPicking.near(c, serverLevel, CompanionPickable.sources(serverLevel, wanted)) || CompanionOre.liesAbout(c, serverLevel, wanted)
                         || CompanionFarming.reapableNear(c, serverLevel, wanted)
                         || CompanionChores.about(c, serverLevel, wanted), wanted -> CompanionMobDrops.near(c, serverLevel, wanted),
                 new CompanionObtain.Trip(serverLevel.dimension() == net.minecraft.world.level.Level.OVERWORLD ? CompanionPortals.litNear(serverLevel, c.blockPosition()) : null, c.errand.away(), CompanionErrand.holdsChunks(c, serverLevel)),
                 stack -> !c.carriedForPlayer(stack), wanted -> available(serverLevel, wanted, ownItems(serverLevel, wanted0).contains(wanted)),
-                wanted -> whyNot(serverLevel, wanted, ownItems(serverLevel, wanted0).contains(wanted)));
+                wanted -> whyNot(serverLevel, wanted, ownItems(serverLevel, wanted0).contains(wanted)),
+                wanted -> CompanionObsidian.loose(c, serverLevel, wanted));
     }
 
     /**
