@@ -46,10 +46,9 @@ public final class CompanionBehaviorScreenTests {
                 "The search row does not cover the setting's 16..128");
         List<Integer> seen = new ArrayList<>();
         int value = CompanionSwitchLayout.nextSearchRadius(CompanionSwitchLayout.SEARCH_RADIUS_MIN);
-        for (int press = 0; press < 8; press++) {
+        while (!seen.contains(value)) {
             seen.add(value);
             value = CompanionSwitchLayout.nextSearchRadius(value);
-            if (value == CompanionSwitchLayout.SEARCH_RADIUS_MIN) break;
         }
         h.assertTrue(seen.equals(List.of(32, 64, 128, 16)),
                 "The search row does not turn through 32, 64, 128 and back: " + seen);

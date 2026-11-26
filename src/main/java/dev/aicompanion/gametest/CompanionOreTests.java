@@ -529,6 +529,13 @@ public final class CompanionOreTests {
         CompanionEntity companion = flat(h);
         BlockPos ore = new BlockPos(20, 7, 16);
         h.setBlock(ore, Blocks.GOLD_ORE);
+        // A one-deep pit under the ore and slabs in the two cells beside it: no column can stand there, so the way's column
+        // stands two across and the drop falls past it into the pit — below him and out of his reach, as the owner's drop lay
+        // below his column.
+        h.setBlock(new BlockPos(20, 0, 16), Blocks.AIR);
+        h.setBlock(new BlockPos(20, -1, 16), Blocks.BEDROCK);
+        h.setBlock(new BlockPos(19, 1, 16), Blocks.STONE_SLAB);
+        h.setBlock(new BlockPos(21, 1, 16), Blocks.STONE_SLAB);
         companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
         companion.setItem(0, new ItemStack(Items.DIRT, 16));
         int[] most = {0};
@@ -592,12 +599,13 @@ public final class CompanionOreTests {
         CompanionEntity companion = flat(h);
         for (int y = 1; y <= 4; y++) h.setBlock(new BlockPos(6, y, 16), Blocks.DIRT);
         BlockPos top = new BlockPos(6, 5, 16);
-        companion.teleportTo(top.getX() + .5D, top.getY(), top.getZ() + .5D);
+        BlockPos topAbs = h.absolutePos(top);
+        companion.teleportTo(topAbs.getX() + .5D, topAbs.getY(), topAbs.getZ() + .5D);
         companion.setItem(0, new ItemStack(Items.DIRT, 16));
         for (var kind : List.of(Blocks.GOLD_ORE, Blocks.LAPIS_ORE, Blocks.DIAMOND_ORE)) {
             BlockPos ore = new BlockPos(29, top.getY() + 4, 16);
             h.setBlock(ore, kind);
-            var how = dev.aicompanion.entity.CompanionReach.how(companion, h.getLevel(), ore, 3.5D, true, true,
+            var how = dev.aicompanion.entity.CompanionReach.how(companion, h.getLevel(), h.absolutePos(ore), 3.5D, true, true,
                     dev.aicompanion.entity.CompanionPillar.WAY_SUPPORTS);
             h.assertTrue(how.up() && how.steps() > 0 && how.steps() <= 16,
                     "The way refused " + kind + " twenty-three across and four up from a column top: " + how.way() + " " + how.why());
@@ -607,11 +615,11 @@ public final class CompanionOreTests {
     }
 
     /**
-     * «Добудь золота» with no number: the wish is sixteen, the most one order holds, and the promise is what is really visible
-     * — five blocks are five, twenty are sixteen, never the four of the old wish (the owner, 27.11).
+     * «Добудь золота» with no number: the phrase carries sixteen, the most one order holds, and the promise is what is really
+     * visible — five blocks are five, never the four of the old wish (the owner, 27.11).
      */
     @GameTest(template = "tall_tree", timeoutTicks = 4000)
-    public static void anUnnumberedOreOrderPromisesWhatIsVisibleUpToSixteen(GameTestHelper h) {
+    public static void anUnnumberedGoldOrderTakesEveryVisibleBlock(GameTestHelper h) {
         CompanionEntity companion = flat(h);
         companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
         String command = CompanionLocalCommands.route("добудь золота", "Олег", item -> new ItemStack(item).getHoverName().getString());
@@ -619,29 +627,35 @@ public final class CompanionOreTests {
         h.assertTrue(CompanionWorkCommands.parse("добудь золота", "Олег").count() == 16, "The quick command still carries four");
         h.assertTrue(CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"mine_ore\",\"item\":\"minecraft:gold_ore\"}]"))
                 .getFirst().count() == 16, "The plan's own default is still four");
-        int[] phase = {0};
-        h.onEachTick(() -> {
-            String activity = companion.getActivityForAi();
-            if (!activity.contains("«золотая руда» (")) return;
-            if (phase[0] == 0) {
-                h.assertTrue(activity.contains("из 5"), "Five visible blocks were not promised: " + activity);
-                h.assertTrue(!activity.contains("из 4"), "Four was promised over five blocks: " + activity);
-                companion.setFollowing(true);
-                for (int x = 20; x <= 23; x++) for (int z = 16; z <= 17; z++) h.setBlock(new BlockPos(x, 1, z), Blocks.AIR);
-                for (int x = 20; x <= 23; x++) for (int z = 10; z <= 14; z++) h.setBlock(new BlockPos(x, 1, z), Blocks.GOLD_ORE);
-                companion.setFollowing(false);
-                h.assertTrue(companion.startWork("mine_ore", "minecraft:gold_ore", 16).success(), "Second ore order not accepted");
-                phase[0] = 1;
-                return;
-            }
-            h.assertTrue(activity.contains("из 16"), "Twenty visible blocks were not capped at sixteen: " + activity);
-            companion.setFollowing(true);
-            h.succeed();
-        });
-        // The first scene: five gold ore blocks about him.
         for (int x = 20; x <= 23; x++) h.setBlock(new BlockPos(x, 1, 16), Blocks.GOLD_ORE);
         h.setBlock(new BlockPos(20, 1, 17), Blocks.GOLD_ORE);
-        h.assertTrue(companion.startWork("mine_ore", "minecraft:gold_ore", 16).success(), "Ore order not accepted");
+        var future = say(h, companion, CompanionLocalCommands.actions(command));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + companion.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(!report.contains("План остановлен") && !report.contains("Часть не вышла"), "The order failed: " + report);
+            h.assertTrue(count(companion, Items.RAW_GOLD) >= 5,
+                    "Only " + count(companion, Items.RAW_GOLD) + " of the five visible blocks were taken: " + report);
+            h.assertTrue(!report.contains("из 4"), "Four was promised: " + report);
+        });
+    }
+
+    /** «Добудь золота» over twenty blocks: sixteen is the most one order holds, and sixteen is what is taken. */
+    @GameTest(template = "tall_tree", timeoutTicks = 8000)
+    public static void anUnnumberedGoldOrderStopsAtSixteen(GameTestHelper h) {
+        CompanionEntity companion = flat(h);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        for (int x = 20; x <= 23; x++) for (int z = 10; z <= 14; z++) h.setBlock(new BlockPos(x, 1, z), Blocks.GOLD_ORE);
+        String command = CompanionLocalCommands.route("добудь золота", "Олег", item -> new ItemStack(item).getHoverName().getString());
+        var future = say(h, companion, CompanionLocalCommands.actions(command));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + companion.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(!report.contains("План остановлен") && !report.contains("Часть не вышла"), "The order failed: " + report);
+            h.assertTrue(count(companion, Items.RAW_GOLD) >= 16,
+                    "Only " + count(companion, Items.RAW_GOLD) + " of the sixteen were taken: " + report);
+            h.assertTrue(!report.contains("из 4"), "Four was promised: " + report);
+        });
     }
 
 
