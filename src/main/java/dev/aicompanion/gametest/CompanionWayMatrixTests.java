@@ -340,6 +340,7 @@ public final class CompanionWayMatrixTests {
         String[] said = new String[phrases.size()];
         int[] promise = new int[phrases.size()];
         int[] at = {0};
+        int[] settleFrom = new int[phrases.size()];
         List<CompletableFuture<CompanionPlanRunner.Outcome>> futures = new java.util.ArrayList<>();
         for (int index = 0; index < phrases.size(); index++) futures.add(null);
         h.onEachTick(() -> {
@@ -356,7 +357,14 @@ public final class CompanionWayMatrixTests {
             h.assertBlockPresent(Blocks.AIR, target);
             h.assertTrue(report.contains("Накопал обсидиана: 1"), "«" + phrase + "» not the honest one: " + report);
             h.assertTrue(!report.contains("не выполнено") && !report.contains("Полторы минуты"), "«" + phrase + "»: " + report);
-            h.assertTrue(c.getTemporarySupportCount() == 0 && count(c, Items.DIRT) == 20, "The column or the soil stayed: " + report);
+            // The drop is taken from the top of the column, then the column comes down, and the soil of it comes back as the
+            // descent's own drops are picked up — a few ticks after the last support, not on the tick the order ends.
+            if (c.getTemporarySupportCount() != 0 || count(c, Items.DIRT) != 20) {
+                if (settleFrom[at[0]] == 0) settleFrom[at[0]] = (int) h.getTick();
+                h.assertTrue(h.getTick() - settleFrom[at[0]] < 100, "«" + phrase + "»: the column or the soil stayed: supports "
+                        + c.getTemporarySupportCount() + ", dirt " + count(c, Items.DIRT) + ", " + report);
+                return;
+            }
             assertRestored(h, before, target);
             said[at[0]] = "one";
             // The next phrasing starts on the same scene: the block back, the bag as it was, him at his place.
@@ -1079,9 +1087,9 @@ public final class CompanionWayMatrixTests {
         });
     }
 
-    /** The owner's obsidian order: mined, then the column down, then the drop, then «Накопал обсидиана: 1». */
+    /** The owner's obsidian order: mined, the drop taken from the top of the column he stood on, then the column down, then «Накопал обсидиана: 1». */
     @GameTest(template = "tall_tree", timeoutTicks = 8000)
-    public static void theObsidianOrderDescendsBeforeTheDrop(GameTestHelper h) {
+    public static void theObsidianOrderTakesTheDropThenComesDown(GameTestHelper h) {
         flat(h, Blocks.GRASS_BLOCK);
         BlockPos target = new BlockPos(16, FEET + 10, 16);
         h.setBlock(target, Blocks.OBSIDIAN);
@@ -1100,10 +1108,14 @@ public final class CompanionWayMatrixTests {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
             String report = future.join().report();
             h.assertTrue(most[0] >= 7, "He never built up: supports " + most[0] + ", " + report);
-            h.assertTrue(minedAt[0] >= 0 && downAt[0] > minedAt[0] && bagAt[0] > downAt[0], "Wrong order: mined " + minedAt[0] + ", down " + downAt[0] + ", bag " + bagAt[0] + ", " + report);
-            h.assertTrue(supportsAtBag[0] == 0, "The drop came with the column still standing: " + supportsAtBag[0]);
+            // The drop of what he broke comes first: it falls onto the top of his own column, his body touches it there, and the
+            // column comes down once it is in his bag — the owner's «сразу же ломает своё строение, а потом забирает» (26.11).
+            h.assertTrue(minedAt[0] >= 0 && bagAt[0] > minedAt[0], "The drop was not taken after mining: mined " + minedAt[0] + ", bag " + bagAt[0] + ", " + report);
+            h.assertTrue(supportsAtBag[0] > 0, "The drop was not taken from the column he stood on: " + supportsAtBag[0] + ", " + report);
+            h.assertTrue(downAt[0] > bagAt[0], "The column came down before the drop was taken: bag " + bagAt[0] + ", down " + downAt[0] + ", " + report);
             h.assertTrue(report.contains("Накопал обсидиана: 1"), "Not the honest count: " + report);
             h.assertTrue(count(c, Items.OBSIDIAN) == 1 && count(c, Items.DIRT) == 20, "Bag or soil wrong: " + report);
+            h.assertTrue(c.getTemporarySupportCount() == 0, "The column still stands: " + c.getTemporarySupportCount());
         });
     }
 

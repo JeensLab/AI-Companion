@@ -182,12 +182,13 @@ public final class CompanionObsidianTests {
     }
 
     /**
-     * The live order of PATH7: mine, then step down the column dismantling it behind him, then take the drop, then done.
-     * Standing on his own column while the drop lies below is not progress, and the watchdog must not close the order for
-     * it: no «Полторы минуты» and no «Не нашёл лавы» for the nine blocks that were never there.
+     * The live order of PATH7, with the owner's own correction (26.11): mine, the drop comes to rest on the top of the column he
+     * stands on and is taken there, then he steps down dismantling the column behind him, then done. Standing on his own column
+     * while the drop lies below is not progress, and the watchdog must not close the order for it: no «Полторы минуты» and no
+     * «Не нашёл лавы» for the nine blocks that were never there.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 5000)
-    public static void obsidianAboveIsMinedThenTheColumnComesDownThenTheDropIsTaken(GameTestHelper h) {
+    public static void obsidianAboveIsTakenFromHisColumnThenItComesDown(GameTestHelper h) {
         ground(h);
         BlockPos obsidian = new BlockPos(12, GROUND + 11, 16);
         h.setBlock(obsidian, Blocks.OBSIDIAN);
@@ -211,9 +212,10 @@ public final class CompanionObsidianTests {
             String report = future.join().report();
             h.assertTrue(most[0] >= 7, "He never built up to it: supports " + most[0] + ", " + report);
             h.assertTrue(minedAt[0] >= 0, "The obsidian above him was never mined: " + report);
-            h.assertTrue(downAt[0] > minedAt[0], "He did not come down after mining: mined " + minedAt[0] + ", down " + downAt[0] + ", " + report);
-            h.assertTrue(bagAt[0] > downAt[0], "The drop came before the column came down: down " + downAt[0] + ", bag " + bagAt[0] + ", " + report);
-            h.assertTrue(supportsAtBag[0] == 0, "He took the drop with the column still standing: " + supportsAtBag[0] + ", " + report);
+            h.assertTrue(bagAt[0] > minedAt[0], "The drop was not taken after mining: mined " + minedAt[0] + ", bag " + bagAt[0] + ", " + report);
+            // The drop rests on the top of his own column, at his feet: it is taken there, and only then the column comes down.
+            h.assertTrue(supportsAtBag[0] > 0, "He took the drop only after the column came down: " + supportsAtBag[0] + ", " + report);
+            h.assertTrue(downAt[0] > bagAt[0], "The column came down before the drop was taken: bag " + bagAt[0] + ", down " + downAt[0] + ", " + report);
             h.assertTrue(doneAt[0] >= bagAt[0], "The order ended before the drop was in the bag: " + report);
             h.assertTrue(report.contains("Накопал обсидиана: 1"), "Not an honest count: " + report);
             h.assertTrue(!report.contains("Полторы минуты") && !report.contains("Не нашёл лавы"), "A wrong end: " + report);
