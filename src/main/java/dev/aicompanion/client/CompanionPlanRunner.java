@@ -147,6 +147,19 @@ public final class CompanionPlanRunner {
             run.gathered.clear();
             return step(run, index, run.plan.get(index), false);
         });
+        // An ore order's number is the promise the world really gives, not the wish: the step is resolved once against the world
+        // before it runs, so the task line, the promise and the report say one count (the owner, 27.11: sixteen on the line over
+        // ten blocks, and «накопал только 3 из 10»).
+        if ("mine_ore".equals(action.type()) && run.oreResolved.add(index)) return port.expand(action).thenCompose(expansion -> {
+            // A port that does not know ore orders (a test stub) leaves the step as the plan has it.
+            if (expansion.refusal() != null || expansion.steps().size() != 1 || !"mine_ore".equals(expansion.steps().getFirst().type()))
+                return step(run, index, action, retried);
+            PlannedAction resolved = expansion.steps().getFirst();
+            CompanionDiagnostics.event(port.trace(), "ore_promise", "step", number, "asked", action.count(), "promise", resolved.count());
+            if (resolved.count() == action.count()) return step(run, index, action, retried);
+            run.plan.set(index, resolved);
+            return step(run, index, resolved, retried);
+        });
         // A step boundary of the plan itself: a cooked batch of another request that is near is collected now (CompanionServerPlanPort.checkpoint).
         if (checkpointOpen(run, index, action, retried))
             return port.checkpoint().exceptionally(error -> {
@@ -476,6 +489,8 @@ public final class CompanionPlanRunner {
         /** The build_portal step put back after the obtain_item inserted for it, and the item it lacked. */
         PlannedAction builtAfter;
         String builtFor;
+        /** The ore steps whose count was already resolved against the world: asked once each, not again at every retry. */
+        final java.util.Set<Integer> oreResolved = new java.util.HashSet<>();
         Run(List<PlannedAction> plan, Port port) { this.plan = new ArrayList<>(plan); this.port = port; }
 
         Outcome outcome(int stoppedAt) {

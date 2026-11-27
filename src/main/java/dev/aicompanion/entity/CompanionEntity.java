@@ -633,6 +633,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public boolean isGatheringTask() { return isGatheringLogs(); }
 
     public int getTemporarySupportCount() { return temporaryPillar.supportCount(); }
+    /** The column of his own soil, for a check that watches it climb (the GameTest of the feet under it). */
+    public CompanionPillar temporaryPillar() { return temporaryPillar; }
     public boolean isRecoveringSupports() { return temporaryPillar.isRecovering(); }
     /** Read only, for the GameTest observer: the cells of his own floor across a gap, and its way back. */
     public int getTemporaryBridgeCount() { return temporaryBridge.supportCount(); }
@@ -948,6 +950,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public boolean didLastTaskSucceed() { return lastTaskSucceeded; }
 
     public CompanionObtain.Plan obtainPlan(String item, int count) { return bag.obtainPlan(item, count); }
+    /** What an ore order really promises, from the bag, the drops on the ground and the ore blocks about him (CompanionWork). */
+    public int orePromise(String item, int count) { return work.orePromise(item, count); }
     /** What the world about him really gives of the item by the one reach answer (CompanionReach); null where it is not about blocks. */
     public CompanionReach.Available obtainAvailable(String item) {
         if (!(level() instanceof ServerLevel level)) return null;

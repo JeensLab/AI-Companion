@@ -291,6 +291,28 @@ final class CompanionLoot {
         return nearest;
     }
 
+    /**
+     * Whether a drop of his still to be taken lies below his feet, at rest: no column or floor brings it up to him where he stands —
+     * it is taken from the ground below, and the way down is his own column's.
+     */
+    boolean dropsBelow() {
+        if (!(owner.level() instanceof ServerLevel level)) return false;
+        boolean any = false;
+        for (UUID id : pending) {
+            if (unreachable.contains(id) || !(level.getEntity(id) instanceof ItemEntity item) || !item.isAlive() || !item.onGround()) continue;
+            if (item.blockPosition().getY() >= owner.blockPosition().getY()) return false;
+            any = true;
+        }
+        return any;
+    }
+
+    /**
+     * Whether the drop still to be taken fell below his feet while his own column stands: nothing brings it to him here, so the
+     * column is no obstacle — it is the way down to the drop, and comes down at once (the owner, 27.11: half a minute standing on
+     * the column over a drop that lay below it).
+     */
+    boolean waitsBelowHisColumn() { return owner.temporaryPillar.isActive() && dropsBelow(); }
+
     private void giveUpFromHere(ServerLevel level, UUID id) {
         unreachable.add(id); unreachableFrom.put(id, owner.blockPosition());
         // The drop is no destination any more: a self-rescue must not dig towards it.
@@ -339,6 +361,12 @@ final class CompanionLoot {
         // too long, as after a mine whose drop fell below it, gives the drop to the chase, walked to from where it lies
         // (the owner, 27.11: five minutes on top of a column over a drop below it).
         boolean otherWay = !ownWay && (owner.temporaryPillar.isActive() || owner.temporaryBridge.isActive() && !owner.temporaryBridge.isWalk());
+        // A drop that fell below his feet while his own column stands is no reason to wait: the column is the way down to it, and
+        // comes down now — the drop is taken from the ground (the owner, 27.11: half a minute standing over a drop below him).
+        if (otherWay && owner.temporaryPillar.isActive() && dropsBelow()) {
+            if (!owner.temporaryPillar.isRecovering()) owner.temporaryPillar.requestCleanup();
+            return false;
+        }
         if (otherWay) {
             if (wayBlockedAt == 0) wayBlockedAt = level.getGameTime();
             if (level.getGameTime() - wayBlockedAt <= WAY_PATIENCE) return false;

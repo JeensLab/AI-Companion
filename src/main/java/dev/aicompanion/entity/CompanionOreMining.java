@@ -132,6 +132,12 @@ final class CompanionOreMining {
     }
 
     void mineOre(ServerLevel level) {
+        // The drop of the block just broken fell below the column that was the way to it: nothing brings it up to him where he
+        // stands, so the column comes down now and the drop is taken from the ground (the owner, 27.11: half a minute on top of
+        // the column over a drop below it, then the column broken by hand).
+        if (!w.oreDone && w.owner.loot.waitsBelowHisColumn()) { w.owner.temporaryPillar.requestCleanup(); return; }
+        // His own way down is being walked: no next ore and no walk until it is down (the pickup waits for the same descent).
+        if (w.owner.temporaryPillar.isRecovering() || w.owner.temporaryBridge.isRecovering()) return;
         // The bag answers, not the blocks broken: the drop it gained in the promise met is the order done (the owner, 26.11:
         // the ore mined, its drop picked up, and «с этим пока не справился»).
         if (w.oreDone || w.oreMined >= w.oreWanted || (!w.ironPrep && w.oreGained() >= w.oreWanted)) { finishMine(level); return; }
@@ -151,7 +157,7 @@ final class CompanionOreMining {
                 int onGround = CompanionPickUp.lying(level, w.owner.blockPosition(), w.owner.pickUpRadius(), w.dropId(), w.owner.getOwnerId());
                 // The autonomy's own deed is a batch: what he holds is no part of its promise.
                 int held = w.oreBatch ? 0 : w.oreHeld();
-                w.oreWanted = Math.max(1, Math.min(w.requestedCount, held + onGround + w.oreFound));
+                w.oreWanted = CompanionWork.orePromise(w.requestedCount, held, onGround, w.oreFound);
                 // The search has now said what the world gives: an order the bag already meets in that promise is done without a
                 // dig, as every obtain is (the owner, 26.11: a redstone block in the bag, an ore about, and nothing to swing at).
                 if (held >= w.oreWanted) { finishMine(level); return; }

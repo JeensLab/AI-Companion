@@ -470,7 +470,17 @@ public final class CompanionPillar {
      * the support would stand half a cell over his feet: a jump of one and a half blocks, which he does not make.
      */
     private boolean footForColumn(BlockPos foot) {
-        return CompanionMiningNavigation.standsAtCellBottom(owner, foot);
+        return CompanionMiningNavigation.standsAtCellBottom(owner, foot) || ownStep(foot);
+    }
+
+    /**
+     * A foot cell that holds one of his own blocks — a support of the column he stands on, a cell of his floor, a block he set down:
+     * the column's first step is already there, so the cell is a foot like the ground under it is (the owner, 27.11: the feet under
+     * his own column were refused, and the way gave up on the ore over them).
+     */
+    private boolean ownStep(BlockPos foot) {
+        if (!(owner.level() instanceof ServerLevel level)) return false;
+        return ownWork(level, foot, level.getBlockState(foot));
     }
 
     /** The fewest steps of soil a column to this block takes, at most {@code limit}: 0 when no column reaches it at all. */
@@ -717,15 +727,26 @@ public final class CompanionPillar {
         return horizontal + over * over <= REACH_SQR ? steps : -1;
     }
 
+    /**
+     * Whether a solid cell is his own work — a block he set down, a support of a column, a cell of a floor: it is no obstruction
+     * for a way, it is his own soil and comes back when the column or the floor is taken down (the owner, 27.11: the feet under
+     * his own column were refused as «над опорой не хватает свободного места»).
+     */
+    private boolean ownWork(ServerLevel level, BlockPos pos, BlockState state) {
+        if (state.getCollisionShape(level, pos).isEmpty()) return false;
+        if (!owner.placedByMe(pos)) return false;
+        return CompanionQuarry.soil(state) || state.is(BlockTags.BASE_STONE_OVERWORLD) || state.is(BlockTags.BASE_STONE_NETHER);
+    }
+
     private boolean columnClearable(ServerLevel level, BlockPos feet, int steps) {
         for (int dy = 0; dy <= steps + 2; dy++) {
             BlockPos pos = feet.above(dy);
             if (!level.hasChunkAt(pos) || !level.getWorldBorder().isWithinBounds(pos)
                     || !level.getFluidState(pos).isEmpty()) return false;
             BlockState state = level.getBlockState(pos);
-            // Foliage in the column's own cells is taken as it rises; a solid block of any kind — the player's, or a natural
-            // ceiling — stands in the way for good, and the refusal says so (the matrix ratified it).
-            if (!state.getCollisionShape(level, pos).isEmpty() && !isFoliage(state)) return false;
+            // Foliage in the column's own cells is taken as it rises; his own blocks are taken back the same way. A solid block of
+            // any other kind — the player's, or a natural ceiling — stands in the way for good, and the refusal says so.
+            if (!state.getCollisionShape(level, pos).isEmpty() && !isFoliage(state) && !ownWork(level, pos, state)) return false;
         }
         return true;
     }
@@ -752,12 +773,13 @@ public final class CompanionPillar {
     }
 
     /**
-     * Whether the block in the way of the column is natural ground he may take: soil, stone, ore or netherrack, its drop in his
-     * hand. A wall or a floor the player built is never broken — the way is walked round it (idea PATH7, #105: «убирает мешающий
-     * блок», но чужую постройку не ломает).
+     * Whether the block in the way of the column is one he may take: soil, stone, ore or netherrack, its drop in his hand — and his
+     * own blocks, set down by him and taken back (a support of a column, a cell of his floor). A wall or a floor the player built is
+     * never broken — the way is walked round it (idea PATH7, #105: «убирает мешающий блок», но чужую постройку не ломает).
      */
     private boolean inTheWay(ServerLevel level, BlockPos pos, BlockState state) {
         if (state.getCollisionShape(level, pos).isEmpty()) return false;
+        if (ownWork(level, pos, state)) return toolForIt(state);
         if (!(CompanionQuarry.soil(state) || state.is(BlockTags.BASE_STONE_OVERWORLD) || state.is(BlockTags.BASE_STONE_NETHER))) return false;
         return !CompanionPicking.kept(owner, level).test(pos) && toolForIt(state);
     }
