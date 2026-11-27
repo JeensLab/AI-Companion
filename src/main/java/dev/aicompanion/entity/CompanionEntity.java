@@ -814,7 +814,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         for (ItemEntity drop : found) if (canStoreDrops(java.util.List.of(drop.getItem().copyWithCount(1)))) room.add(drop);
         if (!room.isEmpty()) {
             CompanionActionResult started = startWork("pick_up_nearby", item, count);
-            if (started.success()) { loot.claim(room); CompanionPickUp.leave(level, blockPosition(), pickUpRadius, meaning); }
+            if (started.success()) loot.claim(room);
             return started;
         }
         if (!found.isEmpty()) {
