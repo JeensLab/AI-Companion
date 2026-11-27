@@ -248,9 +248,11 @@ final class CompanionExpeditionDig {
     }
 
     /**
-     * The wear the iron pickaxe keeps from the rock: what the climb or a diamond in sight set, else {@link #SPARE_DURABILITY} for ore.
+     * The wear the iron pickaxe keeps from the rock: what the climb or a diamond in sight set, else {@link #SPARE_DURABILITY} for ore and, out of a pit whose
+     * way up begins across a gap, the staircase the climb cuts up from it. Run mobs of seed 20261031 (21.11): the tunnel took the iron pickaxe down to the wear
+     * for ore, and the staircase up from the pit, 55 blocks under the surface, wore it out at height 38 with no wood to make another.
      */
-    private int reserve() { return ironReserve == KEPT ? SPARE_DURABILITY : ironReserve; }
+    private int reserve() { return ironReserve == KEPT ? SPARE_DURABILITY + CompanionExpeditionClimb.cutWear(w.mine) : ironReserve; }
 
     /** A diamond or netherite pickaxe with wear left: it digs rock when there is no stone pickaxe, and no iron is kept for ore that it can take instead. */
     Item hardPickaxe() {
@@ -263,11 +265,12 @@ final class CompanionExpeditionDig {
     boolean spareIron() { return ironLeft(reserve()); }
 
     /**
-     * Pickaxes he can still dig his way up with: those in the bag (stone, diamond, netherite, iron with any wear).
+     * Pickaxes he can still dig his way up with: those in the bag (stone, diamond, netherite, iron with any wear, or out of a pit only with the wear of
+     * the staircase cut up from it) and the stone ones the bag's materials make.
      */
     int pickaxesLeft() {
         int left = count(Items.STONE_PICKAXE) + CompanionExpeditionSupply.craftable(w);
-        if (ironLeft(0)) left++;
+        if (ironLeft(CompanionExpeditionClimb.cutWear(w.mine))) left++;
         if (hardPickaxe() != null) left++;
         return left;
     }

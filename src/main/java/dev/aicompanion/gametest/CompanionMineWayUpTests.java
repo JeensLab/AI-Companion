@@ -11,6 +11,7 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.gametest.GameTestHolder;
@@ -19,7 +20,10 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import java.util.List;
 
 import static dev.aicompanion.gametest.CompanionMineArena.CENTER;
+import static dev.aicompanion.gametest.CompanionMineArena.DEEPSLATE_TOP;
+import static dev.aicompanion.gametest.CompanionMineArena.DIAMOND_FEET;
 import static dev.aicompanion.gametest.CompanionMineArena.GROUND;
+import static dev.aicompanion.gametest.CompanionMineArena.SIZE;
 import static dev.aicompanion.gametest.CompanionMineArena.TIMEOUT;
 import static dev.aicompanion.gametest.CompanionMineArena.carveMine;
 import static dev.aicompanion.gametest.CompanionMineArena.count;
@@ -40,10 +44,26 @@ public final class CompanionMineWayUpTests {
     private static final int STEPS = 10, TUNNEL = 6, PLUG_AT = 3, SURFACE_MARGIN = 2;
     /** The chamber deep in the deepslate: its feet over the bottom of the arena, east of the surface entrance. */
     private static final int DEEP_EAST = 6, DEEP_FEET = 3;
+    /** The pit under the foot of the old stairs: this many blocks lower and as many across, to the north (away from the stairs, whose floors stay whole). */
+    private static final int UNDER_FOOT = 4;
+    /** A pit this far east of the entrance on the surface, at the height of the foot of the old stairs: farther from all of them than a short staircase reaches (20). */
+    private static final int FAR_EAST = 21;
+    /** Two cells of the way up further apart than this (squared) have a gap between them: a restart takes its way up from a cell as near, and the climb walks there. */
+    private static final int NEAR = 12;
     /** How far the self-rescue digs from where he stands, and how many cells of rock the record forbids. */
     private static final int RESCUE_REACH = 4, MAX_FORBIDDEN = 256;
     /** What the new staircase of a lost way is said with; the way up of his own never says it. */
     private static final String NEW_STAIRS = "прокапываю новую";
+    /** What the short staircase up to his old stairs over a pit is said with. */
+    private static final String TO_WAY = "прокапываю к ней ступени";
+    /** The end of a climb out of the pit by the staircase cut up from it: the far gap of a pit is no gap for the rescues to chase the cell beyond across. */
+    private static final String CUT_OUT = "прокопал новую к поверхности";
+    /**
+     * The pit under the ground of a tall mountain (the template is 36 high): the feet in it, the corner the entrance on the surface lies in, the tunnel off
+     * the foot of its stairs, and the wear left on the iron pickaxe: more than the staircase out of the pit takes on top of the wear kept for ore, or worn
+     * below what the staircase takes (78).
+     */
+    private static final int TALL_GROUND = 33, PIT_FEET = 8, CORNER = 2, PIT_TUNNEL = 2, IRON_LEFT = 150, IRON_WORN = 40, BESIDE = 3;
 
     private CompanionMineWayUpTests() { }
 
@@ -139,16 +159,7 @@ public final class CompanionMineWayUpTests {
         site.restart(stand, Direction.NORTH);
         site.buried(true);
         h.assertTrue(site.above().size() == 1, "The record of the way up is not the entrance alone: " + site.above().size() + " cells");
-        // The self-rescue digs no cell his mine forbids, so within its reach (4 blocks) it finds no rock to cut; the staircase of the climb takes them in a second pass.
-        Vec3 feet = new Vec3(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
-        int shut = 0;
-        for (int x = -RESCUE_REACH; x <= RESCUE_REACH; x++) for (int y = -RESCUE_REACH; y <= RESCUE_REACH + 2; y++) for (int z = -RESCUE_REACH; z <= RESCUE_REACH; z++) {
-            BlockPos cell = stand.offset(x, y, z);
-            if (h.getLevel().getBlockState(cell).isAir() || cell.getCenter().distanceToSqr(feet) > RESCUE_REACH * RESCUE_REACH) continue;
-            site.forbid(cell);
-            shut++;
-        }
-        h.assertTrue(shut <= MAX_FORBIDDEN, "The rock round the chamber does not fit the forbidden cells of the record: " + shut);
+        shutForRescue(h, site, stand);
         c.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
         int surface = h.absolutePos(new BlockPos(0, GROUND + 1 - SURFACE_MARGIN, 0)).getY();
         CompanionMineClimbOutTests.climb(h, c, stand, result -> {
@@ -159,8 +170,242 @@ public final class CompanionMineWayUpTests {
         });
     }
 
-    /** Ten stands down from the entrance on the surface and a tunnel west off the foot, cut in the rock and recorded as the expedition records them; he stands at the entrance. */
-    private static CompanionEntity mine(GameTestHelper h) {
+    /**
+     * Run retreat of seed 7 (series d, 21.11): a mine started again in a pit four blocks under the foot of his old stairs, rock between. The climb took the
+     * near gap for the far one out of a pit, cut a staircase from a hundred blocks down, and the pickaxes ran out at height 36. A few steps up to the foot
+     * are the way: he cuts them and walks his old stairs to the surface, no staircase to the surface cut. No rescue crosses the gap here, its rock forbidden.
+     */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 2 * TIMEOUT, skyAccess = true)
+    public static void cutsAShortStaircaseUpToHisOldStairsJustOverThePit(GameTestHelper h) {
+        shortStairsOutOfThePit(h, foot -> foot.below(UNDER_FOOT).relative(Direction.NORTH, UNDER_FOOT));
+    }
+
+    /**
+     * As above, the pit straight under the foot (review of the short staircase: its steps up toward the foot cut the floor of the foot and of the step over
+     * it, and the walk up the old stairs found a hole): the steps go round the floors of his stairs.
+     */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 2 * TIMEOUT, skyAccess = true)
+    public static void cutsAShortStaircaseUpToHisOldStairsStraightOverThePit(GameTestHelper h) {
+        shortStairsOutOfThePit(h, foot -> foot.below(UNDER_FOOT));
+    }
+
+    /** The old stairs with no tunnel, the mine started again at {@code under} of their foot, and the climb out: by a short staircase and the old stairs, whole. */
+    private static void shortStairsOutOfThePit(GameTestHelper h, java.util.function.UnaryOperator<BlockPos> under) {
+        CompanionEntity c = mine(h, 0);
+        CompanionMineSite site = c.mineSite();
+        BlockPos foot = site.foot(), pit = under.apply(foot);
+        for (int y = 0; y <= 1; y++) h.getLevel().setBlock(pit.above(y), Blocks.AIR.defaultBlockState(), 2 | 16);
+        c.teleportTo(pit.getX() + .5, pit.getY(), pit.getZ() + .5);
+        site.restart(pit, Direction.NORTH);
+        site.buried(true);
+        h.assertTrue(site.above().get(0).equals(foot), "The way up of the mine started again does not begin at the foot of the old stairs: " + site.above().get(0));
+        shutForRescue(h, site, pit);
+        List<BlockPos> old = List.copyOf(site.above());
+        StringBuilder said = new StringBuilder();
+        java.util.Set<BlockPos> holed = new java.util.HashSet<>(), filled = new java.util.HashSet<>();
+        h.onEachTick(() -> {
+            said.append(c.getLastTaskResult()).append('\n');
+            for (BlockPos stand : old) {
+                if (h.getLevel().getBlockState(stand.below()).isAir()) holed.add(stand);
+                if (!h.getLevel().getBlockState(stand).getCollisionShape(h.getLevel(), stand).isEmpty()) filled.add(stand);
+            }
+        });
+        int surface = h.absolutePos(new BlockPos(0, GROUND + 1 - SURFACE_MARGIN, 0)).getY();
+        CompanionMineClimbOutTests.climb(h, c, pit, result -> {
+            h.assertTrue(result.success() && c.getBlockY() >= surface, "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c));
+            h.assertTrue(!said.toString().contains(NEW_STAIRS) && said.toString().contains(TO_WAY), "He did not cut his way up to his old stairs four blocks over the pit | " + report(c));
+            h.assertTrue(holed.isEmpty(), "The floor under steps of his old stairs was cut: " + holed + " | " + report(c));
+            h.assertTrue(filled.isEmpty(), "A block was laid into steps of his old stairs: " + filled + " | " + report(c));
+            noGapUp(h, c);
+        });
+    }
+
+    /**
+     * A pit far off his old stairs, no short staircase in reach: the staircase he cuts up to the surface is the way up in the record in place of the old
+     * stairs across the gap. Kept before them, the way down from the surface went down the old stairs, and from their foot across the rock to the pit.
+     */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 2 * TIMEOUT, skyAccess = true)
+    public static void theStaircaseOutOfAPitTakesThePlaceOfTheOldStairsInTheRecord(GameTestHelper h) {
+        CompanionEntity c = mine(h, 0);
+        CompanionMineSite site = c.mineSite();
+        BlockPos foot = site.foot(), origin = site.origin(), pit = new BlockPos(origin.getX() + FAR_EAST, foot.getY(), origin.getZ());
+        for (int y = 0; y <= 1; y++) h.getLevel().setBlock(pit.above(y), Blocks.AIR.defaultBlockState(), 2 | 16);
+        c.teleportTo(pit.getX() + .5, pit.getY(), pit.getZ() + .5);
+        site.restart(pit, Direction.NORTH);
+        site.buried(true);
+        h.assertTrue(site.above().contains(foot), "The old stairs are not the way up of the mine started again: " + site.above().size() + " cells");
+        shutForRescue(h, site, pit);
+        StringBuilder said = new StringBuilder();
+        h.onEachTick(() -> said.append(c.getLastTaskResult()).append('\n'));
+        int surface = h.absolutePos(new BlockPos(0, GROUND + 1 - SURFACE_MARGIN, 0)).getY();
+        CompanionMineClimbOutTests.climb(h, c, pit, result -> {
+            h.assertTrue(result.success() && c.getBlockY() >= surface && said.toString().contains(NEW_STAIRS),
+                    "He did not come out by the staircase he cut: «" + result.message() + "» at height " + c.getBlockY() + " | " + report(c));
+            List<BlockPos> way = site.above();
+            h.assertTrue(!way.contains(foot) && way.get(way.size() - 1).equals(origin), "The old stairs across the gap are still on the way up: " + way + " | " + report(c));
+            noGapUp(h, c);
+        });
+    }
+
+    /** The record's way up runs on from the entrance of the pit with no gap to its last cell before the entrance on the surface (a staircase out under the sky may end off it). */
+    private static void noGapUp(GameTestHelper h, CompanionEntity c) {
+        List<BlockPos> way = c.mineSite().above();
+        BlockPos last = c.mineSite().entrance();
+        for (BlockPos cell : way.subList(0, way.size() - 1)) {
+            h.assertTrue(cell.distSqr(last) <= NEAR, "The way up from the pit has a gap from " + last.toShortString() + " to " + cell.toShortString() + ": " + way + " | " + report(c));
+            last = cell;
+        }
+    }
+
+    /** The self-rescue digs no cell his mine forbids, so within its reach (4 blocks) of {@code stand} it finds no rock to cut; the staircases of the climb take them in a second pass. */
+    private static void shutForRescue(GameTestHelper h, CompanionMineSite site, BlockPos stand) {
+        Vec3 feet = new Vec3(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
+        int shut = 0;
+        for (int x = -RESCUE_REACH; x <= RESCUE_REACH; x++) for (int y = -RESCUE_REACH; y <= RESCUE_REACH + 2; y++) for (int z = -RESCUE_REACH; z <= RESCUE_REACH; z++) {
+            BlockPos cell = stand.offset(x, y, z);
+            if (h.getLevel().getBlockState(cell).isAir() || cell.getCenter().distanceToSqr(feet) > RESCUE_REACH * RESCUE_REACH) continue;
+            site.forbid(cell);
+            shut++;
+        }
+        h.assertTrue(shut <= MAX_FORBIDDEN, "The rock round the chamber does not fit the forbidden cells of the record: " + shut);
+    }
+
+    /**
+     * Run mobs of seed 20261031 (21.11): a mine started again in a pit under the ground, the old stairs far off across the rock. With no stone pickaxe and no wood
+     * the tunnel at the foot was dug with the iron one down to the wear kept for ore; the staircase cut up out of the pit wore it out at height 38, and he stood
+     * there with no pickaxe: «путь наверх закрыт». The iron pickaxe keeps the wear of that staircase as well, so he turns back while it can still cut him out.
+     */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 2 * TIMEOUT, skyAccess = true)
+    public static void keepsTheWearForTheStairsOutOfAPit(GameTestHelper h) {
+        // The record is not checked whole here: the route search toward the far entrance takes him down the tunnel, and the staircase is begun from its end.
+        outOfThePit(h, pitMine(h), PIT_TUNNEL, false);
+    }
+
+    /**
+     * As above, the mine started again once more at the end of the pit's tunnel (a change of way, lost stairs by a tunnel cell): the way up of the new record
+     * begins with the tunnel and the stairs of the pit beside him, and the gap to the surface lies beyond the pit's entrance.
+     */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 2 * TIMEOUT, skyAccess = true)
+    public static void keepsTheWearForTheStairsOutOfAPitStartedAgainInside(GameTestHelper h) {
+        CompanionEntity c = pitMine(h);
+        CompanionMineSite site = c.mineSite();
+        BlockPos end = c.blockPosition();
+        site.restart(end, Direction.WEST);
+        site.buried(true);
+        h.assertTrue(site.above().get(0).distSqr(end) <= 1, "The way up of the mine started again does not begin beside him: " + site.above().get(0));
+        outOfThePit(h, c, 0, true);
+    }
+
+    /**
+     * As above, started again three blocks off the end of the tunnel, by a passage to it: a restart takes its way up from a cell that near, and the climb
+     * walks there; it is no gap to reserve a staircase for, or the iron pickaxe would never dig the rock.
+     */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 2 * TIMEOUT, skyAccess = true)
+    public static void keepsTheWearForTheStairsOutOfAPitStartedAgainBesideIt(GameTestHelper h) {
+        CompanionEntity c = pitMine(h);
+        CompanionMineSite site = c.mineSite();
+        BlockPos end = c.blockPosition(), here = end.relative(Direction.WEST, BESIDE).relative(Direction.NORTH);
+        for (BlockPos cell : List.of(end.relative(Direction.WEST), end.relative(Direction.WEST, 2), end.relative(Direction.WEST, BESIDE), here)) {
+            h.getLevel().setBlock(cell, Blocks.AIR.defaultBlockState(), 2 | 16);
+            h.getLevel().setBlock(cell.above(), Blocks.AIR.defaultBlockState(), 2 | 16);
+        }
+        c.teleportTo(here.getX() + .5, here.getY(), here.getZ() + .5);
+        site.restart(here, Direction.WEST);
+        site.buried(true);
+        double off = site.above().get(0).distSqr(here);
+        h.assertTrue(off > 9 && off <= 12, "The way up of the mine started again does not begin three blocks off: " + site.above().get(0) + ", " + off);
+        outOfThePit(h, c, 0, true);
+    }
+
+    /**
+     * The same pit with one stone pickaxe and an iron one too worn to cut the staircase up from it: the iron pickaxe is no way up from here, so the stone one
+     * is the last and the tunnel is not dug with it. Counted as a way up, the iron pickaxe let the stone one go on the tunnel, and its wear could not cut the stairs.
+     */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 2 * TIMEOUT, skyAccess = true)
+    public static void aWornIronPickaxeIsNoWayUpFromAPit(GameTestHelper h) {
+        CompanionEntity c = pitMine(h);
+        c.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        c.getItem(1).setDamageValue(c.getItem(1).getMaxDamage() - IRON_WORN);
+        long id = start(h, c, 1);
+        int surface = c.mineSite().origin().getY() - SURFACE_MARGIN;
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(!result.message().contains("путь наверх закрыт") && c.getBlockY() >= surface,
+                    "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c));
+            h.assertTrue(result.message().contains("Кирки на исходе") && result.message().contains(CUT_OUT),
+                    "He did not turn back while the stone pickaxe was left, or not out by the staircase he cut: " + result.message() + " | " + report(c));
+        });
+    }
+
+    /**
+     * Orders the mine where he stands and waits for it to end: out on the surface with the iron pickaxe whole, after a tunnel longer than {@code tunnel}
+     * cells in all was dug with the iron pickaxe (a reserve too large would keep it from the rock; the longest the record held, as a change of way
+     * toward the entrance on the surface starts the record again); {@code whole}: the staircase is in the record of the way up in place of the gap, the
+     * steps on from the stairs of the pit.
+     */
+    private static void outOfThePit(GameTestHelper h, CompanionEntity c, int tunnel, boolean whole) {
+        long id = start(h, c, 1);
+        int surface = c.mineSite().origin().getY() - SURFACE_MARGIN;
+        int[] longest = {0};
+        h.onEachTick(() -> longest[0] = Math.max(longest[0], c.mineSite().tunnels().stream().mapToInt(CompanionMineSite.Tunnel::length).sum()));
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(!result.message().contains("путь наверх закрыт") && c.getBlockY() >= surface,
+                    "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c));
+            h.assertTrue(result.message().contains(CUT_OUT), "He did not come out by the staircase he cut: " + result.message() + " | " + report(c));
+            h.assertTrue(count(c, Items.IRON_PICKAXE) == 1, "The iron pickaxe was worn out on the way | " + report(c));
+            h.assertTrue(longest[0] > tunnel, "The iron pickaxe dug no tunnel: " + longest[0] + " cells | " + report(c));
+            if (whole) noGapUp(h, c);
+        });
+    }
+
+    /**
+     * A pit low in a tall mountain, the mine started again in it, its record of the way up the entrance on the surface alone, far off in the opposite corner:
+     * its stairs down to the depth of diamonds and a tunnel off the foot. He stands at the end of the tunnel with an iron pickaxe and no stone one, no wood.
+     */
+    private static CompanionEntity pitMine(GameTestHelper h) {
+        tallMountain(h);
+        // Corner to corner: the entrance on the surface is too far for the walk back to it (FAR_ENTRANCE), so the climb is the way up, as in the run.
+        BlockPos origin = h.absolutePos(new BlockPos(CORNER, TALL_GROUND + 1, CORNER)), pit = h.absolutePos(new BlockPos(SIZE - 1 - CORNER, PIT_FEET, SIZE - 1 - CORNER));
+        List<BlockPos> stairs = CompanionShaftPlan.stands(pit, Direction.NORTH, PIT_FEET - DIAMOND_FEET);
+        for (BlockPos stand : stairs) for (BlockPos cell : CompanionShaftPlan.column(stand)) h.getLevel().setBlock(cell, Blocks.AIR.defaultBlockState(), 2 | 16);
+        CompanionEntity c = rig(h, CORNER, TALL_GROUND + 1, CORNER);
+        c.setFollowing(false);
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        c.setItem(0, ItemStack.EMPTY);
+        ItemStack iron = new ItemStack(Items.IRON_PICKAXE);
+        iron.setDamageValue(iron.getMaxDamage() - IRON_LEFT);
+        c.setItem(1, iron);
+        CompanionMineSite site = c.mineSite();
+        site.start(origin, Direction.NORTH);
+        site.restart(pit, Direction.NORTH);
+        site.buried(true);
+        for (BlockPos stand : stairs.subList(1, stairs.size())) site.reached(stand);
+        site.openTunnel(Direction.WEST);
+        BlockPos end = site.foot().relative(Direction.WEST, PIT_TUNNEL);
+        for (int k = 1; k <= PIT_TUNNEL; k++) {
+            BlockPos cell = site.foot().relative(Direction.WEST, k);
+            h.getLevel().setBlock(cell, Blocks.AIR.defaultBlockState(), 2 | 16);
+            h.getLevel().setBlock(cell.above(), Blocks.AIR.defaultBlockState(), 2 | 16);
+            site.extendTunnel();
+        }
+        c.teleportTo(end.getX() + .5, end.getY(), end.getZ() + .5);
+        return c;
+    }
+
+    /** The ground of {@link CompanionMineArena#mountain} up to {@link #TALL_GROUND}, no ore: a pit low in it lies deeper under the surface than the wear kept for ore cuts. */
+    private static void tallMountain(GameTestHelper h) {
+        for (int x = 0; x < SIZE; x++) for (int z = 0; z < SIZE; z++) for (int y = 0; y <= TALL_GROUND; y++) {
+            boolean edge = x == 0 || z == 0 || x == SIZE - 1 || z == SIZE - 1;
+            Block block = y == 0 || edge ? Blocks.BEDROCK : y <= DEEPSLATE_TOP ? Blocks.DEEPSLATE : y < TALL_GROUND - 2 ? Blocks.STONE : y < TALL_GROUND ? Blocks.DIRT : Blocks.GRASS_BLOCK;
+            h.getLevel().setBlock(h.absolutePos(new BlockPos(x, y, z)), block.defaultBlockState(), 2 | 16);
+        }
+    }
+
+    private static CompanionEntity mine(GameTestHelper h) { return mine(h, TUNNEL); }
+
+    /** Ten stands down from the entrance on the surface and a tunnel west off the foot ({@code tunnel} cells, none for 0), cut in the rock and recorded as the expedition records them; he stands at the entrance. */
+    private static CompanionEntity mine(GameTestHelper h, int tunnel) {
         mountain(h, false);
         BlockPos entrance = h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER));
         List<BlockPos> stands = CompanionShaftPlan.stands(entrance, Direction.NORTH, STEPS);
@@ -171,8 +416,9 @@ public final class CompanionMineWayUpTests {
         site.start(entrance, Direction.NORTH);
         for (BlockPos stand : stands.subList(1, stands.size())) site.reached(stand);
         BlockPos foot = site.foot();
+        if (tunnel == 0) return c;
         site.openTunnel(Direction.WEST);
-        for (int k = 1; k <= TUNNEL; k++) {
+        for (int k = 1; k <= tunnel; k++) {
             BlockPos cell = foot.relative(Direction.WEST, k);
             h.getLevel().setBlock(cell, Blocks.AIR.defaultBlockState(), 2 | 16);
             h.getLevel().setBlock(cell.above(), Blocks.AIR.defaultBlockState(), 2 | 16);

@@ -262,8 +262,8 @@ public final class CompanionWork {
     boolean ownFurnaceFailed;
     /** A smoker was made or set down for this batch, or could not be: not tried again. */
     boolean smokerTried;
-    /** Tries to get out of a cut below the bench before the order gives up on it. */
-    int benchClimbs;
+    /** Tries to get out of a cut below the bench before the order gives up on it; for a bench chosen with no walk to it, the self-rescues begun when it was chosen (-1: none such) and the ticks waited for the next. */
+    int benchClimbs, benchCutRescues = -1, benchCutWait;
     /** Where the furnace goes when there was no room for it where he stood: the place of the order. */
     BlockPos furnaceRoom;
     boolean furnacesShort;
@@ -629,7 +629,7 @@ public final class CompanionWork {
         // real prerequisite stages. A single three-minute budget used to expire before mining began.
         deadline = level.getGameTime() + 20 * (job == Job.COURSE ? CompanionCourse.LIMIT_SECONDS + 60 : job == Job.CHORE && chores.fishes() ? CompanionFishing.LIMIT_SECONDS + 60 : job == Job.SCOUT ? CompanionScouting.WORK_SECONDS : job == Job.TRADE ? CompanionTrading.WORK_SECONDS : 600);
         rejected.clear(); triedChests.clear(); stoneCandidates = null; stoneLootRetried = false;
-        lots.clear(); triedFurnaces.clear(); heading = furnaceRoom = null; ownFurnaceFailed = furnacesShort = smokerTried = false; furnacesPlaced = 0; benchClimbs = 0;
+        lots.clear(); triedFurnaces.clear(); heading = furnaceRoom = null; ownFurnaceFailed = furnacesShort = smokerTried = false; furnacesPlaced = 0; benchClimbs = benchCutWait = 0; benchCutRescues = -1;
         stoneSearch = null; quarrySoil.clear(); quarryTried = selectingStone = false; exitCell = null; stairs = 0;
         resetTarget();
         craftingStation = null; benchHere = false; shore = null; owner.allowNewBench(false); cutter = "cutter_craft".equals(action) ? owner.cutterWalk(item, count) : null;

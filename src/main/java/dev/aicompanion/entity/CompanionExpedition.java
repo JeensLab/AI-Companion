@@ -509,7 +509,9 @@ final class CompanionExpedition {
     private boolean startOnSurface(ServerLevel level) {
         CompanionMineSite mine = w.mine;
         BlockPos here = owner.blockPosition();
-        if (fresh >= MAX_FRESH || mine.origin() == null || here.getY() < mine.origin().getY() - CompanionMineSite.UNDERGROUND_DEPTH) return false;
+        // Open ground below the entrance is the surface too, as the climb that brought him there counts it.
+        if (fresh >= MAX_FRESH || mine.origin() == null || here.getY() < mine.origin().getY() - CompanionMineSite.UNDERGROUND_DEPTH
+                && !CompanionExpeditionClimb.surface(level, mine, CompanionExpeditionRecord.standingCell(level, owner))) return false;
         CompanionShaftPlan.Entrance entrance = CompanionShaftPlan.chooseEntrance(level, here, NEAR_RADIUS);
         if (entrance == null) return false;
         Direction side = entrance.direction();
@@ -632,8 +634,9 @@ final class CompanionExpedition {
                 // Normally the iron one is kept for ore and he goes up for supplies; from a mine started under the ground with no cells of the way up in the record there is no way up,
                 // a step that began without a stone pickaxe has been up for them already: the way back down with nothing new is no use; and from a tunnel at the foot the climb costs more than the wear.
                 if (!dig.lackedOre && !dig.ironForRock && (w.mine.buried() && w.mine.above().isEmpty() || !hadStone || stage == Stage.BRANCH || supply.stuckCrafting()) && dig.spareIron()) { dig.ironForRock = true; return; }
-                // A diamond in sight is worth the last wear of the iron pickaxe: the wear kept for ore is for this very ore, and the way up needs none.
-                if (!dig.lackedOre && !dig.ironForRock && dig.ironLeft(DIAMOND_IRON) && dig.diamondInSight((ServerLevel) owner.level(), DIAMOND_SIGHT)) { dig.ironForRock(DIAMOND_IRON); return; }
+                // A diamond in sight is worth the last wear of the iron pickaxe: the wear kept for ore is for this very ore, and the way up needs none but the staircase out of a pit.
+                int last = DIAMOND_IRON + CompanionExpeditionClimb.cutWear(w.mine);
+                if (!dig.lackedOre && !dig.ironForRock && dig.ironLeft(last) && dig.diamondInSight((ServerLevel) owner.level(), DIAMOND_SIGHT)) { dig.ironForRock(last); return; }
                 // A pit under the ground has no supplies above it, and its entrance leads nowhere: wood and stone are at the first entrance on the surface.
                 ServerLevel level = (ServerLevel) owner.level();
                 if (!dig.lackedOre && !towardOrigin && w.mine.buried() && CompanionExpeditionRecord.originNear(w.mine, FAR_ENTRANCE) && CompanionExpeditionRecord.originSide(level, w.mine) != null) {

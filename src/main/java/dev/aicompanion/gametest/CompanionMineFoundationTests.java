@@ -264,4 +264,20 @@ public final class CompanionMineFoundationTests {
         for (BlockPos cell : CompanionShaftPlan.column(stand)) h.getLevel().setBlock(cell, Blocks.AIR.defaultBlockState(), 2 | 16);
         return stand;
     }
+
+    /** Run s1c/void-2: a mine started again under the ground knows its upper stairs only as the way above it, and an ore under them took a step's floor and the way out. */
+    @GameTest(batch = "mine_core", template = "marathon_cave")
+    public static void theFloorOfAStepAboveARestartIsNoCellForATunnel(GameTestHelper h) {
+        CompanionMineSite site = new CompanionMineSite();
+        BlockPos entrance = new BlockPos(16, 40, 16), step = entrance;
+        site.start(entrance, Direction.NORTH);
+        for (int k = 1; k <= 12; k++) { step = step.below().north(); site.reached(step); }
+        BlockPos upper = entrance.below().north();
+        site.restart(step, Direction.WEST);
+        site.buried(true);
+        h.assertTrue(site.above().contains(upper), "The step is not on the way above the restart: " + site.above());
+        h.assertTrue(site.carriesStand(upper.below()), "The floor of the step at " + upper.toShortString() + " above the restart is free for a tunnel");
+        h.assertTrue(site.carriesStand(entrance.below()), "The floor of the entrance above the restart is free for a tunnel");
+        h.succeed();
+    }
 }

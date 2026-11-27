@@ -9,6 +9,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
@@ -37,7 +38,8 @@ public final class CompanionMineK15Tests {
     private static final int SLIT_Y = 14, SLIT_Z = 14, SLIT_X0 = 20, SLIT_X1 = 23, FLOOR_Y = 12, TOP_Y = 14,
             FAR_CHAMBER_X0 = 12, FAR_CHAMBER_X1 = 19, FAR_CHAMBER_Z0 = 11, FAR_CHAMBER_Z1 = 17, CORRIDOR_X = 3, DEEP_Y = 14, HIGH_Y = GROUND - 2, PAST_THE_CAVE = 13,
             OLD_STEPS = 15, TORCHES_SLOT = 3, BIG_STACK = 64, STRIP_FROM = 8, NICHE_BEHIND = 3,
-            WEST_X0 = 14, WEST_X1 = 22, EAST_X0 = 26, EAST_X1 = 33, SIDE_Z0 = 12, SIDE_Z1 = 15, STRIP_ABOVE_CAVE = 9, DEEPER_THAN_THE_CAVE = 11;
+            WEST_X0 = 14, WEST_X1 = 22, EAST_X0 = 26, EAST_X1 = 33, SIDE_Z0 = 12, SIDE_Z1 = 15, STRIP_ABOVE_CAVE = 9, DEEPER_THAN_THE_CAVE = 11,
+            STONE_USES = 70, IRON_WEAR = 5;
 
     private CompanionMineK15Tests() { }
 
@@ -127,6 +129,29 @@ public final class CompanionMineK15Tests {
             h.assertTrue(!"EXPLORE".equals(c.expeditionCavePhase()), "He took his old stairs for a cave at " + rel(h, c.blockPosition()).toShortString() + " | " + report(c));
             if (site.stands().size() >= OLD_STEPS) h.succeed();
             h.assertTrue(c.isWorking() || c.isGatheringTask(), "The order ended on the old stairs: " + report(c));
+        });
+    }
+
+    /**
+     * r1b/void-2: the last stone pickaxe wears out in the tunnel at the bottom, sticks for another are none. The climb out and back costs more
+     * than the wear of the iron one, which is whole: it digs the rock.
+     */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void digsOnWithTheIronPickaxeWhenTheStoneOneWearsOutInATunnel(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = rig(h);
+        c.setItem(0, ItemStack.EMPTY);
+        ItemStack worn = new ItemStack(Items.STONE_PICKAXE);
+        worn.setDamageValue(worn.getMaxDamage() - STONE_USES);
+        c.setItemSlot(EquipmentSlot.MAINHAND, worn);
+        start(h, c, 1);
+        h.onEachTick(() -> {
+            int wear = 0;
+            for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.IRON_PICKAXE)) wear = Math.max(wear, c.getItem(slot).getDamageValue());
+            if (c.getMainHandItem().is(Items.IRON_PICKAXE)) wear = Math.max(wear, c.getMainHandItem().getDamageValue());
+            h.assertTrue(!"CLIMB".equals(c.expeditionStage()), "He went up with a whole iron pickaxe in the bag, from " + rel(h, c.blockPosition()).toShortString() + " | " + report(c));
+            if ("BRANCH".equals(c.expeditionStage()) && wear >= IRON_WEAR) h.succeed();
+            h.assertTrue(c.isWorking() || c.isGatheringTask(), "The order ended before the iron pickaxe took the rock: " + report(c));
         });
     }
 

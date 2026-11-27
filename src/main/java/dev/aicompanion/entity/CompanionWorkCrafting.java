@@ -9,6 +9,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
 
 final class CompanionWorkCrafting {
+    /** Ticks a bench with no walk to it waits for the self-rescue to begin, as the mine's climb waits for it. */
+    private static final int CUT_PATIENCE = 600;
     final CompanionWork w;
 
     CompanionWorkCrafting(CompanionWork w) { this.w = w; }
@@ -169,8 +171,10 @@ final class CompanionWorkCrafting {
         if (!w.owner.onGround() && !w.owner.isInWater()) return true;
         if (!(w.owner.level() instanceof ServerLevel level) || w.owner.hasCraftingTableNearby()) return false;
         if (w.benchHere) return ashore(level, Blocks.CRAFTING_TABLE, "верстак");
+        BlockPos above = null;
         if (w.craftingStation == null || !level.hasChunkAt(w.craftingStation) || !level.getBlockState(w.craftingStation).is(Blocks.CRAFTING_TABLE)) {
             w.craftingStation = null;
+            w.benchCutRescues = -1;
             for (BlockPos pos : w.owner.knownCraftingTables()) {
                 // Farther than a short trip, the travelling bench is set down here instead of a long walk back.
                 if (pos.distSqr(w.owner.blockPosition()) > CompanionWork.BENCH_TRIP * CompanionWork.BENCH_TRIP) continue;
@@ -179,6 +183,8 @@ final class CompanionWorkCrafting {
                 if (reach.busy()) return true;
                 // The walk to it is at most twice the straight trip; a longer one costs more than a new bench.
                 if (reach.found() && reach.length() <= 2 * CompanionWork.BENCH_TRIP) { w.craftingStation = pos; break; }
+                // The self-rescue starts only for a way that is missing and a bench out of arm's reach: its stall counts nothing else.
+                if (above == null && !reach.found() && pos.getY() > w.owner.getY() + 1.5 && w.owner.getEyePosition().distanceToSqr(pos.getCenter()) > 4.5 * 4.5) above = pos;
             }
             w.resetApproach();
         }
@@ -191,12 +197,26 @@ final class CompanionWorkCrafting {
                 // remembered across a wall and two logs in the bag). With the bag empty, a tree in sight does the same: he cuts it
                 // first (a bench seen over the edge of the next GameTest arena ended the house order with the oak beside him).
                 if (!atHand && (hasWoodForABench() || woodFollows && woodInSight(level))) return useOwnBench("к известному верстаку сейчас нет пути");
-                if (atHand) { w.finish(false, "Помню верстак в двух шагах, но пройти к нему сейчас не могу. Вещи сохранил."); return true; }
-                w.finish(false, "Помню верстак неподалёку, но пройти к нему сейчас не могу, а дерева на новый не хватает."); return true;
-            }
-            return ashore(level, Blocks.CRAFTING_TABLE, "верстак");
+                // No walk to a bench up over him (down in a cut under a cliff) and no wood for one here: before the order gives up he climbs
+                // out to it, the way a player cuts steps up (series w, seed 7: «пройти к нему сейчас не могу» five times over with the bench on the cliff).
+                if (above == null || !w.allowsRouteRecovery()) {
+                    if (atHand) { w.finish(false, "Помню верстак в двух шагах, но пройти к нему сейчас не могу. Вещи сохранил."); return true; }
+                    w.finish(false, "Помню верстак неподалёку, но пройти к нему сейчас не могу, а дерева на новый не хватает."); return true;
+                }
+                w.craftingStation = above; w.benchCutRescues = w.owner.recovery.begun(); w.benchCutWait = 0;
+            } else return ashore(level, Blocks.CRAFTING_TABLE, "верстак");
         }
         w.owner.movementIntent(w.craftingStation);
+        // A bench with no walk to it: he stands still for the self-rescue to cut the way up (it begins on a standstill; the walk of the
+        // approach kept it from ever starting), then walks to the bench as to any other.
+        if (w.benchCutRescues >= 0) {
+            if (w.owner.isSelfRescuing()) { w.owner.workStatus("Выбираюсь наверх, к верстаку."); return true; }
+            if (w.owner.recovery.begun() == w.benchCutRescues && w.owner.canRecoverRoute() && w.benchCutWait++ < CUT_PATIENCE) {
+                w.owner.getNavigation().stop(); w.owner.workStatus("Выбираюсь наверх, к верстаку."); return true;
+            }
+            w.benchCutRescues = -1;
+            w.resetApproach();
+        }
         if (!w.approach(level, w.craftingStation, 2.8D)) {
             // Down in a cut below the bench with no walk up: first out, the way a player cuts steps up the wall, then the bench
             // (marathon 23.10, «долина»: back down the quarry for more stone, the order ended «не смог добраться до верстака»

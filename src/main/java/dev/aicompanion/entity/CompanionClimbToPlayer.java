@@ -26,7 +26,7 @@ import net.minecraft.world.entity.player.Player;
  * mine's record.
  */
 final class CompanionClimbToPlayer {
-    private static final int MAX_STEPS = 48, RECHECK_TICKS = 40, ABOVE = 3, LIP_REACH = 64, SUPPORT = 64;
+    private static final int MAX_STEPS = 48, RECHECK_TICKS = 40, ABOVE = 3, LIP_REACH = 64, SUPPORT = 64, RIM = 6, DROP = 3;
     /**
      * The most cells a pit or a chamber may hold: more is ground that leads on. Counted, not a reach round him: the ravines of seed 7 (21.11)
      * held some sixty cells, six wide and fifteen long, and a reach of six took them for open ground. An arena of the GameTests holds some two thousand.
@@ -147,7 +147,7 @@ final class CompanionClimbToPlayer {
             BlockPos cell = next.poll();
             if (strict && CompanionShaftPlan.builtAround(level, cell)) return -1;
             for (Direction d : Direction.Plane.HORIZONTAL) {
-                BlockPos side = cell.relative(d), feet = feetIn(level, side);
+                BlockPos side = cell.relative(d), feet = feetIn(level, side, FALL);
                 if (feet == null) {
                     int height = 0;
                     while (height < LIP_REACH && !CompanionShaftPlan.open(level, side.above(height))) height++;
@@ -162,11 +162,32 @@ final class CompanionClimbToPlayer {
         return rim == Integer.MAX_VALUE ? 0 : Math.max(rim, 0);
     }
 
-    /** Where the feet go walking into {@code cell}: a block up, level, or down onto the first floor (no deeper than {@link #FALL}); null for a wall. */
-    private static BlockPos feetIn(ServerLevel level, BlockPos cell) {
+    /**
+     * No walk under the sky leads more than {@link #RIM} cells away from {@code at}: the slot of a staircase or a hole, not a spot beside a trunk, a
+     * wall or a cliff, where the ground goes on round them. A walk steps a block up or drops down to {@link #DROP}, never with its feet below
+     * {@code lowest}; a cell under a roof (a tunnel, an overhang) is no way out. The mine's climb asks it of the place it comes out at.
+     */
+    static boolean walledIn(ServerLevel level, BlockPos at, int lowest) {
+        if (!CompanionExpeditionRecord.underSky(level, at)) return false;
+        ArrayDeque<BlockPos> next = new ArrayDeque<>(Set.of(at));
+        Set<BlockPos> seen = new HashSet<>(next);
+        while (!next.isEmpty()) {
+            BlockPos cell = next.poll();
+            for (Direction d : Direction.Plane.HORIZONTAL) {
+                BlockPos feet = feetIn(level, cell.relative(d), DROP);
+                if (feet == null || feet.getY() < lowest || !seen.add(feet) || !CompanionExpeditionRecord.underSky(level, feet)) continue;
+                if (Math.abs(feet.getX() - at.getX()) > RIM || Math.abs(feet.getZ() - at.getZ()) > RIM) return false;
+                next.add(feet);
+            }
+        }
+        return true;
+    }
+
+    /** Where the feet go walking into {@code cell}: a block up, level, or down onto the first floor (no deeper than {@code drop}); null for a wall. */
+    private static BlockPos feetIn(ServerLevel level, BlockPos cell, int drop) {
         if (!CompanionShaftPlan.open(level, cell)) return CompanionShaftPlan.open(level, cell.above()) && CompanionShaftPlan.open(level, cell.above(2)) ? cell.above() : null;
         if (!CompanionShaftPlan.open(level, cell.above())) return null;
-        for (int down = 0; down <= FALL && cell.getY() - down > level.getMinBuildHeight(); down++) if (!CompanionShaftPlan.open(level, cell.below(down + 1))) return cell.below(down);
+        for (int down = 0; down <= drop && cell.getY() - down > level.getMinBuildHeight(); down++) if (!CompanionShaftPlan.open(level, cell.below(down + 1))) return cell.below(down);
         return null;
     }
 
