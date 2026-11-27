@@ -444,8 +444,9 @@ final class CompanionLoot {
                     && level.getGameTime() - born.getOrDefault(target.getUUID(), 0L) >= SETTLE;
             // A drop in the water may still be rising to the surface or drifting with the current: no cell to take it
             // from now is no verdict on it yet — the attempts above give it up only if it really stays out of reach.
-            System.out.println("ROUTE_DEBUG target=" + target.blockPosition().toShortString() + " feet=" + feet.size() + " path=" + (path != null) + " reach=" + (path != null && path.canReach())
-                    + " atRest=" + atRest + " me=" + owner.blockPosition().toShortString() + " d=" + Math.sqrt(owner.distanceToSqr(target)));
+            dev.aicompanion.AICompanionMod.LOGGER.debug("pickup route target={} feet={} path={} reach={} atRest={} me={} d={}",
+                    target.blockPosition().toShortString(), feet.size(), path != null, path != null && path.canReach(), atRest,
+                    owner.blockPosition().toShortString(), Math.sqrt(owner.distanceToSqr(target)));
             if (atRest && !target.isInWater() && (path == null || !path.canReach())) {
                 // A drop in a pocket under the leaves of a bush or a crown: a player breaks a leaf or two and takes it (marathon
                 // 23.10, «долина»: a log fell into a dip under a bush, the leaves shut every cell he could take it from).

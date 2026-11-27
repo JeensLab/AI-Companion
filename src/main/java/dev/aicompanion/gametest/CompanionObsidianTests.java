@@ -1087,6 +1087,99 @@ public final class CompanionObsidianTests {
     }
 
     /**
+     * The merge's fix commit: the drop of the dig lies in the hole the lava is poured into, and poured over it the lava burns
+     * it — and that drop is what fills the hole back. The lava must wait while the drop is still there, so the pickup takes it
+     * first; the order then makes its obsidian and the floor is whole again. The journal proves the order of the two events:
+     * the drop in his bag before the lava goes in.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void theLavaWaitsForTheDropOfTheDigBeforeItIsPoured(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        plankRoom(h, c, new BlockPos(12, GROUND + 1, 12));
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.WATER_BUCKET));
+        c.setItem(2, new ItemStack(Items.LAVA_BUCKET));
+        int planksBefore = count(c, Items.OAK_PLANKS);
+        var plan = CompanionPlanCodec.parsePlan(JsonParser.parseString(
+                "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":1}]"));
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(),
+                "gametest-obsidian-lava-wait", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1, "Not one obsidian: " + count(c, Items.OBSIDIAN) + ", " + report);
+            for (int x = 4; x <= 16; x++) for (int z = 10; z <= 22; z++)
+                h.assertBlockPresent(Blocks.OAK_PLANKS, new BlockPos(x, GROUND, z));
+            h.assertTrue(count(c, Items.OAK_PLANKS) == planksBefore,
+                    "A plank was gained or lost: " + count(c, Items.OAK_PLANKS) + " of " + planksBefore + ", " + report);
+            int picked = -1, poured = -1;
+            for (var row : journalRows(c)) {
+                String event = row.get("event").getAsString();
+                if (event.equals("item_picked_up") && row.get("item").getAsString().equals("minecraft:oak_planks"))
+                    picked = row.get("sequence").getAsInt();
+                if (event.equals("obsidian_lava_poured")) poured = row.get("sequence").getAsInt();
+            }
+            h.assertTrue(picked >= 0, "The drop of the dig was never picked up: " + report);
+            h.assertTrue(poured >= 0, "The lava was never poured: " + report);
+            h.assertTrue(picked < poured, "The lava was poured before the drop of the dig was taken out of the hole: picked at "
+                    + picked + ", poured at " + poured + ", " + report);
+        });
+    }
+
+    /**
+     * The hole is filled back only once the drop in it is taken: a drop the pickup never gets (aimed at the player, no room in
+     * the bag) must not hold the order open for ever. A netherite scrap with the game's never-expiring pickup delay lies in the
+     * hole cell; the order must still end within the bound and leave the hole as it is — no block buried under the drop.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void aDropLeftInTheHoleDoesNotHoldTheOrderOpenForEver(GameTestHelper h) {
+        ground(h);
+        CompanionEntity c = spawn(h);
+        plankRoom(h, c, new BlockPos(12, GROUND + 1, 12));
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.WATER_BUCKET));
+        c.setItem(2, new ItemStack(Items.LAVA_BUCKET));
+        int planksBefore = count(c, Items.OAK_PLANKS);
+        BlockPos[] hole = {null};
+        long[] stuckAt = {0};
+        h.onEachTick(() -> {
+            if (hole[0] != null) return;
+            for (var drop : h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                    new net.minecraft.world.phys.AABB(c.blockPosition()).inflate(4)))
+                if (drop.isAlive() && drop.getItem().is(Items.OBSIDIAN)) {
+                    hole[0] = drop.blockPosition().immutable();
+                    var stuck = new net.minecraft.world.entity.item.ItemEntity(h.getLevel(), drop.getX(), drop.getY(), drop.getZ(),
+                            new ItemStack(Items.NETHERITE_SCRAP));
+                    // 32767 is the game's own "never picked up" delay.
+                    stuck.setPickUpDelay(32767);
+                    h.getLevel().addFreshEntity(stuck);
+                    stuckAt[0] = h.getLevel().getGameTime();
+                    return;
+                }
+        });
+        var plan = CompanionPlanCodec.parsePlan(JsonParser.parseString(
+                "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":1}]"));
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(),
+                "gametest-obsidian-hole-bound", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(),
+                    "A drop in the hole held the order open: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1, "Not one obsidian: " + count(c, Items.OBSIDIAN) + ", " + report);
+            h.assertTrue(hole[0] != null, "The make never mined an obsidian to leave a hole: " + report);
+            h.assertTrue(h.getLevel().getBlockState(h.absolutePos(hole[0])).isAir(),
+                    "The hole was filled over the drop: " + h.getLevel().getBlockState(h.absolutePos(hole[0])) + ", " + report);
+            long waited = h.getLevel().getGameTime() - stuckAt[0];
+            h.assertTrue(waited <= 260, "The order waited " + waited + " ticks for the drop in the hole, past the bound (stuck at "
+                    + stuckAt[0] + ", now " + h.getLevel().getGameTime() + "): " + report);
+            h.assertTrue(count(c, Items.OAK_PLANKS) == planksBefore + 1,
+                    "The plank the dig gave was not kept when the hole stayed: " + count(c, Items.OAK_PLANKS) + " of "
+                            + (planksBefore + 1) + ", " + report);
+        });
+    }
+
+    /**
      * The same house: no plank of the floor ignites or burns while the block is made. Lava in a plank hole can set the planks
      * around it alight for the tick it stands there; his water must go over it before that tick ends. No fire is allowed anywhere
      * in the room at any tick, and after the make every floor cell must be the very block it was before.
@@ -1504,6 +1597,25 @@ public final class CompanionObsidianTests {
     /** His water buckets gone, as a fall or the player would take them mid-make. */
     private static void takeWaterAway(CompanionEntity c) {
         for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.WATER_BUCKET)) c.setItem(slot, ItemStack.EMPTY);
+    }
+
+    /** The journal rows of this companion's trace, parsed so a test can compare the order of two events. */
+    private static List<com.google.gson.JsonObject> journalRows(CompanionEntity c) {
+        dev.aicompanion.CompanionDiagnostics.flush();
+        var directory = net.neoforged.fml.loading.FMLPaths.GAMEDIR.get().resolve("logs").resolve("aicompanion");
+        List<com.google.gson.JsonObject> rows = new ArrayList<>();
+        // The files a long run may have rolled it into, then the latest one.
+        for (String name : List.of("companion-3.jsonl", "companion-2.jsonl", "companion-1.jsonl", "companion-latest.jsonl")) {
+            java.nio.file.Path file = directory.resolve(name);
+            if (!java.nio.file.Files.exists(file)) continue;
+            try {
+                for (String line : java.nio.file.Files.readAllLines(file, java.nio.charset.StandardCharsets.UTF_8)) {
+                    var row = JsonParser.parseString(line).getAsJsonObject();
+                    if (row.has("trace") && row.get("trace").getAsString().equals(c.diagnosticTrace())) rows.add(row);
+                }
+            } catch (java.io.IOException | com.google.gson.JsonParseException ignored) { }
+        }
+        return rows;
     }
 
     /** The take-back order as the diagnostics keep it: his water scooped into its bucket before the lava of the pour went back. */

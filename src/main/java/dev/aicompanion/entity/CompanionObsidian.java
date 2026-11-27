@@ -75,6 +75,8 @@ final class CompanionObsidian {
     private static final int DIG_DROP_WAIT = 40;
     /** Ticks past the settle the work still waits while the pickup has the drop of what he mined and is walking to it. */
     private static final int PICKUP_WAIT = 200;
+    /** Ticks the hole waits for a drop lying in it to be taken before it is given up: a drop the pickup never gets must not hold the order open. */
+    private static final int HOLE_DROP_WAIT = 200;
     /** On a site of the player's, at most this many obsidian touching (corners too) are blocks lying about; more are something he builds. */
     private static final int LOOSE = 2;
 
@@ -99,6 +101,8 @@ final class CompanionObsidian {
     private BlockPos holeCell;
     private BlockState holeFloor;
     private Item holeDrop;
+    /** Ticks spent waiting for a drop lying in the hole to be taken before the hole is given up. */
+    private int holeDropWaited;
     private Set<BlockPos> stands = Set.of();
     private Path path;
     /** Where he stood when the block came within his reach and sight. */
@@ -248,7 +252,7 @@ final class CompanionObsidian {
         reset();
         wanted = count; before = w.items.countCarried(Items.OBSIDIAN); mined = pours = 0; water = null; ending = null; nextLook = settleAt = 0; retried = false;
         made = madeWater = madeLava = null; madeStep = fromBuckets = 0; madeAt = 0; digDropWaited = 0;
-        madeFloor = null; madeFloorDrop = null; holeCell = null; holeFloor = null; holeDrop = null;
+        madeFloor = null; madeFloorDrop = null; holeCell = null; holeFloor = null; holeDrop = null; holeDropWaited = 0;
         his.clear(); passed.clear();
         fetch = null; fetchless.clear();
         // The buckets lying within his hand are his before the first pour: the plan counted them as the source (CompanionObtain).
@@ -269,8 +273,6 @@ final class CompanionObsidian {
 
     /** One tick of the order: obsidian mined while there is some, else his water back, else on to the next lava and over it, else made of his own buckets. */
     void tick(ServerLevel level) {
-        // The floor of the hole he dug for his own lava is put back once the block is gone and his water is scooped.
-        if (refill(level, true)) return;
         if (ending != null) {
             if (!takeWaterBack(level)) return;
             // The hole he dug for his own lava is filled back before the order ends, even from where he stands now: the ground
@@ -279,6 +281,8 @@ final class CompanionObsidian {
             end(ending);
             return;
         }
+        // The floor of the hole he dug for his own lava is put back once the block is gone and his water is scooped.
+        if (refill(level, true)) return;
         site = c.getOwnerId() == null ? pos -> false : CompanionPlayerBuilds.get(level.getServer()).sites(c.getOwnerId(), level);
         int got = got();
         if (got >= wanted) {
@@ -812,21 +816,27 @@ final class CompanionObsidian {
     private boolean refill(ServerLevel level, boolean mayWalk) {
         if (holeCell == null) return false;
         if (water != null) return false;
-        if (holeFloor == null) { holeCell = null; return false; }
+        if (holeFloor == null) { holeCell = null; holeDropWaited = 0; return false; }
         BlockState now = level.getBlockState(holeCell);
         // The block he made is still there: nothing to fill yet.
         if (now.is(Blocks.OBSIDIAN)) return false;
         // Something else stands there since (the player's block): the hole is not his to fill.
-        if (!now.isAir()) { holeCell = null; holeFloor = null; holeDrop = null; return false; }
-        // A drop still in the cell would be buried by the block: the pickup takes it first.
-        if (!level.getEntitiesOfClass(ItemEntity.class, new AABB(holeCell)).isEmpty()) return false;
+        if (!now.isAir()) { holeCell = null; holeFloor = null; holeDrop = null; holeDropWaited = 0; return false; }
+        // A drop still in the cell would be buried by the block: the pickup takes it first. Bounded, so a drop the pickup
+        // never gets (aimed at the player, no room in the bag) does not hold the order open for ever: the hole stays, nothing
+        // is buried under it.
+        if (!level.getEntitiesOfClass(ItemEntity.class, new AABB(holeCell)).isEmpty()) {
+            if (holeDropWaited++ < HOLE_DROP_WAIT) return false;
+            holeCell = null; holeFloor = null; holeDrop = null; holeDropWaited = 0; reset();
+            return false;
+        }
         if (!inReach(level, holeCell)) {
             if (!mayWalk) return false;
             if (stands.isEmpty()) { stands = standsBeside(level, holeCell); legs = 0; path = null; }
             c.workStatus("Заделываю ямку.");
             if (walk()) return true;
             // No way back to it: the hole stays, no block is invented.
-            holeCell = null; holeFloor = null; holeDrop = null;
+            holeCell = null; holeFloor = null; holeDrop = null; holeDropWaited = 0;
             return false;
         }
         // He stands in the cell the block would go into: he steps aside first (a block never closes over his feet). No stand
@@ -838,11 +848,11 @@ final class CompanionObsidian {
         }
         int slot = holeDrop == null ? -1 : slot(holeDrop);
         // The drop the dig gave is gone (burnt, spent): the hole stays rather than a block from nothing.
-        if (holeDrop != null && slot < 0) { holeCell = null; holeFloor = null; holeDrop = null; reset(); return false; }
+        if (holeDrop != null && slot < 0) { holeCell = null; holeFloor = null; holeDrop = null; holeDropWaited = 0; reset(); return false; }
         if (slot >= 0) c.removeItem(slot, 1);
         level.setBlockAndUpdate(holeCell, holeFloor);
         event("obsidian_hole_filled", "hole", holeCell.toShortString(), "block", net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(holeFloor.getBlock()));
-        holeCell = null; holeFloor = null; holeDrop = null;
+        holeCell = null; holeFloor = null; holeDrop = null; holeDropWaited = 0;
         reset();
         return true;
     }
