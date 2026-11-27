@@ -24,6 +24,12 @@ import java.util.function.Function;
  * A word that names a group names every member of it: «брёвна» are all logs, «доски» all planks. A word the registry
  * cannot answer — «кура», «тухлое мясо» — is left to the model, which picks among the drops actually lying here
  * ({@link dev.aicompanion.client.CompanionPickUpCommands#ask}).
+ *
+ * Two ways the live router failed at 92b91d91 (owner, 27.11: «добудь тыкву» said «имени нет в игре»): the names it
+ * matched were the game's names in whatever language the client shows (en_us on his client, so every Russian word named
+ * nothing), and a bare kind of several name shapes («забор»: «Дубовый забор» beside «Забор из тёмного дуба») was no
+ * group at all, so one species answered and the rest went to the model's wood chain. The Russian names of the game's own
+ * lang files ({@link dev.aicompanion.client.CompanionClientNames}) and a tag rule that does not count words fix both.
  */
 public final class CompanionItemLookup {
     private CompanionItemLookup() { }
