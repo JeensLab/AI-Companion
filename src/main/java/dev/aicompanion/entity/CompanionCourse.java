@@ -4,6 +4,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.tags.BiomeTags;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.tags.StructureTags;
@@ -103,7 +104,7 @@ public final class CompanionCourse {
             "south", new Heading(0, 1, "юг"), "southwest", new Heading(-1, 1, "юго-запад"),
             "west", new Heading(-1, 0, "запад"), "northwest", new Heading(-1, -1, "северо-запад"));
     /** What he can look for on the way, and how it is said when found. */
-    private static final Map<String, String> TARGETS = Map.of("village", "деревню", "water", "воду", "forest", "лес", "animals", "животных");
+    private static final Map<String, String> TARGETS = Map.of("village", "деревню", "jungle", "джунгли", "water", "воду", "forest", "лес", "animals", "животных");
 
     private final CompanionWork w;
     private Heading heading;
@@ -147,11 +148,17 @@ public final class CompanionCourse {
     }
 
     /** A pet search may carry the proposed heading. The direction alone never starts a walk. */
-    public static String petVillageCourse(String item) {
-        if ("village".equals(item)) return "south:village";
-        if (item == null || !item.startsWith("village:")) return null;
-        String heading = item.substring("village:".length());
-        return HEADINGS.containsKey(heading) ? heading + ":village" : null;
+    public static String petSearchCourse(String item, CompanionPet kind) {
+        String habitat = kind.habitat;
+        if (habitat.equals(item)) return "south:" + habitat;
+        if (item == null || !item.startsWith(habitat + ":")) return null;
+        String heading = item.substring(habitat.length() + 1);
+        return HEADINGS.containsKey(heading) ? heading + ":" + habitat : null;
+    }
+
+    static boolean atPetHabitat(ServerLevel level, CompanionEntity owner, CompanionPet kind) {
+        return kind == CompanionPet.PARROT ? level.getBiome(owner.blockPosition()).is(BiomeTags.IS_JUNGLE)
+                : atVillage(level, owner);
     }
 
     static boolean atVillage(ServerLevel level, CompanionEntity owner) {
@@ -315,13 +322,13 @@ public final class CompanionCourse {
             else w.finish(true, "Идём на " + heading.name + " уже двадцать минут, остановился передохнуть.");
             return;
         }
-        boolean petTrip = w.activePet != null && "village".equals(target);
-        // Ordinary courses skip what was in sight at the start. The pet search begins as soon as they enter a village.
+        boolean petTrip = w.activePet != null && w.activePet.kind.habitat.equals(target);
+        // Ordinary courses skip what was in sight at the start. The pet search begins as soon as they enter the habitat.
         if (target != null && now >= nextScan && (petTrip || along >= SCAN_RADIUS)) {
             nextScan = now + 20;
             if (petTrip) {
-                if (atVillage(level, owner)) { w.beginPetSearchInVillage(level); return; }
-                if (villageApproach == null) {
+                if (atPetHabitat(level, owner, w.activePet.kind)) { w.beginPetSearchInHabitat(level); return; }
+                if ("village".equals(target) && villageApproach == null) {
                     villageApproach = level.getEntitiesOfClass(Villager.class, owner.getBoundingBox().inflate(SCAN_RADIUS, 8, SCAN_RADIUS),
                                     Villager::isAlive).stream().min(java.util.Comparator.comparingDouble(owner::distanceToSqr))
                             .map(Villager::blockPosition).orElse(null);
@@ -354,7 +361,7 @@ public final class CompanionCourse {
             var step = w.route.legs(villageApproach, 5);
             if (step == CompanionTravel.Step.NEAR) {
                 w.route.legsEnd(true);
-                if (atVillage(level, owner)) w.beginPetSearchInVillage(level);
+                if (atVillage(level, owner)) w.beginPetSearchInHabitat(level);
                 else villageApproach = null;
             } else if (step == CompanionTravel.Step.FAILED) {
                 w.route.legsEnd(false);
@@ -511,6 +518,7 @@ public final class CompanionCourse {
         return switch (target) {
             case "village" -> level.structureManager().getStructureWithPieceAt(owner.blockPosition(), StructureTags.VILLAGE).isValid()
                     || !level.getEntitiesOfClass(Villager.class, around, Villager::isAlive).isEmpty();
+            case "jungle" -> level.getBiome(owner.blockPosition()).is(BiomeTags.IS_JUNGLE);
             case "water", "forest" -> surface(level, target.equals("water")) >= 3;
             default -> !level.getEntitiesOfClass(Animal.class, around, animal -> animal.isAlive()
                     && (this.animal == null ? CompanionGame.Kind.of(animal) != null : animal.getType() == this.animal.type)).isEmpty();

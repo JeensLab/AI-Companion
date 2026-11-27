@@ -37,6 +37,11 @@ public final class CompanionPetSearchTests {
         searchesAtConfiguredDistance(h, CompanionPet.DOG);
     }
 
+    @GameTest(template = "large_search", batch = "pet_search_radius_parrot")
+    public static void parrotSearchUsesTheSharedRadius(GameTestHelper h) {
+        searchesAtConfiguredDistance(h, CompanionPet.PARROT);
+    }
+
     @GameTest(template = "large_search", timeoutTicks = 800)
     public static void starterBaitFitsTogetherAndIsGrantedOnceAcrossReloadAndRespawn(GameTestHelper h) {
         var companion = fixture(h, false, false);
@@ -47,14 +52,18 @@ public final class CompanionPetSearchTests {
             companion.setItem(slot, new ItemStack(Items.STONE, 64));
         }
         companion.grantPetStarterBait();
-        h.assertTrue(companion.getItem(0).isEmpty(), "Granted a partial kit without room for both items");
+        h.assertTrue(companion.getItem(0).isEmpty(), "Granted a partial kit without room for all three items");
 
         companion.setItem(1, ItemStack.EMPTY);
         companion.grantPetStarterBait();
+        h.assertTrue(companion.getItem(0).isEmpty() && companion.getItem(1).isEmpty(), "Granted the kit without room for seeds");
+        companion.setItem(2, ItemStack.EMPTY);
+        companion.grantPetStarterBait();
         companion.grantPetStarterBait();
         h.assertTrue(companion.getItem(0).is(Items.SALMON) && companion.getItem(0).getCount() == 3
-                && companion.getItem(1).is(Items.BONE) && companion.getItem(1).getCount() == 3,
-                "The bag must contain exactly three raw salmon and three bones");
+                && companion.getItem(1).is(Items.BONE) && companion.getItem(1).getCount() == 3
+                && companion.getItem(2).is(Items.WHEAT_SEEDS) && companion.getItem(2).getCount() == 3,
+                "The bag must contain exactly three raw salmon, three bones and three wheat seeds");
 
         companion.clearContent();
         companion.grantPetStarterBait();
@@ -74,6 +83,25 @@ public final class CompanionPetSearchTests {
             back.grantPetStarterBait();
             h.assertTrue(back.isEmpty(), "Granted more bait after respawn");
         });
+    }
+
+    @GameTest(template = "large_search")
+    public static void existingStarterKitGetsOnlyItsMissingSeeds(GameTestHelper h) {
+        var companion = fixture(h, false, false);
+        var oldSave = companion.saveWithoutId(new CompoundTag());
+        oldSave.putBoolean("PetStarterBaitGranted", true);
+        companion.load(oldSave);
+        for (int slot = 0; slot < companion.getContainerSize(); slot++) companion.setItem(slot, new ItemStack(Items.STONE, 64));
+        companion.grantPetStarterBait();
+        companion.setItem(0, ItemStack.EMPTY);
+        companion.grantPetStarterBait();
+        h.assertTrue(companion.getItem(0).is(Items.WHEAT_SEEDS) && companion.getItem(0).getCount() == 3,
+                "Did not add seeds to the original kit when a slot became available");
+        companion.clearContent();
+        companion.load(companion.saveWithoutId(new CompoundTag()));
+        companion.grantPetStarterBait();
+        h.assertTrue(companion.isEmpty(), "Reissued starter bait after upgrading an old kit");
+        h.succeed();
     }
 
     @GameTest(template = "large_search", timeoutTicks = 380, attempts = 2, batch = "pet_search_blocked_cat")
@@ -149,8 +177,12 @@ public final class CompanionPetSearchTests {
         var at = companion.blockPosition().offset(64, 0, 0);
         h.getLevel().getChunk(at);
         h.getLevel().getChunk(at.east());
-        TamableAnimal stray = kind == CompanionPet.CAT ? h.spawn(EntityType.CAT, h.relativePos(at)) : h.spawn(EntityType.WOLF, h.relativePos(at));
-        String action = kind == CompanionPet.CAT ? "tame_cat" : "tame_dog";
+        TamableAnimal stray = switch (kind) {
+            case CAT -> h.spawn(EntityType.CAT, h.relativePos(at));
+            case DOG -> h.spawn(EntityType.WOLF, h.relativePos(at));
+            case PARROT -> h.spawn(EntityType.PARROT, h.relativePos(at));
+        };
+        String action = "tame_" + kind.id;
         var center = at.getCenter();
         try {
             stray.setPos(center.x + 1, center.y, center.z);

@@ -51,7 +51,7 @@ public final class CompanionCourseTests {
                     h.assertTrue(companion.position().distanceToSqr(start) < .1, "Started walking before the player answered");
                     refused[0] = companion.petQuestion(CompanionPet.CAT);
                     CompanionEvents.answerPetQuestion(owner, companion.getUUID(), CompanionPet.CAT, refused[0],
-                            CompanionWorkCommands.petVillageAnswer("Не, не надо", "Олег"));
+                            CompanionWorkCommands.petTripAnswer("Не, не надо", "Олег"));
                     h.assertTrue(!companion.hasActiveWorkOrder() && companion.petQuestion(CompanionPet.CAT) == 0, "A refusal left the proposal active");
                     h.assertTrue(companion.getLastTaskResult().equals("Ладно, останемся здесь."), "Did not acknowledge the refusal");
                 }).thenIdle(20)
@@ -72,7 +72,7 @@ public final class CompanionCourseTests {
                     h.assertTrue(companion.petQuestion(CompanionPet.CAT) == question && companion.autonomyLine().contains("Пока не знаю, где деревня"),
                             "An unclear reply started the walk or was given an invented location");
                     CompanionEvents.answerPetQuestion(owner, companion.getUUID(), CompanionPet.CAT, question,
-                            CompanionWorkCommands.petVillageAnswer("Да, пойдём", "Олег"));
+                            CompanionWorkCommands.petTripAnswer("Да, пойдём", "Олег"));
                     h.assertTrue(companion.petQuestion(CompanionPet.CAT) == 0 && companion.activeWorkId() == question,
                             "Consent did not continue the same work");
                 }).thenWaitUntil(() -> h.assertTrue(companion.getZ() < start.z - 5, "Did not lead north after consent: " + companion.getLastTaskResult()))
@@ -124,19 +124,19 @@ public final class CompanionCourseTests {
         long id = companion.activeWorkId();
         h.startSequence().thenWaitUntil(() -> h.assertTrue(companion.petQuestion(CompanionPet.DOG) == id, "Did not ask about going to the village"))
                 .thenExecute(() -> CompanionEvents.answerPetQuestion(owner, companion.getUUID(), CompanionPet.DOG, id, "go"))
-                .thenWaitUntil(() -> h.assertTrue(companion.petQuestionMode() == CompanionPet.Question.VILLAGE_SEARCH
+                .thenWaitUntil(() -> h.assertTrue(companion.petQuestionMode() == CompanionPet.Question.HABITAT_SEARCH
                         && companion.petQuestion(CompanionPet.DOG) == id && companion.autonomyLine().contains("искать собаку здесь"),
                         "Did not invite the player to look for the dog"))
                 .thenExecute(() -> {
-                    String reported = CompanionWorkCommands.villageSighting("Олег, я нашёл волка!", CompanionPet.DOG, "Олег");
-                    h.assertTrue(reported.equals("found") && CompanionWorkCommands.villageSighting("Не нашёл", CompanionPet.DOG, "Олег").isEmpty(),
+                    String reported = CompanionWorkCommands.petSighting("Олег, я нашёл волка!", CompanionPet.DOG, "Олег");
+                    h.assertTrue(reported.equals("found") && CompanionWorkCommands.petSighting("Не нашёл", CompanionPet.DOG, "Олег").isEmpty(),
                             "Confused a real sighting and a negative reply");
                     var petPos = at(h, companion).offset(3, 0, 0);
                     var tamed = h.spawn(EntityType.WOLF, petPos);
                     tamed.setNoAi(true);
                     tamed.setTame(true, true);
                     CompanionEvents.answerPetQuestion(owner, companion.getUUID(), CompanionPet.DOG, id, reported);
-                    h.assertTrue(companion.petQuestionMode() == CompanionPet.Question.VILLAGE_SEARCH
+                    h.assertTrue(companion.petQuestionMode() == CompanionPet.Question.HABITAT_SEARCH
                             && companion.autonomyLine().contains("Покажи, где"), "A sighting without an eligible animal ended the search");
                     h.spawn(EntityType.WOLF, petPos.offset(0, 0, 2)).setNoAi(true);
                     CompanionEvents.answerPetQuestion(owner, companion.getUUID(), CompanionPet.DOG, id, reported);

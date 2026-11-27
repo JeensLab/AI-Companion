@@ -68,7 +68,8 @@ public final class CompanionParkHold {
                  "harvest_crops", "farm_crops", "use_bone_meal", "pick_up", "build_pen", "breed_animals", "scout_traders", "trade_items", "pursue_goal", "autonomy",
                  "goal_status", "goal_cancel", "goal_defer", "goal_resume",
                  "repair_item", "disenchant_item", "compost_items", "go_to_place", "remember_place", "fish",
-                 "tame_cat", "cat_status", "find_cat", "sit_cat", "follow_cat", "tame_dog", "dog_status", "find_dog", "sit_dog", "follow_dog", "pet_location" -> false;
+                 "tame_cat", "cat_status", "find_cat", "sit_cat", "follow_cat", "tame_dog", "dog_status", "find_dog", "sit_dog", "follow_dog",
+                 "tame_parrot", "parrot_status", "find_parrot", "sit_parrot", "follow_parrot", "pet_location" -> false;
             default -> true;
         };
     }

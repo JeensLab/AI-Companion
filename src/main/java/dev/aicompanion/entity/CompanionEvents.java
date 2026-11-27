@@ -317,10 +317,12 @@ public final class CompanionEvents {
             dev.aicompanion.CompanionDiagnostics.event(trace, "server_rejected", "reason", "companion_unloaded_or_other_dimension");
             return CompanionActionResult.failed("Компаньон не загружен рядом с тобой.");
         }
-        if ("cat_status".equals(action) || "dog_status".equals(action))
-            return companion.work.pet(action.equals("cat_status") ? CompanionPet.CAT : CompanionPet.DOG).status(player.serverLevel());
-        if ("walk_heading".equals(action) && companion.work.activePet != null && companion.work.activePet.waitingForVillage())
-            return CompanionActionResult.failed("Сначала ответь, идём ли искать деревню.");
+        if (action.endsWith("_status")) {
+            var kind = CompanionPet.byId(action.substring(0, action.length() - "_status".length()));
+            if (kind != null) return companion.work.pet(kind).status(player.serverLevel());
+        }
+        if ("walk_heading".equals(action) && companion.work.activePet != null && companion.work.activePet.waitingForHabitat())
+            return CompanionActionResult.failed("Сначала ответь, идём ли искать " + companion.work.activePet.destination() + ".");
         // An order of the player comes before the walk back for his own things too: the walk gives way and waits (CompanionDeathTrip).
         // An order of his own (a goal step, a deed), naming the home and asking about a goal are not orders.
         if (!autonomousDispatch && !goalDispatch && !action.equals("set_home") && !action.equals("remember_place") && !action.equals("goal_status")
@@ -380,7 +382,8 @@ public final class CompanionEvents {
             case "place_block" -> companion.startWork("place_block", item, count, location);
             case "gather_stone", "gather_dirt", "gather_loose", "store_items", "take_items", "sort_chests", "build_house", "build_pen", "breed_animals", "scout_traders", "trade_items", "fill_bucket", "mine_obsidian", "gather_block", "hunt_drop", "compost_meal", "build_portal", "build_cobble_gen", "build_golem", "disenchant_item", "compost_items",
                  "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block", "nether_go", "nether_back", "fish" -> companion.startWork(action, item, count, location);
-            case "tame_cat", "find_cat", "sit_cat", "follow_cat", "tame_dog", "find_dog", "sit_dog", "follow_dog" ->
+            case "tame_cat", "find_cat", "sit_cat", "follow_cat", "tame_dog", "find_dog", "sit_dog", "follow_dog",
+                 "tame_parrot", "find_parrot", "sit_parrot", "follow_parrot" ->
                     companion.startWork(action, item, count, location);
             case "hunt_mobs" -> {
                 companion.setFollowing(false);
@@ -458,7 +461,7 @@ public final class CompanionEvents {
     }
 
     private static CompanionActionResult petLocation(ServerPlayer player, String item, int count) {
-        if (count != 1 || item == null || !Set.of("cat", "dog", "all").contains(item))
+        if (count != 1 || !"all".equals(item) && CompanionPet.byId(item) == null)
             return CompanionActionResult.failed("Не понял, о каком питомце ты спрашиваешь.");
         var server = player.getServer();
         var locations = new ArrayList<String>();
@@ -474,6 +477,7 @@ public final class CompanionEvents {
         return CompanionActionResult.ok(switch (item) {
             case "cat" -> "Своего кота у меня пока нет.";
             case "dog" -> "Своей собаки у меня пока нет.";
+            case "parrot" -> "Своего попугая у меня пока нет.";
             default -> "Своих питомцев у меня пока нет.";
         });
     }

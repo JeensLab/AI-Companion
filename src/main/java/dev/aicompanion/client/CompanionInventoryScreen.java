@@ -71,7 +71,7 @@ public final class CompanionInventoryScreen extends AbstractContainerScreen<Comp
         int x = leftPos, y = topPos;
         graphics.fill(x - 1, y - 1, x + imageWidth + 1, y + imageHeight + 1, 0xFF555F70);
         graphics.fill(x, y, x + imageWidth, y + imageHeight, 0xFF161C28);
-        graphics.fill(x + 193, y + 19, x + 289, y + 153, 0xFF10151E);
+        graphics.fill(x + 193, y + 19, x + 289, y + 164, 0xFF10151E);
         for (var slot : menu.slots) {
             graphics.fill(x + slot.x - 1, y + slot.y - 1, x + slot.x + 17, y + slot.y + 17, 0xFF566174);
             graphics.fill(x + slot.x, y + slot.y, x + slot.x + 16, y + slot.y + 16, 0xFF252E3D);
@@ -120,11 +120,13 @@ public final class CompanionInventoryScreen extends AbstractContainerScreen<Comp
             var companion = menu.getCompanion();
             boolean cat = companion.hasPet(CompanionPet.CAT);
             boolean dog = companion.hasPet(CompanionPet.DOG);
+            boolean parrot = companion.hasPet(CompanionPet.PARROT);
             graphics.drawString(font, cat ? "Свой кот" : "Кот: —", 199, 133, cat ? 0xF1F5FA : 0x8595AC, false);
             graphics.drawString(font, dog ? "Своя собака" : "Собака: —", 199, 144, dog ? 0xF1F5FA : 0x8595AC, false);
+            graphics.drawString(font, parrot ? "Свой попугай" : "Попугай: —", 199, 155, parrot ? 0xF1F5FA : 0x8595AC, false);
         }
-        graphics.drawWordWrap(font, Component.literal("Перетащи предмет в руку или ячейку брони."), 196, 155, 90, 0xA7B4C7);
-        graphics.drawWordWrap(font, Component.literal("Shift + клик — быстро перенести."), 196, 202, 90, 0x8595AC);
+        graphics.drawWordWrap(font, Component.literal("Перетащи предмет в руку или ячейку брони."), 196, 166, 90, 0xA7B4C7);
+        graphics.drawWordWrap(font, Component.literal("Shift + клик — быстро перенести."), 196, 213, 90, 0x8595AC);
     }
 
     @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {

@@ -306,11 +306,11 @@ public final class CompanionCatTests {
     @GameTest(template = "empty")
     public static void understandsRepliesAboutLookingForVillage(GameTestHelper h) {
         for (String positive : java.util.List.of("Да", "Ну давай", "Ага, пойдём", "М-м-м, погнали", "Олег, веди"))
-            h.assertTrue(CompanionWorkCommands.petVillageAnswer(positive, "Олег").equals("go"), "Missed consent: " + positive);
+            h.assertTrue(CompanionWorkCommands.petTripAnswer(positive, "Олег").equals("go"), "Missed consent: " + positive);
         for (String negative : java.util.List.of("Нет", "Не, не надо", "Да не, останемся здесь", "Нет, спасибо", "Давай потом"))
-            h.assertTrue(CompanionWorkCommands.petVillageAnswer(negative, "Олег").equals("cancel"), "Missed refusal: " + negative);
+            h.assertTrue(CompanionWorkCommands.petTripAnswer(negative, "Олег").equals("cancel"), "Missed refusal: " + negative);
         for (String other : java.util.List.of("На юг?", "А почему на юг?", "Мона юг", "Да, если найдётся карта", "Да, есть лосось", "Стой"))
-            h.assertTrue(CompanionWorkCommands.petVillageAnswer(other, "Олег").isEmpty(), "Treated a different message as an answer: " + other);
+            h.assertTrue(CompanionWorkCommands.petTripAnswer(other, "Олег").isEmpty(), "Treated a different message as an answer: " + other);
         var plan = CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"tame_cat\",\"item\":\"village\"}]"));
         h.assertTrue(plan.size() == 1 && plan.getFirst().item().equals("village"), "The village proposal did not survive plan validation");
         h.succeed();
@@ -338,7 +338,7 @@ public final class CompanionCatTests {
         var start = companion.position();
         order(h, companion, "Пойдём искать кота");
         long[] question = {0};
-        h.startSequence().thenWaitUntil(() -> h.assertTrue(companion.petQuestionMode() == CompanionPet.Question.VILLAGE_PERMISSION, "Did not ask about the village trip"))
+        h.startSequence().thenWaitUntil(() -> h.assertTrue(companion.petQuestionMode() == CompanionPet.Question.HABITAT_PERMISSION, "Did not ask about the village trip"))
                 .thenExecute(() -> question[0] = companion.petQuestion(CompanionPet.CAT))
                 .thenWaitUntil(() -> h.assertTrue(!companion.hasActiveWorkOrder(), "Still waiting for an answer"))
                 .thenExecute(() -> {

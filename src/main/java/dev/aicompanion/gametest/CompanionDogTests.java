@@ -102,7 +102,10 @@ public final class CompanionDogTests {
     public static void catAndDogBondsAreIndependentAndDogReconnects(GameTestHelper h) {
         var companion = CompanionPetSearchTests.fixture(h, false, false);
         var player = player(h, companion);
-        var wolf = h.spawn(EntityType.WOLF, 12, 3, 8);
+        // This scenario checks bond persistence. Keep each animal in reach with a known taming roll.
+        var wolf = h.spawn(EntityType.WOLF, 9, 3, 8);
+        wolf.setNoAi(true);
+        wolf.getRandom().setSeed(0);
         var cat = h.spawn(EntityType.CAT, 6, 3, 8);
         cat.setNoAi(true);
         companion.setPetSearchRadius(CompanionPet.MIN_SEARCH_RADIUS);
@@ -112,15 +115,16 @@ public final class CompanionDogTests {
         var savedDog = new CompoundTag();
         h.startSequence().thenWaitUntil(() -> h.assertTrue(wolf.isTame() && !companion.hasActiveWorkOrder(), companion.getLastTaskResult()))
                 .thenExecute(() -> {
-                    // This scenario tests independent bonds, so the cat starts within reach when its order begins.
+                    wolf.setNoAi(false);
                     cat.teleportTo(companion.getX() + 0.5, companion.getY(), companion.getZ());
-                    cat.setNoAi(false);
+                    cat.getRandom().setSeed(0);
                     order(h, player, "приручи кота");
                 }).thenWaitUntil(() -> h.assertTrue(cat.isTame() && companion.hasPet(CompanionPet.CAT)
                         && companion.hasPet(CompanionPet.DOG), "Both pets must coexist: cat tamed=" + cat.isTame()
                         + ", cat bond=" + companion.hasPet(CompanionPet.CAT) + ", dog bond=" + companion.hasPet(CompanionPet.DOG)
                         + ", last result=" + companion.getLastTaskResult()))
                 .thenExecute(() -> {
+                    cat.setNoAi(false);
                     wolf.saveWithoutId(savedDog);
                     wolf.setRemoved(Entity.RemovalReason.UNLOADED_TO_CHUNK);
                     order(h, player, "заведи собаку");

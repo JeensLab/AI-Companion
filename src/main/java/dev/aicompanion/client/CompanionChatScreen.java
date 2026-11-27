@@ -134,11 +134,11 @@ public final class CompanionChatScreen extends Screen {
                 if (workId <= 0) continue;
                 var question = speaker.petQuestionMode();
                 String answer = switch (question) {
-                    case VILLAGE_PERMISSION -> CompanionWorkCommands.petVillageAnswer(text, companionName());
-                    case VILLAGE_SEARCH -> CompanionWorkCommands.villageSighting(text, kind, companionName());
+                    case HABITAT_PERMISSION -> CompanionWorkCommands.petTripAnswer(text, companionName());
+                    case HABITAT_SEARCH -> CompanionWorkCommands.petSighting(text, kind, companionName());
                     case BAIT, BAIT_PERMISSION -> CompanionWorkCommands.petAnswer(text, kind, companionName(), speaker.awaitsPetSearchPermission());
                 };
-                if (question == CompanionPet.Question.VILLAGE_PERMISSION && answer.isEmpty()) {
+                if (question == CompanionPet.Question.HABITAT_PERMISSION && answer.isEmpty()) {
                     String local = CompanionLocalCommands.route(text, companionName());
                     if (local != null && !local.startsWith("companion work walk_heading ")) return local;
                     answer = "clarify";

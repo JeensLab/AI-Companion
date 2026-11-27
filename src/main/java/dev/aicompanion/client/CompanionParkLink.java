@@ -98,6 +98,7 @@ public final class CompanionParkLink implements CompanionTaskQueue.BatchOwner {
             switch (actions.getFirst().type()) {
                 case "tame_cat" -> switchPetQuestion(queued, stale, CompanionPet.CAT);
                 case "tame_dog" -> switchPetQuestion(queued, stale, CompanionPet.DOG);
+                case "tame_parrot" -> switchPetQuestion(queued, stale, CompanionPet.PARROT);
             }
         }
         return queued.completion();

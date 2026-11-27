@@ -12,10 +12,13 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.TamableAnimal;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.entity.ai.goal.FollowOwnerGoal;
+import net.minecraft.world.entity.ai.goal.LandOnOwnersShoulderGoal;
 import net.minecraft.world.entity.ai.goal.SitWhenOrderedToGoal;
 import net.minecraft.world.entity.ai.goal.target.OwnerHurtByTargetGoal;
 import net.minecraft.world.entity.ai.goal.target.TargetGoal;
 import net.minecraft.world.entity.ai.targeting.TargetingConditions;
+import net.minecraft.world.entity.animal.Parrot;
 import net.minecraft.world.entity.animal.Wolf;
 import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.level.saveddata.SavedData;
@@ -31,6 +34,7 @@ import java.util.UUID;
 final class CompanionPetBonds extends SavedData {
     private static final Factory<CompanionPetBonds> CATS = factory(CompanionPet.CAT);
     private static final Factory<CompanionPetBonds> DOGS = factory(CompanionPet.DOG);
+    private static final Factory<CompanionPetBonds> PARROTS = factory(CompanionPet.PARROT);
     record Pet(UUID id, GlobalPos lastSeen, long fedAt) { }
 
     private final CompanionPet kind;
@@ -43,8 +47,12 @@ final class CompanionPetBonds extends SavedData {
     }
 
     static CompanionPetBonds get(MinecraftServer server, CompanionPet kind) {
-        return server.overworld().getDataStorage().computeIfAbsent(kind == CompanionPet.CAT ? CATS : DOGS,
-                "aicompanion_" + kind.id + "s");
+        var factory = switch (kind) {
+            case CAT -> CATS;
+            case DOG -> DOGS;
+            case PARROT -> PARROTS;
+        };
+        return server.overworld().getDataStorage().computeIfAbsent(factory, "aicompanion_" + kind.id + "s");
     }
 
     private static String keeperKey(CompanionPet kind) { return "aicompanion:" + kind.id + "_keeper"; }
@@ -82,7 +90,7 @@ final class CompanionPetBonds extends SavedData {
         return new Pet(animal.getUUID(), GlobalPos.of(level.dimension(), animal.blockPosition()), fedAt);
     }
 
-    private void observe(ServerLevel level, TamableAnimal animal, UUID keeper) {
+    void observe(ServerLevel level, TamableAnimal animal, UUID keeper) {
         Pet old = pets.get(keeper);
         if (old == null || !old.id().equals(animal.getUUID())) return;
         Pet next = snapshot(level, animal, old.fedAt());
@@ -130,7 +138,11 @@ final class CompanionPetBonds extends SavedData {
         Pet pet = pets.get(keeper);
         if (pet == null || !pet.id().equals(animal.getUUID())) return;
         animal.goalSelector.removeAllGoals(goal -> goal instanceof SitWhenOrderedToGoal || goal instanceof StayWithCompanion);
-        animal.goalSelector.addGoal(2, new StayWithCompanion(animal, keeper));
+        if (animal instanceof Parrot) {
+            // Vanilla's shoulder goal expects a ServerPlayer and removes the bird from the world.
+            animal.goalSelector.removeAllGoals(goal -> goal instanceof LandOnOwnersShoulderGoal || goal instanceof FollowOwnerGoal);
+        }
+        animal.goalSelector.addGoal(animal instanceof Parrot ? 1 : 2, new StayWithCompanion(animal, keeper));
         if (animal instanceof Wolf wolf) {
             wolf.targetSelector.removeAllGoals(goal -> goal instanceof OwnerHurtByTargetGoal || goal instanceof DefendCompanion);
             wolf.targetSelector.addGoal(1, new DefendCompanion(wolf, keeper));
@@ -166,12 +178,12 @@ final class CompanionPetBonds extends SavedData {
         @Override public boolean canUse() {
             refresh();
             if (animal.isOrderedToSit()) return animal.onGround() && !animal.isInWaterOrBubble();
-            return canFollow() && animal.distanceToSqr(companion) > 16;
+            return canFollow() && (animal instanceof Parrot || animal.distanceToSqr(companion) > 16);
         }
 
         @Override public boolean canContinueToUse() {
             if (animal.isOrderedToSit()) return animal.onGround() && !animal.isInWaterOrBubble();
-            return canFollow() && animal.distanceToSqr(companion) > 4;
+            return canFollow() && (animal instanceof Parrot || animal.distanceToSqr(companion) > 4);
         }
 
         private boolean canFollow() {
@@ -181,11 +193,14 @@ final class CompanionPetBonds extends SavedData {
 
         @Override public void start() { animal.getNavigation().stop(); }
 
+        @Override public boolean requiresUpdateEveryTick() { return animal instanceof Parrot; }
+
         @Override public void tick() {
             boolean update = animal.tickCount >= nextCheck;
             refresh();
             animal.setInSittingPose(animal.isOrderedToSit());
             if (animal.isOrderedToSit() || !canFollow()) animal.getNavigation().stop();
+            else if (animal instanceof Parrot parrot) CompanionParrotShoulder.approach(parrot, companion, update);
             else if (update) animal.getNavigation().moveTo(companion, 1.1);
         }
 
@@ -227,7 +242,13 @@ final class CompanionPetBonds extends SavedData {
         }
     }
 
-    private String animalKey() { return kind == CompanionPet.CAT ? "Cat" : "Dog"; }
+    private String animalKey() {
+        return switch (kind) {
+            case CAT -> "Cat";
+            case DOG -> "Dog";
+            case PARROT -> "Parrot";
+        };
+    }
 
     @Override public CompoundTag save(CompoundTag root, HolderLookup.Provider registries) {
         var list = new ListTag();

@@ -16,7 +16,9 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.animal.Parrot;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.PathfinderMob;
@@ -84,10 +86,14 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private static final EntityDataAccessor<String> DATA_SAY = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<Integer> DATA_SAY_SERIAL = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Boolean> DATA_PET_LINE = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
+    static final EntityDataAccessor<Optional<BlockPos>> DATA_SHOULDER_RECORD = SynchedEntityData.defineId(
+            CompanionEntity.class, EntityDataSerializers.OPTIONAL_BLOCK_POS);
     private static final EntityDataAccessor<Boolean> DATA_CAT_PRESENT = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
     private static final EntityDataAccessor<Boolean> DATA_DOG_PRESENT = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Boolean> DATA_PARROT_PRESENT = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
     private static final EntityDataAccessor<Long> DATA_CAT_QUESTION = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.LONG);
     private static final EntityDataAccessor<Long> DATA_DOG_QUESTION = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.LONG);
+    private static final EntityDataAccessor<Long> DATA_PARROT_QUESTION = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.LONG);
     private static final EntityDataAccessor<Integer> DATA_PET_QUESTION_MODE = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Long> DATA_SAY_TIME = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.LONG);
     static final EntityDataAccessor<Integer> DATA_EXPRESSION = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
@@ -115,7 +121,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     static final float GAZE_TURN_YAW = 30.0F;
     static final float GAZE_TURN_PITCH = 30.0F;
     UUID ownerId;
-    boolean petStarterBaitGranted;
+    // Existing saves use 1 for the fish and bones kit. Version 2 also includes parrot seeds.
+    private static final int PET_BAIT_VERSION = 2;
+    int petStarterBaitVersion;
     boolean following = true;
     boolean protecting;
     boolean roaming;
@@ -285,23 +293,33 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public CompanionPet.Question petQuestionMode() { return CompanionPet.Question.values()[entityData.get(DATA_PET_QUESTION_MODE)]; }
     public boolean awaitsPetSearchPermission() { return petQuestionMode() == CompanionPet.Question.BAIT_PERMISSION; }
     private static EntityDataAccessor<Long> petQuestionData(CompanionPet kind) {
-        return kind == CompanionPet.CAT ? DATA_CAT_QUESTION : DATA_DOG_QUESTION;
+        return switch (kind) {
+            case CAT -> DATA_CAT_QUESTION;
+            case DOG -> DATA_DOG_QUESTION;
+            case PARROT -> DATA_PARROT_QUESTION;
+        };
     }
     void petPresent(CompanionPet kind, boolean present) { entityData.set(petPresentData(kind), present); }
     public boolean hasPet(CompanionPet kind) { return entityData.get(petPresentData(kind)); }
     private static EntityDataAccessor<Boolean> petPresentData(CompanionPet kind) {
-        return kind == CompanionPet.CAT ? DATA_CAT_PRESENT : DATA_DOG_PRESENT;
+        return switch (kind) {
+            case CAT -> DATA_CAT_PRESENT;
+            case DOG -> DATA_DOG_PRESENT;
+            case PARROT -> DATA_PARROT_PRESENT;
+        };
     }
     public void setPetEnabled(CompanionPet kind, boolean enabled) { work.pet(kind).setEnabled(enabled); }
     public void setPetSearchRadius(int radius) {
         for (var kind : CompanionPet.values()) work.pet(kind).setSearchRadius(radius);
     }
     public void grantPetStarterBait() {
-        if (petStarterBaitGranted || ownerId == null || !isAlive() || !(level() instanceof ServerLevel)) return;
-        var bait = List.of(new ItemStack(Items.SALMON, 3), new ItemStack(Items.BONE, 3));
+        if (petStarterBaitVersion >= PET_BAIT_VERSION || ownerId == null || !isAlive() || !(level() instanceof ServerLevel)) return;
+        var seeds = new ItemStack(Items.WHEAT_SEEDS, 3);
+        var bait = petStarterBaitVersion == 1 ? List.of(seeds)
+                : List.of(new ItemStack(Items.SALMON, 3), new ItemStack(Items.BONE, 3), seeds);
         if (!canStoreDrops(bait)) return;
         bait.forEach(this::storeInCompanionInventory);
-        petStarterBaitGranted = true;
+        petStarterBaitVersion = PET_BAIT_VERSION;
     }
     public String autonomyLine() { return entityData.get(DATA_SAY); }
     public int autonomyLineSerial() { return entityData.get(DATA_SAY_SERIAL); }
@@ -546,12 +564,39 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         builder.define(DATA_SOCIAL, ""); builder.define(DATA_SOCIAL_SERIAL, 0); builder.define(DATA_SOCIAL_TIME, 0L);
         builder.define(DATA_AUTONOMY, false); builder.define(DATA_SAY, ""); builder.define(DATA_SAY_SERIAL, 0); builder.define(DATA_SAY_TIME, 0L);
         builder.define(DATA_PET_LINE, false);
+        builder.define(DATA_SHOULDER_RECORD, Optional.empty());
         builder.define(DATA_CAT_PRESENT, false); builder.define(DATA_CAT_QUESTION, 0L);
         builder.define(DATA_DOG_PRESENT, false); builder.define(DATA_DOG_QUESTION, 0L);
+        builder.define(DATA_PARROT_PRESENT, false); builder.define(DATA_PARROT_QUESTION, 0L);
         builder.define(DATA_PET_QUESTION_MODE, CompanionPet.Question.BAIT.ordinal());
         builder.define(DATA_EXPRESSION, 0); builder.define(DATA_SOCIAL_SAFE, false); builder.define(DATA_FIGHTING, false);
         builder.define(DATA_CAMPFIRE, CompanionCampfire.STANDING); builder.define(DATA_CAMPFIRE_TUNE, "");
         builder.define(DATA_CAMPFIRE_TUNE_START, 0);
+    }
+
+    @Override public LivingEntity getControllingPassenger() {
+        return getFirstPassenger() instanceof Parrot ? null : super.getControllingPassenger();
+    }
+
+    @Override protected Vec3 getPassengerAttachmentPoint(Entity passenger, EntityDimensions dimensions, float scale) {
+        return passenger instanceof Parrot ? CompanionParrotShoulder.offset(this, scale)
+                : super.getPassengerAttachmentPoint(passenger, dimensions, scale);
+    }
+
+    @Override public Vec3 getDismountLocationForPassenger(LivingEntity passenger) {
+        Vec3 safe = passenger instanceof Parrot bird ? CompanionParrotShoulder.safeDismount(this, bird) : null;
+        return safe != null ? safe : super.getDismountLocationForPassenger(passenger);
+    }
+
+    @Override protected void positionRider(Entity passenger, Entity.MoveFunction move) {
+        BlockPos previous = passenger.blockPosition();
+        super.positionRider(passenger, move);
+        if (passenger instanceof Parrot bird) CompanionParrotShoulder.positioned(this, bird, previous);
+    }
+
+    @Override protected void removePassenger(Entity passenger) {
+        super.removePassenger(passenger);
+        if (passenger instanceof Parrot bird && !level().isClientSide) CompanionParrotShoulder.dismounted(this, bird);
     }
 
     public static void createAttributes(net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent event) {
@@ -978,7 +1023,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public String getStoredItemsForAi() { return bag.getStoredItemsForAi(); }
     public void mergeStoredItemsFrom(CompanionEntity other) {
         bag.mergeStoredItemsFrom(other);
-        petStarterBaitGranted |= other.petStarterBaitGranted;
+        petStarterBaitVersion = Math.max(petStarterBaitVersion, other.petStarterBaitVersion);
     }
 
     public String getEquipmentForAi() { return equipment.getEquipmentForAi(); }

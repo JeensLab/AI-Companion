@@ -55,6 +55,7 @@ public final class CompanionPreferences {
                 companion.setMurmurIntervalPercent(murmurInterval);
                 companion.setPetEnabled(dev.aicompanion.entity.CompanionPet.CAT, OpenRouterConfig.PET_CAT.get());
                 companion.setPetEnabled(dev.aicompanion.entity.CompanionPet.DOG, OpenRouterConfig.PET_DOG.get());
+                companion.setPetEnabled(dev.aicompanion.entity.CompanionPet.PARROT, OpenRouterConfig.PET_PARROT.get());
                 companion.setPetSearchRadius(OpenRouterConfig.PET_SEARCH_RADIUS.get());
                 if (OpenRouterConfig.PET_STARTER_BAIT.get()) companion.grantPetStarterBait();
                 companion.setConversationAvailable(conversationAvailable);
