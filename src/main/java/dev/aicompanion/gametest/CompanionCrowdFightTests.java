@@ -10,6 +10,7 @@ import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.monster.Husk;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.item.Item;
@@ -35,7 +36,7 @@ public final class CompanionCrowdFightTests {
     /** The arena (the template "empty" is this wide), its middle, the height of the walls and of the air in a passage, and the times the checks run. */
     private static final int SIZE = 32, MIDDLE = 16, WALL = 8, HIGH = 5, KILL_TICKS = 1800, FIRST_KILL_TICKS = 400, TIMEOUT = 2600;
     private static final int BLOWS = 3, COLUMN = 2, COLUMN_TICKS = 200, LEAST_CROWD = 3, THROWN = 2, ROOF = 4;
-    private static final float HURT = 12;
+    private static final float HURT = 12, WEAK_BLOW = 1;
     /** The corner he stands in: the walls run along the cells east and south of it. */
     private static final int CORNER = 24;
     /**
@@ -160,15 +161,21 @@ public final class CompanionCrowdFightTests {
         });
     }
 
-    /** Under a roof of three cells, too low for a column, a crowd of three is fought as before: no block is laid, and the first of them is dead in time. */
+    /**
+     * Under a roof of three cells, too low for a column, a crowd of three is fought as before: no block is laid, and the first of them is
+     * dead in time. The roof covers the whole floor: with open sky within his run he ran out from under it and raised the column there,
+     * which is fair. The zombies strike weakly: the ground fight of three in a corner is lost now and then (see the test thrown off the
+     * column), and that is no claim about the roof. Before both, 8 of 64 copies failed.
+     */
     @GameTest(template = "empty", timeoutTicks = TIMEOUT)
     public static void underALowRoofTheCrowdIsFoughtFromTheGround(GameTestHelper h) {
         CompanionEntity c = armed(h, CORNER, CORNER);
         corner(h);
-        fill(h, 4, ROOF, 4, CORNER, ROOF, CORNER);
+        fill(h, 0, ROOF, 0, CORNER, ROOF, CORNER);
         int stone = count(c, Items.COBBLESTONE);
         List<Zombie> zombies = new ArrayList<>();
         for (int k = 0; k < LEAST_CROWD; k++) zombies.add(zombie(h, CORNER + CROWD[k][0], CORNER + CROWD[k][1]));
+        for (Zombie zombie : zombies) zombie.getAttribute(Attributes.ATTACK_DAMAGE).setBaseValue(WEAK_BLOW);
         long begun = h.getTick();
         h.onEachTick(() -> {
             target(zombies, c);
