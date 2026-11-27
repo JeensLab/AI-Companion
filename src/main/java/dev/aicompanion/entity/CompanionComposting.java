@@ -164,7 +164,7 @@ public final class CompanionComposting {
     private void own(ServerLevel level) {
         CompanionEntity c = w.owner;
         if (!carries(Items.COMPOSTER)) {
-            if (w.crafting.approachCraftingTable()) return;
+            if (w.crafting.approachCraftingTable(false)) return;
             if (!c.craftFromBag("minecraft:composter", 1).success()) { ownTried = true; w.finish(false, NO_COMPOSTER + done()); return; }
         }
         ownTried = true;

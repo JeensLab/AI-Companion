@@ -64,6 +64,26 @@ final class CompanionNodeEvaluator extends WalkNodeEvaluator {
         var state = currentContext.level().getBlockState(new net.minecraft.core.BlockPos(x, y, z));
         return state.is(net.minecraft.tags.BlockTags.CLIMBABLE) && !state.is(net.minecraft.world.level.block.Blocks.SCAFFOLDING);
     }
+    /** A cell as a way lands on it from a fall of two blocks or more: a node of its own beside the plain one (CompanionMoves.fall). */
+    static final class Landing extends Node {
+        Landing(int x, int y, int z) { super(x, y, z); }
+    }
+    private final it.unimi.dsi.fastutil.ints.Int2ObjectMap<Landing> landings = new it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap<>();
+    @Override
+    public void prepare(net.minecraft.world.level.PathNavigationRegion level, net.minecraft.world.entity.Mob mob) {
+        super.prepare(level, mob);
+        landings.clear();
+    }
+    /** The landing node of the cell {@code plain} is. */
+    Node landing(Node plain) {
+        Landing node = landings.computeIfAbsent(Node.createHash(plain.x, plain.y, plain.z), key -> new Landing(plain.x, plain.y, plain.z));
+        // The plain node's judgement of the cell may be raised after the landing was made (mark keeps the highest malus).
+        node.type = plain.type;
+        node.costMalus = plain.costMalus;
+        return node;
+    }
+    /** The world as this search sees it (the snapshot its cells are read from). */
+    net.minecraft.world.level.CollisionGetter level() { return currentContext.level(); }
     boolean collides(net.minecraft.world.phys.AABB box) { return !currentContext.level().noCollision(mob, box); }
     /**
      * The water straight up from (x, y, z) ends in air within {@code blocks}, and none of it is a bubble column that drags down (over
