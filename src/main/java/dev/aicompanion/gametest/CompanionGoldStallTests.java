@@ -348,13 +348,6 @@ public final class CompanionGoldStallTests {
         return CompanionPlanRunner.run(CompanionLocalCommands.actions(command), port);
     }
 
-    /** Whether a drop of raw gold lies at rest about him: what the pickup is left with once the ore is broken. */
-    private static boolean goldOnTheFloor(GameTestHelper h, CompanionEntity c) {
-        AABB box = new AABB(c.blockPosition()).inflate(10, 6, 10);
-        return h.getLevel().getEntitiesOfClass(ItemEntity.class, box, found -> found.getItem().is(Items.RAW_GOLD) && found.onGround())
-                .stream().findFirst().isPresent();
-    }
-
     /** The drop of raw gold at rest below his feet: what fell below the column he stands on. Null when none lies there. */
     private static ItemEntity goldBelow(GameTestHelper h, CompanionEntity c) {
         AABB box = new AABB(c.blockPosition()).inflate(10, 12, 10);
