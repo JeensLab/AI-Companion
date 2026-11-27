@@ -32,14 +32,20 @@ public final class CompanionClientNames {
     /** The name of an item in the player's own language: the game's Russian name, else the one the client shows. */
     public static Function<Item, String> names() {
         Function<Item, String> known = names;
-        if (known == null) names = known = load();
-        return known;
+        if (known != null) return known;
+        // The client's packs are not read before the game has them: the names the game shows answer until then.
+        Function<Item, String> loaded = load();
+        if (loaded == null) return CompanionItemLookup.GAME_NAMES;
+        return names = loaded;
     }
 
+    /** The reader of the Russian names, or null while the client's resource packs are not there yet. */
     private static Function<Item, String> load() {
         if (FMLEnvironment.dist != Dist.CLIENT) return CompanionItemLookup.GAME_NAMES;
+        var minecraft = net.minecraft.client.Minecraft.getInstance();
+        if (minecraft == null || minecraft.getResourceManager() == null) return null;
         Map<String, String> russian;
-        try { russian = russianNames(); } catch (IOException | RuntimeException unread) { russian = Map.of(); }
+        try { russian = russianNames(minecraft.getResourceManager()); } catch (IOException | RuntimeException unread) { russian = Map.of(); }
         Map<String, String> byKey = russian;
         return item -> {
             String name = byKey.get(item.getDescriptionId());
@@ -48,12 +54,10 @@ public final class CompanionClientNames {
     }
 
     /** The ru_ru.json of every namespace of the client's packs: the game's own Russian names of its items. */
-    private static Map<String, String> russianNames() throws IOException {
-        var minecraft = net.minecraft.client.Minecraft.getInstance();
-        if (minecraft == null || minecraft.getResourceManager() == null) return Map.of();
+    private static Map<String, String> russianNames(net.minecraft.server.packs.resources.ResourceManager resources) throws IOException {
         Map<String, String> names = new HashMap<>();
-        var resources = minecraft.getResourceManager().listResources("lang", id -> id.getPath().equals("ru_ru.json"));
-        for (Map.Entry<ResourceLocation, Resource> entry : resources.entrySet()) {
+        var found = resources.listResources("lang", id -> id.getPath().equals("ru_ru.json"));
+        for (Map.Entry<ResourceLocation, Resource> entry : found.entrySet()) {
             try (Reader reader = entry.getValue().openAsReader()) {
                 var json = com.google.gson.JsonParser.parseReader(reader);
                 if (!json.isJsonObject()) continue;
