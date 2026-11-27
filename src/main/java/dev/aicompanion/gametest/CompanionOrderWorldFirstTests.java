@@ -231,6 +231,9 @@ public final class CompanionOrderWorldFirstTests {
         h.assertTrue(plan.refusal() == null, "Five standing fences were refused for sixteen asked: " + plan.refusal());
         h.assertTrue(plan.steps().stream().anyMatch(step -> step.type().equals("gather_block")),
                 "The standing fences are not taken when more are asked: " + plan.steps());
+        // The cap: the plan takes the five that stand, not sixteen and not a sixth made for the rest.
+        h.assertTrue(plan.steps().stream().filter(step -> step.type().equals("gather_block")).allMatch(step -> step.count() == 5),
+                "The plan does not take exactly the five that stand: " + plan.steps());
         h.assertTrue(plan.steps().stream().noneMatch(step -> step.type().equals("gather_wood")),
                 "The fences that stand were left for wood: " + plan.steps());
         h.assertTrue(plan.steps().stream().noneMatch(step -> step.type().equals("craft_item")),
@@ -252,7 +255,9 @@ public final class CompanionOrderWorldFirstTests {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
             String report = future.join().report();
             for (BlockPos pos : fences) h.assertTrue(h.getBlockState(pos).isAir(), "A standing fence was left: " + report);
-            h.assertTrue(count(c, Items.CHERRY_FENCE) >= 5, "The fences that stood are not in the bag: " + report);
+            // The five that stood are the cap: sixteen were asked, five were taken, and no sixth was crafted for the rest.
+            h.assertTrue(count(c, Items.CHERRY_FENCE) == 5, "Not exactly the five fences that stood are in the bag: "
+                    + count(c, Items.CHERRY_FENCE) + " " + report);
             h.assertTrue(!report.contains("дерева"), "A wood line was said over standing fences: " + report);
         });
     }
