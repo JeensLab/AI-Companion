@@ -339,6 +339,25 @@ public final class CompanionItemOrderTests {
         });
     }
 
+    /** «Принеси калитку»: the gate taken from the world reaches the player — in his bag or tossed at his feet. */
+    @GameTest(template = "way_wide", timeoutTicks = 12000)
+    public static void aCarryOrderOfAKindIsHandedOver(GameTestHelper h) {
+        flat(h, Blocks.GRASS_BLOCK);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_AXE));
+        c.setItem(1, new ItemStack(Items.DIRT, 32));
+        for (int i = 0; i < 3; i++) placedByPlayer(h, c, new BlockPos(HOME_X + 3 + i, FEET, HOME_Z + 2), Blocks.SPRUCE_FENCE_GATE);
+        var future = say(h, c, "принеси калитку");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
+            var owner = (net.minecraft.server.level.ServerPlayer) h.getLevel().getPlayerByUUID(c.getOwnerId());
+            h.assertTrue(owner.getInventory().countItem(Items.SPRUCE_FENCE_GATE) >= 1
+                            || !h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                            owner.getBoundingBox().inflate(8.0D), drop -> drop.getItem().is(Items.SPRUCE_FENCE_GATE)).isEmpty(),
+                    "The gate never reached the player: " + future.join().report());
+        });
+    }
+
     // ---- helpers ----
 
     /** Runs each phrase in turn, its scene set up first, and checks what the bag holds after it. */

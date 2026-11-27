@@ -395,7 +395,7 @@ public final class CompanionEvents {
             }
             // Handed over physically: walked to the player and tossed at their feet, never put into their inventory.
             case "give_wood" -> companion.startWork("give_items", "logs", 64);
-            case "give_items" -> companion.startWork("give_items", item, count);
+            case "give_items" -> companion.startWork("give_items", dev.aicompanion.entity.CompanionItemLookup.held(companion, item), count);
             case "smelt_items" -> companion.startWork("smelt_items", item, count);
             case "collect_smelt" -> companion.startWork("collect_smelt", item, 1);
             case "mine_ore" -> companion.startWork("mine_ore", item, count);

@@ -284,6 +284,26 @@ public final class CompanionItemLookup {
     }
 
     /**
+     * The thing a hand-over gives of a kind («принеси калитку»): the member of it he really carries — the kind itself is no
+     * item of his bag — else the member the chain can make, else the first of the kind.
+     */
+    public static String held(CompanionEntity companion, String item) {
+        if (item == null || !item.startsWith("#")) return item;
+        List<Item> kind = members(item);
+        if (kind.isEmpty()) return item;
+        String best = null;
+        int most = 0;
+        for (Item member : kind) {
+            String id = BuiltInRegistries.ITEM.getKey(member).toString();
+            int carried = companion.carriedCount(id);
+            if (carried > most) { most = carried; best = id; }
+        }
+        if (best != null) return best;
+        String made = made(companion, item, 1);
+        return made != null ? made : BuiltInRegistries.ITEM.getKey(kind.getFirst()).toString();
+    }
+
+    /**
      * How well the phrase names this item: the sum of its words' best matches, 0 for an item it does not name at all. A
      * word is tried in every form it takes in Russian ({@link #stems}), so «забора» answers «забор» and «тыквой» «тыква».
      */
