@@ -217,11 +217,15 @@ public final class CompanionObtain {
         // A block that makes the item (a lapis block for nine lapis) is no block OF the item: its own break gives the block, not
         // the item, so the chain gathers the block and crafts it (produce's storage step below). A block that IS the item, or
         // drops it, is taken as it lies.
-        boolean blockItself = !CompanionPickable.sources(level, item).isEmpty() || !CompanionPickable.identity(level, item).isEmpty();
-        if (lying != null && lying.some() && blockItself) {
-            // What stands is taken, up to the count asked — the count the world cannot meet is the promise's business
-            // (CompanionServerPlanPort caps it to what stands), never a reason to make the whole order of another material.
-            int taken = Math.min(count, lying.count());
+        boolean asItself = !CompanionPickable.identity(level, item).isEmpty();
+        boolean blockItself = asItself || !CompanionPickable.sources(level, item).isEmpty();
+        // A block that IS the item gives one of it per block, so the blocks that stand are the whole promise: they are taken
+        // up to the count asked, and the promise is what stands (CompanionServerPlanPort) — the recipe of another material is
+        // never asked for the part the world cannot give. A block that only DROPS the item (a snow layer, an ore) may give
+        // more per block than the search's least count, so there the gather takes the whole count and reports what it got
+        // («Собрал 1 из 3», as the chain's own pick does).
+        if (lying != null && lying.some() && blockItself && (asItself || lying.count() >= count)) {
+            int taken = asItself ? Math.min(count, lying.count()) : count;
             if (lying.soil() > 0) planner.addSplit("gather_dirt", "", lying.soil(), 64);
             if (!planner.gather(item, id.toString(), taken, 0)) return new Plan(List.of(), planner.why);
             return new Plan(List.copyOf(merged(planner.steps)), null);
