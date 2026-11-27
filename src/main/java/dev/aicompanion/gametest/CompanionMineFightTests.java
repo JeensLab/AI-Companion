@@ -45,7 +45,7 @@ import static dev.aicompanion.gametest.CompanionMineArena.start;
 @GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionMineFightTests {
-    private static final int SHELF_DROP = 3, SHELF_GAP = 4, SHELF_HIT_AT = 40, SHELF_ZOMBIE_HEALTH = 11;
+    private static final int SHELF_DROP = 3, SHELF_GAP = 4, SHELF_TICKS = 300, SHELF_CREEPERS = 5, SHELF_NEAR = 1, BOW_SLOT = 7, SHELF_HIT_AT = 40, SHELF_ZOMBIE_HEALTH = 11;
     private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 4, OPEN_CAVE_STAND = 3, KILL_TICKS = 1200, FUSE_TICKS = 200, CRAFT_TICKS = 1200, BRIDGE_FROM = 4, BRIDGE_TO = 10, BRIDGE_SIDE = 5, CAVERN_DEPTH = 7, PASSAGE_LENGTH = 4, PASSAGE_OFFSET = 2, PASSAGE_HEIGHT = 2, STRIKE_TICKS = 60, FAR_STAND = 10;
     private static final float SURVIVES = 1, RETREAT_HEALTH = 8, BLOW_ABOVE_RETREAT = 10, WEAK_ZOMBIE_BLOW = 1, CLIMB_HEALTH = 4, WOUNDED = 5;
     private static final double THROWN = 0.6, SAFE_GAP = 4;
@@ -231,6 +231,52 @@ public final class CompanionMineFightTests {
             h.assertTrue(c.getBlockY() > bottom.getY() || c.getBlockZ() <= bottom.getZ(), "He stepped off the bridge after the creepers" + trace);
             if (c.isWorking() || c.isGatheringTask()) return;
             CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The order did not go on to the diamond: " + result.message() + trace);
+            h.succeed();
+        });
+    }
+
+    /**
+     * Run p20261031-d2/void-4: his stairs cross a cave on single blocks, and creepers stand on a shelf across the gap, five blocks aside and two or
+     * three lower: in sight, near, with no way to them and none from them to him. He stood on the bridge with the sword for 6000 ticks: each was
+     * given forty-five seconds of its own, and there were eight. They do not hold him: he is off the bridge within {@link #SHELF_TICKS}.
+     */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void creepersOnAShelfAcrossAGapDoNotHoldHimOnTheBridge(GameTestHelper h) { notHeldByTheShelf(h, false); }
+
+    /**
+     * With a bow and arrows in the bag every foe was left to the bow, but the bow is drawn only from six blocks, and the creepers of the run
+     * stood nearer. One creeper on the stand of the shelf that is under six blocks from every stand of the bridge: the bow does not take it,
+     * and it does not hold him either.
+     */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aCreeperAcrossAGapNearerThanTheBowIsDrawnAtDoesNotHoldHimWithABow(GameTestHelper h) { notHeldByTheShelf(h, true); }
+
+    private static void notHeldByTheShelf(GameTestHelper h, boolean bow) {
+        mountain(h);
+        CompanionEntity c = armed(h);
+        if (bow) {
+            c.setItem(BOW_SLOT, new ItemStack(Items.BOW));
+            c.setItem(BOW_SLOT + 1, new ItemStack(Items.ARROW, 16));
+        }
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        List<BlockPos> shelf = shelfAcrossAGap(h, c, stairs);
+        BlockPos bottom = stairs.get(BRIDGE_TO);
+        List<Creeper> creepers = new ArrayList<>();
+        for (BlockPos stand : bow ? shelf.subList(SHELF_NEAR, SHELF_NEAR + 1) : shelf.subList(0, SHELF_CREEPERS)) creepers.add(still(creeper(h, stand)));
+        long[] id = {0}, begun = {0};
+        h.onEachTick(() -> {
+            if (id[0] == 0) {
+                if (creepers.stream().anyMatch(creeper -> creeper.getTarget() != c)) return;
+                id[0] = start(h, c, 1);
+                begun[0] = h.getTick();
+            }
+            String trace = " | creepers alive " + creepers.stream().filter(Creeper::isAlive).count() + ", he at " + rel(h, c.blockPosition()).toShortString() + ", health " + c.getHealth() + ", target " + c.getTarget() + ", tick " + h.getTick() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            h.assertTrue(c.getBlockY() > bottom.getY() || c.getBlockZ() <= bottom.getZ(), "He stepped off the bridge after the creepers" + trace);
+            h.assertTrue(h.getTick() - begun[0] <= SHELF_TICKS || c.getBlockY() < bottom.getY(), "The creepers across the gap held him on the bridge" + trace);
+            if (c.isWorking() || c.isGatheringTask()) return;
+            CompanionActionResult result = ended(h, c, id[0]);
             h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The order did not go on to the diamond: " + result.message() + trace);
             h.succeed();
         });

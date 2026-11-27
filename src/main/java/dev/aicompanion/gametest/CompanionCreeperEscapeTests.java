@@ -77,9 +77,16 @@ public final class CompanionCreeperEscapeTests {
 
     /** With the creeper one ledge below him on a slope with a dead end at its top: while the fuse burns he does not go down the slope, which is past the creeper, and the blast, if any, leaves him more than half his health. */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
-    public static void aLitCreeperOnTheLedgeBelowIsNotRunPastDownTheSlope(GameTestHelper h) {
+    public static void aLitCreeperOnTheLedgeBelowIsNotRunPastDownTheSlope(GameTestHelper h) { onTheLedgeAbove(h, false); }
+
+    /** The same with the bag of the run (cobblestone, which there goes for a wall): he does not go down the slope either, and keeps more than half his health. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aLitCreeperOnTheLedgeBelowIsNotRunPastWithBlocksForAWall(GameTestHelper h) { onTheLedgeAbove(h, true); }
+
+    private static void onTheLedgeAbove(GameTestHelper h, boolean blocks) {
         rock(h);
         CompanionEntity c = rig(h);
+        if (blocks) c.setItem(0, new ItemStack(Items.COBBLESTONE, 64));
         for (int i = 0; i < FEET.length; i++) for (int dz = 0; dz < WIDTH; dz++) for (int y = FEET[i]; y <= ROOF; y++) {
             h.getLevel().setBlock(h.absolutePos(new BlockPos(WEST + i, y, NORTH + dz)), Blocks.AIR.defaultBlockState(), 2 | 16);
         }
