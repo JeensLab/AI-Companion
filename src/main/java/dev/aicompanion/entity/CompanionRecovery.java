@@ -399,7 +399,7 @@ final class CompanionRecovery {
      * Stone to dig a way out of: the natural stone, and the Nether's and the End's own (recon 04.11, E1: in a pocket of netherrack, by
      * the End's obsidian platform «Не могу к тебе пройти»). Not in isStone: stone orders count by it.
      */
-    private static boolean rock(BlockState state) {
+    static boolean rock(BlockState state) {
         return CompanionWork.isStone(state) || state.is(Blocks.NETHERRACK) || state.is(Blocks.END_STONE);
     }
     /** A cell he must not walk into: a trigger, a bush that hurts, powder snow, lava beside it. */
