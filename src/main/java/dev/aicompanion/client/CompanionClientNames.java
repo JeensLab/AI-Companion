@@ -35,29 +35,46 @@ public final class CompanionClientNames {
     /** The game's Russian names of a namespace, in the folder of every lang file of the game's own packs. */
     private static final String RUSSIAN = "lang/ru_ru.json";
 
-    private static volatile Function<Item, String> names;
-
     /** The name of an item in the player's own language: the game's Russian name, else the one the client shows. */
     public static Function<Item, String> names() {
-        Function<Item, String> known = names;
-        if (known != null) return known;
-        // The client's packs are not read before the game has them: the names the game shows answer until then.
-        Function<Item, String> loaded = load();
-        if (loaded == null) return CompanionItemLookup.GAME_NAMES;
-        return names = loaded;
+        return NAMES.ask(CompanionClientNames::load);
     }
 
-    /** The reader of the Russian names, or null while the client's resource packs are not there yet. */
+    /**
+     * The names read once they answer. An empty read is answered with the names the game shows but is not remembered, so
+     * the next ask after the packs carry the names reads them: a chat made during a pack reload must not pin en_us for
+     * the rest of the session.
+     */
+    public static final class Names {
+        private volatile Function<Item, String> names;
+
+        /** The reader the read gives, remembered once it answers, or the names the game shows while it gives none. */
+        public Function<Item, String> ask(java.util.function.Supplier<Function<Item, String>> read) {
+            Function<Item, String> known = names;
+            if (known != null) return known;
+            Function<Item, String> loaded = read.get();
+            if (loaded == null) return CompanionItemLookup.GAME_NAMES;
+            return names = loaded;
+        }
+    }
+
+    private static final Names NAMES = new Names();
+
+    /** The reader of the Russian names, or null while the client's resource packs carry none yet. */
     private static Function<Item, String> load() {
-        if (FMLEnvironment.dist != Dist.CLIENT) return CompanionItemLookup.GAME_NAMES;
+        if (FMLEnvironment.dist != Dist.CLIENT) return null;
         var minecraft = net.minecraft.client.Minecraft.getInstance();
         if (minecraft == null || minecraft.getResourceManager() == null) return null;
         Map<String, String> russian;
         try { russian = russianNames(minecraft.getResourceManager()); } catch (RuntimeException unread) { russian = Map.of(); }
-        // No ru_ru in the packs yet (the reload has not read them): the names the game shows answer, and the next ask
-        // reads the packs again rather than keeping the fallback as the answer for good.
-        if (russian.isEmpty()) return CompanionItemLookup.GAME_NAMES;
-        return reader(russian);
+        // No ru_ru in the packs yet (the reload has not read them): there is no reader to keep, so the next ask reads
+        // the packs again rather than answering with the names the game shows for good.
+        return readerOrNull(russian);
+    }
+
+    /** The reader of the names read, or null while the packs carry none: an empty read is no answer yet, not an answer. */
+    public static Function<Item, String> readerOrNull(Map<String, String> russian) {
+        return russian.isEmpty() ? null : reader(russian);
     }
 
     /** The reader of the game's Russian names from the packs given, or the names the game shows when they carry none. */

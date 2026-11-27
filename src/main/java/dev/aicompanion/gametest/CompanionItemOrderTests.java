@@ -391,6 +391,10 @@ public final class CompanionItemOrderTests {
                 var names = CompanionClientNames.namesFrom(resources);
                 h.assertTrue("minecraft:pumpkin".equals(CompanionItemLookup.itemFor("тыкву", names)),
                         "«тыкву» is not the gourd by the packs' own names: " + CompanionItemLookup.itemFor("тыкву", names));
+                // The router answers by the same reader: the phrase is the order for the gourd, never a sentence for the model.
+                String routed = CompanionLocalCommands.route("добудь тыкву", "Олег", names);
+                h.assertTrue("companion work obtain_item 1 minecraft:pumpkin".equals(routed),
+                        "«добудь тыкву» did not become the order for the gourd: " + routed);
                 h.assertTrue(CompanionItemLookup.blockFor("тыквы", names) == null
                                 && "minecraft:pumpkin".equals(CompanionItemLookup.itemFor("тыквы", names)),
                         "«блок тыквы» is not the pumpkin: block " + CompanionItemLookup.blockFor("тыквы", names)
@@ -399,6 +403,38 @@ public final class CompanionItemOrderTests {
                         "«забора» is not the fences the game's tag holds: " + CompanionItemLookup.groupFor("забора", names));
                 h.assertTrue("#minecraft:fence_gates".equals(CompanionItemLookup.groupFor("калитку", names)),
                         "«калитку» is not the game's fence gates: " + CompanionItemLookup.groupFor("калитку", names));
+            }
+        } finally {
+            deleteTree(root);
+        }
+        h.succeed();
+    }
+
+    /**
+     * An ask made before the packs carry ru_ru is answered with the name the game shows, and that answer is not kept: the
+     * next ask, once a pack that carries the names is there, reads them. A memo that keeps the empty read pins en_us for
+     * the rest of the session, and a chat made during a pack reload is exactly that first ask.
+     */
+    @GameTest(template = "empty")
+    public static void anEmptyReadOfTheNamesIsNotKept(GameTestHelper h) throws Exception {
+        var root = java.nio.file.Files.createTempDirectory("aicompanion-ru-late");
+        try {
+            var memo = new CompanionClientNames.Names();
+            try (MultiPackResourceManager bare = new MultiPackResourceManager(PackType.CLIENT_RESOURCES,
+                    List.of(ruPack(root, "bare", "minecraft", "{}")))) {
+                // The first ask: the pack carries no name yet, so the read gives no reader and the name the game shows answers.
+                String first = memo.ask(() -> CompanionClientNames.readerOrNull(CompanionClientNames.russianNames(bare)))
+                        .apply(Items.PUMPKIN);
+                h.assertTrue("Pumpkin".equals(first), "The empty read did not answer with the name the game shows: " + first);
+            }
+            try (MultiPackResourceManager late = new MultiPackResourceManager(PackType.CLIENT_RESOURCES,
+                    List.of(ruPack(root, "late", "minecraft", GAME_RU)))) {
+                // The second ask, after the pack that carries the names: the same memo reads them.
+                String second = memo.ask(() -> CompanionClientNames.readerOrNull(CompanionClientNames.russianNames(late)))
+                        .apply(Items.PUMPKIN);
+                h.assertTrue("Тыква".equals(second), "The empty read was kept: the next ask still answers «" + second + "»");
+                // And the reader is kept once it answers: an ask that gives nothing new still answers by it.
+                h.assertTrue("Тыква".equals(memo.ask(() -> null).apply(Items.PUMPKIN)), "The reader of the names was not kept");
             }
         } finally {
             deleteTree(root);
