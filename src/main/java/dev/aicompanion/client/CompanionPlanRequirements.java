@@ -12,8 +12,13 @@ public final class CompanionPlanRequirements {
     private CompanionPlanRequirements() { }
 
     public static CompanionReply apply(String request, CompanionReply decoded) {
+        return apply(request, decoded, dev.aicompanion.client.CompanionClientNames.names());
+    }
+
+    /** The same, by the names the game shows for its items (or a stand-in for the language in a test). */
+    public static CompanionReply apply(String request, CompanionReply decoded, java.util.function.Function<net.minecraft.world.item.Item, String> names) {
         // An order the model answered with words only says so in the log, before any step is looked for (owner, 24.11).
-        orderWithoutStep("", request, decoded);
+        orderWithoutStep("", request, decoded, names);
         // A long goal is the whole plan: the wording of the request adds no step beside it.
         if (decoded.actions().stream().anyMatch(step -> step.type().equals("pursue_goal"))) return decoded;
         String text = request.toLowerCase(Locale.ROOT).replace('ё', 'е');
@@ -68,12 +73,17 @@ public final class CompanionPlanRequirements {
      * phrase it cannot name is a name only the model can pick. A talk (no order verb) is no line: silence is right there.
      */
     public static void orderWithoutStep(String trace, String request, CompanionReply decoded) {
+        orderWithoutStep(trace, request, decoded, dev.aicompanion.client.CompanionClientNames.names());
+    }
+
+    public static void orderWithoutStep(String trace, String request, CompanionReply decoded,
+                                        java.util.function.Function<net.minecraft.world.item.Item, String> names) {
         if (!decoded.actions().isEmpty()) return;
         String text = request == null ? "" : request.toLowerCase(Locale.ROOT).replace('ё', 'е');
         if (!text.matches("(?sU).*\\b((?:до|да)будь|накопай|выкопай|сорви|нарви|принеси|набери|достань|собери|скрафти|сделай|поставь|возьми|сложи|переплавь|построй|подбери|убери)\\b.*")) return;
         // A question that only asks something keeps its words: «Как думаешь, что лучше построить?» is no failed order.
         if (text.contains("?") && !text.matches("(?s).*(можешь|сможешь|давай|пожалуйста).*")) return;
-        String item = dev.aicompanion.entity.CompanionItemLookup.itemFor(request);
+        String item = dev.aicompanion.entity.CompanionItemLookup.itemFor(request, names);
         String why = item == null ? "имени нет в игре — решает модель" : "предмет назван, а шага нет";
         dev.aicompanion.CompanionDiagnostics.say(trace, "order_no_step", "«" + request + "»: шага нет — " + why
                         + (decoded.text() == null || decoded.text().isBlank() ? "" : ", сказано: «" + decoded.text() + "»"),

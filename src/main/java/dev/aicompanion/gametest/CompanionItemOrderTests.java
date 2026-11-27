@@ -69,6 +69,87 @@ public final class CompanionItemOrderTests {
         h.succeed();
     }
 
+    /**
+     * The forms a Russian word takes name the same thing: «тыкву», «тыквы», «тыквой» are the gourd, never its seeds — the
+     * whole name said is the thing said, so «Семена тыквы» is named only when the seeds are asked for. «Забора» is the
+     * fence and «калитку» the game's gate.
+     */
+    @GameTest(template = "empty")
+    public static void everyFormOfTheWordNamesTheThing(GameTestHelper h) {
+        for (String phrase : List.of("добудь тыкву", "добудь тыквы", "добудь тыквой", "добудь 2 тыквы", "добудь тыкву рядом"))
+            step(h, phrase, "minecraft:pumpkin", phrase.contains("2") ? 2 : 1);
+        step(h, "добудь семена тыквы", "minecraft:pumpkin_seeds", 1);
+        step(h, "добудь вырезанную тыкву", "minecraft:carved_pumpkin", 1);
+        step(h, "добудь забора", "#minecraft:fences", 1);
+        step(h, "добудь 16 забора", "#minecraft:fences", 16);
+        h.succeed();
+    }
+
+    /**
+     * A bare kind is the game's own group, whatever shapes its names take («Дубовый забор» beside «Забор из тёмного дуба»),
+     * so any member of the kind that stands answers the order — the fence and the gate alike, and «калитка» for the gate
+     * the game calls «ворота». A species said by name stays that species.
+     */
+    @GameTest(template = "empty")
+    public static void aBareKindIsTheGamesOwnGroup(GameTestHelper h) {
+        step(h, "добудь забор", "#minecraft:fences", 1);
+        step(h, "добудь заборы", "#minecraft:fences", 1);
+        step(h, "добудь калитку", "#minecraft:fence_gates", 1);
+        step(h, "сломай калитку", "#minecraft:fence_gates", 1);
+        step(h, "раздобудь калитку", "#minecraft:fence_gates", 1);
+        step(h, "добудь ворота", "#minecraft:fence_gates", 1);
+        step(h, "добудь доски", "#minecraft:planks", 1);
+        // A species said by name is that species, not its kind.
+        step(h, "добудь вишнёвый забор", "minecraft:cherry_fence", 1);
+        step(h, "добудь дубовую калитку", "minecraft:oak_fence_gate", 1);
+        h.succeed();
+    }
+
+    /**
+     * The verb decides the work: «добудь», «раздобудь», «сломай», «принеси» take from the world (the obtain path, which
+     * takes what stands and makes only what is nowhere); «сделай», «скрафти», «смастери» craft. «Принеси» hands it over.
+     */
+    @GameTest(template = "empty")
+    public static void theVerbDecidesTakeOrMake(GameTestHelper h) {
+        for (String phrase : List.of("добудь забор", "раздобудь забор", "сломай забор", "сломай 3 забора"))
+            step(h, phrase, "#minecraft:fences", phrase.contains("3") ? 3 : 1);
+        for (String phrase : List.of("сделай забор", "скрафти забор", "смастери забор", "сделай 2 забора", "скрафти калитку"))
+            craftStep(h, phrase, phrase.contains("калитку") ? "#minecraft:fence_gates" : "#minecraft:fences",
+                    phrase.contains("2") ? 2 : 1);
+        String carried = CompanionLocalCommands.route("принеси калитку", "Олег", RU);
+        h.assertTrue(carried != null && carried.startsWith("companion work obtain_item 1 #minecraft:fence_gates"),
+                "«принеси калитку» is not an obtain of the kind: " + carried);
+        var actions = CompanionLocalCommands.actions(carried);
+        h.assertTrue(actions.size() == 2 && actions.getLast().type().equals("give_items")
+                        && actions.getLast().item().equals("#minecraft:fence_gates"),
+                "«принеси калитку» does not end with the hand-over: " + actions);
+        h.succeed();
+    }
+
+    /**
+     * A reply in words to an order is the engine's own action, never only a sentence: the thing the player named (or the one
+     * the model's reply names, when the registry cannot answer the player's word) is obtained. The order_no_step line stays.
+     */
+    @GameTest(template = "empty")
+    public static void aWordsOnlyReplyBecomesTheObtain(GameTestHelper h) {
+        var known = CompanionPlanRequirements.apply("добудь 2 тыквы и вернись", new CompanionReply("Сейчас сорву", List.of()), RU);
+        h.assertTrue(known.actions().size() == 1 && known.actions().getFirst().type().equals("obtain_item")
+                        && known.actions().getFirst().item().equals("minecraft:pumpkin") && known.actions().getFirst().count() == 2,
+                "A words-only reply to «добудь 2 тыквы и вернись» left no obtain: " + known.actions());
+        // «тухлое мясо» is no name of the registry: the reply's own word names the pork the model meant.
+        var byReply = CompanionPlanRequirements.apply("добудь тухлое мясо", new CompanionReply("Сейчас добуду свинину", List.of()), RU);
+        h.assertTrue(byReply.actions().size() == 1 && byReply.actions().getFirst().type().equals("obtain_item")
+                        && byReply.actions().getFirst().item().equals("minecraft:porkchop"),
+                "A words-only reply to an unnamable order left no obtain: " + byReply.actions());
+        List<String> lines = journal("order_no_step", "добудь тухлое мясо");
+        h.assertTrue(!lines.isEmpty() && lines.getLast().contains("имени нет в игре"),
+                "The order_no_step line of an unnamable order is gone: " + lines);
+        // A talk is still a talk: no step is invented for it.
+        h.assertTrue(CompanionPlanRequirements.apply("привет, как дела", new CompanionReply("Хорошо", List.of()), RU).actions().isEmpty(),
+                "A talk became an order");
+        h.succeed();
+    }
+
     /** «Принеси мне 2 тыквы»: got and handed over — the same order, with the hand-over step after it. */
     @GameTest(template = "empty")
     public static void aCarryOrderEndsWithTheHandOver(GameTestHelper h) {
@@ -193,7 +274,92 @@ public final class CompanionItemOrderTests {
         });
     }
 
+    /**
+     * «Добудь калитку», «сломай калитку», «раздобудь калитку»: the gate that stands about him is taken — the order never
+     * goes looking for wood while a gate is in sight (owner, 27.11: the gate order went into a wood chain).
+     */
+    @GameTest(template = "way_wide", timeoutTicks = 24000)
+    public static void aGateOrderTakesTheStandingGate(GameTestHelper h) {
+        flat(h, Blocks.GRASS_BLOCK);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_AXE));
+        c.setItem(1, new ItemStack(Items.DIRT, 32));
+        List<String> phrases = List.of("добудь калитку", "сломай калитку", "раздобудь калитку");
+        inTurn(h, c, phrases,
+                at -> {
+                    for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.SPRUCE_FENCE_GATE)) c.setItem(slot, ItemStack.EMPTY);
+                    for (int i = 0; i < 3; i++) placedByPlayer(h, c, new BlockPos(HOME_X + 3 + i, FEET, HOME_Z + 2), Blocks.SPRUCE_FENCE_GATE);
+                },
+                at -> {
+                    h.assertTrue(count(c, Items.SPRUCE_FENCE_GATE) >= 1, "«" + phrases.get(at) + "» left no gate in the bag: " + c.getLastTaskResult());
+                    h.assertTrue(journal(c, "way_search").stream().anyMatch(line -> line.contains("fence_gate") && line.contains("\"chosen\":\"")),
+                            "«" + phrases.get(at) + "» never searched for a standing gate: " + journal(c, "way_search"));
+                });
+    }
+
+    /**
+     * «Добудь забор», «добудь 16 забора»: the fences that stand are the order — the kind is any member of it, and an order
+     * for more than stands promises what stands (the owner, 27.11: the fence order went to a wood chain).
+     */
+    @GameTest(template = "way_wide", timeoutTicks = 24000)
+    public static void aFenceOrderTakesWhatStands(GameTestHelper h) {
+        flat(h, Blocks.GRASS_BLOCK);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_AXE));
+        c.setItem(1, new ItemStack(Items.DIRT, 32));
+        List<String> phrases = List.of("добудь забор", "добудь 16 забора");
+        int[] want = {1, 16};
+        inTurn(h, c, phrases,
+                at -> {
+                    for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.OAK_FENCE)) c.setItem(slot, ItemStack.EMPTY);
+                    for (int i = 0; i < 10; i++) {
+                        placedByPlayer(h, c, new BlockPos(HOME_X + 3 + i, FEET, HOME_Z + 2), Blocks.OAK_FENCE);
+                        placedByPlayer(h, c, new BlockPos(HOME_X + 3 + i, FEET + 1, HOME_Z + 2), Blocks.OAK_FENCE);
+                    }
+                },
+                at -> h.assertTrue(count(c, Items.OAK_FENCE) >= want[at],
+                        "«" + phrases.get(at) + "» left " + count(c, Items.OAK_FENCE) + " fences, not " + want[at] + ": " + c.getLastTaskResult()));
+    }
+
+    /** «Сделай забор» with planks in the bag and no fence standing: the verb is the craft, and the fence is made. */
+    @GameTest(template = "way_wide", timeoutTicks = 12000)
+    public static void aMakeOrderCraftsWhenNothingStands(GameTestHelper h) {
+        flat(h, Blocks.GRASS_BLOCK);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.OAK_PLANKS, 16));
+        c.setItem(1, new ItemStack(Items.STICK, 8));
+        BlockPos bench = new BlockPos(HOME_X + 3, FEET, HOME_Z + 3);
+        h.setBlock(bench, Blocks.CRAFTING_TABLE);
+        c.rememberPlaced(h.absolutePos(bench));
+        var future = say(h, c, "сделай забор");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
+            h.assertTrue(count(c, Items.OAK_FENCE) >= 1, "No fence was made of the planks: " + future.join().report());
+        });
+    }
+
     // ---- helpers ----
+
+    /** Runs each phrase in turn, its scene set up first, and checks what the bag holds after it. */
+    private static void inTurn(GameTestHelper h, CompanionEntity c, List<String> phrases,
+                               java.util.function.IntConsumer scene, java.util.function.IntConsumer check) {
+        int[] at = {0};
+        java.util.concurrent.atomic.AtomicReference<CompletableFuture<CompanionPlanRunner.Outcome>> future = new java.util.concurrent.atomic.AtomicReference<>();
+        h.onEachTick(() -> {
+            if (at[0] >= phrases.size()) return;
+            if (future.get() == null) {
+                scene.accept(at[0]);
+                future.set(say(h, c, phrases.get(at[0])));
+                return;
+            }
+            if (!future.get().isDone()) return;
+            check.accept(at[0]);
+            future.set(null);
+            at[0]++;
+        });
+        h.succeedWhen(() -> h.assertTrue(at[0] >= phrases.size(),
+                "Still on «" + phrases.get(Math.min(at[0], phrases.size() - 1)) + "»: " + c.getLastTaskResult()));
+    }
 
     /** The step the router answers with, and its item and count: the order is a work step of the obtain path, not a sentence. */
     private static void step(GameTestHelper h, String phrase, String id, int count) {
@@ -206,6 +372,18 @@ public final class CompanionItemOrderTests {
         h.assertTrue(action.item().equals(id), "«" + phrase + "» names " + action.item() + ", not " + id);
         h.assertTrue(action.count() == count, "«" + phrase + "» asks " + action.count() + ", not " + count);
         h.assertTrue(!CompanionLocalCommands.cancelsPlans(command), "A work order cancels the queue: " + command);
+    }
+
+    /** The craft step the router answers with: «сделай» makes the thing, it does not take what stands. */
+    private static void craftStep(GameTestHelper h, String phrase, String id, int count) {
+        String command = CompanionLocalCommands.route(phrase, "Олег", RU);
+        h.assertTrue(command != null, "«" + phrase + "» went to the model instead of the craft");
+        h.assertTrue(command.startsWith("companion work craft_item "), "«" + phrase + "» is not a craft: " + command);
+        var actions = CompanionLocalCommands.actions(command);
+        PlannedAction action = actions.getFirst();
+        h.assertTrue(action.type().equals("craft_item"), "«" + phrase + "» is not a craft step: " + actions);
+        h.assertTrue(action.item().equals(id), "«" + phrase + "» makes " + action.item() + ", not " + id);
+        h.assertTrue(action.count() == count, "«" + phrase + "» asks " + action.count() + ", not " + count);
     }
 
     /** The player's phrase through the router and the runner: a local order, no model. */
@@ -275,11 +453,15 @@ public final class CompanionItemOrderTests {
 
     /**
      * The names a Russian client shows, hand-picked here because the GameTest server runs en_us. They stand in for the
-     * player's language: the resolver is the same one the client runs, only the names come from here.
+     * player's language: the resolver is the same one the client runs, only the names come from here. A kind is listed by
+     * the shapes the game's own ru_ru gives it («Дубовый забор» beside «Забор из тёмного дуба»), so the group rule is
+     * tried on the real thing, and «Семена тыквы» is here so the gourd's own forms cannot be read as its seeds.
      */
     private static final java.util.Map<String, String> RU_NAMES = java.util.Map.ofEntries(
             java.util.Map.entry("pumpkin", "Тыква"),
             java.util.Map.entry("carved_pumpkin", "Вырезанная тыква"),
+            java.util.Map.entry("pumpkin_seeds", "Семена тыквы"),
+            java.util.Map.entry("pumpkin_pie", "Тыквенный пирог"),
             java.util.Map.entry("lapis_block", "Лазуритовый блок"),
             java.util.Map.entry("lapis_lazuli", "Лазурит"),
             java.util.Map.entry("gold_block", "Золотой блок"),
@@ -289,6 +471,18 @@ public final class CompanionItemOrderTests {
             java.util.Map.entry("poppy", "Мак"),
             java.util.Map.entry("barrel", "Бочка"),
             java.util.Map.entry("oak_planks", "Дубовые доски"),
+            java.util.Map.entry("spruce_planks", "Еловые доски"),
+            java.util.Map.entry("birch_planks", "Берёзовые доски"),
+            java.util.Map.entry("oak_fence", "Дубовый забор"),
+            java.util.Map.entry("spruce_fence", "Еловый забор"),
+            java.util.Map.entry("cherry_fence", "Вишнёвый забор"),
+            java.util.Map.entry("dark_oak_fence", "Забор из тёмного дуба"),
+            java.util.Map.entry("bamboo_fence", "Бамбуковый забор"),
+            java.util.Map.entry("oak_fence_gate", "Дубовые ворота"),
+            java.util.Map.entry("spruce_fence_gate", "Еловые ворота"),
+            java.util.Map.entry("cherry_fence_gate", "Вишнёвые ворота"),
+            java.util.Map.entry("dark_oak_fence_gate", "Ворота из тёмного дуба"),
+            java.util.Map.entry("porkchop", "Свинина"),
             java.util.Map.entry("obsidian", "Обсидиан"),
             java.util.Map.entry("iron_ore", "Железная руда"),
             java.util.Map.entry("water_bucket", "Ведро воды"));
