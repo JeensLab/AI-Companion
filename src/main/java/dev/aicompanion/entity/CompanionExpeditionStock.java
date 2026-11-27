@@ -34,6 +34,7 @@ final class CompanionExpeditionStock {
 
     void reset() {
         dug.clear();
+        dig.ownAir.clear();
         spentAt = null;
         gathering = false;
         ticks = 0;
@@ -70,6 +71,7 @@ final class CompanionExpeditionStock {
             case DONE -> {
                 dig.flush();
                 dug.add(cell.immutable());
+                dig.ownAir.add(cell.immutable());
                 pickupUntil = level.getGameTime() + PICKUP_WAIT;
             }
             case NO_TOOL, NO_HAND, FULL, STUCK -> { dig.forget(); return spend(stand); }

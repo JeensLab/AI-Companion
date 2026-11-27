@@ -161,7 +161,7 @@ public final class CompanionCaveTests {
     }
 
     /**
-     * The step's time runs out two ticks after the breach is opened, with two zombies in the dark cave: the step waits for the
+     * The step's time runs out a tick after the breach is opened, with two zombies in the dark cave: the step waits for the
      * cave episode and does not end with the breach open.
      */
     @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
@@ -184,6 +184,32 @@ public final class CompanionCaveTests {
         h.runAtTickTime(TIMEOUT - 5, () -> h.fail("Out of time. " + summary(h, c, w, cave) + " | " + report(c)));
         h.onEachTick(() -> settle(h, c, id, w, cave, problems -> {
             if (!w.expired) problems.add("SETUP: the step time never ran out in the cave");
+        }));
+    }
+
+    /**
+     * The step's time runs out a tick after the tunnel opens a safe lit cave, the advance still under way: there is no look about
+     * the cave, the breach is closed at once and the step does not end with it open.
+     */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void closesTheBreachOfASafeCaveWhenTheStepTimeRunsOut(GameTestHelper h) {
+        Set<BlockPos> cave = build(h, false, false, true);
+        CompanionEntity c = rig(h);
+        long id = start(h, c, 1);
+        Watch w = new Watch();
+        h.onEachTick(() -> {
+            if (w.settled) return;
+            watch(h, c, w);
+            if (w.breached && !w.expired && h.getTick() >= w.breachTick + EXPIRE_AFTER_BREACH) {
+                w.expired = true;
+                c.expireExpeditionStep();
+            }
+            enteredThe(h, c, cave, w);
+        });
+        h.runAtTickTime(TIMEOUT - 5, () -> h.fail("Out of time. " + summary(h, c, w, cave) + " | " + report(c)));
+        h.onEachTick(() -> settle(h, c, id, w, cave, problems -> {
+            if (!w.expired) problems.add("SETUP: the step time never ran out at the cave");
+            if (w.insideTicks > 0) problems.add("went into the cave with the step's time out, for " + w.insideTicks + " ticks");
         }));
     }
 

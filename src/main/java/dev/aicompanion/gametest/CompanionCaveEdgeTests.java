@@ -41,7 +41,9 @@ import static dev.aicompanion.gametest.CompanionMineArena.start;
 @PrefixGameTestTemplate(false)
 public final class CompanionCaveEdgeTests {
     private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, TIMEOUT = 12000;
-    private static final int TURN_WITHIN = 80, PIG_STAYS = 100, FEW_TORCHES = 7;
+    private static final int TURN_WITHIN = 80, PIG_STAYS = 100, FEW_TORCHES = 7, HAND_REACH = 6;
+    /** Beside stand 8 of the staircase, (24,14,16). */
+    private static final BlockPos TORCH = new BlockPos(25, 14, 16);
     private static final BlockPos BREACH_FEET = new BlockPos(25, DIAMOND_FEET, 3), BREACH_HEAD = BREACH_FEET.above();
     private static final BlockPos PLAN_FEET = new BlockPos(24, DIAMOND_FEET, 3), PLAN_HEAD = PLAN_FEET.above();
     /** The cell ahead of the stand at height 11 of the staircase: the passage beside the staircase ends in it, and it is dug by the next step. */
@@ -52,6 +54,35 @@ public final class CompanionCaveEdgeTests {
         long id, breachTick = -1, turnTick = -1;
         int insideTicks;
         BlockPos firstInside;
+    }
+
+    /**
+     * A dark cave the tunnel opens runs up beside his stairs and touches them twelve blocks higher through a cell with a torch that is not
+     * his. The torch stands in the way of a plug there, but he is at the foot of his stairs: it is not broken from where he cannot reach it.
+     */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void doesNotBreakATorchOfTheCaveFromOutOfReach(GameTestHelper h) {
+        mountain(h, cells(22, 25, 1, 1, 1, 1));
+        CompanionEntity c = rig(h, FEW_TORCHES);
+        CompanionMineArena.carveMine(h, c, 0);
+        carve(h, 26, 30, DIAMOND_FEET, DIAMOND_FEET + 2, 3, 7);
+        carve(h, 28, 28, DIAMOND_FEET + 3, TORCH.getY(), 7, 7);
+        carve(h, 28, 28, TORCH.getY(), TORCH.getY(), 8, TORCH.getZ());
+        carve(h, TORCH.getX(), 27, TORCH.getY(), TORCH.getY(), TORCH.getZ(), TORCH.getZ());
+        h.setBlock(TORCH, Blocks.TORCH);
+        Watch w = new Watch();
+        w.id = start(h, c, 1);
+        h.onEachTick(() -> {
+            if (w.settled) return;
+            if (!w.breached && isOpen(h, BREACH_HEAD)) { w.breached = true; w.breachTick = h.getTick(); }
+            double away = Math.sqrt(rel(h, c.blockPosition()).distSqr(TORCH));
+            h.assertTrue(h.getBlockState(TORCH).is(Blocks.TORCH) || away <= HAND_REACH, "The torch was broken from " + (int) away + " blocks away, he stands at "
+                    + rel(h, c.blockPosition()).toShortString() + " | " + report(c));
+            if (c.isGatheringTask() || c.isWorking() || c.workResult(w.id) == null) return;
+            w.settled = true;
+            h.assertTrue(w.breached && c.workResult(w.id).message().contains(CAVE_SAID), "SETUP: the tunnel never broke into the cave: " + c.workResult(w.id).message() + " | " + report(c));
+            h.succeed();
+        });
     }
 
     /**

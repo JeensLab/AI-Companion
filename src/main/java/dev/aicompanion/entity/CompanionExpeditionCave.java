@@ -67,6 +67,17 @@ final class CompanionExpeditionCave {
     /** The explore time runs on the game clock: a stretch spent elsewhere is not taken from it. */
     void delay(long ticks) { if (phase == Phase.EXPLORE) until += ticks; }
 
+    /**
+     * The step's time is out: a safe cave is not looked over, and a look under way ends; what is left is the way back and the plugs. No more
+     * of the advance is dug either, so a breach it has half opened is plugged on his side, as for a cave with mobs.
+     */
+    void hurry() {
+        if (phase == Phase.IDLE) return;
+        hostile = true;
+        if (phase == Phase.WAIT) sealing();
+        else if (phase == Phase.EXPLORE) until = 0;
+    }
+
     String phaseName() { return phase.name(); }
 
     /** True once after a very dangerous cave has been sealed as far as he could; the expedition then retreats. */
@@ -170,6 +181,7 @@ final class CompanionExpeditionCave {
         Set<BlockPos> mine = CompanionMineSite.mineCells(w.mine);
         mine.addAll(planCells);
         mine.addAll(dig.minedOre);
+        mine.addAll(dig.ownAir);
         mine.add(at);
         // The stairs a restart forgot are his own air, no cave; the plugs still go only where the mine of the record touches the cave.
         Set<BlockPos> own = new HashSet<>(mine);
@@ -357,7 +369,12 @@ final class CompanionExpeditionCave {
         if (onCaveSide(level)) return stepBack(level, open.get(0));
         boolean occupied = false;
         for (BlockPos cell : open) {
-            if (!CompanionSeal.replaceable(level, cell)) { level.destroyBlock(cell, true, owner); return true; }
+            if (!CompanionSeal.replaceable(level, cell)) {
+                // A thing in the way of the plug (a rail, a web, a torch) is broken by hand, and only from where the plug itself could be laid.
+                if (!CompanionSeal.reachable(owner, cell)) continue;
+                if (w.breaking.tick(level, cell)) { level.destroyBlock(cell, true, owner); idle = 0; }
+                return true;
+            }
             switch (CompanionSeal.place(owner, cell)) {
                 case PLACED -> { w.mine.sealed(cell); sealed.add(cell); work++; idle = 0; return true; }
                 case NO_BLOCK -> {
@@ -446,17 +463,17 @@ final class CompanionExpeditionCave {
         if (target instanceof Creeper && !owner.creeperGuard.fights() || shuns(target)) owner.setTarget(null);
     }
 
-    /** A target standing in the cave while he is not exploring it: the melee goal runs ahead of the work, so it must not follow it in. */
-    boolean guards(LivingEntity target) {
+    /** A target standing in the cave while he is not exploring it. */
+    private boolean guards(LivingEntity target) {
         return target != null && phase != Phase.IDLE && phase != Phase.EXPLORE && cave != null && cave.air().contains(target.blockPosition());
     }
 
     /**
      * No fight now: the target is in the cave and out of reach (in reach, he strikes it where he stands, see {@link #guards}), or he is
      * himself on the cave side while the plug is yet to be laid, and the way back to his mine comes first. Never a mob within three blocks
-     * of him: it is on him already, and walking away from it, or laying a plug, is a blow in the back.
+     * of him: it is on him already, and walking away from it, or laying a plug, is a blow in the back. Asked on the cave's own ticks only ({@link #calm}).
      */
-    boolean shuns(LivingEntity target) {
+    private boolean shuns(LivingEntity target) {
         if (target == null || owner.distanceToSqr(target) <= CONTACT_SQR) return false;
         boolean outside = (phase == Phase.SEAL || phase == Phase.BACK) && cave != null && cave.air().contains(owner.blockPosition());
         return outside || guards(target) && !owner.isWithinMeleeAttackRange(target);

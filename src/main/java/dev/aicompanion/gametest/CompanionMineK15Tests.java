@@ -2,6 +2,7 @@ package dev.aicompanion.gametest;
 
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionMineSite;
+import dev.aicompanion.entity.CompanionSeal;
 import dev.aicompanion.entity.CompanionShaftPlan;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -35,7 +36,7 @@ import static dev.aicompanion.gametest.CompanionMineArena.start;
 public final class CompanionMineK15Tests {
     private static final int SLIT_Y = 14, SLIT_Z = 14, SLIT_X0 = 20, SLIT_X1 = 23, FLOOR_Y = 12, TOP_Y = 14,
             FAR_CHAMBER_X0 = 12, FAR_CHAMBER_X1 = 19, FAR_CHAMBER_Z0 = 11, FAR_CHAMBER_Z1 = 17, CORRIDOR_X = 3, DEEP_Y = 14, HIGH_Y = GROUND - 2, PAST_THE_CAVE = 13,
-            OLD_STEPS = 15, TORCHES_SLOT = 3, BIG_STACK = 64;
+            OLD_STEPS = 15, TORCHES_SLOT = 3, BIG_STACK = 64, STRIP_FROM = 8, NICHE_BEHIND = 3;
 
     private CompanionMineK15Tests() { }
 
@@ -46,6 +47,30 @@ public final class CompanionMineK15Tests {
     }
 
     private static int feet(GameTestHelper h, CompanionEntity c) { return rel(h, c.blockPosition()).getY(); }
+
+    /**
+     * The bag runs out of blocks on the way down and he cuts a niche in the wall of his stairs for stone, in a mountain with no cave in it:
+     * the niche is his own air, not a cave to tell of and plug.
+     */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void doesNotTakeTheNicheHeCutForStoneForACave(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = rig(h);
+        start(h, c, 1);
+        boolean[] seen = {false, false}; // the bag was emptied of blocks; a niche stands open beside a stand
+        h.onEachTick(() -> {
+            int steps = c.mineSite().stands().size();
+            if (!seen[0] && steps >= STRIP_FROM) {
+                seen[0] = true;
+                for (int slot = 0; slot < c.getContainerSize(); slot++) if (CompanionSeal.seals(c.getItem(slot))) c.setItem(slot, ItemStack.EMPTY);
+            }
+            for (int step = STRIP_FROM; !seen[1] && step <= steps; step++) seen[1] = h.getBlockState(stand(step).east()).isAir() || h.getBlockState(stand(step).west()).isAir();
+            String phase = c.expeditionCavePhase();
+            h.assertTrue(phase.isEmpty() || "IDLE".equals(phase), "He took " + (seen[1] ? "his niche" : "solid rock") + " for a cave (" + phase + ") at " + rel(h, c.blockPosition()).toShortString() + " | " + report(c));
+            if (seen[1] && steps >= STRIP_FROM + NICHE_BEHIND) h.succeed();
+            h.assertTrue(c.isWorking() || c.isGatheringTask(), "The order ended, a niche was " + (seen[1] ? "" : "not ") + "cut: " + report(c));
+        });
+    }
 
     /**
      * r1e/void-2: a slit one block high shows a chamber from the stairs. The only walk into it is up the stairs, over the surface and down a ramp
@@ -62,11 +87,15 @@ public final class CompanionMineK15Tests {
         // The torches of the stairs must leave him enough for the cave to be safe: with fewer he does not go in at all.
         c.setItem(TORCHES_SLOT, new ItemStack(Items.TORCH, BIG_STACK));
         start(h, c, 1);
-        boolean[] deep = {false};
+        boolean[] deep = {false}, looked = {false};
         h.onEachTick(() -> {
             deep[0] |= feet(h, c) <= DEEP_Y;
+            looked[0] |= "EXPLORE".equals(c.expeditionCavePhase());
             h.assertTrue(!deep[0] || feet(h, c) <= HIGH_Y, "He left the mine for the far side of the cave, at " + rel(h, c.blockPosition()).toShortString() + " in phase " + c.expeditionCavePhase() + " | " + report(c));
-            if (deep[0] && c.mineSite().stands().size() >= PAST_THE_CAVE && !c.expeditionStage().isEmpty()) h.succeed();
+            if (deep[0] && c.mineSite().stands().size() >= PAST_THE_CAVE && !c.expeditionStage().isEmpty()) {
+                h.assertTrue(looked[0], "SETUP: the cave was never looked over, the test proves nothing | " + report(c));
+                h.succeed();
+            }
             h.assertTrue(c.isWorking() || c.isGatheringTask(), "The order ended by the cave: " + report(c));
         });
     }

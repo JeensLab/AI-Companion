@@ -56,6 +56,8 @@ final class CompanionExpeditionDig {
     BlockPos lastBroken;
     /** Ore cells he mined himself: the hole one leaves is his, not a cave. */
     final Set<BlockPos> minedOre = new HashSet<>();
+    /** The niches he cut for stone this step ({@link CompanionExpeditionStock}, which also clears them): his own air as well. */
+    final Set<BlockPos> ownAir = new HashSet<>();
     /** Cells walked into so far: the same for walking. */
     int walked;
     /** The last NO_TOOL was for an ore (it needs a better pickaxe), not for rock (it needs a stone pickaxe). */
