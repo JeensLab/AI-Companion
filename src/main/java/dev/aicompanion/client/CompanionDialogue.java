@@ -287,6 +287,11 @@ public final class CompanionDialogue {
         if (dev.aicompanion.entity.CompanionPickUp.ANY_ITEM.equals(id)) return "вещи";
         // «Листва» is the family word of the orders until the world names the tree's own leaf block.
         if (dev.aicompanion.entity.CompanionLeaves.isFamily(id)) return "листва";
+        // A kind («#minecraft:fences») is said by the player's own word for it: the member is not known before the world is.
+        if (id != null && id.startsWith("#")) {
+            String word = dev.aicompanion.entity.CompanionItemLookup.kindWord(id);
+            return word != null ? word : id.substring(1);
+        }
         var key = net.minecraft.resources.ResourceLocation.tryParse(id);
         if (key == null) return id;
         return net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(key)

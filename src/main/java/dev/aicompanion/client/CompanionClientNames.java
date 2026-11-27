@@ -1,7 +1,6 @@
 package dev.aicompanion.client;
 
 import dev.aicompanion.entity.CompanionItemLookup;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.world.item.Item;
@@ -63,11 +62,5 @@ public final class CompanionClientNames {
         }
         // A namespace whose lang file is broken is no reason to lose every name of the game: the rest still answer.
         return names;
-    }
-
-    /** The item a key of the game's lang names, for a caller that wants one id: null when no item answers it. */
-    static Item itemOf(String key) {
-        for (Item item : BuiltInRegistries.ITEM) if (item.getDescriptionId().equals(key)) return item;
-        return null;
     }
 }

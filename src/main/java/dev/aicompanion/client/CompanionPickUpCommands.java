@@ -39,7 +39,7 @@ public final class CompanionPickUpCommands {
 
     /** The pickup order for the phrase, or null when the registry cannot tell what it names. */
     public static PlannedAction parse(String text, String name) {
-        return parse(text, name, CompanionItemLookup.GAME_NAMES);
+        return parse(text, name, CompanionClientNames.names());
     }
 
     /** The same, by the names the game shows (or a stand-in for the language in a test). */
@@ -61,7 +61,7 @@ public final class CompanionPickUpCommands {
      * already resolved: then the model is asked which of the drops lying here the player meant.
      */
     public static Ask ask(String text, String name) {
-        return ask(text, name, CompanionItemLookup.GAME_NAMES);
+        return ask(text, name, CompanionClientNames.names());
     }
 
     public static Ask ask(String text, String name, Function<net.minecraft.world.item.Item, String> names) {

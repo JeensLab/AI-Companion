@@ -197,11 +197,14 @@ public final class CompanionItemLookup {
     /**
      * The kinds the game's own names do not say: the player calls a fence gate «калитка» while the game names it «ворота»,
      * so no item name answers the word. The tag is the game's own ({@code #minecraft:fence_gates}); nothing of the world's
-     * things is listed here, only the few words the player uses for a kind the game names otherwise.
+     * things is listed here, only the few words the player uses for a kind the game names otherwise, and the word said aloud
+     * for it («калитку», «заборы»).
      */
-    private static final String[][] KIND_WORDS = {{"калитк", "#minecraft:fence_gates"}, {"ворот", "#minecraft:fence_gates"},
-            {"забор", "#minecraft:fences"}, {"ступеньк", "#minecraft:stairs"}, {"плит", "#minecraft:slabs"},
-            {"шерст", "#minecraft:wool"}, {"доск", "#minecraft:planks"}, {"бревн", "#minecraft:logs"}};
+    private static final String[][] KIND_WORDS = {{"калитк", "#minecraft:fence_gates", "калитку"},
+            {"ворот", "#minecraft:fence_gates", "ворота"}, {"забор", "#minecraft:fences", "заборы"},
+            {"ступеньк", "#minecraft:stairs", "ступеньки"}, {"плит", "#minecraft:slabs", "плиты"},
+            {"шерст", "#minecraft:wool", "шерсть"}, {"доск", "#minecraft:planks", "доски"},
+            {"бревн", "#minecraft:logs", "брёвна"}};
 
     /** The tag of a kind word the names cannot answer («калитка»), or null when the word is no kind at all. */
     private static String kindFor(String phrase) {
@@ -215,6 +218,12 @@ public final class CompanionItemLookup {
         for (String stem : stems(word))
             for (String[] kind : KIND_WORDS)
                 if (stem.startsWith(kind[0]) && !members(kind[1]).isEmpty()) return kind[1];
+        return null;
+    }
+
+    /** The player's word for a kind tag («#minecraft:fences» is «заборы»), or null when the tag has no such word. */
+    public static String kindWord(String tag) {
+        for (String[] kind : KIND_WORDS) if (kind[1].equals(tag)) return kind[2];
         return null;
     }
 

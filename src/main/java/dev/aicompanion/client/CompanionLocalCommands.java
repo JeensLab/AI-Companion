@@ -34,7 +34,7 @@ public final class CompanionLocalCommands {
 
     /** The same routing with the marker names the caller knows: the chat screen uses the client's copy, tests pass their own. */
     public static String route(String text, String companionName, java.util.List<String> markers, boolean markersEnabled) {
-        return route(text, companionName, dev.aicompanion.entity.CompanionItemLookup.GAME_NAMES, markers, markersEnabled);
+        return route(text, companionName, CompanionClientNames.names(), markers, markersEnabled);
     }
 
     /** Both: the game's item names and the marker names the caller knows. */
