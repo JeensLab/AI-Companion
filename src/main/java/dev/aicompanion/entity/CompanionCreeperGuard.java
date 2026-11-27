@@ -68,8 +68,11 @@ final class CompanionCreeperGuard {
     private static final int SWELL_TICKS = 28;
     /** The blow that kills a lit creeper ({@link #finishes}) is waited for only with this many ticks of the fuse to spare, and its hurt time down to this. */
     private static final int FINISH_SPARE = 2, HURT_HALF = 10;
-    /** A run that gains less than this many blocks on a lit creeper in this many ticks goes nowhere ({@link #stalled}): a wall instead. */
-    private static final int STALL_TICKS = 6;
+    /**
+     * A run that gains less than this many blocks on a lit creeper in this many ticks goes nowhere ({@link #stalled}): a wall instead. The
+     * ticks are enough for a run along a wall to gain a block on a creeper three blocks off (in six it gains under one, from the first slow steps).
+     */
+    private static final int STALL_TICKS = 12;
     private static final double STALL_GAIN = 1;
     /**
      * The house: a creeper this near its middle is walked away before the fight, until it is this far from it; he waits for it when it falls
@@ -393,7 +396,7 @@ final class CompanionCreeperGuard {
     /**
      * The fuse is lit and he is to be out of its sight before it blows: along the way {@link CompanionFuseEscape} finds over the floor as it
      * is, a push at a time to the next cell. Where there is none, or the run gains nothing on the creeper ({@link #stalled}), under rock a wall
-     * of blocks between him and the creeper ({@link CompanionCreeperWall#raise}); in water a swim straight off it; by the house, or with no
+     * of blocks between him and the creeper ({@link CompanionCreeperWall#raise}); in water a swim straight off it, first of all; by the house, or with no
      * blocks, a blow at it: it throws it back, which is more than standing.
      */
     private void retreat(ServerLevel level, Creeper creeper) {
@@ -407,9 +410,7 @@ final class CompanionCreeperGuard {
             owner.getMoveControl().setWantedPosition(step.x, step.y, step.z, FIGHT_FLEE_SPEED);
             return;
         }
-        // No wall of cobblestone is left standing in the player's house.
-        if (!byTheHouse() && wall.raise(level, creeper)) { mention("wall", creeper, null); return; }
-        // Water has no floor for the way (CompanionExpeditionLedge.stands): he wades or swims straight off the creeper.
+        // Water has no floor for the way (CompanionExpeditionLedge.stands): he wades or swims straight off the creeper, before any wall (none is set in water).
         Vec3 off = wall.swimOff(level, creeper);
         if (off != null) {
             mention("swim", creeper, null);
@@ -418,6 +419,8 @@ final class CompanionCreeperGuard {
             owner.getMoveControl().setWantedPosition(off.x, off.y, off.z, FIGHT_FLEE_SPEED);
             return;
         }
+        // No wall of cobblestone is left standing in the player's house.
+        if (!byTheHouse() && wall.raise(level, creeper)) { mention("wall", creeper, null); return; }
         mention("strike", creeper, null);
         strike(creeper);
     }

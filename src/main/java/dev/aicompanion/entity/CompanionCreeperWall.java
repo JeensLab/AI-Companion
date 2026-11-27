@@ -6,6 +6,9 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.PathNavigationRegion;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.pathfinder.NodeEvaluator;
 import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.level.pathfinder.PathFinder;
@@ -33,6 +36,9 @@ final class CompanionCreeperWall {
     private static final int SEARCH_SPAN = 16, SEARCH_NODES = 256;
     /** A walk that ends this near his stand is near enough: the fuse is lit at three blocks, and he steps about his stand. */
     private static final double LIGHTS_WITHIN = 4;
+    /** A wall is set no nearer the player than this (it would shut him off from the way out), and no nearer a block of his making than this (it would stay there for good). */
+    private static final double PLAYER_NEAR = 8;
+    private static final int BUILT_NEAR = 4;
 
     final CompanionEntity c;
 
@@ -50,20 +56,52 @@ final class CompanionCreeperWall {
     }
 
     /**
-     * Sets the wall: blocks from the bag at his feet and head on the next step towards the creeper, which stands while its fuse burns. True while
-     * the wall goes up or stands; false where there is no block, or the creeper, a wall or the reach stand in the way of it, or he is in the open
-     * (nobody takes a wall out there).
+     * Sets the wall: blocks from the bag at his feet and head on the next step towards the creeper, which stands while its fuse burns. True when
+     * a block of it was set just now; false where there is no block, no free cell, or the creeper or the reach stand in the way of it. Outside
+     * his mine nobody takes such a wall out, so it is set only under a roof of rock (leaves and water are none), away from the buildings of the
+     * player, and not with the player by (it would cut him off from the way out); a cell that holds water or light is no free cell anywhere.
      */
     boolean raise(ServerLevel level, Creeper creeper) {
-        if (CompanionSeal.available(c) <= 0 || level.canSeeSky(c.blockPosition())) return false;
+        if (CompanionSeal.available(c) <= 0 || playerNear(level)) return false;
+        boolean inMine = at(level, way(level)) >= 0;
+        if (!inMine && (!roofed(level) || byABuilding(level))) return false;
         boolean shut = false;
         for (BlockPos cell : wallCells(level, creeper)) {
             CompanionSeal.Result result = CompanionSeal.place(c, cell);
-            if (result == CompanionSeal.Result.PLACED) { c.work.mine.temporary(cell); shut = true; }
+            if (result == CompanionSeal.Result.PLACED) { if (inMine) c.work.mine.temporary(cell); shut = true; }
             else if (result == CompanionSeal.Result.NO_BLOCK) return false;
-            else if (!CompanionSeal.replaceable(level, cell)) shut = true;
+            else if (!free(level, cell)) shut = true;
         }
         return shut;
+    }
+
+    /** A cell a wall may take: air or a plant, with no water in it (a chest, a stair or a plate of the player's that holds water is his) and no light block. */
+    static boolean free(ServerLevel level, BlockPos cell) {
+        BlockState state = level.getBlockState(cell);
+        return state.isAir() || state.canBeReplaced() && state.getFluidState().isEmpty() && !state.is(Blocks.LIGHT);
+    }
+
+    /** A block that stops light and a step above his head, below the surface of the column (the leaves of a tree and the water of a pond are no roof). */
+    private boolean roofed(ServerLevel level) {
+        BlockPos head = c.blockPosition().above(2);
+        int top = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, head.getX(), head.getZ());
+        BlockPos.MutableBlockPos cell = head.mutable();
+        for (int y = head.getY(); y < top; y++) if (level.getBlockState(cell.setY(y)).canOcclude()) return true;
+        return false;
+    }
+
+    private boolean playerNear(ServerLevel level) {
+        var player = c.getOwnerPlayer();
+        return player != null && player.level() == level && c.distanceTo(player) <= PLAYER_NEAR;
+    }
+
+    /** A block of a player's making ({@link CompanionShaftPlan#built}) within a few blocks of him. */
+    private boolean byABuilding(ServerLevel level) {
+        BlockPos at = c.blockPosition();
+        for (BlockPos pos : BlockPos.betweenClosed(at.offset(-BUILT_NEAR, -BUILT_NEAR, -BUILT_NEAR), at.offset(BUILT_NEAR, BUILT_NEAR, BUILT_NEAR))) {
+            if (level.hasChunkAt(pos) && CompanionShaftPlan.built(level, pos)) return true;
+        }
+        return false;
     }
 
     private List<BlockPos> wallCells(ServerLevel level, Creeper creeper) {
@@ -71,7 +109,7 @@ final class CompanionCreeperWall {
         Direction side = Math.abs(towards.x) > Math.abs(towards.z) ? (towards.x > 0 ? Direction.EAST : Direction.WEST) : (towards.z > 0 ? Direction.SOUTH : Direction.NORTH);
         for (int rise : new int[]{0, 1, -1}) {
             BlockPos feet = c.blockPosition().relative(side).above(rise);
-            if (CompanionSeal.replaceable(level, feet) && CompanionSeal.replaceable(level, feet.above())) return List.of(feet, feet.above());
+            if (free(level, feet) && free(level, feet.above())) return List.of(feet, feet.above());
         }
         return List.of();
     }

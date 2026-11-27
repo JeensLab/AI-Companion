@@ -1,5 +1,6 @@
 package dev.aicompanion.gametest;
 
+import dev.aicompanion.CompanionDiagnostics;
 import dev.aicompanion.entity.CompanionActionResult;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
@@ -11,9 +12,14 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
+import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.BooleanSupplier;
 
 import static dev.aicompanion.gametest.CompanionMineArena.CENTER;
@@ -35,8 +41,8 @@ import static dev.aicompanion.gametest.CompanionMineFightTests.place;
 @PrefixGameTestTemplate(false)
 public final class CompanionCreeperGuardTests {
     private static final int TUNNEL_Y = 10, BEND_LEG = 3, BEND_LENGTH = 12, DEAD_END_LENGTH = 8, DEAD_END_CREEPER = 3, BLAST_TICKS = 200;
-    private static final int TRENCH_LENGTH = 8, FUSE_SETTLED = 100, BAG_OF_COBBLESTONE = 128, ROOM = 6, ROOM_HEIGHT = 4;
-    private static final float UNHURT = 10, WALLED = 4;
+    private static final int TRENCH_LENGTH = 8, FUSE_SETTLED = 100, BAG_OF_COBBLESTONE = 128, ROOM = 6, ROOM_HEIGHT = 4, LIGHT_SETTLED = 20, SWUM_OFF = 3;
+    private static final float UNHURT = 10, WALLED = 4, SWUM_THROUGH = 4;
 
     private CompanionCreeperGuardTests() { }
 
@@ -86,7 +92,7 @@ public final class CompanionCreeperGuardTests {
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void aLitFuseBesideHimInWaterIsWadedOffFrom(GameTestHelper h) { inWater(h, 1, 0); }
 
-    /** The same water with his back to the dead end and the creeper on the way out: no swim into the rock (the old blow, or a wall, saves him). */
+    /** The same water with his back to the dead end and the creeper on the way out: no swim into the rock (the old blow saves him: no wall is set in water). */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void aLitFuseInWaterWithHisBackToRockIsNotSwumInto(GameTestHelper h) { inWater(h, 0, 1); }
 
@@ -100,7 +106,11 @@ public final class CompanionCreeperGuardTests {
         place(c, cell(h, his, 0));
         Creeper creeper = creeper(h, cell(h, its, 0));
         creeper.ignite();
-        survivesTheBlast(h, c, creeper, () -> true);
+        // Alive is the measure of the swim: a blast a block off kills (the blow or the wall is what the old order had), four blocks off it leaves him half.
+        survivesTheBlast(h, c, creeper, SWUM_THROUGH, () -> {
+            h.assertTrue(count(c, Items.COBBLESTONE) == BAG_OF_COBBLESTONE, "He set a wall in the water | " + report(c));
+            return his == 0 || rel(h, c.blockPosition()).getX() >= CENTER + his + SWUM_OFF;
+        });
     }
 
     /**
@@ -164,8 +174,132 @@ public final class CompanionCreeperGuardTests {
                 return;
             }
             h.assertTrue(before[0] - c.getHealth() < WALLED, "The blast cost him " + (before[0] - c.getHealth()) + trace);
+            h.assertTrue(journal(c, "retreat_path") && journal(c, "retreat_wall"), "The wall was not the answer to a run that went nowhere (a way was not found, or no wall came) | " + trace);
             h.succeed();
         });
+    }
+
+    /** A pond two deep under the open sky: the water takes the light down a step, so "no sky above" held there. A wall in it would stay for good; he swims off. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aLitFuseInAPondUnderTheOpenSkyIsSwumOffNotWalled(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        trench(h);
+        for (int x = 0; x <= TRENCH_LENGTH; x++) for (int y = GROUND - 2; y <= GROUND - 1; y++) h.getLevel().setBlock(h.absolutePos(new BlockPos(CENTER + x, y, CENTER)), Blocks.WATER.defaultBlockState(), 2 | 16);
+        BlockPos stand = h.absolutePos(new BlockPos(CENTER + 3, GROUND - 2, CENTER));
+        litAfterTheLightSettles(h, c, stand, h.absolutePos(new BlockPos(CENTER + 1, GROUND - 2, CENTER)), "the water does not dim the sky");
+    }
+
+    /** A dry trench of the open ground with one block of leaves three blocks over him: the leaves dim the sky by a step, and no one calls that a roof. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aLitFuseUnderALeafInTheOpenIsNotWalledOut(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        trench(h);
+        h.getLevel().setBlock(h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER)), Blocks.OAK_LEAVES.defaultBlockState().setValue(BlockStateProperties.PERSISTENT, true), 2 | 16);
+        BlockPos stand = h.absolutePos(new BlockPos(CENTER, GROUND - 2, CENTER));
+        litAfterTheLightSettles(h, c, stand, h.absolutePos(new BlockPos(CENTER + DEAD_END_CREEPER, GROUND - 2, CENTER)), "the leaf does not dim the sky");
+    }
+
+    /** A waterlogged candle on the cell of the wall: a block of the player's that holds water is no air. It stays, and the cobblestone stays in the bag. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aWallDoesNotReplaceABlockHoldingWater(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        for (int x = 0; x <= DEAD_END_LENGTH; x++) bore(h, x, 0);
+        BlockPos candle = cell(h, 1, 0);
+        h.getLevel().setBlock(candle, Blocks.CANDLE.defaultBlockState().setValue(BlockStateProperties.WATERLOGGED, true), 2 | 16);
+        place(c, cell(h, 0, 0));
+        Creeper creeper = creeper(h, cell(h, DEAD_END_CREEPER, 0));
+        creeper.ignite();
+        h.onEachTick(() -> {
+            if (!creeper.isAlive()) h.succeed();
+            h.assertTrue(h.getLevel().getBlockState(candle).is(Blocks.CANDLE) && count(c, Items.COBBLESTONE) == BAG_OF_COBBLESTONE, "The wall took the candle's cell | " + report(c));
+        });
+    }
+
+    /** The same dead end in a house of planks, with no home named: a building of the player's, and a wall of his in it would stay for good. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void setsNoWallInABuildingOfThePlayer(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        for (int x = -2; x <= DEAD_END_LENGTH + 2; x++) for (int z = -2; z <= 2; z++) for (int up = -2; up <= 3; up++) h.getLevel().setBlock(cell(h, x, up, z), Blocks.OAK_PLANKS.defaultBlockState(), 2 | 16);
+        for (int x = 0; x <= DEAD_END_LENGTH; x++) bore(h, x, 0);
+        place(c, cell(h, 0, 0));
+        creeper(h, cell(h, DEAD_END_CREEPER, 0)).ignite();
+        setsNoBlock(h, c);
+    }
+
+    /**
+     * A tunnel, the exit behind him, he is stuck, the player stands in it two blocks on and the creeper lit beside the player: a wall between him
+     * and the player would shut the player off from the exit while the fuse burns on him.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void setsNoWallBetweenThePlayerAndTheWayOut(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        for (int x = -ROOM + 1; x <= 0; x++) for (int z = -2; z <= 2; z++) for (int up = 0; up < ROOM_HEIGHT; up++) h.getLevel().setBlock(cell(h, x, up, z), Blocks.AIR.defaultBlockState(), 2 | 16);
+        for (int x = 1; x <= DEAD_END_LENGTH + 4; x++) bore(h, x, 0);
+        ServerPlayer player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        BlockPos at = cell(h, 5, 0);
+        place(c, cell(h, 3, 0));
+        c.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        player.teleportTo(at.getX() + .5, at.getY(), at.getZ() + .5);
+        Creeper creeper = creeper(h, cell(h, 6, 0));
+        creeper.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        creeper.ignite();
+        setsNoBlock(h, c);
+    }
+
+    /**
+     * A room under rock with rock at his back, the lit creeper three blocks off: the way out goes sideways, and a run along a wall gains under a
+     * block on the creeper in six ticks, but it is a run all the same. He runs, sets no block, and is not hurt.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aRunAlongAWallIsNotTakenForOneGoingNowhere(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        for (int x = 0; x <= DEAD_END_CREEPER; x++) for (int z = -2 * ROOM; z <= 2 * ROOM; z++) for (int up = 0; up < ROOM_HEIGHT; up++) h.getLevel().setBlock(cell(h, x, up, z), Blocks.AIR.defaultBlockState(), 2 | 16);
+        place(c, cell(h, 0, 0));
+        Creeper creeper = creeper(h, cell(h, 3, 0));
+        creeper.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        creeper.ignite();
+        survivesTheBlast(h, c, creeper, () -> {
+            h.assertTrue(count(c, Items.COBBLESTONE) == BAG_OF_COBBLESTONE, "He walled a run that was going somewhere | " + report(c));
+            return true;
+        });
+    }
+
+    /** Whether the journal holds a line of the creeper guard with this action for him. */
+    private static boolean journal(CompanionEntity c, String action) {
+        CompanionDiagnostics.flush();
+        var directory = FMLPaths.GAMEDIR.get().resolve("logs").resolve("aicompanion");
+        List<String> lines = new ArrayList<>();
+        for (String name : List.of("companion-1.jsonl", "companion-latest.jsonl")) {
+            try { lines.addAll(Files.readAllLines(directory.resolve(name))); } catch (java.io.IOException | java.io.UncheckedIOException ignored) { }
+        }
+        return lines.stream().anyMatch(line -> line.contains(c.getUUID().toString()) && line.contains("\"action\":\"" + action + "\""));
+    }
+
+    /** The light of the changed blocks is settled before he is set down and the creeper is lit (SETUP checks that the open sky is dimmed); then no block of his is set for a while. */
+    private static void litAfterTheLightSettles(GameTestHelper h, CompanionEntity c, BlockPos stand, BlockPos creeperAt, String dimmed) {
+        long begun = h.getTick();
+        h.onEachTick(() -> {
+            long t = h.getTick() - begun;
+            if (t < LIGHT_SETTLED) return;
+            if (t == LIGHT_SETTLED) {
+                h.assertTrue(!h.getLevel().canSeeSky(stand), "SETUP: " + dimmed);
+                place(c, stand);
+                creeper(h, creeperAt).ignite();
+            }
+            h.assertTrue(count(c, Items.COBBLESTONE) >= BAG_OF_COBBLESTONE, "He set a wall: " + count(c, Items.COBBLESTONE) + " cobblestone left of " + BAG_OF_COBBLESTONE + " | " + report(c));
+            if (t >= LIGHT_SETTLED + FUSE_SETTLED) h.succeed();
+        });
+    }
+
+    /** The dead end of the open ground: air from the stand up to the sky. */
+    private static void trench(GameTestHelper h) {
+        for (int x = 0; x <= TRENCH_LENGTH; x++) for (int y = GROUND - 2; y <= GROUND; y++) h.getLevel().setBlock(h.absolutePos(new BlockPos(CENTER + x, y, CENTER)), Blocks.AIR.defaultBlockState(), 2 | 16);
     }
 
     /** While the fuse burns and after it, no cobblestone of his stands anywhere and none has left the bag. */
@@ -189,7 +323,9 @@ public final class CompanionCreeperGuardTests {
     }
 
     /** Alive and not much hurt all along; once the creeper is gone (it blew or was killed) and {@code when} has held, the test is over. */
-    private static void survivesTheBlast(GameTestHelper h, CompanionEntity c, Creeper creeper, BooleanSupplier when) {
+    private static void survivesTheBlast(GameTestHelper h, CompanionEntity c, Creeper creeper, BooleanSupplier when) { survivesTheBlast(h, c, creeper, UNHURT, when); }
+
+    private static void survivesTheBlast(GameTestHelper h, CompanionEntity c, Creeper creeper, float least, BooleanSupplier when) {
         long begun = h.getTick();
         boolean[] held = {false};
         h.onEachTick(() -> {
@@ -197,7 +333,7 @@ public final class CompanionCreeperGuardTests {
             String trace = " | creeper " + (creeper.isAlive() ? "alive, fuse " + creeper.getSwellDir() : "gone") + ", he at " + rel(h, c.blockPosition()).toShortString()
                     + ", health " + c.getHealth() + " | " + report(c);
             h.assertTrue(c.isAlive(), "Died" + trace);
-            h.assertTrue(c.getHealth() >= UNHURT, "Hurt by the blast" + trace);
+            h.assertTrue(c.getHealth() >= least, "Hurt by the blast" + trace);
             if (creeper.isAlive()) { h.assertTrue(h.getTick() - begun < BLAST_TICKS, "The creeper never blew" + trace); return; }
             h.assertTrue(held[0], "The way was not shut" + trace);
             h.succeed();
