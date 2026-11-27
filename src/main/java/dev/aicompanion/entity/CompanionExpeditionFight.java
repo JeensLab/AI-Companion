@@ -210,7 +210,8 @@ final class CompanionExpeditionFight {
         if (letGo(foe)) return true;
         if (below(foe) || noWayTo(foe)) return true;
         if (retreating) return !owner.isWithinMeleeAttackRange(foe) || w.expedition.fleeing() && wounded() && outrun(foe) && !caught();
-        return fleeable();
+        // The climb to the surface is no retreat and none follows it: a foe in his reach while blows keep landing there is struck where he stands.
+        return fleeable() && !(w.expedition.climbing() && owner.isWithinMeleeAttackRange(foe) && pressed());
     }
 
     /**
@@ -219,11 +220,22 @@ final class CompanionExpeditionFight {
      * foe lands that one at the start. Run ct68 20261031 descent: sixty ticks of the retreat with zombies in reach and his swing ready, four
      * blows taken and none dealt.
      */
-    private boolean caught() {
+    private boolean caught() { return retreatSince >= 0 && owner.getLastHurtByMobTimestamp() > retreatSince && pressed(); }
+
+    /** A hostile mob within his reach, not one that shoots, struck him less than {@link #CAUGHT_TICKS} ago. */
+    private boolean pressed() {
         LivingEntity by = owner.getLastHurtByMob();
-        int at = owner.getLastHurtByMobTimestamp();
         return by instanceof Monster && by.isAlive() && !(by instanceof RangedAttackMob) && owner.isWithinMeleeAttackRange(by)
-                && retreatSince >= 0 && at > retreatSince && owner.tickCount - at < CAUGHT_TICKS;
+                && owner.tickCount - owner.getLastHurtByMobTimestamp() < CAUGHT_TICKS;
+    }
+
+    /**
+     * A living mob that struck him lately stands out of his sword's reach (a skeleton and its arrow): it is not fought on a retreat, and to
+     * rest where he stands is to rest under its arrows, so the retreat walks back to his way up as from a mob on him.
+     */
+    boolean struckFromAfar() {
+        LivingEntity by = owner.getLastHurtByMob();
+        return by != null && by.isAlive() && struckBy(by) && !owner.isWithinMeleeAttackRange(by);
     }
 
     /** Low health, his way up under him, and a mob about that he can leave behind: whatever mob is on him, the work takes the turn to climb away (the melee goal would hold it). */

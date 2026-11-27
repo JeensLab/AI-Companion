@@ -100,6 +100,7 @@ final class CompanionExpedition {
 
     /** The retreat is under way: the climb and the rest at the entrance, where health is got back. */
     boolean retreating() { return active && stage == Stage.RETREAT; }
+    boolean climbing() { return active && stage == Stage.CLIMB; }
 
     /** The retreat is still on the move up: a foe slower than he is left behind, not fought. */
     boolean fleeing() { return retreating() && retreat.leaving(); }

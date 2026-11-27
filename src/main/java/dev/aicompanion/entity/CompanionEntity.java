@@ -1130,8 +1130,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             activityMoved = previousActivityPosition != null && position().distanceToSqr(previousActivityPosition) > .01;
             previousActivityPosition = position(); entityData.set(DATA_ACTIVITY, getActivityForAi());
         }
-        // A fight for the player does not lead away from him: guard order, or any monster outside a hunt and outside his mine.
-        var guardedOwner = (protecting || !work.fightsByOrder() && CompanionCombat.hostile(getTarget())) && !work.expedition.underground() ? getOwnerPlayer() : null;
+        // A fight for the player does not lead away from him: guard order, or any monster outside a hunt and outside his mine. A foe of his
+        // expedition is its own fight, wherever the player is: dropped here, it was his target again in the same tick, every tick.
+        var guardedOwner = (protecting || !work.fightsByOrder() && CompanionCombat.hostile(getTarget())) && !work.expedition.underground() && !work.expedition.fight.engages(getTarget()) ? getOwnerPlayer() : null;
         if (guardedOwner != null && getTarget() != null && CompanionGuardWatch.strayed(this, guardedOwner, getTarget())) setTarget(null);
         if (getTarget() instanceof net.minecraft.world.entity.FlyingMob && !archery.armed()) setTarget(null);
         if (inventoryViewers == 0 && getTarget() != null && tickCount % 10 == 0) selectWeaponForCombat();

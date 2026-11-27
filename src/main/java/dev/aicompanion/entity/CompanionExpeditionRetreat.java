@@ -41,7 +41,8 @@ final class CompanionExpeditionRetreat {
 
     /**
      * Plans the way up from where he stands; with no way (not on his stairs, or already at the entrance) he rests where he is. With a mob on him
-     * ({@code hounded}) a few steps off his stairs is no reason to stay and fight: he walks back to them, from as far as {@link #FLEE_REACH}.
+     * ({@code hounded}), or one out of his reach that has struck him, a few steps off his stairs is no reason to stay: he walks back to them,
+     * from as far as {@link #FLEE_REACH}.
      */
     void begin(String why, boolean hounded) {
         reset();
@@ -50,7 +51,7 @@ final class CompanionExpeditionRetreat {
         CompanionMineSite mine = w.mine;
         if (!mine.exists()) return;
         List<BlockPos> way = CompanionMineSite.wayUp(mine);
-        int at = hounded ? closest(way, owner.blockPosition()) : CompanionExpeditionRecord.nearest(way, owner.blockPosition(), CompanionMineSite.NEAR_STAND);
+        int at = hounded || w.expedition.fight.struckFromAfar() ? closest(way, owner.blockPosition()) : CompanionExpeditionRecord.nearest(way, owner.blockPosition(), CompanionMineSite.NEAR_STAND);
         plugCell = mine.stands().size() >= 2 ? mine.stands().get(1) : null;
         int hold = plugCell == null ? way.size() - 1 : way.size() - 2;
         if (at < 0 || at > hold) { plugCell = null; return; }

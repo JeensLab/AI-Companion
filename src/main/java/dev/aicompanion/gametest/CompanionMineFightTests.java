@@ -47,9 +47,9 @@ import static dev.aicompanion.gametest.CompanionMineArena.start;
 public final class CompanionMineFightTests {
     private static final int SHELF_DROP = 3, SHELF_GAP = 4, SHELF_HIT_AT = 40, SHELF_ZOMBIE_HEALTH = 11;
     private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 4, OPEN_CAVE_STAND = 3, KILL_TICKS = 1200, FUSE_TICKS = 200, CRAFT_TICKS = 1200, BRIDGE_FROM = 4, BRIDGE_TO = 10, BRIDGE_SIDE = 5, CAVERN_DEPTH = 7, PASSAGE_LENGTH = 4, PASSAGE_OFFSET = 2, PASSAGE_HEIGHT = 2, STRIKE_TICKS = 60, FAR_STAND = 10;
-    private static final float SURVIVES = 1, HALF = 10, RETREAT_HEALTH = 8, BLOW_ABOVE_RETREAT = 10, WEAK_ZOMBIE_BLOW = 1;
+    private static final float SURVIVES = 1, HALF = 10, RETREAT_HEALTH = 8, BLOW_ABOVE_RETREAT = 10, WEAK_ZOMBIE_BLOW = 1, CLIMB_HEALTH = 4;
     private static final double THROWN = 0.6, SAFE_GAP = 4;
-    private static final int BLOW_GAP = 20, ANSWER_TICKS = 40, ANSWERS = 2, DROP_STEP = 12, UNARMED_TICKS = 100, MEAL_WINDOW = 40, BREAD = 8, PILLAR_AT = 6, PILLAR_HEIGHT = 5, TALL_CHAMBER = 9;
+    private static final int BLOW_GAP = 20, ANSWER_TICKS = 40, ANSWERS = 2, DROP_STEP = 12, UNARMED_TICKS = 100, MEAL_WINDOW = 40, BREAD = 8, PILLAR_AT = 6, PILLAR_HEIGHT = 5, TALL_CHAMBER = 9, HANGING_TICKS = 200;
 
     private CompanionMineFightTests() { }
 
@@ -85,7 +85,15 @@ public final class CompanionMineFightTests {
      * ready, four blows taken and none dealt). Each blow he takes is answered within {@link #ANSWER_TICKS}.
      */
     @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
-    public static void aZombieThatCatchesHimOnTheRetreatIsStruckBack(GameTestHelper h) { struckBackOnTheRetreat(h, RETREAT_HEALTH, false); }
+    public static void aZombieThatCatchesHimOnTheRetreatIsStruckBack(GameTestHelper h) { struckBackOnTheRetreat(h, RETREAT_HEALTH, false, false); }
+
+    /**
+     * One zombie on his way up, and the order is the way up itself (the climb to the surface, which no retreat follows): at four health he
+     * lets it go for the climb as anywhere, and when its blows keep landing it is struck back all the same (its blow is one health, so
+     * that he lives to answer). He may get out past it as well.
+     */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aZombieThatCatchesHimOnTheClimbToTheSurfaceIsStruckBack(GameTestHelper h) { struckBackOnTheRetreat(h, CLIMB_HEALTH, false, true); }
 
     /**
      * The same two zombies, a wound a blow lighter, and a drop of his lies on the stairs above them, where he cannot go for it: the work
@@ -94,9 +102,9 @@ public final class CompanionMineFightTests {
      * eighty ticks in a corner with «Подбираю добытые вещи», seven blows taken and none dealt).
      */
     @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
-    public static void aDropBehindTheZombiesDoesNotKeepHimFromTheClimb(GameTestHelper h) { struckBackOnTheRetreat(h, BLOW_ABOVE_RETREAT, true); }
+    public static void aDropBehindTheZombiesDoesNotKeepHimFromTheClimb(GameTestHelper h) { struckBackOnTheRetreat(h, BLOW_ABOVE_RETREAT, true, false); }
 
-    private static void struckBackOnTheRetreat(GameTestHelper h, float wound, boolean dropBehind) {
+    private static void struckBackOnTheRetreat(GameTestHelper h, float wound, boolean dropBehind, boolean climb) {
         mountain(h);
         CompanionEntity c = armed(h);
         List<BlockPos> stairs = carveMine(h, c, 0);
@@ -113,8 +121,10 @@ public final class CompanionMineFightTests {
         for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.BREAD)) c.setItem(slot, ItemStack.EMPTY);
         c.setHealth(wound);
         List<Zombie> zombies = new ArrayList<>();
-        for (int k : new int[]{6, 8}) zombies.add(zombie(h, stairs.get(foot - k)));
-        start(h, c, 1);
+        for (int k : climb ? new int[]{6} : new int[]{6, 8}) zombies.add(zombie(h, stairs.get(foot - k)));
+        if (climb) zombies.get(0).getAttribute(Attributes.ATTACK_DAMAGE).setBaseValue(WEAK_ZOMBIE_BLOW);
+        if (climb) h.assertTrue(c.startWork("dig_for_diamonds", "surface", 1).success(), "The climb was not accepted: " + c.getLastTaskResult());
+        else start(h, c, 1);
         float[] health = {c.getHealth()}, theirs = {0};
         long[] unanswered = {-1};
         int[] answers = {0};
@@ -131,6 +141,7 @@ public final class CompanionMineFightTests {
             // Both of them dead is the end as well: with a sword that reaches farther than their arms he may take no second blow at all.
             if (answers[0] >= ANSWERS || left == 0) { h.succeed(); return; }
             h.assertTrue(c.isAlive(), "Died before he struck back" + trace);
+            if (climb && !c.isWorking() && !c.isGatheringTask()) { h.succeed(); return; }
             h.assertTrue(unanswered[0] < 0 || h.getTick() - unanswered[0] <= ANSWER_TICKS, "A blow he took was not answered in " + ANSWER_TICKS + " ticks" + trace);
         });
     }
@@ -221,27 +232,6 @@ public final class CompanionMineFightTests {
             CompanionActionResult result = ended(h, c, id);
             h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The order did not go on to the diamond: " + result.message() + trace);
             h.succeed();
-        });
-    }
-
-    /**
-     * A skeleton on the same shelf, no way to it: once it has hit him it is his foe, as one he had let go is, and the sword is out for it (the
-     * blow is dealt by the test: an arrow of its own misses a walking man too often for a test, so it has no bow).
-     */
-    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
-    public static void aSkeletonAcrossAGapThatHasHitHimIsHisFoe(GameTestHelper h) {
-        mountain(h);
-        CompanionEntity c = armed(h);
-        List<BlockPos> shelf = shelfAcrossAGap(h, c, carveMine(h, c, 0));
-        Skeleton skeleton = still(skeleton(h, shelf.get(0)));
-        skeleton.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
-        start(h, c, 1);
-        long[] hit = {0};
-        h.onEachTick(() -> {
-            if (h.getTick() == SHELF_HIT_AT) { c.hurt(h.getLevel().damageSources().mobAttack(skeleton), 1); hit[0] = h.getTick(); }
-            if (hit[0] == 0) return;
-            if (c.getTarget() == skeleton && c.getMainHandItem().is(Items.STONE_SWORD)) h.succeed();
-            h.assertTrue(h.getTick() - hit[0] <= STRIKE_TICKS, "The skeleton that hit him from across the gap is not his foe: target " + c.getTarget() + ", in hand " + c.getMainHandItem() + " | " + report(c));
         });
     }
 
@@ -462,6 +452,58 @@ public final class CompanionMineFightTests {
         h.succeedWhen(() -> {
             CompanionActionResult result = ended(h, c, id);
             h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He did not get past the foe he cannot reach: " + result.message() + " | zombie " + (zombie.isAlive() ? "alive" : "gone") + " | " + report(c));
+        });
+    }
+
+    /** A skeleton shoots him from across the chamber at the foot of the stairs and the stone sword is all he has: he walks up to it and kills it, and lives. */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aSkeletonThatShootsHimAcrossAChamberIsKilled(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        BlockPos foot = chamber(h, carveMine(h, c, 0));
+        place(c, foot.offset(OPEN_CAVE_STAND, 0, 0));
+        Skeleton skeleton = skeleton(h, foot.offset(CHAMBER_REACH - 1, 0, 0));
+        long begun = h.getTick();
+        start(h, c, 1);
+        h.onEachTick(() -> {
+            if (!skeleton.isAlive()) { h.succeed(); return; }
+            if (skeleton.getTarget() == null) skeleton.setTarget(c);
+            String trace = " | skeleton health " + skeleton.getHealth() + " at " + rel(h, skeleton.blockPosition()).toShortString() + ", in his sight " + c.hasLineOfSight(skeleton) + ", he at "
+                    + rel(h, c.blockPosition()).toShortString() + ", health " + c.getHealth() + ", target " + c.getTarget() + ", stage " + c.expeditionStage() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            h.assertTrue(h.getTick() - begun < KILL_TICKS, "The skeleton that shoots him was not killed in time" + trace);
+        });
+    }
+
+    /**
+     * «Стой» in the middle of a fight on his stairs: the order is over at once, the sword and the pickaxes are all still his, and the zombie
+     * is not left his target for good: in ten seconds it is dead or let go.
+     */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void stoppedInTheMiddleOfAFightHeKeepsHisThingsAndNoTargetIsLeftHanging(GameTestHelper h) {
+        mountain(h);
+        CompanionEntity c = armed(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        int foot = stairs.size() - 1;
+        place(c, stairs.get(foot - 3));
+        Zombie zombie = zombie(h, stairs.get(foot - 6));
+        start(h, c, 1);
+        long[] stopped = {-1};
+        h.onEachTick(() -> {
+            if (zombie.isAlive() && zombie.getTarget() == null) zombie.setTarget(c);
+            String trace = " | zombie health " + zombie.getHealth() + ", target " + c.getTarget() + ", he at " + rel(h, c.blockPosition()).toShortString() + ", health " + c.getHealth() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            if (stopped[0] < 0) {
+                if (zombie.getHealth() >= zombie.getMaxHealth()) return;
+                c.stopGatheringForPlayer();
+                stopped[0] = h.getTick();
+                h.assertTrue(!c.isWorking() && !c.isGatheringTask(), "The order goes on after the stop" + trace);
+            }
+            h.assertTrue(c.expeditionStage().isEmpty(), "The expedition is under way after the stop: stage " + c.expeditionStage() + trace);
+            h.assertTrue(count(c, Items.STONE_SWORD) == 1 && count(c, Items.STONE_PICKAXE) == 2 && count(c, Items.IRON_PICKAXE) == 1, "A sword or a pickaxe of his is gone" + trace);
+            if (h.getTick() - stopped[0] < HANGING_TICKS) return;
+            h.assertTrue(!zombie.isAlive() || c.getTarget() == null, "The zombie is still his target ten seconds after the stop" + trace);
+            h.succeed();
         });
     }
 

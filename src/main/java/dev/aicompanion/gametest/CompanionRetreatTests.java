@@ -12,6 +12,7 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.item.ItemStack;
@@ -49,7 +50,8 @@ import static dev.aicompanion.gametest.CompanionMineArena.start;
 public final class CompanionRetreatTests {
     private static final int DIAMOND_FEET = 2, TUNNEL_HEAD = DIAMOND_FEET + 1;
     private static final int RESUME_TIMEOUT = 9000, SCAN_EVERY = 5, PLUG_STANDS = 2, LOW_HEALTH = 5, FAR = 8, TUNNEL = 6, FOE_BEYOND = 3;
-    private static final int NEAR_ENTRANCE_SQ = 9, RETARGET_EVERY = 20, SURFACE_DISTANCE = 22, SURFACE_CHECKS = 3, SWORD_SLOT = 6;
+    private static final int NEAR_ENTRANCE_SQ = 9, RETARGET_EVERY = 20, SURFACE_DISTANCE = 22, SWORD_SLOT = 6;
+    private static final int SURFACE_FOE = 9, TARGET_DROPS = 2, SURFACE_TICKS = 400, SHOOTER_BEYOND = 8;
     private static final int CHAMBER_X0 = 26, CHAMBER_X1 = 30, CHAMBER_Z0 = 3, CHAMBER_Z1 = 7, STRIP_Z = 1, STRIP_X0 = 22, STRIP_X1 = 25;
     private static final float RECOVERED = 18;
     private static final String RETREATED = "отступил";
@@ -107,26 +109,35 @@ public final class CompanionRetreatTests {
         });
     }
 
-    /** The player is far off and a zombie stands near him on the surface (he walks to his mine): the fight is not taken up, the target is dropped. */
+    /**
+     * The player is thirty blocks off and a zombie comes for him on the surface as he begins his mine, the sword in his bag: the expedition's
+     * fight and the leash of a fight for the player (CompanionGuardWatch.strayed) do not take the target from one another tick after tick
+     * (the fight gave it and the leash dropped it within one tick, so the melee goal began anew every tick). The zombie is killed in twenty
+     * seconds, and from his first blow to its death it is his target at the end of every tick but two.
+     */
     @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
-    public static void doesNotChaseAZombieOnTheSurfaceFarFromThePlayer(GameTestHelper h) {
+    public static void aZombieThatComesForHimOnTheSurfaceFarFromThePlayerIsFought(GameTestHelper h) {
         mountain(h, false);
         CompanionEntity c = rig(h);
+        c.setItem(SWORD_SLOT, new ItemStack(Items.STONE_SWORD));
         h.getLevel().getPlayerByUUID(c.getOwnerId()).teleportTo(c.getX() - SURFACE_DISTANCE, c.getY(), c.getZ() - SURFACE_DISTANCE);
-        Zombie zombie = h.spawn(EntityType.ZOMBIE, CENTER + 3, GROUND + 1, CENTER);
+        Zombie zombie = h.spawn(EntityType.ZOMBIE, CENTER + SURFACE_FOE, GROUND + 1, CENTER);
         zombie.setPersistenceRequired();
-        zombie.setNoAi(true);
+        zombie.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, MobEffectInstance.INFINITE_DURATION));
         start(h, c, 1);
-        int[] checked = {0};
-        boolean[] armed = {false};
+        long begun = h.getTick();
+        boolean[] struck = {false};
+        int[] dropped = {0};
         h.onEachTick(() -> {
-            boolean onSurface = rel(h, c.blockPosition()).getY() > GROUND;
-            if (armed[0] && onSurface) {
-                h.assertTrue(c.getTarget() == null, "On the surface, far from the player, he took up the fight with the zombie | " + report(c));
-                if (++checked[0] >= SURFACE_CHECKS) h.succeed();
-            }
-            armed[0] = onSurface && h.getTick() % RETARGET_EVERY == 0;
-            if (armed[0]) c.setTarget(zombie);
+            if (zombie.isAlive() && zombie.getTarget() == null) zombie.setTarget(c);
+            struck[0] |= zombie.getHealth() < zombie.getMaxHealth();
+            if (struck[0] && zombie.isAlive() && c.getTarget() != zombie) dropped[0]++;
+            String trace = " | ticks with the target dropped " + dropped[0] + ", zombie health " + zombie.getHealth() + ", he at " + rel(h, c.blockPosition()).toShortString()
+                    + ", health " + c.getHealth() + ", stage " + c.expeditionStage() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            h.assertTrue(dropped[0] <= TARGET_DROPS, "The zombie he fights is dropped as his target tick after tick" + trace);
+            if (!zombie.isAlive()) { h.succeed(); return; }
+            h.assertTrue(h.getTick() - begun < SURFACE_TICKS, "The zombie was not killed in time" + trace);
         });
     }
 
@@ -211,13 +222,24 @@ public final class CompanionRetreatTests {
      * and goes up by it instead of resting where he stands.
      */
     @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = RESUME_TIMEOUT)
-    public static void farFromHisWayAMobOnHimSendsHimBackToIt(GameTestHelper h) {
+    public static void farFromHisWayAMobOnHimSendsHimBackToIt(GameTestHelper h) { farFromHisWay(h, false); }
+
+    /**
+     * The same corridor, and a skeleton eight cells beyond him has hit him: out of the sword's reach, it is not fought on the retreat, and to
+     * rest where he stands is to rest under its arrows; he walks back to his tunnel and goes up by it (the blow is dealt by the test: an arrow
+     * of its own misses too often for a test, and two of them would end him on the way, so it has no bow).
+     */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = RESUME_TIMEOUT)
+    public static void farFromHisWayASkeletonThatHasHitHimSendsHimBackToIt(GameTestHelper h) { farFromHisWay(h, true); }
+
+    private static void farFromHisWay(GameTestHelper h, boolean shooter) {
         mountain(h, false);
         CompanionEntity c = rig(h);
         c.setItem(2, ItemStack.EMPTY);
         carveMine(h, c, TUNNEL);
         CompanionMineSite mine = c.mineSite();
-        for (int k = TUNNEL + 1; k <= TUNNEL + FAR + FOE_BEYOND + 1; k++) for (int dy = 0; dy <= 1; dy++) h.getLevel().setBlock(mine.foot().relative(Direction.WEST, k).above(dy), Blocks.AIR.defaultBlockState(), 2 | 16);
+        int beyond = shooter ? SHOOTER_BEYOND : FOE_BEYOND;
+        for (int k = TUNNEL + 1; k <= TUNNEL + FAR + beyond + 1; k++) for (int dy = 0; dy <= 1; dy++) h.getLevel().setBlock(mine.foot().relative(Direction.WEST, k).above(dy), Blocks.AIR.defaultBlockState(), 2 | 16);
         start(h, c, 16);
         boolean[] hurt = {false};
         h.onEachTick(() -> {
@@ -226,16 +248,20 @@ public final class CompanionRetreatTests {
                 BlockPos far = mine.foot().relative(Direction.WEST, TUNNEL + FAR);
                 c.teleportTo(far.getX() + .5, far.getY(), far.getZ() + .5);
                 // In sight and after him, and it stands where it is: the way back to his tunnel is what is asked, not the race.
-                Zombie zombie = h.spawn(EntityType.ZOMBIE, rel(h, mine.foot().relative(Direction.WEST, TUNNEL + FAR + FOE_BEYOND)));
-                zombie.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
-                zombie.setTarget(c);
-                c.setHealth(LOW_HEALTH);
+                BlockPos at = rel(h, mine.foot().relative(Direction.WEST, TUNNEL + FAR + beyond));
+                Mob foe = shooter ? h.spawn(EntityType.SKELETON, at) : h.spawn(EntityType.ZOMBIE, at);
+                foe.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+                foe.setTarget(c);
+                c.setHealth(LOW_HEALTH + (shooter ? 1 : 0));
+                if (shooter) c.hurt(h.getLevel().damageSources().mobAttack(foe), 1);
                 hurt[0] = true;
                 return;
             }
             h.assertTrue(c.isAlive(), "He died");
             // Closing the first step behind him is done only on the way up, which he took: resting where he stood would leave it open.
-            if (mine.plug() != null && blocked(h, mine.plug())) h.succeed();
+            if (mine.plug() != null && blocked(h, mine.plug())) { h.succeed(); return; }
+            h.assertTrue(c.isWorking() || c.isGatheringTask(), "The order ended with no plug on his first step: he did not go up by his way | he at " + rel(h, c.blockPosition()).toShortString()
+                    + ", health " + c.getHealth() + " | " + report(c));
         });
     }
 
