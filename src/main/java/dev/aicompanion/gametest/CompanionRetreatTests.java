@@ -9,20 +9,29 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static dev.aicompanion.gametest.CompanionMineArena.CENTER;
 import static dev.aicompanion.gametest.CompanionMineArena.GROUND;
 import static dev.aicompanion.gametest.CompanionMineArena.SIZE;
+import static dev.aicompanion.gametest.CompanionMineArena.TIMEOUT;
 import static dev.aicompanion.gametest.CompanionMineArena.carveMine;
+import static dev.aicompanion.gametest.CompanionMineArena.count;
 import static dev.aicompanion.gametest.CompanionMineArena.ended;
 import static dev.aicompanion.gametest.CompanionMineArena.mountain;
 import static dev.aicompanion.gametest.CompanionMineArena.rel;
@@ -39,7 +48,87 @@ import static dev.aicompanion.gametest.CompanionMineArena.start;
 @PrefixGameTestTemplate(false)
 public final class CompanionRetreatTests {
     private static final int DIAMOND_FEET = 2, TUNNEL_HEAD = DIAMOND_FEET + 1;
-    private static final int RESUME_TIMEOUT = 9000, SCAN_EVERY = 5, PLUG_STANDS = 2, LOW_HEALTH = 5, FAR = 8, TUNNEL = 6;
+    private static final int RESUME_TIMEOUT = 9000, SCAN_EVERY = 5, PLUG_STANDS = 2, LOW_HEALTH = 5, FAR = 8, TUNNEL = 6, FOE_BEYOND = 3;
+    private static final int NEAR_ENTRANCE_SQ = 9, RETARGET_EVERY = 20, SURFACE_DISTANCE = 22, SURFACE_CHECKS = 3, SWORD_SLOT = 6;
+    private static final int CHAMBER_X0 = 26, CHAMBER_X1 = 30, CHAMBER_Z0 = 3, CHAMBER_Z1 = 7, STRIP_Z = 1, STRIP_X0 = 22, STRIP_X1 = 25;
+    private static final float RECOVERED = 18;
+    private static final String RETREATED = "отступил";
+    private static final BlockPos BREACH_FEET = new BlockPos(25, DIAMOND_FEET, 3), BREACH_HEAD = BREACH_FEET.above();
+
+    /** Four zombies in a dark chamber and no sword in the bag: the breach is sealed, he climbs his stairs, plugs the first step behind him, recovers at the entrance and says so. */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void retreatsUpHisStairsFromACrowdedCaveAndRecovers(GameTestHelper h) { crowdedCave(h, false); }
+
+    /** The same crowd with a sword in the bag and health to spare: he does not climb, fights what comes at him, seals the breach and takes the diamond. */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void fightsACrowdedCaveWithTheSwordInsteadOfClimbing(GameTestHelper h) { crowdedCave(h, true); }
+
+    /** The ore lies only in a strip north of the foot of the stairs, and a chamber with four zombies stands beside the tunnel to it. */
+    private static void crowdedCave(GameTestHelper h, boolean sword) {
+        mountain(h, false);
+        for (int x = STRIP_X0; x <= STRIP_X1; x++) h.setBlock(new BlockPos(x, DIAMOND_FEET - 1, STRIP_Z), Blocks.DEEPSLATE_DIAMOND_ORE);
+        for (int x = CHAMBER_X0; x <= CHAMBER_X1; x++) for (int z = CHAMBER_Z0; z <= CHAMBER_Z1; z++) for (int y = DIAMOND_FEET; y <= DIAMOND_FEET + 2; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        CompanionEntity c = rig(h);
+        if (sword) c.setItem(SWORD_SLOT, new ItemStack(Items.IRON_SWORD));
+        List<Zombie> zombies = new ArrayList<>();
+        for (int[] at : new int[][]{{27, 4}, {28, 5}, {29, 6}, {30, 7}}) {
+            Zombie zombie = h.spawn(EntityType.ZOMBIE, at[0], DIAMOND_FEET, at[1]);
+            zombie.setPersistenceRequired();
+            // The sky light of a freshly built mountain lags behind it: by day a mob in the chamber can burn before the cave opens.
+            zombie.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, MobEffectInstance.INFINITE_DURATION));
+            zombies.add(zombie);
+        }
+        long id = start(h, c, 1);
+        boolean[] breached = {false};
+        h.onEachTick(() -> {
+            for (Zombie zombie : zombies) if (zombie.isAlive() && zombie.getTarget() == null && h.getTick() % RETARGET_EVERY == 0) zombie.setTarget(c);
+            breached[0] |= !blocked(h, h.absolutePos(BREACH_FEET)) || !blocked(h, h.absolutePos(BREACH_HEAD));
+            BlockPos plug = plug(h, c);
+            String state = " | at " + rel(h, c.blockPosition()).toShortString() + ", hp " + c.getHealth() + ", plug " + (plug == null ? "none" : rel(h, plug).toShortString()) + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + state);
+            if (c.isGatheringTask() || c.isWorking() || c.workResult(id) == null) return;
+            String result = c.workResult(id).message();
+            List<String> problems = new ArrayList<>();
+            if (!breached[0]) problems.add("SETUP: the tunnel never broke into the chamber");
+            if (sword) {
+                if (result.contains(RETREATED)) problems.add("he climbed away from a crowd he could fight");
+                if (plug != null) problems.add("a plug stands in the first stair cells");
+                if (count(c, Items.DIAMOND) < 1) problems.add("no diamond in the bag");
+            } else {
+                if (!result.contains(RETREATED)) problems.add("the result does not say «" + RETREATED + "»");
+                if (plug == null) problems.add("no plug in the first stair cells");
+                if (!c.mineSite().exists() || c.blockPosition().distSqr(c.mineSite().entrance()) > NEAR_ENTRANCE_SQ) problems.add("not at the entrance");
+                if (c.getHealth() < RECOVERED) problems.add("health " + c.getHealth() + " is below " + RECOVERED);
+                int level = plug == null ? 0 : rel(h, plug).getY();
+                for (Zombie zombie : zombies) if (zombie.isAlive() && rel(h, zombie.blockPosition()).getY() >= level) problems.add("a zombie on the surface side of the plug at " + rel(h, zombie.blockPosition()).toShortString());
+            }
+            h.assertTrue(problems.isEmpty(), "Not as expected: " + problems + " | result: " + result + state);
+            h.succeed();
+        });
+    }
+
+    /** The player is far off and a zombie stands near him on the surface (he walks to his mine): the fight is not taken up, the target is dropped. */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void doesNotChaseAZombieOnTheSurfaceFarFromThePlayer(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = rig(h);
+        h.getLevel().getPlayerByUUID(c.getOwnerId()).teleportTo(c.getX() - SURFACE_DISTANCE, c.getY(), c.getZ() - SURFACE_DISTANCE);
+        Zombie zombie = h.spawn(EntityType.ZOMBIE, CENTER + 3, GROUND + 1, CENTER);
+        zombie.setPersistenceRequired();
+        zombie.setNoAi(true);
+        start(h, c, 1);
+        int[] checked = {0};
+        boolean[] armed = {false};
+        h.onEachTick(() -> {
+            boolean onSurface = rel(h, c.blockPosition()).getY() > GROUND;
+            if (armed[0] && onSurface) {
+                h.assertTrue(c.getTarget() == null, "On the surface, far from the player, he took up the fight with the zombie | " + report(c));
+                if (++checked[0] >= SURFACE_CHECKS) h.succeed();
+            }
+            armed[0] = onSurface && h.getTick() % RETARGET_EVERY == 0;
+            if (armed[0]) c.setTarget(zombie);
+        });
+    }
 
     /**
      * Left a plug on the first step (as after a retreat) and is back at the entrance: the next step takes his own plug out, walks
@@ -118,8 +207,8 @@ public final class CompanionRetreatTests {
     }
 
     /**
-     * Hurt by a mob far from his way (eight cells beyond the end of the tunnel in an open corridor): he walks back to his tunnel and goes up
-     * by it instead of resting where he stands under the blows.
+     * Wounded with a mob after him far from his way (eight cells beyond the end of the tunnel in an open corridor): he walks back to his tunnel
+     * and goes up by it instead of resting where he stands.
      */
     @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = RESUME_TIMEOUT)
     public static void farFromHisWayAMobOnHimSendsHimBackToIt(GameTestHelper h) {
@@ -128,7 +217,7 @@ public final class CompanionRetreatTests {
         c.setItem(2, ItemStack.EMPTY);
         carveMine(h, c, TUNNEL);
         CompanionMineSite mine = c.mineSite();
-        for (int k = TUNNEL + 1; k <= TUNNEL + FAR + 1; k++) for (int dy = 0; dy <= 1; dy++) h.getLevel().setBlock(mine.foot().relative(Direction.WEST, k).above(dy), Blocks.AIR.defaultBlockState(), 2 | 16);
+        for (int k = TUNNEL + 1; k <= TUNNEL + FAR + FOE_BEYOND + 1; k++) for (int dy = 0; dy <= 1; dy++) h.getLevel().setBlock(mine.foot().relative(Direction.WEST, k).above(dy), Blocks.AIR.defaultBlockState(), 2 | 16);
         start(h, c, 16);
         boolean[] hurt = {false};
         h.onEachTick(() -> {
@@ -136,9 +225,10 @@ public final class CompanionRetreatTests {
                 if (!"BRANCH".equals(c.expeditionStage())) return;
                 BlockPos far = mine.foot().relative(Direction.WEST, TUNNEL + FAR);
                 c.teleportTo(far.getX() + .5, far.getY(), far.getZ() + .5);
-                Zombie zombie = h.spawn(EntityType.ZOMBIE, 1, DIAMOND_FEET + 12, 1);
-                zombie.setNoAi(true);
-                c.setLastHurtByMob(zombie);
+                // In sight and after him, and it stands where it is: the way back to his tunnel is what is asked, not the race.
+                Zombie zombie = h.spawn(EntityType.ZOMBIE, rel(h, mine.foot().relative(Direction.WEST, TUNNEL + FAR + FOE_BEYOND)));
+                zombie.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+                zombie.setTarget(c);
                 c.setHealth(LOW_HEALTH);
                 hurt[0] = true;
                 return;
@@ -147,6 +237,15 @@ public final class CompanionRetreatTests {
             // Closing the first step behind him is done only on the way up, which he took: resting where he stood would leave it open.
             if (mine.plug() != null && blocked(h, mine.plug())) h.succeed();
         });
+    }
+
+    /** The first solid cell in the columns of the first stands below the entrance (absolute), or null. */
+    private static BlockPos plug(GameTestHelper h, CompanionEntity c) {
+        CompanionMineSite mine = c.mineSite();
+        if (!mine.exists()) return null;
+        for (int k = 1; k <= PLUG_STANDS; k++)
+            for (BlockPos cell : CompanionShaftPlan.column(CompanionShaftPlan.stand(mine.entrance(), mine.stairDirection(), k))) if (blocked(h, cell)) return cell;
+        return null;
     }
 
     private static boolean blocked(GameTestHelper h, BlockPos abs) { return !h.getLevel().getBlockState(abs).getCollisionShape(h.getLevel(), abs).isEmpty(); }

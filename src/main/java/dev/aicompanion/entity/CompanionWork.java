@@ -706,7 +706,12 @@ public final class CompanionWork {
         // Breaking does not wait for the last drop: the next block goes while the drop is still on its way to him, and the
         // pickup settles after the breaking. Waiting per block is what made a crown one block at a time.
         if (job != Job.BLOCK && job != Job.COME && job != Job.COURSE && job != Job.HUNT && job != Job.PICK_UP && job != Job.PLACE
-                && owner.hasPendingLoot() && !(job == Job.HOUSE && templateJob && templateHouse.scaffolding())) return;
+                && owner.hasPendingLoot() && !(job == Job.HOUSE && templateJob && templateHouse.scaffolding())) {
+            // In the mine the wait for a pickup is still a fight when a foe is on him (CompanionLoot.foeOnHim holds the pickup, and nothing else would
+            // turn him on it), and no wait at all once the fight has let the foe go for the climb or the climb has begun: a drop behind the mobs
+            // would else leave him neither fighting nor leaving (series p 20261031 d1 descent: seven blows taken and none dealt).
+            if (phase != Phase.EXPEDITION || expedition.fight.holdFight(level) || !expedition.fight.fleeable() && !expedition.retreating()) return;
+        }
         if (owner.getOwnerId() == null || level.getServer().getPlayerList().getPlayer(owner.getOwnerId()) == null) {
             finish(false, "Потерял связь с игроком, остановился."); return;
         }

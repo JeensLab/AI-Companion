@@ -104,6 +104,9 @@ final class CompanionExpeditionCave {
     /** The cell of the advance under way a plug went into (once), or null; if the advance needs the cell, the expedition gives it up. */
     BlockPos takePlugged() { BlockPos now = plugged; plugged = null; return now; }
 
+    /** Left before it was dealt with (a wound sends him up): its air is shunned as a very dangerous cave's is, so no way leads back into it. */
+    void abandon() { if (busy() && cave != null) w.mine.shun(cave.air()); }
+
     /** He goes up now: the cave episode stops, nothing is explored during the retreat. */
     void close() {
         if (!busy()) return;
@@ -468,7 +471,7 @@ final class CompanionExpeditionCave {
         if (target instanceof Creeper && !owner.creeperGuard.fights() || shuns(target)) owner.setTarget(null);
     }
 
-    /** A target standing in the cave while he is not exploring it. */
+    /** A target standing in the cave while he is not exploring it: the melee goal runs ahead of the work, so it must not follow it in. */
     private boolean guards(LivingEntity target) {
         return target != null && phase != Phase.IDLE && phase != Phase.EXPLORE && cave != null && cave.air().contains(target.blockPosition());
     }
@@ -476,9 +479,9 @@ final class CompanionExpeditionCave {
     /**
      * No fight now: the target is in the cave and out of reach (in reach, he strikes it where he stands, see {@link #guards}), or he is
      * himself on the cave side while the plug is yet to be laid, and the way back to his mine comes first. Never a mob within three blocks
-     * of him: it is on him already, and walking away from it, or laying a plug, is a blow in the back. Asked on the cave's own ticks only ({@link #calm}).
+     * of him: it is on him already, and walking away from it, or laying a plug, is a blow in the back.
      */
-    private boolean shuns(LivingEntity target) {
+    boolean shuns(LivingEntity target) {
         if (target == null || owner.distanceToSqr(target) <= CONTACT_SQR) return false;
         boolean outside = (phase == Phase.SEAL || phase == Phase.BACK) && cave != null && cave.air().contains(owner.blockPosition());
         return outside || guards(target) && !owner.isWithinMeleeAttackRange(target);

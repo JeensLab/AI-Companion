@@ -26,9 +26,15 @@ final class CompanionEating {
         float missing = c.getMaxHealth() - c.getHealth();
         // Fed, out of a fight for ten seconds: slowly better, as a player with a full stomach.
         if (missing >= 1 && c.satiety > 0 && c.tickCount - c.lastHurtTick > 200 && c.tickCount % 80 == 0) { c.heal(1); c.satiety--; }
-        boolean urgent = needsMealNow(serverLevel);
-        if (!urgent && (c.tickCount % 20 != 0 || missing < 4 && c.getHealth() > c.getMaxHealth() / 2)) return;
-        if (!urgent && c.getTarget() != null && c.getTarget().isAlive() && c.distanceToSqr(c.getTarget()) < 16 && c.getHealth() > 6) return;
+        boolean expedition = c.work.expedition.active();
+        // An empty stomach does not heal the wound by itself: the retreat's rest eats up to the fit health, however small the wound.
+        boolean mends = c.work.expedition.retreating() && c.satiety <= 0 && c.getHealth() < CompanionExpeditionRetreat.FIT;
+        // In his mine the meal does not wait: a loaf is five health in 32 ticks, as much as a zombie takes from him in that time, and the sword hand
+        // is free while he eats (the mine probe: dead from 19 health in 100 ticks with sixteen loaves in the bag). Neither the twenty-tick beat
+        // holds it nor a foe farther than a zombie's arm, and the next meal starts the tick this one ends, while the wound is below the line.
+        boolean urgent = needsMealNow(serverLevel) || expedition && c.getHealth() <= EXPEDITION_EATS_BELOW;
+        if (!urgent && (c.tickCount % 20 != 0 || missing < 4 && c.getHealth() > c.getMaxHealth() / 2 && !mends)) return;
+        if (!urgent && c.getTarget() != null && c.getTarget().isAlive() && (expedition ? c.distanceToSqr(c.getTarget()) < ARMS_REACH_SQR : c.distanceToSqr(c.getTarget()) < 16 && c.getHealth() > 6)) return;
         ItemStack food = bestFood(missing);
         if (food.isEmpty()) return;
         c.eating = food.copyWithCount(1); c.eatTicks = CompanionEntity.EAT_TICKS;
@@ -46,6 +52,10 @@ final class CompanionEating {
     private boolean needsMealNow(ServerLevel level) {
         return c.getHealth() <= ORDER_EATS_BELOW && (c.work.isActive() || CompanionAgenda.goal(level.getServer(), c.ownerId) != null);
     }
+
+    /** Below this he eats in an expedition whoever is near: the next fight starts from more than the last one left. */
+    private static final float EXPEDITION_EATS_BELOW = 14;
+    private static final double ARMS_REACH_SQR = 4;
 
     private void finishEating() {
         var properties = c.eating.get(net.minecraft.core.component.DataComponents.FOOD);

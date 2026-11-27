@@ -265,7 +265,7 @@ final class CompanionLoot {
     /** The pickup shares the melee goal's priority: once it runs it keeps him walking after a drop while the foe he is fighting strikes. */
     private boolean foeOnHim() {
         LivingEntity foe = owner.getTarget();
-        if (foe instanceof Monster && foe.isAlive() && owner.distanceToSqr(foe) < FOE_NEAR * FOE_NEAR) return true;
+        if (foe instanceof Monster && foe.isAlive() && owner.distanceToSqr(foe) < FOE_NEAR * FOE_NEAR && !owner.work.expedition.shuns(foe)) return true;
         if (!(owner.level() instanceof ServerLevel level)) return false;
         // Series h, 21.11: zombies on him struck while he walked off after a drop. Within three blocks a hostile in sight that goes for him (bow
         // skeletons too), or that he would fight now, is on him, and the pickup starves the retreat. One that goes for nobody (an idle skeleton, a

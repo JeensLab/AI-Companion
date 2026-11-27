@@ -70,6 +70,9 @@ final class CompanionArchery {
         return aiming;
     }
 
+    /** The bow would take this target now; asking does not take it. */
+    boolean takes(LivingEntity target) { return aiming(target); }
+
     private boolean aiming(LivingEntity target) {
         if (target == null || !target.isAlive() || !(target instanceof Enemy) || c.tickCount < bladeUntil || !armed() || CompanionCombat.wakesLava(target)) return false;
         // An enderman teleports away from every arrow and takes none of it (EnderMan.hurt): the sword, however far off it is.

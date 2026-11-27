@@ -118,7 +118,8 @@ final class CompanionHighGround extends Goal {
     @Override public boolean canUse() {
         if (c.tickCount % COUNT_EVERY != 0 || c.inventoryViewers != 0 || !c.onGround() || c.temporaryPillar.isRecovering() || !(c.level() instanceof ServerLevel level)) return false;
         if (c.temporaryPillar.leftStanding()) { settle(); return false; }
-        if (c.tickCount < retryAt || c.temporaryPillar.isActive() || CompanionGuardWatch.watching(c) || shotAt(level)) return false;
+        // With no blade in his mine he walks away from a monster (CompanionCombat.StepOffGoal): a column would only hold him among them.
+        if (c.tickCount < retryAt || c.temporaryPillar.isActive() || CompanionGuardWatch.watching(c) || c.combat.unarmedOnTask() || shotAt(level)) return false;
         int after = 0, touching = 0, close = 0;
         List<Monster> foes = about(c, level);
         for (Monster foe : foes) {
@@ -268,11 +269,11 @@ final class CompanionHighGround extends Goal {
     /**
      * What becomes of the column left standing: taken down, the descent asked for at once (it waits for a fight to be over, and walks him
      * back to it: a fight that lasts, or one that took him a few cells off, ends with him at the column and its blocks in his bag). Too far
-     * to come back, they are left where they are.
+     * to come back, they are left where they are, and so they are on the retreat from his mine: the walk back to them is against the climb.
      */
     private void settle() {
         BlockPos foot = c.temporaryPillar.foot();
-        if (foot == null || c.distanceToSqr(foot.getX() + .5, foot.getY(), foot.getZ() + .5) > GIVE_UP_SQR) c.temporaryPillar.abandon();
+        if (foot == null || c.distanceToSqr(foot.getX() + .5, foot.getY(), foot.getZ() + .5) > GIVE_UP_SQR || c.work.expedition.retreating()) c.temporaryPillar.abandon();
         else c.temporaryPillar.requestCleanupAfterFight();
     }
 
@@ -332,6 +333,8 @@ final class CompanionHighGround extends Goal {
         phase = run != null ? Phase.BREAK : Phase.RAISE;
         if (run != null) CompanionMiningNavigation.walk(c, run, RUN_SPEED);
         else c.getNavigation().stop();
+        // Before the block for the column is in his hand: the tool of the work is what the fight of his mine gives back.
+        c.work.expedition.fight.fightBegan();
         if (c.hasActiveWorkOrder()) c.workStatus(run != null ? "Их много, и они уже вплотную: отбегаю и встаю на столбик из своих блоков."
                 : "Их много: встаю на столбик из своих блоков, сверху меня не достанут.");
     }
@@ -354,6 +357,7 @@ final class CompanionHighGround extends Goal {
      * same, or with no room for a column after all, it gains none: the fight is on the ground, as before.
      */
     private void breakAway(List<Monster> foes) {
+        c.work.expedition.fight.fightGoing();
         if (++ran < RUN_TICKS && !(c.getNavigation().isDone() && c.onGround())) return;
         Path walked = c.getNavigation().getPath();
         boolean arrived = walked != null && walked.isDone();
@@ -372,6 +376,7 @@ final class CompanionHighGround extends Goal {
     }
 
     private void raise(Monster nearest) {
+        c.work.expedition.fight.fightGoing();
         // A mob pressed against him stands in the cell the block must take: his blow throws it back, and the jump follows.
         if (nearest != null && c.distanceToSqr(nearest) < TOUCH_SQR && c.combat.swingReady() && c.onGround()) {
             c.selectWeaponForCombat();
@@ -386,6 +391,7 @@ final class CompanionHighGround extends Goal {
     }
 
     private void stand(Monster nearest) {
+        c.work.expedition.fight.fightGoing();
         c.getNavigation().stop();
         BlockPos foot = c.temporaryPillar.foot();
         // Thrown off it (a blast), shot on it, or struck on it by a mob that stands where it reaches him: the fight is the turn of the melee

@@ -39,17 +39,18 @@ final class CompanionExpeditionRetreat {
         this.walk = new CompanionExpeditionWalk(dig);
     }
 
-    /** Plans the way up from where he stands; with no way (not on his stairs, or already at the entrance) he rests where he is. */
-    void begin(String why) {
+    /**
+     * Plans the way up from where he stands; with no way (not on his stairs, or already at the entrance) he rests where he is. With a mob on him
+     * ({@code hounded}) a few steps off his stairs is no reason to stay and fight: he walks back to them, from as far as {@link #FLEE_REACH}.
+     */
+    void begin(String why, boolean hounded) {
         reset();
         reason = why;
         owner.getNavigation().stop();
         CompanionMineSite mine = w.mine;
         if (!mine.exists()) return;
         List<BlockPos> way = CompanionMineSite.wayUp(mine);
-        // Under blows he may be far off his way (a fight pulled him aside): then the nearest cell within FLEE_REACH, not within a stand's reach.
-        BlockPos pos = owner.blockPosition();
-        int at = CompanionExpeditionDanger.hurtByMobLately(owner) ? closest(way, pos) : CompanionExpeditionRecord.nearest(way, pos, CompanionMineSite.NEAR_STAND);
+        int at = hounded ? closest(way, owner.blockPosition()) : CompanionExpeditionRecord.nearest(way, owner.blockPosition(), CompanionMineSite.NEAR_STAND);
         plugCell = mine.stands().size() >= 2 ? mine.stands().get(1) : null;
         int hold = plugCell == null ? way.size() - 1 : way.size() - 2;
         if (at < 0 || at > hold) { plugCell = null; return; }
@@ -122,6 +123,9 @@ final class CompanionExpeditionRetreat {
     private boolean cannotMend() {
         return owner.satiety <= 0 && owner.eatTicks <= 0 && !CompanionEating.hasFood(owner);
     }
+
+    /** Still on the move up (the climb, the plug, the last stretch): a slower foe is left behind. At rest, or stuck, there is nowhere further to go. */
+    boolean leaving() { return phase != Phase.REST; }
 
     /** What he did and how it ended, for the report. */
     String text() {

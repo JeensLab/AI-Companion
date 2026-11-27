@@ -33,6 +33,8 @@ final class CompanionFootwork {
     /** The target stays while it is within his reach plus this margin, or for this many ticks after a blow of his: a knocked-back foe is not swapped for the next one. */
     private static final double REACH = 3, STICKY = 1.5;
     private static final int STRUCK_TICKS = 20;
+    /** How far from every foe the withdrawal of a man with no blade ends. */
+    static final double SAFE = 4.5;
     private static final int STEP_SAMPLES = 3;
     private static final double STEP_LENGTH = .5;
     /** The courses tried for the step: straight away from the foe, then turned off it. */
@@ -64,6 +66,9 @@ final class CompanionFootwork {
     boolean keepOut(ServerLevel level, boolean swordReady) {
         return !swordReady && stepBack(level, CLOSE);
     }
+
+    /** True when he stepped back this tick from a foe within {@link #SAFE}: with no blade the foe is left behind, not fought. */
+    boolean withdraw(ServerLevel level) { return stepBack(level, SAFE); }
 
     private boolean stepBack(ServerLevel level, double reach) {
         if (anchor == null || owner.isBlocking()) return false;
@@ -120,6 +125,14 @@ final class CompanionFootwork {
         return blows / Math.max(1, foe.getHealth());
     }
 
+    boolean onHim(ServerLevel level) { return near(level, ON_HIM); }
+
+    /** A hostile mob he may fight is within this many blocks of him. */
+    boolean near(ServerLevel level, double range) {
+        for (Monster foe : foes(level, range)) if (owner.distanceToSqr(foe) < range * range) return true;
+        return false;
+    }
+
     /** The least distance from the spot to a foe: the step back is the one that leaves him farthest from all of them. */
     private static double gap(Vec3 spot, List<Monster> foes) {
         double least = Double.MAX_VALUE;
@@ -131,7 +144,7 @@ final class CompanionFootwork {
     private List<Monster> foes(ServerLevel level, double range) {
         return level.getEntitiesOfClass(Monster.class, owner.getBoundingBox().inflate(range), foe -> foe.isAlive() && !foe.isNoAi() && !(foe instanceof Creeper)
                 && !(foe instanceof RangedAttackMob && foe.getMainHandItem().getItem() instanceof ProjectileWeaponItem)
-                && owner.combat.fairTarget(foe, owner.combat.provokes(foe)) && owner.hasLineOfSight(foe));
+                && owner.combat.fairTarget(foe, owner.combat.provokes(foe)) && !owner.work.expedition.shuns(foe) && owner.hasLineOfSight(foe));
     }
 
     /** A run along a heading takes a rise or a drop of one block as a step. */

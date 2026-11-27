@@ -54,6 +54,7 @@ final class CompanionExpedition {
     private final CompanionExpeditionBench bench;
     private final CompanionExpeditionStock stock;
     private final CompanionExpeditionWade wade;
+    final CompanionExpeditionFight fight;
     private List<BlockPos> route = List.of();
     private CompanionExpeditionStep plan;
     private Stage stage = Stage.LOCATE;
@@ -83,7 +84,8 @@ final class CompanionExpedition {
         this.lead = new CompanionExpeditionWalk(dig).sealingLiquid(w);
         this.ore = new CompanionExpeditionOre(w, dig);
         this.cave = new CompanionExpeditionCave(w, dig, ore, () -> gained() >= w.requestedCount, this::cutStone);
-        this.hazard = new CompanionExpeditionDanger(owner, cave);
+        this.fight = new CompanionExpeditionFight(w);
+        this.hazard = new CompanionExpeditionDanger(owner, cave, fight);
         this.retreat = new CompanionExpeditionRetreat(w, dig);
         this.backtrack = new CompanionExpeditionBacktrack(w, dig);
         this.digOut = new CompanionExpeditionDigOut(w, dig);
@@ -96,11 +98,19 @@ final class CompanionExpedition {
 
     boolean active() { return active; }
 
+    /** The retreat is under way: the climb and the rest at the entrance, where health is got back. */
+    boolean retreating() { return active && stage == Stage.RETREAT; }
+
+    /** The retreat is still on the move up: a foe slower than he is left behind, not fought. */
+    boolean fleeing() { return retreating() && retreat.leaving(); }
+
     String stageName() { return active ? stage.name() : ""; }
 
     String cavePhase() { return active ? cave.phaseName() : ""; }
 
     void expireStep(ServerLevel level) { stepEnd = level.getGameTime(); }
+
+    long stepEnd() { return stepEnd; }
 
     /** The climb is cutting its way out of rock: the self-rescue may work. */
     boolean cuttingOut() { return active && stage == Stage.CLIMB && climb.cuttingOut(); }
@@ -178,6 +188,7 @@ final class CompanionExpedition {
         supply.reset();
         bench.reset();
         stock.reset();
+        fight.reset();
         tunnelWhy = digOutWhy = "";
         resurfaceWhy = null;
         stage = Stage.LOCATE;
@@ -196,6 +207,15 @@ final class CompanionExpedition {
         CompanionChunkTicket.follow(owner);
         boolean expired = level.getGameTime() >= stepEnd;
         boolean digging = stage == Stage.DESCEND || stage == Stage.BRANCH;
+        // A foe is fought before anything else is done; the time it takes is given back to the step.
+        if (!expired && fight.hold(level, stage == Stage.RETREAT)) return;
+        // Wounded with a mob on him, the fight has let it go for the climb: the climb starts before any other turn (the cave's, a bench's, an
+        // ore's), which would else keep it from starting and leave him neither fighting nor leaving (run r20261031-d2/water: two zombies, seven
+        // seconds, not a blow struck).
+        if (!expired && stage != Stage.LOCATE && stage != Stage.CLIMB && stage != Stage.RETREAT && fight.fleeable()) {
+            String danger = hazard.now();
+            if (danger != null) { cave.abandon(); startRetreat(level, danger); return; }
+        }
         // The cave looks at a breach a tick after it opens, so it must look before the timeout may end the step.
         if (expired) cave.hurry();
         boolean caveTurn = cave.tick(level, plan == null ? List.of() : plan.cells(), digging);
@@ -210,7 +230,8 @@ final class CompanionExpedition {
         if (expired) return;
         // A bench he set down on a step shuts the stairs: it comes up before anything else, a retreat apart.
         if (stage != Stage.LOCATE && stage != Stage.RETREAT && bench.tick(level)) return;
-        String danger = stage == Stage.CLIMB || stage == Stage.RETREAT || stage == Stage.LOCATE ? null : hazard.now();
+        // The first tick locates the mine and then takes his hands for a craft: with a mob on him at low health the climb comes first, not ten ticks later.
+        String danger = stage == Stage.CLIMB || stage == Stage.RETREAT || stage == Stage.LOCATE && !(w.mine.exists() && fight.hounded(level)) ? null : hazard.now();
         if (danger != null) { startRetreat(level, danger); return; }
         if (plan == null && digging && ore.pending() && mineOre(level, stage == Stage.BRANCH ? CompanionExpeditionOre.Mode.TUNNEL : CompanionExpeditionOre.Mode.NEAR)) return;
         if (plan == null && stage == Stage.DESCEND && stock.tick(level, stand, dir)) return;
@@ -265,7 +286,7 @@ final class CompanionExpedition {
         }
         w.mine.retreated();
         holdStep(CLIMB_TICKS + CompanionExpeditionRetreat.REST_TICKS);
-        retreat.begin(why);
+        retreat.begin(why, fight.hounded(level));
         stage = Stage.RETREAT;
     }
 
@@ -273,6 +294,12 @@ final class CompanionExpedition {
         CompanionExpeditionOre.Result result = ore.step(level, mode);
         if (result == CompanionExpeditionOre.Result.FULL) end(Ending.BLOCKED, "Сумка полна, добытое некуда класть.");
         return result != CompanionExpeditionOre.Result.NONE;
+    }
+
+    /** True when a fight would draw him into a cave the mine has opened: see {@link CompanionExpeditionCave#shuns}. */
+    boolean shuns(net.minecraft.world.entity.LivingEntity target) {
+        return active && (cave.shuns(target) || fight.avoids(target, stage == Stage.RETREAT)
+                || target instanceof net.minecraft.world.entity.monster.Creeper && !owner.creeperGuard.fights());
     }
 
     private int gained() { return w.items.countCarried(Items.DIAMOND) - startDiamonds; }
