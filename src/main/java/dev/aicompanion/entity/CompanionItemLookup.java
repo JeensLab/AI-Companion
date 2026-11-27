@@ -78,8 +78,8 @@ public final class CompanionItemLookup {
         return found;
     }
 
-    /** An item the phrase names, its name, and how much of that name the phrase said (1.0: the whole name). */
-    private record Match(Item item, String name, double said, int score) { }
+    /** An item the phrase names, and the name it answers to. */
+    private record Match(Item item, String name) { }
 
     /**
      * The items the phrase names, best first: the whole name said beats a part of a longer one («Тыква» before «Семена
@@ -103,7 +103,7 @@ public final class CompanionItemLookup {
             if (whole > bestSaid + 1e-9) { bestSaid = whole; bestScore = score; found.clear(); }
             if (Math.abs(whole - bestSaid) <= 1e-9 && score >= bestScore) {
                 if (score > bestScore) { bestScore = score; found.clear(); }
-                found.add(new Match(item, name, whole, score));
+                found.add(new Match(item, name));
             }
         }
         found.sort(Comparator.comparingInt(match -> match.name().length()));

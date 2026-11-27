@@ -307,17 +307,18 @@ public final class CompanionItemOrderTests {
         CompanionEntity c = spawn(h);
         c.setItem(0, new ItemStack(Items.DIAMOND_AXE));
         c.setItem(1, new ItemStack(Items.DIRT, 32));
-        List<String> phrases = List.of("добудь забор", "добудь 16 забора");
-        int[] want = {1, 16};
+        List<String> phrases = List.of("добудь забор", "добудь 16 забора", "добудь 16 забора");
+        int[] want = {1, 16, 4};
+        int[] stand = {20, 20, 4};
         inTurn(h, c, phrases,
                 at -> {
                     for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.OAK_FENCE)) c.setItem(slot, ItemStack.EMPTY);
-                    for (int i = 0; i < 10; i++) {
-                        placedByPlayer(h, c, new BlockPos(HOME_X + 3 + i, FEET, HOME_Z + 2), Blocks.OAK_FENCE);
-                        placedByPlayer(h, c, new BlockPos(HOME_X + 3 + i, FEET + 1, HOME_Z + 2), Blocks.OAK_FENCE);
-                    }
+                    // Only this phrase's fences stand: the ones the order before left are cleared, so the count is the scene's.
+                    for (int i = 0; i < 20; i++) h.setBlock(new BlockPos(HOME_X + 3 + i % 10, FEET + i / 10, HOME_Z + 2), Blocks.AIR);
+                    for (int i = 0; i < stand[at]; i++)
+                        placedByPlayer(h, c, new BlockPos(HOME_X + 3 + i % 10, FEET + i / 10, HOME_Z + 2), Blocks.OAK_FENCE);
                 },
-                at -> h.assertTrue(count(c, Items.OAK_FENCE) >= want[at],
+                at -> h.assertTrue(count(c, Items.OAK_FENCE) == want[at],
                         "«" + phrases.get(at) + "» left " + count(c, Items.OAK_FENCE) + " fences, not " + want[at] + ": " + c.getLastTaskResult()));
     }
 

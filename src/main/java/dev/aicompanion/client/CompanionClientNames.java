@@ -49,9 +49,10 @@ public final class CompanionClientNames {
 
     /** The ru_ru.json of every namespace of the client's packs: the game's own Russian names of its items. */
     private static Map<String, String> russianNames() throws IOException {
+        var minecraft = net.minecraft.client.Minecraft.getInstance();
+        if (minecraft == null || minecraft.getResourceManager() == null) return Map.of();
         Map<String, String> names = new HashMap<>();
-        var resources = net.minecraft.client.Minecraft.getInstance().getResourceManager()
-                .listResources("lang", id -> id.getPath().equals("ru_ru.json"));
+        var resources = minecraft.getResourceManager().listResources("lang", id -> id.getPath().equals("ru_ru.json"));
         for (Map.Entry<ResourceLocation, Resource> entry : resources.entrySet()) {
             try (Reader reader = entry.getValue().openAsReader()) {
                 var json = com.google.gson.JsonParser.parseReader(reader);

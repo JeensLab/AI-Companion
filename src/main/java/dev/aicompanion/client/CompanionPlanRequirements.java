@@ -110,7 +110,7 @@ public final class CompanionPlanRequirements {
         String command = CompanionWorkCommands.itemOrder(request, "", names);
         if (command != null && command.startsWith("companion work obtain_item ")) {
             List<PlannedAction> steps = CompanionLocalCommands.actions(command);
-            return new CompanionReply(decoded.text(), List.copyOf(steps), decoded.repeat());
+            return stepFromWords(decoded, request, steps);
         }
         String item = dev.aicompanion.entity.CompanionItemLookup.itemFor(thingOf(text), names);
         if (item == null) item = dev.aicompanion.entity.CompanionItemLookup.itemFor(decoded.text(), names);
@@ -120,6 +120,13 @@ public final class CompanionPlanRequirements {
         List<PlannedAction> steps = new ArrayList<>();
         steps.add(new PlannedAction("obtain_item", 0, count, item));
         if (text.matches("(?sU).*\\b(принеси|притащи|дай)\\b.*")) steps.add(new PlannedAction("give_items", 0, count, item));
+        return stepFromWords(decoded, request, steps);
+    }
+
+    /** The reply with the engine's own step, and a line in the journal saying which step the words became. */
+    private static CompanionReply stepFromWords(CompanionReply decoded, String request, List<PlannedAction> steps) {
+        dev.aicompanion.CompanionDiagnostics.say("", "order_words_step",
+                "«" + request + "»: шаг взят из слов — " + steps, "order", request, "steps", steps);
         return new CompanionReply(decoded.text(), List.copyOf(steps), decoded.repeat());
     }
 
