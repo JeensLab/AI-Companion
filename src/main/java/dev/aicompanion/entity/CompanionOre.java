@@ -89,6 +89,12 @@ public final class CompanionOre {
                 || state.is(net.neoforged.neoforge.common.Tags.Blocks.ORES);
     }
 
+    /** Water or lava next to the ore: the mine expedition digs without plugging, so it leaves such ore alone. */
+    static boolean liquidNear(ServerLevel level, BlockPos pos) {
+        for (Direction side : Direction.values()) if (!level.getFluidState(pos.relative(side)).isEmpty()) return true;
+        return !level.getFluidState(pos).isEmpty();
+    }
+
     /**
      * A cell of the own tunnel: no lava in it or under it, no sand or gravel around, no chest or furnace beside it. Lava above or
      * beside it is no bar here: it is plugged when the cell is opened (CompanionLava.plug), if he has the blocks.

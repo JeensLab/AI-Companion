@@ -1,0 +1,326 @@
+package dev.aicompanion.gametest;
+
+import dev.aicompanion.entity.CompanionActionResult;
+import dev.aicompanion.entity.CompanionEntity;
+import dev.aicompanion.entity.CompanionMineSite;
+import dev.aicompanion.entity.CompanionShaftPlan;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.gametest.framework.GameTest;
+import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
+import net.neoforged.neoforge.gametest.GameTestHolder;
+import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+
+import java.util.List;
+
+import static dev.aicompanion.gametest.CompanionMineArena.CENTER;
+import static dev.aicompanion.gametest.CompanionMineArena.GROUND;
+import static dev.aicompanion.gametest.CompanionMineArena.SIZE;
+import static dev.aicompanion.gametest.CompanionMineArena.TIMEOUT;
+import static dev.aicompanion.gametest.CompanionMineArena.count;
+import static dev.aicompanion.gametest.CompanionMineArena.mountain;
+import static dev.aicompanion.gametest.CompanionMineArena.rel;
+import static dev.aicompanion.gametest.CompanionMineArena.report;
+import static dev.aicompanion.gametest.CompanionMineArena.rig;
+
+/**
+ * Run p1a/void (seed 20261031): the record of a mine started again under the ground held a pit, and above it only the entrance on the surface
+ * nine blocks up, with nothing of the way between; the pit is roofed, no walk or floor reaches that cell, and the climb ended «путь наверх закрыт»
+ * with an iron pickaxe and shovels in the bag. Arena as in the other mine tests; the pit is a small copy of the shape of the record.
+ */
+@GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
+@PrefixGameTestTemplate(false)
+public final class CompanionMineClimbOutTests {
+    private static final String SURFACE = "surface";
+    /** Where the record's entrance lies from the one on the surface, as in the run. */
+    private static final int EAST = 7, SOUTH = 2, BELOW = 9;
+    /** The pit reaches up to the soil under the turf, which is its roof. */
+    private static final int PIT_TOP = GROUND - 2, SOIL = 31, SURFACE_MARGIN = 2;
+    /** The deep pit: its feet in the deepslate over the diamond ring, east of the surface entrance, and the old stand further east through the rock. */
+    private static final int DEEP_EAST = 6, DEEP_FEET = 3, OLD_STAND_EAST = 8, LAKE = 1;
+    /** The ground taken down east of the entrance: five layers, below the entrance's two of margin; the terrace from four blocks east, the trench round twelve east. */
+    private static final int TERRACE_DEPTH = 5, TERRACE_FROM = 4, TRENCH_EAST = 12;
+    /** The cave with a hole in its roof: his feet eight under the turf, the cave nine across, three high. */
+    private static final int CAVE_BELOW = 8, CAVE_HALF = 4;
+    /** A corridor of his own off the stairs, the ramp from its far end up to the turf, and the chasm in its floor. */
+    private static final int TOP_STEPS = 10, CORRIDOR_Y = 12, CORRIDOR_Z = 14, RAMP_X = 3, START_X = 18, BACK_DOWN_FEET = 14, ENTRANCE_X = 5, CHASM_FROM = 9, CHASM_TO = 11, CHASM_DEPTH = 3;
+    /** Wear of the iron pickaxe past what is kept for ore. */
+    private static final int IRON_WORN = 191;
+
+    private CompanionMineClimbOutTests() { }
+
+    /** The pit, the record and a bag of a pickaxe with wear to spare: he cuts his way through the rock and the roof, and walks to the surface. */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    public static void cutsHisWayOutOfARoofedPitWhenTheRecordHasNoWayUp(GameTestHelper h) {
+        CompanionEntity c = roofedPit(h, false);
+        BlockPos stand = c.mineSite().stands().get(0);
+        int surface = h.absolutePos(new BlockPos(0, GROUND + 1 - SURFACE_MARGIN, 0)).getY();
+        climb(h, c, stand, result -> {
+            h.assertTrue(result.success() && c.getBlockY() >= surface, "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c));
+            h.assertTrue(count(c, Items.COBBLESTONE) > 0, "No stone of the way he cut came into the bag | " + report(c));
+        });
+    }
+
+    /**
+     * Runs void-5 (seed 20261031), void-2 (seed 7), restart (seed 314159) of 06.11: the record of a mine started again at the bottom holds a pit, and
+     * above it a cell of the old record eight blocks off through solid rock and the entrance on the surface far up; no walk, no plug and no rescue
+     * opens that, and the diamonds stayed down there with «путь наверх закрыт». He cuts a staircase of his own up to the surface instead.
+     * Run descent of seed 7 (21.11): the step two under the entrance takes the turf off over it, and the climb ended there under the sky, at the
+     * bottom of the slot of his own stairs, with no walk out of it; the stairs end at the first step he walks out of onto the land, a block
+     * under it, not in the slot and not on at the entrance.
+     */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 2 * TIMEOUT, skyAccess = true)
+    public static void cutsAStaircaseToTheSurfaceWhenTheWayAboveIsShutByRock(GameTestHelper h) {
+        CompanionEntity c = deepPit(h);
+        BlockPos stand = c.mineSite().stands().get(0);
+        int surface = h.absolutePos(new BlockPos(0, GROUND, 0)).getY();
+        List<BlockPos> recorded = List.copyOf(c.mineSite().above());
+        climb(h, c, stand, result -> {
+            h.assertTrue(result.success() && c.getBlockY() == surface, "He said «" + result.message() + "» at height " + c.getBlockY() + ", not on the step out of his stairs at " + surface + " | " + report(c));
+            h.assertTrue(!recorded.containsAll(c.mineSite().above()), "The staircase he cut is not in the record of the way up | " + report(c));
+        });
+    }
+
+    /**
+     * Runs descent and void of seed 7 (07.11): a pocket of an aquifer, water over the rock of every column round him, so no step up may be
+     * cut, and «путь наверх закрыт» with the diamonds in his bag. The way is level first, out from under the water, and up from there.
+     */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 2 * TIMEOUT, skyAccess = true)
+    public static void tunnelsLevelOutFromUnderALakeBeforeCuttingUp(GameTestHelper h) {
+        CompanionEntity c = underLake(h);
+        BlockPos stand = c.mineSite().stands().get(0);
+        int surface = h.absolutePos(new BlockPos(0, GROUND + 1 - SURFACE_MARGIN, 0)).getY();
+        climb(h, c, stand, result -> h.assertTrue(result.success() && c.getBlockY() >= surface, "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c)));
+    }
+
+    /** The same pit in bedrock: no cut gets anywhere, the climb ends once, said as it is, and he is still down there. */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    public static void endsTheClimbOnceWhenThePitCannotBeCutOutOf(GameTestHelper h) {
+        CompanionEntity c = roofedPit(h, true);
+        BlockPos stand = c.mineSite().stands().get(0);
+        climb(h, c, stand, result -> {
+            h.assertTrue(!result.success() && result.message().contains("путь наверх закрыт"), "The climb out of bedrock ended: " + result.message() + " | " + report(c));
+            h.assertTrue(c.getBlockY() < h.absolutePos(new BlockPos(0, PIT_TOP + 1, 0)).getY(), "He left a pit of bedrock | " + report(c));
+        });
+    }
+
+    /**
+     * Run water of seed 7 (20.11): sent up for wood, he came out under the open sky on a slope five blocks below the entrance of his mine, and the climb
+     * went on to a cell of his old stairs below him; the self-rescue dug him down into a pit of his own, and from there no tree was in reach. Open
+     * ground under the sky is the surface whatever the height of the entrance: the climb ends where he stands.
+     */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    public static void endsTheClimbOnOpenGroundBelowTheEntrance(GameTestHelper h) {
+        BlockPos stand = lowered(h, CENTER + TERRACE_FROM, SIZE - 2);
+        CompanionEntity c = lost(h, stand);
+        climb(h, c, h.absolutePos(stand), true, result -> h.assertTrue(result.success() && c.getBlockY() == h.absolutePos(stand).getY() && c.blockPosition().distManhattan(h.absolutePos(stand)) <= 2,
+                "He said «" + result.message() + "» at " + c.blockPosition() + ", not on the open ground at " + h.absolutePos(stand) + " | " + report(c)));
+    }
+
+    /** The floor of a trench three wide is under the sky too, but walled on both sides: no surface to fetch wood on, so the climb goes on out of it. */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 2 * TIMEOUT, skyAccess = true)
+    public static void goesOnOutOfATrenchUnderTheSky(GameTestHelper h) {
+        BlockPos stand = lowered(h, CENTER + TRENCH_EAST - 1, CENTER + TRENCH_EAST + 1);
+        CompanionEntity c = lost(h, stand);
+        int surface = h.absolutePos(new BlockPos(0, GROUND + 1 - SURFACE_MARGIN, 0)).getY();
+        climb(h, c, h.absolutePos(stand), true, result -> h.assertTrue(result.success() && c.getBlockY() >= surface, "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c)));
+    }
+
+    /**
+     * Review of 21.11: a cave under the rock with one hole in its roof right over him. He is under the sky, and the air of the cave round him is no
+     * ground under it: no surface to fetch wood on, so the climb goes on out.
+     */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 2 * TIMEOUT, skyAccess = true)
+    public static void goesOnOutOfACaveUnderAHoleInItsRoof(GameTestHelper h) {
+        mountain(h, false);
+        BlockPos stand = new BlockPos(CENTER + TRENCH_EAST, GROUND - CAVE_BELOW, CENTER);
+        for (int x = -CAVE_HALF; x <= CAVE_HALF; x++) for (int z = -CAVE_HALF; z <= CAVE_HALF; z++) for (int y = 0; y <= 2; y++) h.setBlock(stand.offset(x, y, z), Blocks.AIR);
+        for (int y = 3; stand.getY() + y <= GROUND; y++) h.setBlock(stand.above(y), Blocks.AIR);
+        CompanionEntity c = lost(h, stand);
+        int surface = h.absolutePos(new BlockPos(0, GROUND + 1 - SURFACE_MARGIN, 0)).getY();
+        climb(h, c, h.absolutePos(stand), true, result -> h.assertTrue(result.success() && c.getBlockY() >= surface, "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c)));
+    }
+
+    /**
+     * Run s1a/void-2: the record has a gap below the upper stairs. The only walk across it is a corridor and a ramp to the surface, over the ground and down
+     * the stairs. Once out on the surface the climb has done its work: he must not go back down the stairs for the cell beyond the gap, to walk up them again.
+     */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    public static void aClimbAcrossAGapEndsOnTheSurfaceItReaches(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        for (int slot = 0; slot < 6; slot++) c.setItem(slot, ItemStack.EMPTY);
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        CompanionMineSite site = c.mineSite();
+        site.start(h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER)), Direction.NORTH);
+        for (int k = 1; k <= TOP_STEPS; k++) {
+            BlockPos stand = new BlockPos(CENTER, GROUND + 1 - k, CENTER - k);
+            for (int y = 0; y <= 2; y++) h.setBlock(stand.above(y), Blocks.AIR);
+            site.reached(h.absolutePos(stand));
+        }
+        for (int x = RAMP_X; x <= START_X; x++) for (int y = 0; y <= 2; y++) h.setBlock(new BlockPos(x, CORRIDOR_Y + y, CORRIDOR_Z), Blocks.AIR);
+        for (int rise = 1; rise <= GROUND - CORRIDOR_Y; rise++) for (int y = CORRIDOR_Y + rise; y <= Math.min(GROUND, CORRIDOR_Y + rise + 2); y++) h.setBlock(new BlockPos(RAMP_X, y, CORRIDOR_Z + rise), Blocks.AIR);
+        BlockPos at = h.absolutePos(new BlockPos(START_X, CORRIDOR_Y, CORRIDOR_Z));
+        site.reached(at);
+        c.teleportTo(at.getX() + .5, at.getY(), at.getZ() + .5);
+        boolean[] up = {false};
+        h.onEachTick(() -> {
+            int feet = rel(h, c.blockPosition()).getY();
+            up[0] |= feet >= GROUND - 1;
+            h.assertTrue(!up[0] || feet > BACK_DOWN_FEET, "Out on the surface he went back down to height " + feet + " | " + report(c));
+        });
+        climb(h, c, at, result -> h.assertTrue(result.success() && up[0], "The climb did not end on the surface: " + result.message() + " | " + report(c)));
+    }
+
+    /**
+     * Run w1b/void-3: a corridor of his own with a chasm in its floor, three cells long and three deep, between where he stands and the stairs he came down. No walk
+     * crosses it, and the bag has a pickaxe and no block: he stood on «в пути наверх нет пола, а блоков, чтобы его настелить, нет». A player cuts stone from the wall
+     * of the corridor and lays the floor with it.
+     */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    public static void cutsStoneFromTheWallToLayTheFloorOfTheWayUp(GameTestHelper h) {
+        mountain(h, false);
+        for (int x = ENTRANCE_X; x <= START_X; x++) for (int y = CORRIDOR_Y; y <= CORRIDOR_Y + 2; y++) h.setBlock(new BlockPos(x, y, CORRIDOR_Z), Blocks.AIR);
+        for (int x = CHASM_FROM; x <= CHASM_TO; x++) for (int y = CORRIDOR_Y - CHASM_DEPTH; y < CORRIDOR_Y; y++) h.setBlock(new BlockPos(x, y, CORRIDOR_Z), Blocks.AIR);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        for (int slot = 0; slot < c.getContainerSize(); slot++) c.setItem(slot, ItemStack.EMPTY);
+        c.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        CompanionMineSite site = c.mineSite();
+        site.start(h.absolutePos(new BlockPos(ENTRANCE_X, CORRIDOR_Y, CORRIDOR_Z)), Direction.WEST);
+        site.reached(h.absolutePos(new BlockPos(ENTRANCE_X + 1, CORRIDOR_Y, CORRIDOR_Z)));
+        BlockPos start = h.absolutePos(new BlockPos(START_X, CORRIDOR_Y, CORRIDOR_Z));
+        site.reached(start);
+        c.teleportTo(start.getX() + .5, start.getY(), start.getZ() + .5);
+        climb(h, c, start, result -> {
+            int x = rel(h, c.blockPosition()).getX();
+            h.assertTrue(result.success() && x <= ENTRANCE_X + 2, "He said «" + result.message() + "» at x " + x + ", short of the stairs at x " + (ENTRANCE_X + 1) + " | " + report(c));
+        });
+    }
+
+    /** Run u1a/void-4: the only pickaxe left is the iron one, its wear below what is kept for ore: the way out is worth more than the ore, and rock is cut with it. */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT, skyAccess = true)
+    public static void cutsHisWayOutWithTheWornIronPickaxeWhenItIsTheLastHeHas(GameTestHelper h) {
+        CompanionEntity c = roofedPit(h, false);
+        c.getItem(1).setDamageValue(IRON_WORN);
+        BlockPos stand = c.mineSite().stands().get(0);
+        int surface = h.absolutePos(new BlockPos(0, GROUND - 1, 0)).getY();
+        climb(h, c, stand, result -> h.assertTrue(result.success() && c.getBlockY() >= surface, "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c)));
+    }
+
+    /** The mountain with its top {@code TERRACE_DEPTH} layers taken off from x0 to x1 the whole length of the arena; his feet on the ground there, east of the entrance. */
+    private static BlockPos lowered(GameTestHelper h, int x0, int x1) {
+        mountain(h, false);
+        for (int x = x0; x <= x1; x++) for (int z = 1; z < SIZE - 1; z++) {
+            for (int y = GROUND - TERRACE_DEPTH + 1; y <= GROUND; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+            h.setBlock(new BlockPos(x, GROUND - TERRACE_DEPTH, z), Blocks.GRASS_BLOCK);
+        }
+        return new BlockPos(Math.min(x1, CENTER + TRENCH_EAST), GROUND - TERRACE_DEPTH + 1, CENTER);
+    }
+
+    /** The record of a mine started again deep under the ground with only the entrance on the surface above it, and he stands at {@code stand}, far from both. */
+    private static CompanionEntity lost(GameTestHelper h, BlockPos stand) {
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        CompanionMineSite site = c.mineSite();
+        site.start(h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER)), Direction.NORTH);
+        site.restart(h.absolutePos(new BlockPos(stand.getX(), DEEP_FEET, stand.getZ())), Direction.NORTH);
+        site.buried(true);
+        BlockPos at = h.absolutePos(stand);
+        c.teleportTo(at.getX() + .5, at.getY(), at.getZ() + .5);
+        return c;
+    }
+
+    /** A pocket of two cells deep in the deepslate, a spring beside it flooding his feet, water in the layer over its ceiling three blocks each way; the record as in {@link #deepPit}. */
+    private static CompanionEntity underLake(GameTestHelper h) {
+        mountain(h, false);
+        BlockPos entrance = new BlockPos(CENTER + DEEP_EAST, DEEP_FEET + 1, CENTER + SOUTH), stand = entrance.north().below();
+        for (BlockPos cell : List.of(stand, stand.above(), entrance)) h.setBlock(cell, Blocks.AIR);
+        h.setBlock(stand.north(), Blocks.WATER);
+        for (int x = -LAKE; x <= LAKE; x++) for (int z = -LAKE; z <= LAKE; z++) h.setBlock(stand.offset(x, 3, z), Blocks.WATER);
+        BlockPos oldStand = stand.east(OLD_STAND_EAST);
+        for (BlockPos cell : CompanionShaftPlan.column(oldStand)) h.setBlock(cell, Blocks.AIR);
+        return recorded(h, entrance, stand, oldStand);
+    }
+
+    /** A chamber of three by three deep in the deepslate; the old record had a stand eight blocks east of it through the rock, and its entrance on the surface. */
+    private static CompanionEntity deepPit(GameTestHelper h) {
+        mountain(h, true);
+        BlockPos entrance = new BlockPos(CENTER + DEEP_EAST, DEEP_FEET + 1, CENTER + SOUTH), stand = entrance.north().below();
+        for (int x = entrance.getX() - 1; x <= entrance.getX() + 1; x++) for (int z = stand.getZ() - 1; z <= stand.getZ() + 1; z++) for (int y = stand.getY(); y <= stand.getY() + 2; y++) {
+            h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        }
+        BlockPos oldStand = stand.east(OLD_STAND_EAST);
+        for (BlockPos cell : CompanionShaftPlan.column(oldStand)) h.setBlock(cell, Blocks.AIR);
+        return recorded(h, entrance, stand, oldStand);
+    }
+
+    private static CompanionEntity recorded(GameTestHelper h, BlockPos entrance, BlockPos stand, BlockPos oldStand) {
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        BlockPos from = h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER)), standAt = h.absolutePos(stand);
+        CompanionMineSite site = c.mineSite();
+        site.start(from, Direction.NORTH);
+        site.reached(h.absolutePos(oldStand));
+        site.restart(h.absolutePos(entrance), Direction.NORTH);
+        site.reached(standAt);
+        site.buried(true);
+        c.teleportTo(standAt.getX() + .5, standAt.getY(), standAt.getZ() + .5);
+        return c;
+    }
+
+    static void climb(GameTestHelper h, CompanionEntity c, BlockPos stand, java.util.function.Consumer<CompanionActionResult> check) { climb(h, c, stand, false, check); }
+
+    /** As above; {@code sky}: he stands under the open sky, and the climb waits for the sky light to reach him instead of to leave. */
+    static void climb(GameTestHelper h, CompanionEntity c, BlockPos stand, boolean sky, java.util.function.Consumer<CompanionActionResult> check) {
+        long[] id = {0};
+        h.onEachTick(() -> {
+            if (id[0] == 0) {
+                // The sky light of a freshly built mountain lags behind it.
+                if (h.getLevel().canSeeSky(stand.above()) != sky) return;
+                h.assertTrue(c.startWork("dig_for_diamonds", SURFACE, 1).success(), "The climb was not accepted: " + c.getLastTaskResult());
+                id[0] = c.activeWorkId();
+                return;
+            }
+            if (c.isWorking() || c.isGatheringTask()) return;
+            CompanionActionResult result = c.workResult(id[0]);
+            h.assertTrue(result != null, "No result for the order: " + report(c));
+            check.accept(result);
+            h.succeed();
+        });
+    }
+
+    /** A pit of three by three under the soil of the surface, shut in {@code bedrock} on every side if asked; he stands in it with the record of the run. */
+    static CompanionEntity roofedPit(GameTestHelper h, boolean bedrock) {
+        mountain(h, true);
+        BlockPos entrance = new BlockPos(CENTER + EAST, GROUND + 1 - BELOW, CENTER + SOUTH), stand = entrance.north().below();
+        for (int x = entrance.getX() - 2; x <= entrance.getX() + 2; x++) for (int z = stand.getZ() - 2; z <= stand.getZ() + 2; z++) for (int y = stand.getY() - 1; y <= PIT_TOP + 1; y++) {
+            boolean inside = Math.abs(x - entrance.getX()) <= 1 && Math.abs(z - stand.getZ()) <= 1 && y >= stand.getY() && y <= PIT_TOP;
+            if (inside) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+            else if (bedrock) h.setBlock(new BlockPos(x, y, z), Blocks.BEDROCK);
+        }
+        h.setBlock(entrance.below(), Blocks.STONE);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        c.setItem(0, ItemStack.EMPTY);
+        c.setItem(4, new ItemStack(Items.DIRT, SOIL));
+        c.setItem(5, new ItemStack(Items.IRON_SHOVEL));
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        BlockPos from = h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER)), standAt = h.absolutePos(stand);
+        CompanionMineSite site = c.mineSite();
+        site.start(from, Direction.NORTH);
+        site.restart(h.absolutePos(entrance), Direction.NORTH);
+        site.reached(standAt);
+        site.buried(true);
+        c.teleportTo(standAt.getX() + .5, standAt.getY(), standAt.getZ() + .5);
+        return c;
+    }
+}

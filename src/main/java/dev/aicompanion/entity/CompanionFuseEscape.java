@@ -21,7 +21,7 @@ import java.util.Map;
 
 /**
  * The way out of a lit fuse, over the floor as it is: a breadth-first walk over the cells he can stand on (four neighbours, a rise of one
- * block, a drop of up to three, which hurts nothing) to a dozen steps, that never goes towards a creeper. The cell it ends at is the one the
+ * block, a drop of up to three, which hurts nothing) to a dozen steps, that never goes towards a creeper nor past the one he runs from or one that is lit. The cell it ends at is the one the
  * fuse cannot see (a fuse goes out without a line of sight, and a blast does not reach round a corner), then the farthest from the nearest
  * creeper up to the gap beyond which the fuse goes out anyway, then the nearest to walk to.
  */
@@ -30,6 +30,8 @@ final class CompanionFuseEscape {
     private static final long NEVER = Long.MIN_VALUE / 2;
     /** How much nearer to a creeper than he is now a cell may be (a corner is rounded on a cell not much farther), and how near to one never. */
     private static final double TOLERANCE = 1, MIN_CLEAR = 1, REACHED = .6, DERAILED = 2.5;
+    /** A creeper less than this off him on the plan, right over or under him, has no far side ({@link #past}). */
+    private static final double ABREAST = .5;
     private static final Direction[] SIDES = {Direction.EAST, Direction.WEST, Direction.SOUTH, Direction.NORTH};
     private static final int[] LEVELS = {0, 1, -1, -2, -MAX_DROP};
     /** How far inside the edge of the floor his footprint is counted, and how far above the floor a point still stands on it. */
@@ -60,9 +62,9 @@ final class CompanionFuseEscape {
 
     int length() { return path.size() - index; }
 
-    /** Builds the way now; its length, or -1 where he has none. */
-    int plan(ServerLevel level, List<Creeper> threats) {
-        build(level, threats);
+    /** Builds the way now, out of this creeper's blast; its length, or -1 where he has none. */
+    int plan(ServerLevel level, List<Creeper> threats, Creeper judged) {
+        build(level, threats, judged);
         builtAt = level.getGameTime();
         return holding ? 0 : path.isEmpty() ? -1 : path.size();
     }
@@ -71,9 +73,9 @@ final class CompanionFuseEscape {
      * The point to push him to now: the next cell of the way, built again every few ticks and where he has left it; where he stands when he is
      * out of the fuse's sight already; null when there is no way.
      */
-    Vec3 step(ServerLevel level, List<Creeper> threats) {
+    Vec3 step(ServerLevel level, List<Creeper> threats, Creeper judged) {
         long now = level.getGameTime();
-        if (now - builtAt >= REPLAN_TICKS || derailed() || arrived()) { build(level, threats); builtAt = now; }
+        if (now - builtAt >= REPLAN_TICKS || derailed() || arrived()) { build(level, threats, judged); builtAt = now; }
         if (holding) return owner.position();
         if (path.isEmpty()) return null;
         while (index < path.size() - 1 && reached(path.get(index))) index++;
@@ -99,12 +101,13 @@ final class CompanionFuseEscape {
         }
     }
 
-    private void build(ServerLevel level, List<Creeper> threats) {
+    private void build(ServerLevel level, List<Creeper> threats, Creeper judged) {
         BlockPos start = owner.blockPosition();
         double[] floors = new double[threats.size()];
         for (int i = 0; i < floors.length; i++) {
             floors[i] = Math.max(MIN_CLEAR, Math.min(owner.position().distanceTo(threats.get(i).position()), CompanionCreeperGuard.SAFE_GAP) - TOLERANCE);
         }
+        List<Creeper> sided = threats.stream().filter(creeper -> creeper == judged || CompanionCreeperGuard.lit(creeper)).toList();
         Map<BlockPos, BlockPos> from = new HashMap<>();
         Map<BlockPos, Integer> steps = new HashMap<>();
         ArrayDeque<BlockPos> queue = new ArrayDeque<>();
@@ -119,7 +122,8 @@ final class CompanionFuseEscape {
             if (taken == DEPTH) continue;
             for (Direction side : SIDES) {
                 BlockPos next = move(level, cell, side);
-                if (next == null || steps.containsKey(next) || !keepsOff(Vec3.atBottomCenterOf(next), threats, floors)) continue;
+                Vec3 foot = next == null ? null : Vec3.atBottomCenterOf(next);
+                if (next == null || steps.containsKey(next) || !keepsOff(foot, threats, floors) || past(owner.position(), foot, sided)) continue;
                 from.put(next, cell);
                 steps.put(next, taken + 1);
                 queue.add(next);
@@ -187,6 +191,23 @@ final class CompanionFuseEscape {
     private static boolean keepsOff(Vec3 point, List<Creeper> threats, double[] floors) {
         for (int i = 0; i < floors.length; i++) if (point.distanceTo(threats.get(i).position()) < floors[i]) return false;
         return true;
+    }
+
+    /**
+     * The point lies beyond one of these creepers from where he stands, within the gap of its fuse: the way never leads past one. A blow of
+     * his throws it that way, a drop there keeps them abreast, and a fall burns its fuse faster (run ta20261031-d2 void-4: he struck one a
+     * ledge below him and ran on down the same slope, 18 ticks within two blocks of it, dead at full health). The creepers with a far side
+     * are the one the way is built for (the one the guard judges before its fuse, and runs from after: the two must agree, or he would go
+     * to fight one with no way out of its blast) and any whose fuse is lit. Another one, seen or not, has none: it may stand on a
+     * shelf across a gap, and the way keeps off it by the distance as it is.
+     */
+    private static boolean past(Vec3 from, Vec3 point, List<Creeper> sided) {
+        for (Creeper creeper : sided) {
+            Vec3 at = creeper.position();
+            double dx = at.x - from.x, dz = at.z - from.z;
+            if (Math.hypot(dx, dz) >= ABREAST && (point.x - at.x) * dx + (point.z - at.z) * dz > 0 && point.distanceTo(at) < CompanionCreeperGuard.SAFE_GAP) return true;
+        }
+        return false;
     }
 
     private Score score(ServerLevel level, BlockPos cell, int steps, List<Creeper> threats) {

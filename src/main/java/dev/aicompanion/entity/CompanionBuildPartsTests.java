@@ -242,4 +242,47 @@ public final class CompanionBuildPartsTests {
             h.succeed();
         });
     }
+
+    // ---- the return to the bench
+
+    /** A house of logs at one end of a flat arena, its bench at the other in a carpet three blocks wide (nowhere in its reach to stand but through a gap); the bag holds logs only. */
+    private static CompanionEntity houseWithABenchInCarpet(GameTestHelper h, BlockPos bench, boolean gap) {
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) { h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK); h.setBlock(new BlockPos(x, 1, z), Blocks.DIRT); for (int y = 2; y < 12; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR); }
+        CompanionEntity oleg = h.spawn(AICompanionMod.COMPANION.get(), 12, 2, 12);
+        var player = h.makeMockServerPlayerInLevel(); player.teleportTo(oleg.getX() - 5, oleg.getY(), oleg.getZ() - 5);
+        oleg.setOwnerId(player.getUUID()); player.getPersistentData().putUUID("aicompanion:canonical_companion", oleg.getUUID());
+        CompanionEvents.getOwnedCompanion(player); oleg.setSearchRadius(16);
+        var level = h.getLevel();
+        level.setBlock(bench, Blocks.CRAFTING_TABLE.defaultBlockState(), 3);
+        for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) if (dx != 0 || dz != 0) level.setBlock(bench.offset(dx, 0, dz), Blocks.WHITE_CARPET.defaultBlockState(), 3);
+        if (gap) level.setBlock(bench.offset(-2, 0, 0), Blocks.AIR.defaultBlockState(), 3);
+        CompanionEntity builder = CompanionBuildReviewTests.reloadedWithUnfinished(h, oleg, h.absolutePos(new BlockPos(3, 1, 3)), "бревенчатый дом", bench);
+        builder.setItem(0, new ItemStack(Items.OAK_LOG, 64));
+        h.assertTrue(builder.startWork("build_house", "resume", 1).success(), "Resume rejected");
+        return builder;
+    }
+
+    private static int benches(GameTestHelper h) {
+        int n = 0;
+        for (BlockPos rel : BlockPos.betweenClosed(new BlockPos(0, 2, 0), new BlockPos(31, 4, 31))) if (h.getBlockState(rel).is(Blocks.CRAFTING_TABLE)) n++;
+        return n;
+    }
+
+    /** His bench is in sight from 4 blocks and nowhere in reach: the walk back to it does not go on for good, he sets down another and makes the stairs and doors at it. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void aBenchHeCannotStandNearIsLeftAndAnotherIsSetDown(GameTestHelper h) {
+        CompanionEntity builder = houseWithABenchInCarpet(h, h.absolutePos(new BlockPos(24, 2, 24)), false);
+        h.succeedWhen(() -> h.assertTrue(benches(h) >= 2, "No other bench: " + builder.getLastTaskResult() + " at " + builder.blockPosition()));
+    }
+
+    /** The same with a gap in the carpet: he walks to the gap and crafts at the bench there; no second bench. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void aBenchWithAGapNearItIsWalkedToAndUsed(GameTestHelper h) {
+        BlockPos bench = h.absolutePos(new BlockPos(24, 2, 24));
+        CompanionEntity builder = houseWithABenchInCarpet(h, bench, true);
+        h.succeedWhen(() -> {
+            h.assertTrue(builder.hasCraftingTableNearby(), "Not at the bench: " + builder.getLastTaskResult() + " at " + builder.blockPosition());
+            h.assertTrue(benches(h) == 1, "A second bench was set down");
+        });
+    }
 }

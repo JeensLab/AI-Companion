@@ -6,6 +6,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
@@ -18,6 +19,8 @@ final class CompanionPlacement {
     final CompanionEntity c;
     /** The bench the last craft set down, for a caller that takes it again at once; null when none was. */
     BlockPos benchSetDown;
+    /** The bench is taken up again at once: a cell that shuts the way back for that while is a last resort, not a refusal. */
+    boolean takenUpAtOnce;
 
     CompanionPlacement(CompanionEntity c) { this.c = c; }
 
@@ -68,7 +71,7 @@ final class CompanionPlacement {
                 || !serverLevel.setBlock(tablePosition, Blocks.CRAFTING_TABLE.defaultBlockState(), 3))) {
             return recordActionResult(CompanionActionResult.failed("Не нашёл свободное безопасное место для верстака. Материалы сохранены."));
         }
-        if (tablePosition != null) { c.rememberPlaced(tablePosition); benchSetDown = tablePosition.immutable(); }
+        if (tablePosition != null) { c.rememberPlaced(tablePosition); benchSetDown = tablePosition.immutable(); markTemporaryInMine(serverLevel, tablePosition); }
         if (tablePosition != null && fieldBench) c.fieldBenches.add(tablePosition.immutable());
         for (int slot = 0; slot < c.companionInventory.size(); slot++) c.companionInventory.set(slot, plan.inventory().get(slot).copy());
         if (gridCell) {
@@ -121,6 +124,7 @@ final class CompanionPlacement {
         c.lastPlacedPosition = position.immutable();
         c.lastPlacedTick = serverLevel.getGameTime();
         c.rememberPlaced(position);
+        markTemporaryInMine(serverLevel, position);
         dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "block_placed", "entity", c.getUUID(),
                 "block", blockId, "position", position, "reason", "place_block");
         item.shrink(1);
@@ -189,6 +193,15 @@ final class CompanionPlacement {
         if (!c.level().isClientSide) c.rememberObserved(pos);
         return true;
     }
+    /** A bench in plain sight within the walk is remembered like one stood next to: the plan walks to it instead of hunting a tree for a new one. */
+    boolean seesCraftingTableWithin(int blocks) {
+        BlockPos origin = c.blockPosition();
+        for (BlockPos pos : BlockPos.betweenClosed(origin.offset(-blocks, -3, -blocks), origin.offset(blocks, 3, blocks))) {
+            if (pos.distSqr(origin) > (double) blocks * blocks || !c.level().hasChunkAt(pos) || !c.level().getBlockState(pos).is(Blocks.CRAFTING_TABLE)) continue;
+            if (seesBlock(c.getEyePosition(), pos)) { c.rememberObserved(pos.immutable()); return true; }
+        }
+        return false;
+    }
     private boolean seesBlock(Vec3 eye, BlockPos pos) { return seesBlock(c, eye, pos); }
 
     /** Like a player: a bench or chest is usable when any face turned to the eye can be looked at, not only its exact centre. */
@@ -216,9 +229,22 @@ final class CompanionPlacement {
         return !grid.isEmpty() && grid.getItem() instanceof BlockItem blockItem && blockItem.getBlock() == block ? grid : null;
     }
 
+    /** A bench or a furnace: what he sets down in his mine for a while and takes up again. */
+    private static boolean isWorkBlock(Block block) { return block == Blocks.CRAFTING_TABLE || block == Blocks.FURNACE; }
+
+    /**
+     * A bench or a furnace the expedition sets down in its mine is a temporary block of it: out of the way it comes up by hand when it shuts the
+     * walk. One set down on a player's order or for another work is not the expedition's to take.
+     */
+    private void markTemporaryInMine(ServerLevel level, BlockPos cell) {
+        if (!c.work.expedition.active() || !isWorkBlock(level.getBlockState(cell).getBlock())) return;
+        if (CompanionMineSite.mineCells(c.mineSite()).contains(cell)) c.mineSite().temporary(cell);
+    }
+
     BlockPos findPlacementPosition(ServerLevel serverLevel, Block block, BlockPos origin, java.util.function.Predicate<BlockPos> allowed) {
         BlockState state = block.defaultBlockState();
         int returnHeight = CompanionMiningNavigation.provenReturnHeight(c);
+        BlockPos shutting = null;
         // Where he stands and a block up or down first; only then as high or as low as a player reaches (marathon 23.10, «долина»:
         // in a crack of the ravine the bench took the one cell beside him, the furnace found no room, though the top of the bench
         // was right in front of his face).
@@ -233,6 +259,8 @@ final class CompanionPlacement {
                 // Not on a stump of the tree he fells: a bench set there for his axe took the dark oak's square (in game 09.11).
                 if (c.replant.awaits(pos)) continue;
                 if (!serverLevel.hasChunkAt(pos) || !serverLevel.getBlockState(pos).canBeReplaced()) continue;
+                // Not on top of a bench in his mine: in a one-cell pocket that block hides the bench from his eyes and he can no longer craft at it.
+                if (c.work.expedition.active() && serverLevel.getBlockState(pos.below()).is(Blocks.CRAFTING_TABLE)) continue;
                 if (!serverLevel.getFluidState(pos).isEmpty() || !serverLevel.getWorldBorder().isWithinBounds(pos)) continue;
                 if (!serverLevel.getBlockState(pos.below()).isFaceSturdy(serverLevel, pos.below(), Direction.UP)) continue;
                 if (!state.canSurvive(serverLevel, pos)) continue;
@@ -246,12 +274,16 @@ final class CompanionPlacement {
                     for (Direction direction : Direction.Plane.HORIZONTAL) if (serverLevel.getBlockState(pos.relative(direction)).getBlock() instanceof net.minecraft.world.level.block.ChestBlock) adjacentChest = true;
                     if (adjacentChest) continue;
                 }
-                AABB collision = new AABB(pos);
-                if (c.getBoundingBox().intersects(collision) || !serverLevel.getEntities(c, collision).isEmpty()) continue;
-                if (!CompanionMiningNavigation.preservesReturnOnPlacement(c, pos, returnHeight)) continue;
+                // In his mine only what blocks building counts: a mob or the player, not an item lying in the cell (a stone on every step of his stairs).
+                boolean inMine = c.work.expedition.active();
+                if (c.getBoundingBox().intersects(new AABB(pos)) || !serverLevel.getEntities(c, new AABB(pos), entity -> net.minecraft.world.entity.EntitySelector.NO_SPECTATORS.test(entity) && !(inMine && entity instanceof ItemEntity)).isEmpty()) continue;
+                if (!CompanionMiningNavigation.preservesReturnOnPlacement(c, pos, returnHeight)) {
+                    if (takenUpAtOnce && shutting == null) shutting = pos.immutable();
+                    continue;
+                }
                 return pos.immutable();
             }
         }
-        return null;
+        return shutting;
     }
 }

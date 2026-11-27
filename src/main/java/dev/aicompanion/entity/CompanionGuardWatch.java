@@ -45,13 +45,19 @@ final class CompanionGuardWatch extends Goal {
 
     /** The disengage rule of a fight for the player; a guard order widens it to the watch (a hunt keeps its own range). */
     static boolean strayed(CompanionEntity c, ServerPlayer owner, LivingEntity target) {
-        boolean watching = c.guardByPlayer() && c.protecting && !c.work.isHunting();
+        boolean watching = watching(c);
         double self = watching ? GUARD_WATCH : STRAY_SELF, enemy = watching ? GUARD_WATCH : STRAY_ENEMY;
         return c.distanceToSqr(owner) > self * self && target.distanceToSqr(owner) > enemy * enemy;
     }
 
+    /** The target is the guard order's own pick (the monster nearest to the player), not one met for another reason. */
+    boolean holds(LivingEntity target) { return chosen != null && chosen == target; }
+
+    /** The guard order picks his target: the monster nearest to the player. */
+    static boolean watching(CompanionEntity c) { return c.guardByPlayer() && c.protecting && !c.work.isHunting(); }
+
     @Override public boolean canUse() {
-        if (!c.guardByPlayer() || !c.protecting || c.work.isHunting() || c.inventoryViewers != 0 || c.tickCount < nextScan) return false;
+        if (!watching(c) || c.inventoryViewers != 0 || c.tickCount < nextScan) return false;
         nextScan = c.tickCount + SCAN_INTERVAL;
         chosen = nearestToOwner();
         return chosen != null;
@@ -65,7 +71,7 @@ final class CompanionGuardWatch extends Goal {
 
     @Override public boolean canContinueToUse() {
         ServerPlayer owner = c.getOwnerPlayer();
-        if (!c.guardByPlayer() || !c.protecting || c.work.isHunting() || owner == null || chosen == null || c.getTarget() != chosen || !watched(owner, chosen)) return false;
+        if (!watching(c) || owner == null || chosen == null || c.getTarget() != chosen || !watched(owner, chosen)) return false;
         if (sees(owner, chosen)) lastSeen = c.tickCount;
         return c.tickCount - lastSeen <= UNSEEN_TICKS && !unreachable();
     }
