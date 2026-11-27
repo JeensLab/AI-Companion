@@ -816,7 +816,10 @@ public final class CompanionWork {
             var step = route.follow(player.blockPosition(), 2);
             if (step == CompanionTravel.Step.WALKING) { if (!owner.travel().searchOnly()) orderProgressPosition = null; return; }
             owner.travel().reset();
-            if (step == CompanionTravel.Step.FAILED) { comeFailedAt = owner.blockPosition(); comeFailedTime = level.getGameTime(); }
+            if (step == CompanionTravel.Step.FAILED) {
+                if (owner.treeDescent.request(player)) { orderProgressPosition = null; return; }
+                comeFailedAt = owner.blockPosition(); comeFailedTime = level.getGameTime();
+            }
         }
         if (orderHasStalled(level, 240)) {
             // No way at all is told as such; «застрял» is for a way that exists and that he could not get on along.
