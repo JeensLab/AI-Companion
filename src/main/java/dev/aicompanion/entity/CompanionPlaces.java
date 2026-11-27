@@ -24,19 +24,33 @@ final class CompanionPlaces {
     private static final int HOME_FINDS = 16;
     private static final int HOME_FINDS_FROM = 24;
     private static final int HOME_FINDS_MAX = 24;
+    static final String LANDSCAPE_DISABLED = "Понимание ландшафта выключено в настройках поведения.";
     private final CompanionEntity owner;
     final dev.aicompanion.terrain.LandmarkMemory landmarks = new dev.aicompanion.terrain.LandmarkMemory();
     private final dev.aicompanion.terrain.LandmarkObserver observer = new dev.aicompanion.terrain.LandmarkObserver();
+    private boolean landscapeUnderstanding = true;
     private String sharedKinds = "";
     private final LinkedHashMap<String, Place> places = new LinkedHashMap<>();
     private long nextDiscovery;
     private HomePlace namedHome;
 
     CompanionPlaces(CompanionEntity owner) { this.owner = owner; }
+    boolean landscapeUnderstanding() { return landscapeUnderstanding; }
+
+    void setLandscapeUnderstanding(boolean enabled) {
+        if (landscapeUnderstanding == enabled) return;
+        landscapeUnderstanding = enabled;
+        observer.reset();
+        if (!enabled && (owner.work.job == CompanionWork.Job.SURVEY || owner.work.job == CompanionWork.Job.GUIDE))
+            owner.work.finish(CompanionActionResult.cancelled(LANDSCAPE_DISABLED));
+        sharedKinds = landscapeKinds();
+        owner.refreshPlaces();
+    }
+
     void tick() {
-        if (owner.getOwnerId() != null && owner.canCollectItems() && owner.getTarget() == null && !owner.isSelfRescuing())
+        if (landscapeUnderstanding && owner.getOwnerId() != null && owner.canCollectItems() && owner.getTarget() == null && !owner.isSelfRescuing())
             observer.tick(owner, this::observeLandmark);
-        String kinds = landmarks.witnessedKinds(owner.level().dimension().location());
+        String kinds = landscapeKinds();
         boolean periodic = owner.tickCount % 100 == 0;
         if (periodic) {
             discoverHome();
@@ -46,6 +60,10 @@ final class CompanionPlaces {
             sharedKinds = kinds;
             owner.refreshPlaces();
         }
+    }
+
+    private String landscapeKinds() {
+        return landscapeUnderstanding ? landmarks.witnessedKinds(owner.level().dimension().location()) : "";
     }
 
     private void observeLandmark(String kind, BlockPos pos) {
@@ -174,10 +192,12 @@ final class CompanionPlaces {
                     .map(mark -> "«" + mark.name() + "» на " + mark.pos().toShortString() + " в " + CompanionMarkers.worldName(mark.dimension())).toList()));
         }
         String structures = entries.isEmpty() ? "известных рабочих мест нет" : "Известные места: " + String.join("; ", entries);
-        String kinds = landmarks.witnessedKinds(owner.level().dimension().location());
+        if (!landscapeUnderstanding) return structures + ", понимание ландшафта выключено";
+        String kinds = landscapeKinds();
         return structures + (kinds.isEmpty() ? ", дорожных находок в этом измерении пока не записано" : ", по пути в этом измерении видел " + kinds);
     }
     void save(CompoundTag tag) {
+        tag.putBoolean("LandscapeUnderstanding", landscapeUnderstanding);
         ListTag list = new ListTag();
         for (Place place : places.values()) {
             CompoundTag entry = new CompoundTag(); entry.putString("Dimension", place.dimension); entry.putLong("Pos", place.pos.asLong());
@@ -190,6 +210,8 @@ final class CompanionPlaces {
         }
     }
     void load(CompoundTag tag) {
+        landscapeUnderstanding = !tag.contains("LandscapeUnderstanding") || tag.getBoolean("LandscapeUnderstanding");
+        observer.reset();
         places.clear(); nextDiscovery = 0;
         namedHome = null;
         if (tag.contains("HomePlace", 10)) {

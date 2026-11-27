@@ -162,6 +162,11 @@ public final class OpenRouterConfig {
             .translation("config.aicompanion.fence_gates")
             .define("fenceGates", true);
 
+    public static final ModConfigSpec.BooleanValue LANDSCAPE_UNDERSTANDING = BUILDER
+            .comment("Survey terrain and remember visible caves and ore along the way. Off: pause observations, recall and guidance without clearing the saved places.")
+            .translation("config.aicompanion.landscape_understanding")
+            .define("landscapeUnderstanding", true);
+
     public static final ModConfigSpec.BooleanValue LONG_TERM_MEMORY = BUILDER
             .comment("Let the companion remember facts, promises and recent talk between sessions, adapt his character and raise topics of his own. Stored in the world save.")
             .translation("config.aicompanion.long_term_memory")

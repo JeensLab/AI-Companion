@@ -7,6 +7,7 @@ import dev.aicompanion.entity.CompanionEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
@@ -68,6 +69,45 @@ public final class CompanionLandmarkGuideTests {
             h.assertTrue(result != null && result.status() == CompanionActionResult.Status.FAILED, "Old ore was reported as seen");
             h.assertTrue(w.companion().landmarks().recall(w.dimension(), "iron") == null, "The mined ore is still offered");
         });
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 80)
+    public static void disablingLandscapeCancelsItsOrdersAndKeepsSavedLandmarks(GameTestHelper h) {
+        Walk w = arena(h);
+        long guide = show(h, w);
+        CompanionEvents.setLandscapeUnderstanding(w.companion(), false);
+        assertCancelled(h, w.companion(), guide);
+        for (var entry : java.util.Map.of("survey_terrain", "around", "recall_landmark", "iron", "guide_landmark", "iron").entrySet()) {
+            var result = CompanionEvents.executeAction(w.player(), entry.getKey(), entry.getValue(), 1);
+            h.assertTrue(result.status() == CompanionActionResult.Status.BLOCKED && result.message().contains("выключено"),
+                    "A landscape command still runs while disabled: " + entry.getKey());
+        }
+        h.assertTrue(!w.companion().getPlacesForAi().contains("железную руду"), "Disabled findings leaked into the model snapshot");
+
+        var saved = new CompoundTag();
+        w.companion().addAdditionalSaveData(saved);
+        var restored = AICompanionMod.COMPANION.get().create(h.getLevel());
+        h.assertTrue(restored != null, "Could not create companion for reload");
+        restored.readAdditionalSaveData(saved);
+        h.assertTrue(restored.getPlacesForAi().contains("понимание ландшафта выключено"), "Disabled preference was lost on reload");
+        CompanionEvents.setLandscapeUnderstanding(restored, true);
+        h.assertTrue(restored.getPlacesForAi().contains("железную руду"), "The remembered vein was lost while disabled");
+
+        CompanionEvents.setLandscapeUnderstanding(w.companion(), true);
+        var recall = CompanionEvents.executeAction(w.player(), "recall_landmark", "iron", 1);
+        h.assertTrue(recall.message().contains("Я видел железную руду"), recall.message());
+        var survey = CompanionEvents.executeAction(w.player(), "survey_terrain", "around", 1);
+        h.assertTrue(survey.status() == CompanionActionResult.Status.ACCEPTED, survey.message());
+        long surveyId = w.companion().activeWorkId();
+        CompanionEvents.setLandscapeUnderstanding(w.companion(), false);
+        assertCancelled(h, w.companion(), surveyId);
+        h.succeed();
+    }
+
+    private static void assertCancelled(GameTestHelper h, CompanionEntity c, long workId) {
+        var result = c.workResult(workId);
+        h.assertTrue(result != null && result.status() == CompanionActionResult.Status.CANCELLED && !c.hasActiveWorkOrder(),
+                "Disabling landscape did not cancel active work " + workId);
     }
 
     @GameTest(template = "tall_tree", timeoutTicks = 80)

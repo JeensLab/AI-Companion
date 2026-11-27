@@ -65,6 +65,7 @@ public final class CompanionPreferences {
                 companion.setPlaysByTheFire(OpenRouterConfig.PLAYS_BY_THE_FIRE.get());
                 companion.setReplantSaplings(OpenRouterConfig.REPLANT_SAPLINGS.get());
                 companion.setRightToolForBlock(OpenRouterConfig.RIGHT_TOOL_FOR_BLOCK.get());
+                CompanionEvents.setLandscapeUnderstanding(companion, OpenRouterConfig.LANDSCAPE_UNDERSTANDING.get());
                 companion.setFenceGates(OpenRouterConfig.FENCE_GATES.get());
                 companion.setDeathRecoveryLimits(OpenRouterConfig.DEATH_RECOVERY_ATTEMPTS.get(), OpenRouterConfig.DEATH_RECOVERY_DEATHS.get());
                 String remote = companion.getName().getString() + " находится на " + companion.blockPosition().toShortString()

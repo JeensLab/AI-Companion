@@ -23,6 +23,12 @@ public final class LandmarkObserver {
     private Vec3 lastPosition;
     private float lastYaw, lastPitch;
 
+    public void reset() {
+        column = YAW.length;
+        delay = 0;
+        lastPosition = null;
+    }
+
     /** Call once per tick. Returns the number of sightlines sampled; an idle observer uses none. */
     public int tick(CompanionEntity c, BiConsumer<String, BlockPos> seen) {
         if (delay > 0) { delay--; return 0; }

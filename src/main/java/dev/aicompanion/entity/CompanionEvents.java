@@ -286,6 +286,9 @@ public final class CompanionEvents {
             dev.aicompanion.CompanionDiagnostics.event(trace, "server_rejected", "reason", "companion_unloaded_or_other_dimension");
             return CompanionActionResult.failed("Компаньон не загружен рядом с тобой.");
         }
+        if (!companion.places.landscapeUnderstanding()
+                && ("survey_terrain".equals(action) || "recall_landmark".equals(action) || "guide_landmark".equals(action)))
+            return CompanionActionResult.blocked(CompanionPlaces.LANDSCAPE_DISABLED);
         if ("survey_terrain".equals(action)) {
             if (count != 1 || !"near_player".equals(location) || !dev.aicompanion.terrain.TerrainSurvey.TOPICS.contains(item))
                 return CompanionActionResult.failed("Не понял, что осмотреть.");
@@ -481,6 +484,10 @@ public final class CompanionEvents {
     public static void onBlockPlaced(net.neoforged.neoforge.event.level.BlockEvent.EntityPlaceEvent event) {
         if (event.getEntity() instanceof ServerPlayer player && !(player instanceof net.neoforged.neoforge.common.util.FakePlayer) && event.getLevel() instanceof ServerLevel level)
             CompanionPlayerBuilds.get(level.getServer()).record(player.getUUID(), level, event.getPos(), event.getPlacedBlock());
+    }
+
+    public static void setLandscapeUnderstanding(CompanionEntity companion, boolean enabled) {
+        companion.places.setLandscapeUnderstanding(enabled);
     }
 
     public static CompanionEntity getOwnedCompanion(ServerPlayer player) {

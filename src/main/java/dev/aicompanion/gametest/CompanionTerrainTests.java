@@ -129,6 +129,27 @@ public final class CompanionTerrainTests {
         }).thenSucceed();
     }
 
+    @GameTest(template = "tall_tree", timeoutTicks = 180)
+    public static void landscapeSwitchPausesBackgroundObservations(GameTestHelper h) {
+        floor(h);
+        for (int x = -2; x <= 2; x++) for (int y = 1; y <= 3; y++) put(h, x, y, 12, Blocks.IRON_ORE);
+        var c = observer(h);
+        var player = h.makeMockServerPlayerInLevel();
+        player.teleportTo(c.getX(), c.getY(), c.getZ() + 10);
+        c.setOwnerId(player.getUUID());
+        player.getPersistentData().putUUID("aicompanion:canonical_companion", c.getUUID());
+        var start = c.position();
+        String dimension = c.level().dimension().location().toString();
+        CompanionEvents.setLandscapeUnderstanding(c, false);
+        c.setFollowing(true);
+        h.startSequence().thenIdle(35).thenExecute(() -> {
+            h.assertTrue(c.position().distanceToSqr(start) > 1, "The companion did not walk the lit route");
+            h.assertTrue(c.landmarks().witnessedKinds(c.level().dimension().location()).isEmpty(), "Background sight collected ore while disabled");
+            CompanionEvents.setLandscapeUnderstanding(c, true);
+        }).thenWaitUntil(() -> h.assertTrue(c.landmarks().recall(dimension, "iron") != null,
+                "Background sight did not resume after enabling landscape")).thenSucceed();
+    }
+
     @GameTest(template = "tall_tree")
     public static void mixedTerrainPlansMustValidateInFull(GameTestHelper h) {
         var survey = new com.google.gson.JsonObject();
