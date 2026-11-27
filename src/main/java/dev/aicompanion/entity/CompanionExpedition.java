@@ -19,6 +19,8 @@ final class CompanionExpedition {
 
     enum Ending { FOUND, SUPPLIES, BLOCKED, TIMEOUT, RETREAT }
 
+    /** Extra time past the step's end for a cave episode under way to close its breach; a reserve used up ends the step anyway. */
+    private static final int CAVE_RESERVE = 20 * 60;
     /** The most time the creeper guard may add to one step: a creeper that never leaves cannot hold the step open for ever. */
     private static final int GUARD_RESERVE = 20 * 120;
     private static final int STEP_TICKS = 20 * 540, NEAR_RADIUS = 12, LIGHT_CLIMB_RETRY = 600;
@@ -40,6 +42,7 @@ final class CompanionExpedition {
     private final CompanionExpeditionClimb climb;
     private final CompanionExpeditionWalk lead;
     private final CompanionExpeditionOre ore;
+    private final CompanionExpeditionCave cave;
     private final CompanionExpeditionDanger hazard;
     private final CompanionExpeditionRetreat retreat;
     private final CompanionExpeditionSupply supply;
@@ -70,18 +73,23 @@ final class CompanionExpedition {
         this.climb = new CompanionExpeditionClimb(w, dig, supply);
         this.lead = new CompanionExpeditionWalk(dig).sealingLiquid(w);
         this.ore = new CompanionExpeditionOre(w, dig);
-        this.hazard = new CompanionExpeditionDanger(owner);
+        this.cave = new CompanionExpeditionCave(w, dig, ore, () -> gained() >= w.requestedCount, this::cutStone);
+        this.hazard = new CompanionExpeditionDanger(owner, cave);
         this.retreat = new CompanionExpeditionRetreat(w, dig);
         this.bench = new CompanionExpeditionBench(w);
         this.stock = new CompanionExpeditionStock(w, dig);
     }
 
-    /** What the stall watchdog sees move: blocks broken, steps finished, health regained while resting. */
-    int progress() { return progress + dig.broken + dig.walked + lead.sealed() + bench.progress() + stock.progress() + (stage == Stage.RETREAT ? (int) owner.getHealth() : 0); }
+    /** What the stall watchdog sees move: blocks broken, steps finished, plugs placed in a cave, health regained while resting. */
+    int progress() { return progress + dig.broken + dig.walked + lead.sealed() + cave.progress() + bench.progress() + stock.progress() + (stage == Stage.RETREAT ? (int) owner.getHealth() : 0); }
 
     boolean active() { return active; }
 
     String stageName() { return active ? stage.name() : ""; }
+
+    String cavePhase() { return active ? cave.phaseName() : ""; }
+
+    void expireStep(ServerLevel level) { stepEnd = level.getGameTime(); }
 
     /** The climb is cutting its way out of rock: the self-rescue may work. */
     boolean cuttingOut() { return active && stage == Stage.CLIMB && climb.cuttingOut(); }
@@ -94,13 +102,14 @@ final class CompanionExpedition {
         w.deadline = Math.max(w.deadline, stepEnd + 40);
     }
 
-    /** The time the creeper guard took from the work is given back to the step and its order, up to a reserve. */
+    /** The time the creeper guard took from the work is given back to the step, its order and the cave's explore time, up to a reserve. */
     void credit(long ticks) {
         long given = Math.min(ticks, GUARD_RESERVE - credited);
         if (!active || given <= 0) return;
         credited += given;
         stepEnd += given;
         w.deadline += given;
+        cave.delay(given);
     }
 
     /** Below the mine's entrance, or in a buried mine: the dark there is deeper than on the surface (the light check, the torches). */
@@ -111,7 +120,7 @@ final class CompanionExpedition {
         active = true;
         stepEnd = level.getGameTime() + STEP_TICKS;
         credited = 0;
-        w.deadline = stepEnd + 40;
+        w.deadline = stepEnd + CAVE_RESERVE + 40;
         startDiamonds = w.items.countCarried(Items.DIAMOND);
         hadStone = w.items.countCarried(Items.STONE_PICKAXE) > 0;
         w.mine.newStep(level.getGameTime());
@@ -150,6 +159,7 @@ final class CompanionExpedition {
         CompanionChunkTicket.release(owner);
         active = hadStone = unheld = joining = joinedBelow = atFoot = towardOrigin = surfaceOnly = false;
         ore.reset();
+        cave.reset();
         retreat.reset();
         supply.reset();
         bench.reset();
@@ -172,8 +182,17 @@ final class CompanionExpedition {
         CompanionChunkTicket.follow(owner);
         boolean expired = level.getGameTime() >= stepEnd;
         boolean digging = stage == Stage.DESCEND || stage == Stage.BRANCH;
-        if (expired) { end(Ending.TIMEOUT, "Время вылазки вышло, остановился на месте."); return; }
-        if (gained() >= w.requestedCount) { end(Ending.FOUND, ""); return; }
+        // The cave looks at a breach a tick after it opens, so it must look before the timeout may end the step.
+        boolean caveTurn = cave.tick(level, plan == null ? List.of() : plan.cells(), digging);
+        if (expired && (!cave.busy() || level.getGameTime() >= stepEnd + CAVE_RESERVE)) { end(Ending.TIMEOUT, "Время вылазки вышло, остановился на месте."); return; }
+        BlockPos plugged = cave.takePlugged();
+        if (plugged != null && plan != null && plan.needs(plugged)) { plan.why = "дальше пещера"; plan.lasting = true; w.mine.forbid(plugged); blocked(); }
+        if (caveTurn) {
+            if (cave.failure() != null) end(Ending.BLOCKED, cave.failure());
+            return;
+        }
+        if (gained() >= w.requestedCount && !cave.busy()) { end(Ending.FOUND, ""); return; }
+        if (expired) return;
         // A bench he set down on a step shuts the stairs: it comes up before anything else, a retreat apart.
         if (stage != Stage.LOCATE && stage != Stage.RETREAT && bench.tick(level)) return;
         String danger = stage == Stage.CLIMB || stage == Stage.RETREAT || stage == Stage.LOCATE ? null : hazard.now();
@@ -201,11 +220,18 @@ final class CompanionExpedition {
         }
     }
 
+    /** Stone from the walls where he stands, for the plugs of a cave: true while it is being cut. */
+    private boolean cutStone() {
+        Direction along = stage == Stage.BRANCH && tunnel != null ? tunnel : dir;
+        return stand != null && along != null && stock.tick((ServerLevel) owner.level(), owner.blockPosition(), along);
+    }
+
     /** The rest of the step is the climb and the rest at the entrance: the step's time and the order's deadline grow to hold them. */
     private void startRetreat(ServerLevel level, String why) {
         hazard.reset();
         CompanionExpeditionRecord.rememberMove(w.mine, stage == Stage.BRANCH ? tunnel : null, plan, stand, dir);
         plan = null;
+        cave.close();
         lead.clear();
         dig.reset();
         holdStep(CLIMB_TICKS + CompanionExpeditionRetreat.REST_TICKS);
@@ -448,6 +474,7 @@ final class CompanionExpedition {
             }
             List<CompanionMineSite.Tunnel> tunnels = w.mine.tunnels();
             if (tunnels.get(tunnels.size() - 1).length() >= CompanionShaftPlan.MAX_TUNNEL_CELLS) { tunnel = null; return; }
+            if (cave.crossesSeal(CompanionShaftPlan.tunnelCells(head, tunnel))) { tunnel = null; tunnelWhy = "дальше пещера"; return; }
             plan = CompanionExpeditionStep.tunnel(w, dig, head, tunnel);
         }
         advance();
@@ -593,7 +620,7 @@ final class CompanionExpedition {
 
     private void end(Ending ending, String why) {
         dig.flush();
-        String text = CompanionExpeditionReport.of(w, gained(), stairSteps) + " " + why + rememberStop(ending);
+        String text = CompanionExpeditionReport.of(w, gained(), stairSteps) + (cave.notes().isEmpty() ? "" : " " + cave.notes()) + " " + why + rememberStop(ending);
         if (ore.missedDiamond && gained() == 0) text += " Видел алмазную руду, но взять её нечем: нужна железная кирка.";
         if (unheld) text += " Чанки вокруг шахты удержать не удалось.";
         text = text.strip();

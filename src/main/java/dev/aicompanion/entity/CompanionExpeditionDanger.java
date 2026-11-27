@@ -1,25 +1,30 @@
 package dev.aicompanion.entity;
 
-/** Why the expedition must go up now: a fire or low health; a meal eaten on the spot is given time to mend (moved out of {@link CompanionExpedition}). */
+/** Why the expedition must go up now: a cave too dangerous, a fire or low health; a meal eaten on the spot is given time to mend (moved out of {@link CompanionExpedition}). */
 final class CompanionExpeditionDanger {
-    /** At or below this health he goes up. */
-    private static final float HEALTH_VERY = 8;
+    private static final String CAVE_DANGER = "в пещере слишком опасно";
     /** How long a meal is given to raise his health before the climb, and how recent a blow from a mob keeps the climb. */
     private static final int MEAL_GRACE = 200, RECENT_HURT = 100;
     private final CompanionEntity owner;
+    private final CompanionExpeditionCave cave;
     private long mealStart = -1;
     private float mealHealth;
 
-    CompanionExpeditionDanger(CompanionEntity owner) { this.owner = owner; }
+    CompanionExpeditionDanger(CompanionEntity owner, CompanionExpeditionCave cave) {
+        this.owner = owner;
+        this.cave = cave;
+    }
 
     /** A new danger check starts from the health at that time. */
     void reset() { mealStart = -1; }
 
-    /** Why he must go up now (a fire, or health at the limit), or null. */
+    /** Why he must go up now (a very dangerous cave dealt with, a fire, or health at the cave limit), or null. */
     String now() {
+        if (!cave.busy() && cave.takeRetreat()) return CAVE_DANGER;
+        // The cave sense reads a fire only inside a cave episode.
         if (owner.isOnFire() || owner.isInLava()) return "горю";
         float health = owner.getHealth();
-        if (health > HEALTH_VERY) { mealStart = -1; return null; }
+        if (health > CompanionCaveSense.HEALTH_VERY) { mealStart = -1; return null; }
         // With food in the bag he eats on the spot (a fall, a blast, /damage); climbing at once would give up the order for a meal.
         // A living attacker that struck lately (a skeleton out of the fight's sight) or a harmful effect means a wound a meal does not end, and so does a meal that does not mend.
         if (CompanionEating.hasFood(owner) && !hurtByMobLately(owner) && !hasHarmfulEffect() && mealMends(health)) return null;
