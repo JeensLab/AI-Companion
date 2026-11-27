@@ -47,6 +47,8 @@ final class CompanionExpeditionCave {
     private boolean hostile;
     /** A cave judged very dangerous has been dealt with: the expedition goes up his stairs. */
     private boolean retreat;
+    /** That cave is very dangerous only for want of a block to plug it with: nothing in it drives him out of the mine. */
+    private boolean bareHanded;
     /** The cell of the advance under way that a plug went into, until the expedition has taken it. */
     private BlockPos plugged;
     /** Stone was cut from the wall for this cave once already, and whether the cutting is for the plugs yet to lay (else for the judgement). */
@@ -87,12 +89,15 @@ final class CompanionExpeditionCave {
         return now;
     }
 
+    boolean bareHanded() { return bareHanded; }
+
     /** A very dangerous cave sends him up and is remembered, so no later step of the mine is dug back into it. */
     private void markRetreat(CompanionCaveSense.Danger danger, CompanionCaveSense.Facts facts, String where) {
         if (danger != CompanionCaveSense.Danger.VERY_DANGEROUS) return;
         dev.aicompanion.CompanionDiagnostics.event(owner.diagnostics.trace(), "cave_very_dangerous", "entity", owner.getUUID(), "where", where,
                 "reasons", CompanionCaveSense.veryReasons(facts), "breach", cave.breach(), "position", owner.blockPosition());
         retreat = true;
+        bareHanded = CompanionCaveSense.onlyBlocksLack(facts);
         w.mine.shun(cave.air());
     }
 
@@ -136,7 +141,7 @@ final class CompanionExpeditionCave {
         ore.limit(pos -> true);
         seenBroken = dig.broken;
         idle = settle = taken = work = tries = 0;
-        hostile = retreat = stocked = resealing = false;
+        hostile = retreat = stocked = resealing = bareHanded = false;
         plugged = null;
         scanned = null;
         scanFrom = 0;

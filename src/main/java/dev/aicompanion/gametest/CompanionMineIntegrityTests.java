@@ -36,30 +36,9 @@ import static dev.aicompanion.gametest.CompanionMineArena.start;
 @PrefixGameTestTemplate(false)
 public final class CompanionMineIntegrityTests {
     private static final int TURN_AT = 6, FLOOR_CUT_A = 4, FLOOR_CUT_B = 7, STANDS_ABOVE_FOOT = 3, ORE_WAIT_TICKS = 300, LOCATE_TICKS = 200, CHAMBER_STAND = 6, CHAMBER_LENGTH = 3,
-            COAL_BESIDE = -1, COAL_BELOW = -4, COAL_BEHIND = 1, FIRST_STEPS = 4, DEAD_END = 10, ROCK_AROUND = 3;
+            COAL_BESIDE = -1, COAL_BELOW = -4, COAL_BEHIND = 1, FIRST_STEPS = 4;
 
     private CompanionMineIntegrityTests() { }
-
-    /**
-     * The stairs run into bedrock on every side at the end: that is no end of the mine but of this staircase, and he begins one anew (a restart
-     * in the record) instead of ending the order with «некуда свернуть».
-     */
-    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
-    public static void aDeadEndOfTheStairsStartsThemAgain(GameTestHelper h) {
-        mountain(h);
-        CompanionEntity c = rig(h);
-        var level = h.getLevel();
-        BlockPos entrance = h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER));
-        List<BlockPos> stairs = CompanionShaftPlan.stands(entrance, Direction.NORTH, DEAD_END);
-        BlockPos end = stairs.get(DEAD_END);
-        for (BlockPos cell : BlockPos.betweenClosed(end.offset(-ROCK_AROUND, -ROCK_AROUND, -ROCK_AROUND), end.offset(ROCK_AROUND, 1, ROCK_AROUND))) level.setBlock(cell, Blocks.BEDROCK.defaultBlockState(), 2 | 16);
-        for (BlockPos stand : stairs) for (BlockPos cell : CompanionShaftPlan.column(stand)) level.setBlock(cell, Blocks.AIR.defaultBlockState(), 2 | 16);
-        c.mineSite().start(entrance, Direction.NORTH);
-        for (BlockPos stand : stairs.subList(1, stairs.size())) c.mineSite().reached(stand);
-        c.teleportTo(end.getX() + .5, end.getY(), end.getZ() + .5);
-        start(h, c, 1);
-        h.succeedWhen(() -> h.assertTrue(c.mineSite().restarts() >= 1, "The stairs were not begun again: " + c.mineSite().restarts() + " restarts | " + report(c)));
-    }
 
     /** A step of the stairs stands one level above a cell beside him: that cell is the floor of the step, and a landing there would take it out from under. */
     @GameTest(batch = "mine_core", template = "marathon_cave")

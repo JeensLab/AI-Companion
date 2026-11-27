@@ -15,7 +15,7 @@ import java.util.List;
  * it ends honestly with what was found, why it stopped and what is left undone.
  */
 final class CompanionExpedition {
-    private enum Stage { LOCATE, CHECK_NEAR, WALK_DOWN, DESCEND, BRANCH, CLIMB, RETREAT }
+    private enum Stage { LOCATE, CHECK_NEAR, WALK_DOWN, DESCEND, BRANCH, BACKTRACK, DIG_OUT, CLIMB, RETREAT }
 
     enum Ending { FOUND, SUPPLIES, BLOCKED, TIMEOUT, RETREAT }
 
@@ -25,6 +25,8 @@ final class CompanionExpedition {
     private static final int GUARD_RESERVE = 20 * 120;
     private static final int STEP_TICKS = 20 * 540, NEAR_RADIUS = 12, LIGHT_CLIMB_RETRY = 600;
     private static final int SOFT_RETRIES = 3, WALK_RETRY = 40, OWN_STEPS = 4, MAX_TURNS = 8, FAR_ENTRANCE = 64, CLIMB_TICKS = 20 * 120, MAX_FRESH = 2;
+    /** Liquid under the way down: this many stands back up, a level way this long off to the side, at most this many times a step. */
+    private static final int WATER_RISE = 4, DRIFT = 16, MAX_DRIFTS = 3;
     /** Within this many blocks of the entrance he walks down his own stairs from it instead of searching a route to their far bottom. */
     private static final int NEAR_ENTRANCE = 16;
     /** Afloat in a pool under a cliff, the surface lies above the reach of the entrance search from his height: it is looked for this much higher, up to the limit. */
@@ -45,14 +47,17 @@ final class CompanionExpedition {
     private final CompanionExpeditionCave cave;
     private final CompanionExpeditionDanger hazard;
     private final CompanionExpeditionRetreat retreat;
+    private final CompanionExpeditionBacktrack backtrack;
+    private final CompanionExpeditionDigOut digOut;
     private final CompanionExpeditionSupply supply;
     private final CompanionExpeditionPlugOut plugOut;
     private final CompanionExpeditionBench bench;
     private final CompanionExpeditionStock stock;
+    private final CompanionExpeditionWade wade;
     private List<BlockPos> route = List.of();
     private CompanionExpeditionStep plan;
     private Stage stage = Stage.LOCATE;
-    private boolean active, hadStone, unheld, joining, atFoot, towardOrigin, surfaceOnly;
+    private boolean active, hadStone, unheld, joining, atFoot, towardOrigin, surfaceOnly, wetTurn;
     private long stepEnd, nextLightClimb;
     /** The surface entrance of the mine whose way up ended closed: kept over the steps (not cleared by {@link #reset}) until a climb gets out, so no climb walks into the same trap again. */
     private BlockPos noWayUpFrom;
@@ -60,9 +65,12 @@ final class CompanionExpedition {
     private boolean joinedBelow;
     private long credited;
     private int startDiamonds, progress, stairSteps, turns, routeIndex, softFails, fresh;
-    private BlockPos stand, head;
-    private Direction dir, tunnel;
-    private String tunnelWhy = "", resurfaceWhy;
+    /** Landings left of the level way off from liquid under the stairs, and how many such ways this step has dug ({@link #wetTurn}: the last turn was for liquid). */
+    private int drift, drifts;
+    private BlockPos stand, head, sealCell;
+    /** The stairs' own direction while a way off liquid runs to a side: they go on in it once that way ends. */
+    private Direction dir, tunnel, driftAlong;
+    private String tunnelWhy = "", digOutWhy = "", resurfaceWhy;
 
     CompanionExpedition(CompanionWork w) {
         this.w = w;
@@ -70,12 +78,15 @@ final class CompanionExpedition {
         this.dig = new CompanionExpeditionDig(w);
         this.supply = new CompanionExpeditionSupply(w);
         this.plugOut = new CompanionExpeditionPlugOut(w, dig, supply, this::end);
+        this.wade = new CompanionExpeditionWade(w, dig, supply, this::end, this::restartHere);
         this.climb = new CompanionExpeditionClimb(w, dig, supply);
         this.lead = new CompanionExpeditionWalk(dig).sealingLiquid(w);
         this.ore = new CompanionExpeditionOre(w, dig);
         this.cave = new CompanionExpeditionCave(w, dig, ore, () -> gained() >= w.requestedCount, this::cutStone);
         this.hazard = new CompanionExpeditionDanger(owner, cave);
         this.retreat = new CompanionExpeditionRetreat(w, dig);
+        this.backtrack = new CompanionExpeditionBacktrack(w, dig);
+        this.digOut = new CompanionExpeditionDigOut(w, dig);
         this.bench = new CompanionExpeditionBench(w);
         this.stock = new CompanionExpeditionStock(w, dig);
     }
@@ -157,21 +168,24 @@ final class CompanionExpedition {
         climb.reset();
         lead.clear();
         CompanionChunkTicket.release(owner);
-        active = hadStone = unheld = joining = joinedBelow = atFoot = towardOrigin = surfaceOnly = false;
+        active = hadStone = unheld = joining = joinedBelow = atFoot = towardOrigin = surfaceOnly = wetTurn = false;
         ore.reset();
         cave.reset();
         retreat.reset();
+        backtrack.reset();
+        digOut.reset();
+        wade.reset();
         supply.reset();
         bench.reset();
         stock.reset();
-        tunnelWhy = "";
+        tunnelWhy = digOutWhy = "";
         resurfaceWhy = null;
         stage = Stage.LOCATE;
         plan = null;
         route = List.of();
-        stand = head = null;
-        dir = tunnel = null;
-        progress = stairSteps = turns = routeIndex = softFails = fresh = 0;
+        stand = head = sealCell = null;
+        dir = tunnel = driftAlong = null;
+        progress = stairSteps = turns = routeIndex = softFails = fresh = drift = drifts = 0;
     }
 
     /** The game time of the next try after a failed walk to the stairs. */
@@ -210,12 +224,15 @@ final class CompanionExpedition {
             owner.workStatus(w.mine.noCoalAbove() ? "Факелы кончились, а угля наверху не было: копаю дальше в темноте." : "Факелы кончились, а пути наверх нет: копаю дальше в темноте.");
         }
         if (plan == null) supply.arm(level);
+        if ((digging || stage == Stage.CHECK_NEAR || stage == Stage.WALK_DOWN) && wade.stuck(progress(), plan != null && plan.busy(owner.level().getGameTime()), plan == null && stage == Stage.BRANCH)) { w.mine.underwaterStalled(); restartHere("Застрял в воде на своей лестнице."); return; }
         switch (stage) {
             case LOCATE -> locate(level);
             case CHECK_NEAR -> { if (!mineOre(level, CompanionExpeditionOre.Mode.WALK)) stage = Stage.WALK_DOWN; }
             case WALK_DOWN -> walkDown(level);
             case DESCEND -> descend();
             case BRANCH -> branch();
+            case BACKTRACK -> backtrack();
+            case DIG_OUT -> digOut();
             case CLIMB -> { if (climb.tick() == CompanionExpeditionClimb.Result.DONE) climbed(level); }
             case RETREAT -> { if (retreat.tick(level) == CompanionExpeditionRetreat.Result.DONE) end(Ending.RETREAT, retreat.text()); }
         }
@@ -229,12 +246,24 @@ final class CompanionExpedition {
 
     /** The rest of the step is the climb and the rest at the entrance: the step's time and the order's deadline grow to hold them. */
     private void startRetreat(ServerLevel level, String why) {
+        // A repeat danger from a cave with health to spare is not climbed away from again: he backs up the stairs and turns off.
         hazard.reset();
+        boolean bareHanded = cave.bareHanded();
+        boolean again = why.equals(CompanionExpeditionDanger.CAVE_DANGER) && (w.mine.retreats() >= 1 || bareHanded) && owner.getHealth() > CompanionCaveSense.HEALTH_WARY;
         CompanionExpeditionRecord.rememberMove(w.mine, stage == Stage.BRANCH ? tunnel : null, plan, stand, dir);
         plan = null;
         cave.close();
         lead.clear();
+        backtrack.reset();
         dig.reset();
+        if (again && backtrack.begin(level)) {
+            // A bag without blocks says nothing of the cave: the next danger is no repeat of it.
+            if (!bareHanded) w.mine.retreated();
+            stage = Stage.BACKTRACK;
+            owner.workStatus(bareHanded ? "Заделать пещеру нечем, поднимаюсь по лестнице и сверну в сторону." : "Пещера снова опасна, поднимаюсь по лестнице и сверну в сторону.");
+            return;
+        }
+        w.mine.retreated();
         holdStep(CLIMB_TICKS + CompanionExpeditionRetreat.REST_TICKS);
         retreat.begin(why);
         stage = Stage.RETREAT;
@@ -264,6 +293,8 @@ final class CompanionExpedition {
         }
         if (mine.exists()) {
             mine.verify(level, here);
+            int shunned = mine.firstShunned();
+            if (shunned >= 0) { sealCell = mine.stands().get(shunned).above(); mine.forbid(sealCell); mine.truncate(shunned); }
             route = new ArrayList<>();
             // On the surface with a mine started again under the ground, the way down is the way he climbed, reversed: from the entrance on the surface down to the pit.
             boolean onSurface = mine.buried() && !mine.above().isEmpty() && mine.origin() != null && here.getY() >= mine.origin().getY() - CompanionMineSite.UNDERGROUND_DEPTH && CompanionExpeditionRecord.underSky(level, here.above());
@@ -295,6 +326,14 @@ final class CompanionExpedition {
     private void walkDown(ServerLevel level) {
         if (level.getGameTime() < walkAgain) return;
         if (routeIndex < 0) {
+            if (wade.active()) {
+                switch (wade.tick(level, route.get(joining ? route.size() - 1 : 0))) {
+                    case DONE -> softFails = 0;
+                    case RETRY -> walkAgain = level.getGameTime() + WALK_RETRY;
+                    case WORKING -> { }
+                }
+                return;
+            }
             // A failed search can leave him on a partial path out to the surface: the way down is then his own stairs from the entrance, not the far foot.
             if (joining && joinedBelow && !w.mine.buried() && !CompanionExpeditionRecord.belowTop((ServerLevel) owner.level(), w.mine, owner.blockPosition(), top()) && owner.getY() >= w.mine.entrance().getY() - CompanionMineSite.UNDERGROUND_DEPTH) {
                 w.route.legsEnd(false);
@@ -304,13 +343,15 @@ final class CompanionExpedition {
             int target = joining ? route.size() - 1 : 0;
             // A search stops up to two blocks short of its goal: the last steps are his own.
             if (owner.blockPosition().distManhattan(route.get(target)) <= OWN_STEPS) {
-                if (dig.reach(route.get(target))) { routeIndex = target; softFails = 0; }
+                if (dig.reach(route.get(target))) { routeIndex = target; softFails = 0; wade.resetStairs(); }
+                else if (dig.walkStuck() && wade.begin(route.get(target))) return;
                 else if (dig.walkStuck() && ++softFails > SOFT_RETRIES) restartHere(joining ? "Не смог вернуться на свою лестницу." : "Не смог дойти до входа в шахту.");
                 else if (dig.walkStuck()) walkAgain = level.getGameTime() + WALK_RETRY;
                 return;
             }
             CompanionTravel.Step walk = w.route.legs(route.get(target), ENTRANCE_NEAR);
-            if (walk == CompanionTravel.Step.NEAR) { routeIndex = target; softFails = 0; }
+            if (walk == CompanionTravel.Step.NEAR) { routeIndex = target; softFails = 0; wade.resetStairs(); }
+            else if (walk == CompanionTravel.Step.FAILED && wade.begin(route.get(target))) return;
             // A failed search can be a passing one (a mob in the way), and a restart gives up the whole staircase.
             else if (walk == CompanionTravel.Step.FAILED && ++softFails > SOFT_RETRIES) restartHere(joining ? "Не смог вернуться на свою лестницу." : "Не смог дойти до входа в шахту.");
             else if (walk == CompanionTravel.Step.FAILED) walkAgain = level.getGameTime() + WALK_RETRY;
@@ -321,6 +362,10 @@ final class CompanionExpedition {
             if (dig.reach(route.get(routeIndex + 1))) routeIndex++;
             // No way round to the next step (a chamber he cut beside the stairs): back to the stairs as a whole, the search of the walk finds a stand.
             else if (dig.walkStuck()) { joining = true; routeIndex = -1; softFails = 0; }
+            return;
+        }
+        if (sealCell != null) {
+            if (backtrack.seal(level, sealCell)) sealCell = null;
             return;
         }
         stand = route.get(routeIndex);
@@ -343,11 +388,46 @@ final class CompanionExpedition {
     }
 
     private void descend() {
+        if (plan == null && drift > 0) plan = CompanionExpeditionStep.landing(w, dig, stand, dir);
         if (plan == null) {
             plan = CompanionExpeditionDetour.next(w, dig, (ServerLevel) owner.level(), stand, dir, turns < MAX_TURNS);
-            if (plan == null) { restartHere("Дальше лестницу не прокопать: некуда свернуть."); return; }
+            if (plan == null) { startBacktrack("Дальше лестницу не прокопать: некуда свернуть"); return; }
         }
         advance();
+    }
+
+    /** The stairs end here: back up them to a stand with a side to turn off to, or start again where he stands. */
+    private void startBacktrack(String why) {
+        if (!backtrack.begin((ServerLevel) owner.level())) { restartHere(why + "."); return; }
+        stage = Stage.BACKTRACK;
+        owner.workStatus("Лестница упёрлась, поднимаюсь по ней и сверну в сторону.");
+    }
+
+    /** Liquid under the way down that a turn does not get round: a few stands back up, then a level way off to the side out from over it. */
+    private boolean moveOffLiquid() {
+        if (stage != Stage.DESCEND || drifts >= MAX_DRIFTS || !backtrack.beginAway((ServerLevel) owner.level(), WATER_RISE, DRIFT)) return false;
+        drifts++;
+        drift = 0;
+        if (driftAlong == null) driftAlong = dir;
+        stage = Stage.BACKTRACK;
+        owner.workStatus("Под лестницей вода или лава: поднимаюсь на пару ступеней и копаю ход в сторону.");
+        return true;
+    }
+
+    private void backtrack() {
+        CompanionExpeditionBacktrack.Result ticked = backtrack.tick((ServerLevel) owner.level());
+        switch (ticked) {
+            case WORKING -> { }
+            case STUCK -> restartHere("Не смог подняться по своей лестнице, чтобы свернуть в сторону.");
+            case DONE -> {
+                stand = backtrack.target();
+                dir = backtrack.side();
+                turns = softFails = 0;
+                if (driftAlong != null) drift = DRIFT;
+                plan = CompanionExpeditionStep.landing(w, dig, stand, dir);
+                stage = Stage.DESCEND;
+            }
+        }
     }
 
     /** The stairs are lost: the mine starts again where he stands, if the ground there allows and the restarts are not used up. */
@@ -375,7 +455,8 @@ final class CompanionExpedition {
         // A walk to the entrance that failed once is not tried again through yet another restart: the order ends instead of burning them all.
         Direction side = towardOrigin || !CompanionExpeditionRecord.originNear(w.mine, FAR_ENTRANCE) ? null : CompanionExpeditionRecord.originSide(level, w.mine);
         if (side == null) {
-            if (!leaveForSurface(level, why, false)) end(Ending.BLOCKED, why);
+            if (startDigOut(level)) digOutWhy = why;
+            else if (!leaveForSurface(level, why, false)) end(Ending.BLOCKED, why);
             return;
         }
         towardOrigin = true;
@@ -447,9 +528,33 @@ final class CompanionExpedition {
         return true;
     }
 
+    /** No side and no way to the entrance: the last restart, past the cap, here or, if his own plugs wall him in, below the ring he digs out of. */
+    private boolean startDigOut(ServerLevel level) {
+        if (!digOut.begin()) return false;
+        dropPlan();
+        stage = Stage.DIG_OUT;
+        owner.workStatus("Ко входу не пройти и свернуть некуда, пробую начать шахту заново, если надо, прокопав выход вниз.");
+        return true;
+    }
+
+    private void digOut() {
+        ServerLevel level = (ServerLevel) owner.level();
+        CompanionExpeditionDigOut.Result ticked = digOut.tick(level);
+        switch (ticked) {
+            case WORKING -> { }
+            case STUCK -> { if (!leaveForSurface(level, digOutWhy, false)) end(Ending.BLOCKED, digOutWhy); }
+            case DONE -> {
+                restartAt(level, digOut.at(), digOut.side(), 0);
+                owner.workStatus("Потерял свою лестницу, начинаю шахту заново отсюда.");
+            }
+        }
+    }
+
     private void dropPlan() {
         plan = null;
+        sealCell = null;
         lead.clear();
+        backtrack.reset();
         dig.reset();
     }
 
@@ -461,8 +566,10 @@ final class CompanionExpedition {
         w.mine.buried(!CompanionExpeditionRecord.underSky(level, at.above()));
         route = new ArrayList<>(List.of(at));
         routeIndex = index;
-        tunnel = null;
-        turns = softFails = 0;
+        // New stairs owe nothing to a way off liquid of the old ones (its landings left, its direction).
+        tunnel = driftAlong = null;
+        turns = softFails = drift = 0;
+        wetTurn = false;
         stage = Stage.CHECK_NEAR;
     }
 
@@ -498,7 +605,7 @@ final class CompanionExpedition {
         int used = w.mine.tunnels().size();
         if (used >= order.size() - 1) {
             CompanionExpeditionRecord.Base base = CompanionExpeditionRecord.moveBase(w.mine, atFoot);
-            if (base == null) { restartHere("Все тоннели от лестницы пройдены" + (tunnelWhy.isEmpty() ? "" : " (" + tunnelWhy + ")") + "."); return false; }
+            if (base == null) { startBacktrack("Все тоннели от лестницы пройдены" + (tunnelWhy.isEmpty() ? "" : " (" + tunnelWhy + ")")); return false; }
             dir = base.direction();
             order = CompanionShaftPlan.tunnelOrder(dir);
             used = 0;
@@ -553,6 +660,7 @@ final class CompanionExpedition {
                 stand = done.to;
                 w.mine.reached(stand);
                 stairSteps++;
+                wetTurn = false;
                 owner.workStatus("Спускаюсь по лестнице: ступень " + stairSteps + ", ноги на высоте " + stand.getY() + ".");
                 if (reachedDepth((ServerLevel) owner.level())) { stage = Stage.BRANCH; enterBranch(); }
             }
@@ -560,6 +668,11 @@ final class CompanionExpedition {
                 dir = done.turn;
                 stand = done.to;
                 w.mine.reached(stand);
+                if (drift > 0) {
+                    owner.workStatus("Копаю ход в сторону: прошёл " + (DRIFT - drift + 1) + " из " + DRIFT + ".");
+                    if (--drift == 0) { dir = driftAlong; driftAlong = null; }
+                    return;
+                }
                 turns++;
                 owner.workStatus("Лестницу пришлось повернуть на " + CompanionExpeditionReport.name(dir) + ".");
             }
@@ -574,22 +687,28 @@ final class CompanionExpedition {
     private void blocked() {
         CompanionExpeditionStep failed = plan;
         plan = null;
+        // Liquid a turn gets round (a pocket by the step) costs a landing, as before; met on that landing or right after it, it lies under the stairs.
+        boolean wet = failed.kind != CompanionExpeditionStep.Kind.TUNNEL && failed.liquid;
+        if (wet && (wetTurn || failed.kind == CompanionExpeditionStep.Kind.LANDING) && moveOffLiquid()) return;
+        wetTurn |= wet;
+        // A way off liquid that meets rock it cannot pass ends where it is: the stairs go on from there in their own direction.
+        if (drift > 0 && failed.lasting) { drift = 0; dir = driftAlong; driftAlong = null; return; }
         switch (failed.kind) {
             case STAIR -> {
                 if (!failed.lasting && ++softFails <= SOFT_RETRIES) return;
                 if (failed.lasting) w.mine.refuse(stand, dir);
                 if (failed.lost) { restartHere("Потерял свою лестницу: " + failed.why + "."); return; }
                 Direction side = turns >= MAX_TURNS ? null : CompanionShaftPlan.chooseTurn((ServerLevel) owner.level(), stand, dir, w.mine.seals(), w.mine.avoid());
-                if (side == null) restartHere("Дальше лестницу не прокопать: " + failed.why + ".");
+                if (side == null) startBacktrack("Дальше лестницу не прокопать: " + failed.why);
                 else plan = CompanionExpeditionStep.landing(w, dig, stand, side);
             }
             case LANDING -> {
                 if (!failed.lasting && ++softFails <= SOFT_RETRIES) { plan = CompanionExpeditionStep.landing(w, dig, failed.from, failed.turn); return; }
                 if (failed.lost) { restartHere("Потерял свою лестницу: " + failed.why + "."); return; }
-                if (!failed.lasting) { restartHere("Свернуть в сторону тоже не вышло: " + failed.why + "."); return; }
+                if (!failed.lasting) { startBacktrack("Свернуть в сторону тоже не вышло: " + failed.why); return; }
                 w.mine.refuse(failed.from, failed.turn);
                 Direction side = turns >= MAX_TURNS ? null : CompanionShaftPlan.chooseTurn((ServerLevel) owner.level(), failed.from, dir, w.mine.seals(), w.mine.avoid());
-                if (side == null) restartHere("Свернуть в сторону тоже не вышло: " + failed.why + ".");
+                if (side == null) startBacktrack("Свернуть в сторону тоже не вышло: " + failed.why);
                 else plan = CompanionExpeditionStep.landing(w, dig, failed.from, side);
             }
             case TUNNEL -> { tunnel = null; tunnelWhy = failed.why; }
@@ -621,6 +740,7 @@ final class CompanionExpedition {
 
     private void end(Ending ending, String why) {
         dig.flush();
+        if (ending == Ending.FOUND) w.mine.retreatsForgotten();
         String text = CompanionExpeditionReport.of(w, gained(), stairSteps) + (cave.notes().isEmpty() ? "" : " " + cave.notes()) + " " + why + rememberStop(ending);
         if (ore.missedDiamond && gained() == 0) text += " Видел алмазную руду, но взять её нечем: нужна железная кирка.";
         if (unheld) text += " Чанки вокруг шахты удержать не удалось.";

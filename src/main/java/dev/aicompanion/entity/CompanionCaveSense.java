@@ -128,6 +128,9 @@ final class CompanionCaveSense {
         return f.health() <= HEALTH_VERY || f.burning() || !f.fit() && (f.hostiles() >= CROWD || f.creeper() < CREEPER_CLOSE);
     }
 
+    /** The bag without a sealing block is all that makes the cave very dangerous. */
+    static boolean onlyBlocksLack(Facts f) { return f.seals() == 0 && !threatened(f); }
+
     /** Which of the very-dangerous conditions of {@link #judge} hold, for the diagnostics. */
     static String veryReasons(Facts f) {
         List<String> reasons = new ArrayList<>();

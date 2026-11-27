@@ -36,7 +36,8 @@ import static dev.aicompanion.gametest.CompanionMineArena.start;
 public final class CompanionMineK15Tests {
     private static final int SLIT_Y = 14, SLIT_Z = 14, SLIT_X0 = 20, SLIT_X1 = 23, FLOOR_Y = 12, TOP_Y = 14,
             FAR_CHAMBER_X0 = 12, FAR_CHAMBER_X1 = 19, FAR_CHAMBER_Z0 = 11, FAR_CHAMBER_Z1 = 17, CORRIDOR_X = 3, DEEP_Y = 14, HIGH_Y = GROUND - 2, PAST_THE_CAVE = 13,
-            OLD_STEPS = 15, TORCHES_SLOT = 3, BIG_STACK = 64, STRIP_FROM = 8, NICHE_BEHIND = 3;
+            OLD_STEPS = 15, TORCHES_SLOT = 3, BIG_STACK = 64, STRIP_FROM = 8, NICHE_BEHIND = 3,
+            WEST_X0 = 14, WEST_X1 = 22, EAST_X0 = 26, EAST_X1 = 33, SIDE_Z0 = 12, SIDE_Z1 = 15, STRIP_ABOVE_CAVE = 9, DEEPER_THAN_THE_CAVE = 11;
 
     private CompanionMineK15Tests() { }
 
@@ -129,4 +130,28 @@ public final class CompanionMineK15Tests {
         });
     }
 
+    /**
+     * r1b/void-2: the blocks run out on the way down, a cave opens, and the rock here is too thin for a niche. A bag without blocks is no danger in
+     * the cave itself: with health to spare he turns off above it instead of leaving the mine, as he does for a cave that is dangerous again.
+     */
+    @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void turnsOffAboveACaveHeHasNoBlocksToPlug(GameTestHelper h) {
+        mountain(h, false);
+        air(h, SLIT_X1, SLIT_X1, SLIT_Y, SLIT_Y, SLIT_Z, SLIT_Z);
+        air(h, WEST_X0, WEST_X1, FLOOR_Y, TOP_Y, SIDE_Z0, SIDE_Z1);
+        air(h, EAST_X0, EAST_X1, FLOOR_Y, TOP_Y, SIDE_Z0, SIDE_Z1);
+        CompanionEntity c = rig(h);
+        start(h, c, 1);
+        h.onEachTick(() -> {
+            CompanionMineSite site = c.mineSite();
+            if (site.stands().size() >= STRIP_ABOVE_CAVE && site.backtracks() == 0) stripBlocks(c);
+            h.assertTrue(site.retreats() == 0 && feet(h, c) < GROUND - 3 || site.stands().size() < STRIP_ABOVE_CAVE, "He left the mine for want of blocks, at " + rel(h, c.blockPosition()).toShortString() + ", retreats " + site.retreats() + " | " + report(c));
+            if (site.backtracks() >= 1 && "DESCEND".equals(c.expeditionStage()) && feet(h, c) < DEEPER_THAN_THE_CAVE) h.succeed();
+            h.assertTrue(c.isWorking() || c.isGatheringTask(), "The order ended at the cave: " + report(c));
+        });
+    }
+
+    private static void stripBlocks(CompanionEntity c) {
+        for (int slot = 0; slot < c.getContainerSize(); slot++) if (CompanionSeal.seals(c.getItem(slot))) c.setItem(slot, ItemStack.EMPTY);
+    }
 }

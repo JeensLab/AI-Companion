@@ -2,7 +2,7 @@ package dev.aicompanion.entity;
 
 /** Why the expedition must go up now: a cave too dangerous, a fire or low health; a meal eaten on the spot is given time to mend (moved out of {@link CompanionExpedition}). */
 final class CompanionExpeditionDanger {
-    private static final String CAVE_DANGER = "в пещере слишком опасно";
+    static final String CAVE_DANGER = "в пещере слишком опасно";
     /** How long a meal is given to raise his health before the climb, and how recent a blow from a mob keeps the climb. */
     private static final int MEAL_GRACE = 200, RECENT_HURT = 100;
     private final CompanionEntity owner;
