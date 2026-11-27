@@ -255,6 +255,10 @@ public final class CompanionMineWayUpTests {
             h.assertTrue(cell.distSqr(last) <= NEAR, "The way up from the pit has a gap from " + last.toShortString() + " to " + cell.toShortString() + ": " + way + " | " + report(c));
             last = cell;
         }
+        // Review of M5: a floor of the short staircase was laid into the head of a step of the record, and the next walk along it met his own block.
+        for (BlockPos cell : way) for (BlockPos body : List.of(cell, cell.above())) {
+            h.assertTrue(h.getLevel().getBlockState(body).getCollisionShape(h.getLevel(), body).isEmpty(), "A block stands in the cell " + cell.toShortString() + " of the way up in the record, at " + body.toShortString() + ": " + way + " | " + report(c));
+        }
     }
 
     /** The self-rescue digs no cell his mine forbids, so within its reach (4 blocks) of {@code stand} it finds no rock to cut; the staircases of the climb take them in a second pass. */

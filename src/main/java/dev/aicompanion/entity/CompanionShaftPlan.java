@@ -193,7 +193,7 @@ public final class CompanionShaftPlan {
     }
 
     /** A crafted block or a chest/furnace; the companion's own torches are not a building. */
-    private static boolean built(ServerLevel level, BlockPos pos) {
+    static boolean built(ServerLevel level, BlockPos pos) {
         BlockState state = level.getBlockState(pos);
         if (state.is(Blocks.TORCH) || state.is(Blocks.WALL_TORCH)) return false;
         return CompanionBuildings.crafted(state) || level.getBlockEntity(pos) != null;

@@ -184,7 +184,7 @@ final class CompanionWorkCrafting {
                 // The walk to it is at most twice the straight trip; a longer one costs more than a new bench.
                 if (reach.found() && reach.length() <= 2 * CompanionWork.BENCH_TRIP) { w.craftingStation = pos; break; }
                 // The self-rescue starts only for a way that is missing and a bench out of arm's reach: its stall counts nothing else.
-                if (above == null && !reach.found() && pos.getY() > w.owner.getY() + 1.5 && w.owner.getEyePosition().distanceToSqr(pos.getCenter()) > 4.5 * 4.5) above = pos;
+                if (above == null && !reach.found() && !CompanionRoute.NOT_SEARCHED.equals(reach.reason()) && pos.getY() > w.owner.getY() + 1.5 && w.owner.getEyePosition().distanceToSqr(pos.getCenter()) > 4.5 * 4.5) above = pos;
             }
             w.resetApproach();
         }
@@ -199,7 +199,8 @@ final class CompanionWorkCrafting {
                 if (!atHand && (hasWoodForABench() || woodFollows && woodInSight(level))) return useOwnBench("к известному верстаку сейчас нет пути");
                 // No walk to a bench up over him (down in a cut under a cliff) and no wood for one here: before the order gives up he climbs
                 // out to it, the way a player cuts steps up (series w, seed 7: «пройти к нему сейчас не могу» five times over with the bench on the cliff).
-                if (above == null || !w.allowsRouteRecovery()) {
+                // By a building (the bench on a roof or an upper floor) the refusal stays: the way cut up would go through the house and its yard.
+                if (above == null || !w.allowsRouteRecovery() || byABuilding(level, above)) {
                     if (atHand) { w.finish(false, "Помню верстак в двух шагах, но пройти к нему сейчас не могу. Вещи сохранил."); return true; }
                     w.finish(false, "Помню верстак неподалёку, но пройти к нему сейчас не могу, а дерева на новый не хватает."); return true;
                 }
@@ -237,6 +238,17 @@ final class CompanionWorkCrafting {
      * one beside it was the duplication of game log 22.10. Farther off, another is worth setting down.
      */
     private static final int BENCH_AT_HAND = 3;
+
+    /** A block of a player's making (CompanionShaftPlan.built) within reach of the steps the self-rescue would cut from where he stands, or beside the bench; the bench itself is none. */
+    private boolean byABuilding(ServerLevel level, BlockPos bench) {
+        BlockPos at = w.owner.blockPosition();
+        for (BlockPos pos : BlockPos.betweenClosed(at.offset(-BUILT_NEAR, -BUILT_NEAR, -BUILT_NEAR), at.offset(BUILT_NEAR, BUILT_NEAR + 3, BUILT_NEAR))) {
+            if (!pos.equals(bench) && level.hasChunkAt(pos) && CompanionShaftPlan.built(level, pos)) return true;
+        }
+        for (var side : net.minecraft.core.Direction.values()) if (CompanionShaftPlan.built(level, bench.relative(side))) return true;
+        return false;
+    }
+    private static final int BUILT_NEAR = 4;
 
     /** Like a player far down a slope from his bench: one log buys a new bench here instead of giving up the order. */
     boolean canMakeBench() {

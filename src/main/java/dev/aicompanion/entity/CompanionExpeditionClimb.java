@@ -554,7 +554,8 @@ final class CompanionExpeditionClimb {
         stairSteps = 0;
         why = outcome = "";
         cells = List.of();
-        stretchEnd = plugs = cuts = cutWait = rescuesBefore = toWayCell = toWaySteps = recordAt = 0;
+        stretchEnd = plugs = cuts = cutWait = rescuesBefore = toWayCell = toWaySteps = 0;
+        recordAt = -1;
         lost = cutToWay = false;
         newStairsWhy = "";
         phase = Phase.WALK;

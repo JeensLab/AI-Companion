@@ -163,11 +163,8 @@ final class CompanionExpeditionStairsUp {
                     }
                     case FLOOR -> {
                         // A floor fills a gap of one block over a block that bears it (a sturdy top: not air, not water or lava), never a bridge.
-                        // The slot of his own steps of this climb (the feet or the head of a stand he has left, rock under it) is no bridge either,
-                        // for the short staircase alone: it turns back over them to his old stairs straight over the pit.
                         BlockPos under = hazard.cell().below();
-                        boolean ownSlot = keepsStairs && (stood.contains(under) || stood.contains(under.below()));
-                        if (!ownSlot && !level.getBlockState(under).isFaceSturdy(level, under, Direction.UP)) continue;
+                        if (!level.getBlockState(under).isFaceSturdy(level, under, Direction.UP)) continue;
                         // With no block to lay, the side that needs none comes first (the rock cut at a wall is the floor blocks of the next steps).
                         if (CompanionSeal.available(owner) == 0) { noFloor = true; continue; }
                         laying = new CompanionExpeditionFloor(hazard.cell());
@@ -222,6 +219,9 @@ final class CompanionExpeditionStairsUp {
         else if (dz != 0) order.add(dz > 0 ? Direction.SOUTH : Direction.NORTH);
         if (dir != null && !order.contains(dir)) order.add(dir);
         for (Direction d : Direction.Plane.HORIZONTAL) if (!order.contains(d)) order.add(d);
+        // The short staircase winds: with the side toward its goal shut (his old stairs straight over the pit), the side that keeps nearest to the goal
+        // comes next, not the run on away from it, which came back over his own steps and laid its floors into them.
+        if (keepsStairs) order.sort(java.util.Comparator.comparingDouble(d -> here.relative(d).atY(goal.getY()).distSqr(goal)));
         return order;
     }
 
