@@ -51,6 +51,7 @@ public final class CompanionExpeditionTests {
     /**
      * Water under the way down, wider than a turn or two goes round (an aquifer: seed 7 at y 1): he goes a few steps back up, digs a level
      * way off to the side, out from over it, and goes on down from there, never into the water and with no end above the tunnels.
+     * The level way is asked for by its status: a turn or two round the water got this scene down as well.
      */
     @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = 12000)
     public static void movesTheStairsAwayFromWaterBelowThem(GameTestHelper h) {
@@ -59,12 +60,17 @@ public final class CompanionExpeditionTests {
         for (int x = CENTER - 6; x <= CENTER + 6; x++) for (int z = 2; z <= CENTER; z++) for (int y = 6; y <= 9; y++) h.setBlock(new BlockPos(x, y, z), Blocks.WATER);
         long id = start(h, c, 1);
         int down = GROUND + 1 - DIAMOND_FEET;
+        boolean[] aside = {false};
         h.onEachTick(() -> {
+            aside[0] |= c.getLastTaskResult().startsWith("Копаю ход в сторону");
             h.assertTrue(!c.isEyeInFluid(FluidTags.WATER), "In the water at " + h.relativePos(c.blockPosition()).toShortString() + " | " + report(c));
             CompanionActionResult result = c.workResult(id);
             if (result != null) h.fail("Ended above the tunnels: " + result + " | " + report(c));
         });
-        h.succeedWhen(() -> h.assertTrue(depth(h, c) >= down, "Not down to the tunnels, depth " + depth(h, c) + " | " + report(c)));
+        h.succeedWhen(() -> {
+            h.assertTrue(depth(h, c) >= down, "Not down to the tunnels, depth " + depth(h, c) + " | " + report(c));
+            h.assertTrue(aside[0], "Down with no level way off the water | " + report(c));
+        });
     }
 
     /** A lava source open only from above, beside the column he opens next and in sight from his stand: it is plugged before that column is opened. */

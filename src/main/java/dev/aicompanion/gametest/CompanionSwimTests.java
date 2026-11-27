@@ -6,7 +6,14 @@ import dev.aicompanion.entity.CompanionEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.Pose;
+import net.minecraft.world.entity.ai.goal.GoalSelector;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
@@ -286,28 +293,54 @@ public final class CompanionSwimTests {
     }
 
     /**
-     * A column of falling water in a shaft, a plateau beside its top (an opening three blocks high in the wall), and an order that
-     * cannot start while he swims: the game's float holds the jump flag against the order, and nothing else takes him sideways (the
-     * mine world, a drowning at a waterfall with air one step away). The water is placed with its ticks cleared, so that it stands
-     * as a fall does and spreads nowhere.
+     * A column of falling water in a shaft at x 12, z 16 (y 1..14, in stone up to y 11), a plateau beside its top and an opening to it
+     * in the shaft's wall at x 13 from {@code low} to {@code high}. The route of an order does not take him out of the fall, and
+     * nothing else takes him sideways (the mine world, a drowning at a waterfall with air one step away).
      */
-    @GameTest(template = "tall_tree", timeoutTicks = 400)
-    public static void inAColumnOfFallingWaterWithAirOneStepAwayHeGetsOutAndDoesNotDrown(GameTestHelper h) {
+    private static void fall(GameTestHelper h, Block wall, int low, int high) {
         for (int x = 8; x <= 24; x++) for (int z = 12; z <= 20; z++) for (int y = 0; y <= 16; y++) {
-            boolean shaft = x == 12 && z == 16, wall = Math.abs(x - 12) + Math.abs(z - 16) == 1;
-            boolean opening = x == 13 && z == 16 && y >= 12 && y <= 14;
+            boolean shaft = x == 12 && z == 16, side = Math.abs(x - 12) + Math.abs(z - 16) == 1;
+            boolean opening = x == 13 && z == 16 && y >= low && y <= high;
             BlockState block = y <= 11 && !(shaft && y >= 1) ? Blocks.STONE.defaultBlockState()
                     : shaft && y >= 1 && y <= 14 ? Fluids.FLOWING_WATER.getFlowing(8, true).createLegacyBlock()
-                    : wall && !opening ? Blocks.STONE.defaultBlockState() : Blocks.AIR.defaultBlockState();
+                    : side && !opening ? wall.defaultBlockState() : Blocks.AIR.defaultBlockState();
             h.setBlock(new BlockPos(x, y, z), block);
         }
-        var low = h.absolutePos(new BlockPos(8, 0, 12));
-        var high = h.absolutePos(new BlockPos(24, 16, 20));
-        ((LevelTicks<Fluid>) h.getLevel().getFluidTicks()).clearArea(BoundingBox.fromCorners(low, high));
-        CompanionEntity oleg = spawn(h, 12, 7, 16);
+    }
+
+    /** The water of the scene stands as it was placed, as a fall does, and spreads nowhere: its ticks are cleared. Called after the last block is set. */
+    private static void still(GameTestHelper h) {
+        ((LevelTicks<Fluid>) h.getLevel().getFluidTicks()).clearArea(BoundingBox.fromCorners(h.absolutePos(new BlockPos(8, 0, 12)), h.absolutePos(new BlockPos(24, 16, 20))));
+    }
+
+    /** The owner on the plateau and the order to come to him. */
+    private static ServerPlayer called(GameTestHelper h, CompanionEntity oleg) {
+        var owner = player(h, oleg);
         var at = h.absoluteVec(new Vec3(20.5, 12, 16.5));
-        player(h, oleg).teleportTo(at.x, at.y, at.z);
-        h.assertTrue(CompanionEvents.executeAction(player(h, oleg), "come", "", 1).success(), "The order was not accepted");
+        owner.teleportTo(at.x, at.y, at.z);
+        h.assertTrue(CompanionEvents.executeAction(owner, "come", "", 1).success(), "The order was not accepted");
+        return owner;
+    }
+
+    /** His way out of falling water has the turn. The goals of a mob are the game's own and closed to a test: read as the game holds them. */
+    private static boolean leaving(CompanionEntity c) {
+        try {
+            var field = Mob.class.getDeclaredField("goalSelector");
+            field.setAccessible(true);
+            return ((GoalSelector) field.get(c)).getAvailableGoals().stream()
+                    .anyMatch(goal -> goal.isRunning() && goal.getGoal().getClass().getSimpleName().equals("CompanionWaterExit"));
+        } catch (ReflectiveOperationException e) { throw new IllegalStateException(e); }
+    }
+
+    private static String where(GameTestHelper h, CompanionEntity c) { return c.blockPosition().subtract(h.absolutePos(BlockPos.ZERO)).toShortString(); }
+
+    /** The opening three blocks high: he gets out onto the plateau and loses neither health nor all his air. */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void inAColumnOfFallingWaterWithAirOneStepAwayHeGetsOutAndDoesNotDrown(GameTestHelper h) {
+        fall(h, Blocks.STONE, 12, 14);
+        still(h);
+        CompanionEntity oleg = spawn(h, 12, 7, 16);
+        called(h, oleg);
         float[] lowestHealth = {oleg.getMaxHealth()};
         int[] lowestAir = {oleg.getAirSupply()};
         h.onEachTick(() -> {
@@ -315,35 +348,79 @@ public final class CompanionSwimTests {
             lowestAir[0] = Math.min(lowestAir[0], oleg.getAirSupply());
         });
         h.succeedWhen(() -> {
-            h.assertTrue(!oleg.isInWater() && oleg.onGround(), "Still in the water at " + oleg.blockPosition().subtract(h.absolutePos(BlockPos.ZERO)).toShortString());
+            h.assertTrue(!oleg.isInWater() && oleg.onGround(), "Still in the water at " + where(h, oleg));
             h.assertTrue(lowestHealth[0] >= oleg.getMaxHealth() && lowestAir[0] > 0, "Drowned: health " + lowestHealth[0] + ", air " + lowestAir[0]);
         });
     }
 
     /**
-     * The same column, the opening in the wall a block high: the dry cell beyond it is in sight and out of reach, and the walls bedrock. The
-     * pocket of an aquifer under a ceiling (runs descent and void of seed 7): the push at the bank went on with the work shut out of its turn
-     * until the order timed out. The push is given up after a while, and the order gets its turn and its answer.
+     * The foot of a low fall (water over a lip a block up, falling water to his neck, the shaft shut above), a niche beside it and ore
+     * in the wall at the height of his head, with a wooden pickaxe: a swing of 68 ticks. A swing that goes on is not treading water,
+     * and he is not taken off it: taken to the niche at tick 60, he had no stand for the ore from there and the order ended with nothing.
      */
-    @GameTest(template = "tall_tree", timeoutTicks = 1200)
-    public static void aDryCellInSightButOutOfReachDoesNotHoldTheOrderForGood(GameTestHelper h) {
-        for (int x = 8; x <= 24; x++) for (int z = 12; z <= 20; z++) for (int y = 0; y <= 16; y++) {
-            boolean shaft = x == 12 && z == 16, wall = Math.abs(x - 12) + Math.abs(z - 16) == 1;
-            boolean opening = x == 13 && z == 16 && y == 13;
-            BlockState block = y <= 11 && !(shaft && y >= 1) ? Blocks.STONE.defaultBlockState()
-                    : shaft && y >= 1 && y <= 14 ? Fluids.FLOWING_WATER.getFlowing(8, true).createLegacyBlock()
-                    : wall && !opening ? Blocks.BEDROCK.defaultBlockState() : Blocks.AIR.defaultBlockState();
-            h.setBlock(new BlockPos(x, y, z), block);
-        }
-        var low = h.absolutePos(new BlockPos(8, 0, 12));
-        var high = h.absolutePos(new BlockPos(24, 16, 20));
-        ((LevelTicks<Fluid>) h.getLevel().getFluidTicks()).clearArea(BoundingBox.fromCorners(low, high));
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void aSwingAtOreFromTheFallIsNotBrokenOffByTheWayOut(GameTestHelper h) {
+        fall(h, Blocks.STONE, 0, -1);
+        for (int y = 3; y <= 14; y++) h.setBlock(new BlockPos(12, y, 16), Blocks.STONE);
+        h.setBlock(new BlockPos(12, 2, 16), Fluids.FLOWING_WATER.getFlowing(7, false).createLegacyBlock());
+        for (int x = 13; x <= 14; x++) for (int y = 1; y <= 2; y++) h.setBlock(new BlockPos(x, y, 16), Blocks.AIR);
+        BlockPos ore = new BlockPos(11, 2, 16);
+        h.setBlock(ore, Blocks.DEEPSLATE_COAL_ORE);
+        still(h);
+        CompanionEntity oleg = spawn(h, 12, 1, 16);
+        oleg.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.WOODEN_PICKAXE));
+        h.assertTrue(oleg.startWork("mine_ore", "coal", 1).success(), "The order was not accepted");
+        long[] taken = {-1};
+        h.onEachTick(() -> { if (taken[0] < 0 && h.getBlockState(ore).is(Blocks.DEEPSLATE_COAL_ORE) && leaving(oleg)) taken[0] = h.getTick(); });
+        h.succeedWhen(() -> {
+            h.assertTrue(!h.getBlockState(ore).is(Blocks.DEEPSLATE_COAL_ORE), "The ore is not mined, he is at " + where(h, oleg) + ": " + oleg.getLastTaskResult());
+            h.assertTrue(taken[0] < 0, "Taken off the ore at tick " + taken[0] + ", before it broke at " + h.getTick());
+        });
+    }
+
+    /** «Стой» on the way out: the way out is the order's, and ends with it. */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void theWayOutOfTheFallEndsWithTheOrder(GameTestHelper h) {
+        fall(h, Blocks.STONE, 12, 14);
+        still(h);
         CompanionEntity oleg = spawn(h, 12, 7, 16);
-        var at = h.absoluteVec(new Vec3(20.5, 12, 16.5));
-        player(h, oleg).teleportTo(at.x, at.y, at.z);
-        h.assertTrue(CompanionEvents.executeAction(player(h, oleg), "come", "", 1).success(), "The order was not accepted");
-        long id = oleg.activeWorkId();
-        h.succeedWhen(() -> h.assertTrue(!oleg.isWorking() && oleg.workResult(id) != null, "The order has no answer yet, he is at "
-                + oleg.blockPosition().subtract(h.absolutePos(BlockPos.ZERO)).toShortString() + ": " + oleg.getLastTaskResult()));
+        var owner = called(h, oleg);
+        long[] told = {-1};
+        int[] after = {0};
+        h.onEachTick(() -> {
+            if (!leaving(oleg)) return;
+            if (told[0] < 0) { told[0] = h.getTick(); CompanionEvents.executeAction(owner, "stop", "", 1); }
+            else if (h.getTick() > told[0] + 2) after[0]++;
+        });
+        h.runAfterDelay(200, () -> {
+            h.assertTrue(told[0] >= 0, "The way out of the fall never had the turn");
+            h.assertTrue(!oleg.isWorking(), "«Стой» did not end the order");
+            h.assertTrue(after[0] == 0, "Went on out of the water for " + after[0] + " ticks after «стой»");
+            h.succeed();
+        });
+    }
+
+    /**
+     * The opening is under the water line, a lip over it: the dry cell beyond is in sight and a step away, and afloat (he starts at the
+     * top of the water: on his way up he would pass the opening and walk out) he cannot duck under the lip. The walls are bedrock. The
+     * pocket of an aquifer under a ceiling (runs descent and void of seed 7): the push at the bank went on with the work shut out of its
+     * turn until the order timed out. The push is given up after a while, and the order has its turn back while it is still an order.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void aDryCellInSightButOutOfReachDoesNotHoldTheOrderForGood(GameTestHelper h) {
+        fall(h, Blocks.BEDROCK, 12, 13);
+        still(h);
+        CompanionEntity oleg = spawn(h, 12, 13, 16);
+        called(h, oleg);
+        boolean[] left = {false}, back = {false};
+        h.onEachTick(() -> {
+            boolean now = leaving(oleg);
+            left[0] |= now;
+            back[0] |= left[0] && !now && oleg.isWorking();
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(left[0], "The way out of the fall never had the turn");
+            h.assertTrue(back[0], "The order has not had its turn back, he is at " + where(h, oleg) + (oleg.isWorking() ? "" : ", and it is over: " + oleg.getLastTaskResult()));
+        });
     }
 }

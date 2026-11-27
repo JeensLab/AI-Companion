@@ -14,9 +14,9 @@ import java.util.EnumSet;
  * takes him sideways: at a waterfall with air one step away he bobbed, with no route, until he drowned. A route through the water
  * is left to the work. This goal moves him to the nearest dry
  * cell, with the move flag only: the float goes on lifting him, and the guard (priority 0) keeps the turn if it has it.
- * A dry cell in sight that the push does not reach (a pocket of an aquifer under a ceiling, runs descent and void of seed 7: he
- * floated there with the mine's work shut out of its turn until the order timed out) is given up after a while, and the turn goes
- * back to the work, which cuts or lays its own way; the push is tried again later.
+ * A dry cell in sight that the push does not reach (under a lip lower than he floats: a pocket of an aquifer under a ceiling, runs
+ * descent and void of seed 7: he floated there with the mine's work shut out of its turn until the order timed out) is given up
+ * after a while, and the turn goes back to the work, which cuts or lays its own way; the push is tried again later.
  */
 final class CompanionWaterExit extends Goal {
     private static final int STEP_DOWN = 3, REPLAN_EVERY = 10, TREADING_TICKS = 60, PATIENCE = 20 * 8, REST = 20 * 10;
@@ -38,16 +38,21 @@ final class CompanionWaterExit extends Goal {
                 && c.getNavigation().isDone() && treadingWater() && (target = nearestDry()) != null;
     }
 
-    /** A swim that gets somewhere is left alone: crossing a river to the player is not a reason to turn back to the nearest bank. */
+    /**
+     * A swim that gets somewhere is left alone: crossing a river to the player is not a reason to turn back to the nearest bank. So is
+     * a swing at a block from the fall: taken off ore at the foot of a low fall a few ticks before it broke, he lost the swing and then
+     * the order, with no stand for that ore from the floor beside.
+     */
     private boolean treadingWater() {
-        if (!deepInWater()) { anchor = null; return false; }
+        if (!deepInWater() || c.work.swinging()) { anchor = null; return false; }
         long now = c.level().getGameTime();
         double dx = anchor == null ? 0 : c.getX() - anchor.x, dz = anchor == null ? 0 : c.getZ() - anchor.z;
         if (anchor == null || dx * dx + dz * dz > DRIFT * DRIFT) { anchor = c.position(); treadingSince = now; return false; }
         return now - treadingSince >= TREADING_TICKS;
     }
 
-    @Override public boolean canContinueToUse() { return c.inventoryViewers == 0 && c.isAlive() && c.isInWater() && c.level().getGameTime() < giveUpAt; }
+    /** The way out is the order's and ends with it («стой» on the way to the bank). */
+    @Override public boolean canContinueToUse() { return c.inventoryViewers == 0 && c.isAlive() && c.work.isActive() && c.isInWater() && c.level().getGameTime() < giveUpAt; }
     @Override public boolean requiresUpdateEveryTick() { return true; }
     @Override public void start() {
         long now = c.level().getGameTime();

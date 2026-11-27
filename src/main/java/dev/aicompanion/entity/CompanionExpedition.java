@@ -224,7 +224,7 @@ final class CompanionExpedition {
             owner.workStatus(w.mine.noCoalAbove() ? "Факелы кончились, а угля наверху не было: копаю дальше в темноте." : "Факелы кончились, а пути наверх нет: копаю дальше в темноте.");
         }
         if (plan == null) supply.arm(level);
-        if ((digging || stage == Stage.CHECK_NEAR || stage == Stage.WALK_DOWN) && wade.stuck(progress(), plan != null && plan.busy(owner.level().getGameTime()), plan == null && stage == Stage.BRANCH)) { w.mine.underwaterStalled(); restartHere("Застрял в воде на своей лестнице."); return; }
+        if ((digging || stage == Stage.CHECK_NEAR || stage == Stage.WALK_DOWN) && wade.stuck(progress(), plan != null && plan.busy(owner.level().getGameTime()), plan == null && stage == Stage.BRANCH)) { w.mine.underwaterStalled(); wade.reset(); restartHere("Застрял в воде на своей лестнице."); return; }
         switch (stage) {
             case LOCATE -> locate(level);
             case CHECK_NEAR -> { if (!mineOre(level, CompanionExpeditionOre.Mode.WALK)) stage = Stage.WALK_DOWN; }
@@ -455,7 +455,7 @@ final class CompanionExpedition {
         // A walk to the entrance that failed once is not tried again through yet another restart: the order ends instead of burning them all.
         Direction side = towardOrigin || !CompanionExpeditionRecord.originNear(w.mine, FAR_ENTRANCE) ? null : CompanionExpeditionRecord.originSide(level, w.mine);
         if (side == null) {
-            if (startDigOut(level)) digOutWhy = why;
+            if (startDigOut()) digOutWhy = why;
             else if (!leaveForSurface(level, why, false)) end(Ending.BLOCKED, why);
             return;
         }
@@ -529,7 +529,7 @@ final class CompanionExpedition {
     }
 
     /** No side and no way to the entrance: the last restart, past the cap, here or, if his own plugs wall him in, below the ring he digs out of. */
-    private boolean startDigOut(ServerLevel level) {
+    private boolean startDigOut() {
         if (!digOut.begin()) return false;
         dropPlan();
         stage = Stage.DIG_OUT;
