@@ -242,4 +242,35 @@ public final class CompanionBuildPartsTests {
             h.succeed();
         });
     }
+
+    // ---- the return to the bench
+
+    /**
+     * The way back to the bench of the house ends where it can be used: a bench seen from 4 blocks, with no spot to stand within its reach
+     * (carpet round it), was walked to as far as the spot 4 blocks off, and the walk was begun again from there for good.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 200)
+    public static void theWayBackToTheBenchEndsWithinItsReach(GameTestHelper h) {
+        var level = h.getLevel();
+        for (BlockPos rel : BlockPos.betweenClosed(new BlockPos(1, 0, 1), new BlockPos(30, 12, 30))) h.setBlock(rel, Blocks.AIR);
+        CompanionEntity oleg = h.spawn(AICompanionMod.COMPANION.get(), 2, 1, 2);
+        CompanionHouse house = new CompanionHouse(oleg);
+        house.base = h.absolutePos(new BlockPos(8, -1, 8));
+        BlockPos bench = h.absolutePos(new BlockPos(16, 0, 16));
+        level.setBlock(bench, Blocks.CRAFTING_TABLE.defaultBlockState(), 3);
+        for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) if (dx != 0 || dz != 0) level.setBlock(bench.offset(dx, 0, dz), Blocks.WHITE_CARPET.defaultBlockState(), 3);
+        // A gap in the carpet two blocks off the bench: the way is found again, and to there.
+        h.runAfterDelay(40, () -> level.setBlock(bench.offset(-2, 0, 0), Blocks.AIR.defaultBlockState(), 3));
+        h.onEachTick(() -> {
+            if (!oleg.onGround()) return;
+            double ends = endsFromBench(house.route(level, new CompanionHouse.Step(bench, Blocks.CRAFTING_TABLE.defaultBlockState(), 0)), bench);
+            h.assertTrue(ends <= 3.2, "The way to the bench ends " + ends + " blocks from it");
+        });
+        h.succeedWhen(() -> h.assertTrue(h.getTick() > 40 && endsFromBench(house.route(level, new CompanionHouse.Step(bench, Blocks.CRAFTING_TABLE.defaultBlockState(), 0)), bench) >= 0, "No way to the bench through the gap"));
+    }
+
+    /** How far from the bench the way ends; -1 when there is none. */
+    private static double endsFromBench(net.minecraft.world.level.pathfinder.Path way, BlockPos bench) {
+        return way == null || way.getEndNode() == null ? -1 : Math.sqrt(net.minecraft.world.phys.Vec3.atBottomCenterOf(way.getEndNode().asBlockPos()).distanceToSqr(bench.getCenter()));
+    }
 }
