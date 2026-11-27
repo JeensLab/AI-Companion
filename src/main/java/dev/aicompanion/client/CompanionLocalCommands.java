@@ -19,7 +19,8 @@ public final class CompanionLocalCommands {
     public static String route(String text, String companionName) {
         // One snapshot of the client's copy: the marker names and the switch come from the same publication.
         CompanionMarkerView.Snapshot known = CompanionMarkerView.snapshot();
-        return route(text, companionName, dev.aicompanion.entity.CompanionItemLookup.GAME_NAMES, known.names(), known.enabled());
+        // The names the player's own language gives the game's things: a client showing en_us must still know «тыкву».
+        return route(text, companionName, CompanionClientNames.names(), known.names(), known.enabled());
     }
 
     /**

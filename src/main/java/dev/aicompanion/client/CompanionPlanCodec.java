@@ -253,8 +253,9 @@ public final class CompanionPlanCodec {
                 if ("fish".equals(type) && !dev.aicompanion.entity.CompanionFishing.NAMES.contains(item)) throw invalid();
                 if (("craft_item".equals(type) || "place_block".equals(type) || "equip_item".equals(type) || "smelt_items".equals(type) || "obtain_item".equals(type)
                         || "pick_up".equals(type)) && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")
-                        // obtain_item may name a kind («#minecraft:fences»), which the server answers with the member that stands.
-                        && !("obtain_item".equals(type) && item.matches("#[a-z0-9_.-]+:[a-z0-9/._-]+"))) throw invalid();
+                        // obtain_item may name a kind («#minecraft:fences»), which the server answers with the member that stands;
+                        // craft_item may name one too («сделай забор»), made as the member the chain can make of what he carries.
+                        && !(("obtain_item".equals(type) || "craft_item".equals(type)) && item.matches("#[a-z0-9_.-]+:[a-z0-9/._-]+"))) throw invalid();
                 String slot = step.has("slot") ? step.get("slot").getAsString() : "auto";
                 if (!Set.of("auto", "mainhand", "offhand", "head", "chest", "legs", "feet").contains(slot)) throw invalid();
                 String location = step.has("location") ? step.get("location").getAsString() : "near_player";

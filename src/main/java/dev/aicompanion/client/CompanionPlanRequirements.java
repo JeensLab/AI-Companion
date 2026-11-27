@@ -19,6 +19,8 @@ public final class CompanionPlanRequirements {
     public static CompanionReply apply(String request, CompanionReply decoded, java.util.function.Function<net.minecraft.world.item.Item, String> names) {
         // An order the model answered with words only says so in the log, before any step is looked for (owner, 24.11).
         orderWithoutStep("", request, decoded, names);
+        // The same order is the engine's own work, never only a sentence (owner, 27.11).
+        decoded = obtainAfterWords(request, decoded, names);
         // A long goal is the whole plan: the wording of the request adds no step beside it.
         if (decoded.actions().stream().anyMatch(step -> step.type().equals("pursue_goal"))) return decoded;
         String text = request.toLowerCase(Locale.ROOT).replace('ё', 'е');
@@ -88,6 +90,43 @@ public final class CompanionPlanRequirements {
         dev.aicompanion.CompanionDiagnostics.say(trace, "order_no_step", "«" + request + "»: шага нет — " + why
                         + (decoded.text() == null || decoded.text().isBlank() ? "" : ", сказано: «" + decoded.text() + "»"),
                 "order", request, "reply", decoded.text() == null ? "" : decoded.text(), "item", item == null ? "" : item, "why", why);
+    }
+
+    /**
+     * A reply in words to an order for a thing is the engine's own work, never only a sentence (owner, 27.11: «Тыкву добуду —
+     * за ней далеко идти не придётся» left nothing done at all). The thing is the one the player named, or — when the game's
+     * own names cannot answer the player's word («тухлое мясо») — the one the model's reply itself names («свинину»); the
+     * count is the one the player said. Only a taking order is turned: «сделай» is the craft, and its plain phrases are local
+     * already; a talk, a question and an order the model did plan are left as they are.
+     */
+    static CompanionReply obtainAfterWords(String request, CompanionReply decoded, java.util.function.Function<net.minecraft.world.item.Item, String> names) {
+        if (!decoded.actions().isEmpty() || request == null) return decoded;
+        String text = request.toLowerCase(Locale.ROOT).replace('ё', 'е');
+        if (!text.matches("(?sU).*\\b((?:до|да)будь|раздобудь|сломай|сорви|нарви|накопай|выкопай|набери|достань|собери|принеси|притащи)\\b.*")) return decoded;
+        // A question that only asks something keeps its words, as for the line above.
+        if (text.contains("?") && !text.matches("(?s).*(можешь|сможешь|давай|пожалуйста).*")) return decoded;
+        // A plain order of one thing is the router's own answer, with its hand-over for «принеси»; the phrase the router
+        // cannot take («и вернись», an unknown word) is read for the thing it names.
+        String command = CompanionWorkCommands.itemOrder(request, "", names);
+        if (command != null && command.startsWith("companion work obtain_item ")) {
+            List<PlannedAction> steps = CompanionLocalCommands.actions(command);
+            return new CompanionReply(decoded.text(), List.copyOf(steps), decoded.repeat());
+        }
+        String item = dev.aicompanion.entity.CompanionItemLookup.itemFor(thingOf(text), names);
+        if (item == null) item = dev.aicompanion.entity.CompanionItemLookup.itemFor(decoded.text(), names);
+        if (item == null) return decoded;
+        var said = CompanionNumbers.parse(text);
+        int count = said.count() > 0 ? Math.min(64, said.count()) : 1;
+        List<PlannedAction> steps = new ArrayList<>();
+        steps.add(new PlannedAction("obtain_item", 0, count, item));
+        if (text.matches("(?sU).*\\b(принеси|притащи|дай)\\b.*")) steps.add(new PlannedAction("give_items", 0, count, item));
+        return new CompanionReply(decoded.text(), List.copyOf(steps), decoded.repeat());
+    }
+
+    /** The words of the request after its order verb and its number: «добудь 2 тыквы и вернись» names «тыквы и вернись». */
+    private static String thingOf(String text) {
+        String rest = CompanionNumbers.parse(text).rest();
+        return rest.replaceFirst("^(?U)(?:(?:до|да)будь(?:ка)?|раздобудь(?:ка)?|сломай(?:ка)?|разбей|ломай|выломай|накопай|выкопай|собери|сорви|нарви|набери|принеси|притащи|дай|достань|поищи|найди)(?: мне| нам| себе)?\\s*", "");
     }
 
     /**

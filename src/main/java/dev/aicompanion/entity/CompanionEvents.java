@@ -334,6 +334,10 @@ public final class CompanionEvents {
                 yield status != null ? status : CompanionActionResult.ok(companion.goals().status());
             }
             case "craft_item" -> {
+                // «Сделай забор»: a bare kind is made as the member of it the chain can make of what he carries.
+                String made = dev.aicompanion.entity.CompanionItemLookup.made(companion, item, count);
+                if (made == null) yield CompanionActionResult.failed("Не понял, какой предмет сделать.");
+                item = made;
                 CompanionActionResult repeat = count == 1 && !goalDispatch ? companion.alreadyMade(item) : null;
                 if (repeat != null) yield repeat;
                 if (CompanionCraftCosts.supportsCraft(item, count)) yield companion.startWork("prepare_craft", item, count);

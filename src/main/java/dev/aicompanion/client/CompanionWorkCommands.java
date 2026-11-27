@@ -47,16 +47,21 @@ public final class CompanionWorkCommands {
     }
 
     /**
-     * The verbs of an order for a thing by name: «добудь тыкву», «сорви блок тыквы», «принеси мне 2 тыквы», «достань бочку».
+     * The verbs of an order for a thing by name: «добудь тыкву», «сорви блок тыквы», «принеси мне 2 тыквы», «достань бочку»,
+     * «раздобудь забор», «сломай калитку» — and the verbs of making: «сделай забор», «скрафти калитку», «смастери доски».
      * The thing is one or two words — «блок тыквы», «золотой блок» — and the words after it are the ones that only say where
      * to look. Anything else in the phrase («и вернись», «потом домой») is no plain order of one thing: the model's.
      */
-    private static final Pattern ANY_ORDER = Pattern.compile("^(?:(?<verb>(?:до|да)будь(?:ка)?|сломай(?:ка)?|разбей|ломай|выломай|накопай|выкопай|собери|сорви|нарви|набери|принеси|дай|достань|поищи|найди))"
+    private static final Pattern ANY_ORDER = Pattern.compile("^(?:(?<verb>(?:до|да)будь(?:ка)?|раздобудь(?:ка)?|сломай(?:ка)?|разбей|ломай|выломай"
+            + "|накопай|выкопай|собери|сорви|нарви|набери|принеси|притащи|дай|достань|поищи|найди"
+            + "|сделай|скрафти|смастери|создай|изготовь))"
             + "(?: мне| нам| себе)?\\s+(?:(?<measure>блоков|блока|блок|штук|штуки|шт)\\s+)?(?<thing>\\p{L}+(?: \\p{L}+)?)"
             + "(?:\\s+(?:рядом|поблизости|с земли|с дерева|тут|здесь))?$", Pattern.UNICODE_CHARACTER_CLASS);
 
     /** «Принеси», «дай»: the thing is for the player, not only for his bag. */
-    private static final java.util.Set<String> GIVING = java.util.Set.of("принеси", "дай");
+    private static final java.util.Set<String> GIVING = java.util.Set.of("принеси", "дай", "притащи");
+    /** «Сделай», «скрафти», «смастери»: the thing is made, not taken from the world. */
+    private static final java.util.Set<String> MAKING = java.util.Set.of("сделай", "скрафти", "смастери", "создай", "изготовь");
 
     /**
      * «Добудь тыкву», «сорви блок тыквы», «принеси мне 2 тыквы», «сломай вишнёвый забор» (owner, 24.11, 26.11): the thing by
@@ -68,7 +73,10 @@ public final class CompanionWorkCommands {
      * him is broken and picked up, and only a thing that is nowhere in the search box is crafted (CompanionObtain). The word
      * «блок» is no part of that rule — it only asks for the block OF a thing («блок лазурита» is the lapis block, not the
      * lapis) — and a bare kind («забор») names the whole group by the game's own tag, so any member of it that stands answers
-     * the order. «Сломай» is a mining order like «добудь»: only «принеси» and «дай» add the hand-over after it.
+     * the order. «Сломай» and «раздобудь» are mining orders like «добудь»: only «принеси» and «дай» add the hand-over after it.
+     *
+     * «Сделай», «скрафти», «смастери» are the making, as the owner asked (27.11): the thing is crafted, never taken from the
+     * world, and a bare kind is made as the member of it the chain can make of what he carries (CompanionEvents).
      *
      * Null when the verb is none of these or the registry cannot name the thing («кура», «тухлое мясо»): then the model
      * decides, as for every name it knows better.
@@ -94,13 +102,18 @@ public final class CompanionWorkCommands {
         int count = amount(said.count(), 1, 64, 8);
         if (count < 1 || count > 64) return null;
         lastItem = id;
-        return "companion work obtain_item " + count + " " + id + (GIVING.contains(order.group("verb")) ? " give" : "");
+        boolean making = MAKING.contains(order.group("verb"));
+        return "companion work " + (making ? "craft_item" : "obtain_item") + " " + count + " " + id
+                + (!making && GIVING.contains(order.group("verb")) ? " give" : "");
     }
 
     /** The thing by its name: a group («забор» — every fence) when the game's own tag names exactly that group, else one item. */
     private static String named(String thing, java.util.function.Function<net.minecraft.world.item.Item, String> names) {
         String group = dev.aicompanion.entity.CompanionItemLookup.groupFor(thing, names);
-        return group != null ? group : dev.aicompanion.entity.CompanionItemLookup.itemFor(thing, names);
+        if (group != null) return group;
+        // «Дубовую калитку»: a kind word the game's names do not answer, and the member of it the species word names.
+        String member = dev.aicompanion.entity.CompanionItemLookup.memberFor(thing, names);
+        return member != null ? member : dev.aicompanion.entity.CompanionItemLookup.itemFor(thing, names);
     }
 
     /** The verbs of an order for every block of a kind, and the words that only fill the phrase. */
