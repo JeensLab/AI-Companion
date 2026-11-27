@@ -83,7 +83,8 @@ public final class CompanionMineRetreatFightTests {
         h.onEachTick(() -> {
             for (Zombie zombie : zombies) if (zombie.isAlive() && zombie.getTarget() == null) zombie.setTarget(c);
             // The arrow is dealt by the test: a skeleton's own misses a walking man too often for a test, so it has no bow.
-            if (!shot[0] && !zombies.get(0).isAlive()) { shot[0] = true; c.hurt(h.getLevel().damageSources().mobAttack(skeleton), 1); health[0] = c.getHealth(); }
+            // It is dealt again until it lands: within half a second of a zombie's blow a hit of one health is not felt, and no target comes of it.
+            if (!shot[0] && !zombies.get(0).isAlive() && c.hurt(h.getLevel().damageSources().mobAttack(skeleton), 1)) { shot[0] = true; health[0] = c.getHealth(); }
             aimed[0] |= c.getTarget() == skeleton;
             float left = 0;
             for (Zombie zombie : zombies) left += zombie.isAlive() ? zombie.getHealth() : 0;
