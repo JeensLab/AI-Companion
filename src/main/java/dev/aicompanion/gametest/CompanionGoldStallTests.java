@@ -267,7 +267,7 @@ public final class CompanionGoldStallTests {
     }
 
     /**
-     * A close block the walk cannot come at: a trench two cells across, from bank to bank, and the ore on the far bank four across.
+     * A close block the walk cannot come at: a trench three cells across, from bank to bank, and the ore on the far bank five across.
      * Every search here spends its whole budget on its first cell, so the miss is not proven — and a floor across the gap is still
      * the way to it, never «not proven: no route» (the owner, 27.11: an ore three up and nine across was refused that way). The ore
      * ends in the bag, on a floor of his own cobblestone.
@@ -275,7 +275,7 @@ public final class CompanionGoldStallTests {
     @GameTest(template = "way_wide", timeoutTicks = 2400)
     public static void aCloseTargetTheWalkCannotProveIsStillReached(GameTestHelper h) {
         flat(h, Blocks.STONE);
-        // A trench two cells across, from bank to bank: no walk crosses it, and the ore stands on the far bank four across — a floor
+        // A trench three cells across, from bank to bank: no walk crosses it, and the ore stands on the far bank five across — a floor
         // laid over the gap is the way to it, and the ore itself ends in the bag.
         for (int x = HOME_X + 2; x <= HOME_X + 4; x++)
             for (int z = 1; z <= SIDE - 2; z++) for (int y = 1; y <= GROUND; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
@@ -292,9 +292,12 @@ public final class CompanionGoldStallTests {
             h.assertTrue(journal(c, "way_refused").stream().noneMatch(line -> line.contains("not proven")),
                     "The close ore was refused as not proven: " + journal(c, "way_refused"));
             h.assertTrue(count(c, Items.RAW_GOLD) >= 1, "The close ore is not in the bag: " + future.join().report());
-            // The floor over the trench was laid from his own cobblestone, and it is what the walk to the ore crossed.
-            h.assertBlockPresent(Blocks.COBBLESTONE, new BlockPos(HOME_X + 2, GROUND, HOME_Z));
-            h.assertTrue(count(c, Items.COBBLESTONE) <= 14, "The floor was laid out of nothing: " + count(c, Items.COBBLESTONE));
+            // The floor over the trench was laid from his own cobblestone, cell for cell: nothing appeared for it.
+            int laid = 0;
+            for (int x = HOME_X + 2; x <= HOME_X + 4; x++) if (h.getBlockState(new BlockPos(x, GROUND, HOME_Z)).is(Blocks.COBBLESTONE)) laid++;
+            h.assertTrue(laid >= 1, "No floor was laid over the trench: " + laid);
+            h.assertTrue(count(c, Items.COBBLESTONE) == 16 - laid, "The floor was not his own cobblestone, cell for cell: "
+                    + count(c, Items.COBBLESTONE) + " left over " + laid + " laid");
             h.assertBlockPresent(Blocks.AIR, ore);
         });
     }
