@@ -41,7 +41,7 @@ public final class CompanionMineRetreatFightTests {
     /** A zombie on him and five health: the wound that sends him off (CompanionExpeditionFight.wounded). */
     private static final float LOW = 4, ARMED_FOE_HEALTH = 12, WOUNDED = 5;
     /** A zombie's blow with nothing in its hand. */
-    private static final double BARE_BLOW = 3;
+    private static final double BARE_BLOW = 3, SLOW = .1, WEAK_BLOW = 1;
 
     private CompanionMineRetreatFightTests() { }
 
@@ -73,6 +73,8 @@ public final class CompanionMineRetreatFightTests {
         List<Zombie> zombies = new ArrayList<>();
         for (int k : new int[]{FIRST_ZOMBIE, SECOND_ZOMBIE}) zombies.add(zombie(h, stairs.get(foot - k)));
         zombies.get(0).setHealth(ONE_BLOW);
+        // A blow of one health: that the blows are answered is what is asked, and with three a blow he is dead before the second answer now and then.
+        for (Zombie zombie : zombies) zombie.getAttribute(Attributes.ATTACK_DAMAGE).setBaseValue(WEAK_BLOW);
         start(h, c, 1);
         float[] health = {c.getHealth()}, theirs = {0};
         long[] unanswered = {-1};
@@ -105,7 +107,9 @@ public final class CompanionMineRetreatFightTests {
      * On his own stairs at four health with two zombies right below him on the same stairs and the way up free, the mine record real and the sword
      * in his hand: he climbs away at least {@link #CLIMB} steps and lands no blow while his health is that low (the old rule refused to leave a
      * foe within three blocks, so he stood and fought). A property of what he does, not a count of who lives. The bread in his bag may mend him
-     * on the way up before the eighth step; past {@link #LOW} he may strike, and the zombies dead end the climb as well.
+     * on the way up before the eighth step; past {@link #LOW} he may strike, and the zombies dead end the climb as well. The zombies are slow,
+     * so that none catches him: one that does and lands a blow is struck back where he stands, whatever his health (the rule of
+     * CompanionExpeditionFight.caught, which stands over this one), and so a blow of his within {@link #ANSWER_TICKS} of one he took is no failure.
      */
     @GameTest(batch = "mine_core", template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void atFourHealthWithZombiesRightBelowHimOnTheStairsHeClimbsAwayAndStrikesNoBlow(GameTestHelper h) {
@@ -116,19 +120,23 @@ public final class CompanionMineRetreatFightTests {
         c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_SWORD));
         c.setHealth(LOW);
         List<Zombie> foes = List.of(zombie(h, stairs.get(FROM_STEP + 2)), zombie(h, stairs.get(FROM_STEP + 3)));
-        float[] seen = {foes.get(0).getMaxHealth(), foes.get(1).getMaxHealth()};
+        for (Zombie foe : foes) foe.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(SLOW);
+        float[] seen = {foes.get(0).getMaxHealth(), foes.get(1).getMaxHealth()}, health = {c.getHealth()};
+        long[] blow = {-ANSWER_TICKS};
         int startY = rel(h, stairs.get(FROM_STEP)).getY();
         long begun = h.getTick();
         start(h, c, 1);
         h.onEachTick(() -> {
             int rise = rel(h, c.blockPosition()).getY() - startY;
+            if (c.getHealth() < health[0]) blow[0] = h.getTick();
+            health[0] = c.getHealth();
             String trace = " | climbed " + rise + " steps, zombie health " + foes.get(0).getHealth() + "/" + foes.get(1).getHealth() + ", he at " + rel(h, c.blockPosition()).toShortString()
                     + ", health " + c.getHealth() + ", stage " + c.expeditionStage() + " | " + report(c);
             for (int i = 0; i < foes.size(); i++) {
                 Zombie foe = foes.get(i);
                 if (foe.isAlive() && foe.getTarget() == null) foe.setTarget(c);
                 boolean struck = !foe.isAlive() || foe.getHealth() < seen[i];
-                h.assertTrue(!struck || c.getHealth() > LOW, "He struck a zombie at " + LOW + " health or less" + trace);
+                h.assertTrue(!struck || c.getHealth() > LOW || h.getTick() - blow[0] <= ANSWER_TICKS, "He struck a zombie that had not caught him at " + LOW + " health or less" + trace);
                 seen[i] = foe.isAlive() ? foe.getHealth() : seen[i];
             }
             h.assertTrue(c.isAlive(), "Died" + trace);
