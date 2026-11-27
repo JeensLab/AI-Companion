@@ -300,11 +300,10 @@ public final class CompanionRoute {
         // The work's own stairs and its ore tunnel are the way back, not a trap to build out of (CompanionWork.allowsRouteRecovery).
         if (!w.allowsRouteRecovery()) return noWay(block, "work keeps its own way");
         if (owner.recovery.active()) return noWay(block, "recovery running");
-        // A walk that was not searched at all, or whose cells were spent, is no proof of no way: nearest() answered it already.
-        if (!provenMiss && !"no stand cell".equals(reach.reason())) return noWay(block, "not proven: " + reach.reason());
         CompanionPillar pillar = owner.temporaryPillar;
-        // A leaf crown's column is not ours to raise; one coming down is left to finish.
-        if (pillar.isRecovering()) return noWay(block, "a column is coming down");
+        // A leaf crown's column is not ours to raise; one coming down is left to finish — his own way is walked down, and the block
+        // is asked again once it is (no refusal over a column that stands yet).
+        if (pillar.isRecovering()) return 0;
         // The climb must be ticked every tick of its climb, the jump's own arc included: that is when its step is set down.
         // So the way already standing is ticked before anything else, even while he is off the ground in its jump.
         if (pillar.isWayActive()) return tickWay(pillar, block);
@@ -318,21 +317,30 @@ public final class CompanionRoute {
         }
         // Between two steps before a way is raised (a hop on the way to it): the block is not given up, asked again next tick.
         if (!owner.onGround()) return 0;
-        // The one geometry answer, logged as the decision the player can read: up a column, or a floor across a gap. It asks
-        // only where the block is — how far up, how far across, whether a bank is behind a gap — never what the block is.
+        // The one geometry answer, logged as the decision the player can read: up a column, or a floor across a gap. It asks only
+        // where the block is — how far up, how far across, whether a bank is behind a gap — never what the block is. It is asked
+        // before the walk's own miss is judged: a block a column or a floor reaches is no refusal over a search that did not prove
+        // its miss (the owner, 27.11: an ore three up and nine across was refused as «not proven: no route» while a column of four
+        // stood within a step of it).
         CompanionReach.How how = CompanionReach.how(owner, (ServerLevel) owner.level(), block, 3.5D, true, false, CompanionPillar.WAY_SUPPORTS);
         CompanionReach.decision(owner, block, how);
         if (how.bridge()) return tickBridge(block);
-        if (!how.up()) {
+        if (how.up()) return tickWay(pillar, block);
+        if (how.way() == CompanionReach.Way.WALK || how.way() == CompanionReach.Way.ACROSS) {
             // A stand cell reaches it, yet the walk could not get there (a gap, a wall): a floor laid across the gap before it
             // is the same geometry answer (PATH7: «мост через провал»).
-            CompanionReach.BridgePlan plan = (how.way() == CompanionReach.Way.WALK || how.way() == CompanionReach.Way.ACROSS)
-                    ? CompanionReach.bridge(owner, (ServerLevel) owner.level(), block, 3.5D, true, CompanionPillar.WAY_SUPPORTS, false) : null;
+            CompanionReach.BridgePlan plan = CompanionReach.bridge(owner, (ServerLevel) owner.level(), block, 3.5D, true, CompanionPillar.WAY_SUPPORTS, false);
             // A floor to lay is what makes a bridge: a bank and the far cell with a floor between them already is no bridge.
             if (plan != null && plan.length() > 0) return tickBridge(block);
-            return noWay(block, how.why());
+            // No bank at its own level to lay a floor from: a column up to the block is the other way the same answer gives — a
+            // stand cell no walk comes at is still worked from the top of his own soil (the owner, 27.11: an ore over a ledge two
+            // steps up was neither walked to nor climbed to, and the way gave up on it).
+            return tickWay(pillar, block);
         }
-        return tickWay(pillar, block);
+        // No way of any shape: the walk's own answer stands. A miss that is not proven is no refusal — asked again next tick,
+        // the search may have spent its cells on another choice.
+        if (!provenMiss && !"no stand cell".equals(reach.reason())) return 0;
+        return noWay(block, how.why().isEmpty() ? reach.reason() : how.why());
     }
 
     /** One tick of the floor across a gap: 1 in reach, 0 laying or walking, -1 no way. */
@@ -346,6 +354,10 @@ public final class CompanionRoute {
         CompanionPillar.Outcome outcome = pillar.tickToward(block, false, CompanionPillar.WAY_SUPPORTS);
         if (outcome == CompanionPillar.Outcome.FAILED) {
             String why = pillar.failureReason();
+            // A column that stood but cannot serve this block comes down (its foot was planned for another block): the block is
+            // asked again from the ground, never refused over a column that is only being taken down (the owner, 27.11: the
+            // second gold was «с этой опоры не достану» and the way gave up on it while its own column came down).
+            if (pillar.isRecovering()) return 0;
             // Every foot of the column failed: a floor across the gap before it is the other way the same geometry answer gives
             // (PATH7: «мост через провал»), never a refusal while one can still be laid. It waits for the failed column's soil.
             if (!pillar.isActive()) {

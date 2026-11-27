@@ -198,6 +198,28 @@ public final class CompanionWork {
     String dropId() { return ore == null ? "" : BuiltInRegistries.ITEM.getKey(ore.drop).toString(); }
     /** How many of that drop the bag really holds: a block that makes it counts for what it gives (a redstone block is nine). */
     int oreHeld() { return ore == null ? 0 : owner.carriedOfDrop(dropId()); }
+    /**
+     * What an ore order really promises: what the bag holds of the drop, the drops lying about him and the ore blocks the one search
+     * reaches — never past the number said. The same number is the task line, the promise and the result, so the player is told one
+     * honest count and not a wish of sixteen over ten blocks (the owner, 27.11: «добыть золото (16 бл. руды)» on the task line, the
+     * promise ten, and «накопал только 3 из 10»).
+     */
+    public int orePromise(String item, int count) {
+        CompanionOre.Kind kind = CompanionOre.Kind.of(item);
+        if (kind == null || !(owner.level() instanceof ServerLevel level)) return Math.max(1, count);
+        boolean batch = CompanionEvents.autonomous();
+        String drop = BuiltInRegistries.ITEM.getKey(kind.drop).toString();
+        int held = batch ? 0 : owner.carriedOfDrop(drop);
+        CompanionOre.Search search = new CompanionOre.Search(level, owner.blockPosition(), owner.getSearchRadius(), kind);
+        for (int share = 0; share < 64 && !search.scan(level); share++) { }
+        int found = (int) search.results(level).stream().filter(pos -> owner.errand.within(pos)).count();
+        int onGround = CompanionPickUp.lying(level, owner.blockPosition(), owner.pickUpRadius(), drop, owner.getOwnerId());
+        return orePromise(count, held, onGround, found);
+    }
+    /** The promise of an ore order from its parts: the number said, the drops he holds, those on the ground and the blocks about him. */
+    public static int orePromise(int count, int held, int onGround, int available) {
+        return Math.max(1, Math.min(count, held + onGround + available));
+    }
     /** What the order has brought: the drop gained in the bag since it began, not what it held before. */
     int oreGained() { return ore == null ? 0 : Math.max(0, items.countCarried(ore.drop) - oreDropsBefore); }
     CompanionOre.Search oreSearch;
@@ -634,9 +656,8 @@ public final class CompanionWork {
                 // редстоуна» over one block of ore is one, and the work reports that, not four). The mine's own scan grows it to
                 // what it finds, and the bag answers at the end: the promise met in it is the order done, never «не справился»
                 // (CompanionOreMining.finishOre).
-                int onGround = CompanionPickUp.lying(level, owner.blockPosition(), owner.pickUpRadius(), dropId(), owner.getOwnerId());
                 job = Job.ORE; phase = Phase.ORE_PICK; oreBatch = batch;
-                oreWanted = Math.max(1, Math.min(count, held + onGround + blocks.count()));
+                oreWanted = orePromise(item, count);
             }
             case "pick_up_nearby" -> {
                 pickUp = CompanionPickUp.of(item);
@@ -761,7 +782,7 @@ public final class CompanionWork {
         // are waited for as before: the cobblestone of the way is what plugs the spring of the next ore.
         if (job != Job.BLOCK && job != Job.COME && job != Job.COURSE && job != Job.HUNT && job != Job.PICK_UP && job != Job.PLACE
                 && job != Job.OBSIDIAN && !orePromiseMet()
-                && owner.hasPendingLoot() && !(job == Job.HOUSE && templateJob && templateHouse.scaffolding())) return;
+                && owner.hasPendingLoot() && !owner.loot.waitsBelowHisColumn() && !(job == Job.HOUSE && templateJob && templateHouse.scaffolding())) return;
         if (owner.getOwnerId() == null || level.getServer().getPlayerList().getPlayer(owner.getOwnerId()) == null) {
             finish(false, "Потерял связь с игроком, остановился."); return;
         }

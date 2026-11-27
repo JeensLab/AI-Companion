@@ -242,6 +242,16 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     }
 
     @Override public CompletableFuture<CompanionPlanRunner.Expansion> expand(PlannedAction action) {
+        // An ore order is no chain: its promise is the number the world and the bag really give, and the task line says that number,
+        // not the wish the model said (the owner, 27.11: «добыть золото (16 бл. руды)» over ten ore blocks, the promise ten, and
+        // «накопал только 3 из 10» — one honest number on the line, in the promise and in the report).
+        if ("mine_ore".equals(action.type())) return onServer(player -> {
+            CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
+            if (companion == null) return new CompanionPlanRunner.Expansion(java.util.List.of(), "Компаньон выгружен из мира.");
+            int promise = companion.orePromise(action.item(), action.count());
+            return new CompanionPlanRunner.Expansion(java.util.List.of(new PlannedAction(action.type(), action.seconds(), promise,
+                    action.item(), action.slot(), action.location())), null);
+        });
         return onServer(player -> {
             CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
             if (companion == null) return new CompanionPlanRunner.Expansion(java.util.List.of(), "Компаньон выгружен из мира.");
