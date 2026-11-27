@@ -17,8 +17,12 @@ import java.util.EnumSet;
 
 final class CompanionCombat {
     final CompanionEntity c;
+    final CompanionFootwork footwork;
+    final CompanionGuardWatch guardWatch;
+    /** The attacker of the player that the owner-defense goal has made his target: like the guard's pick, not swapped for a foe on him. */
+    private LivingEntity defended;
 
-    CompanionCombat(CompanionEntity c) { this.c = c; }
+    CompanionCombat(CompanionEntity c) { this.c = c; footwork = new CompanionFootwork(c); guardWatch = new CompanionGuardWatch(c); }
 
     /**
      * Swings as often as the weapon in hand lets a player (a stone sword 1.6 a second, an axe 0.8), not the mob's once a second
@@ -28,17 +32,45 @@ final class CompanionCombat {
     static final class PlayerPaceAttackGoal extends MeleeAttackGoal {
         final CompanionEntity c;
         PlayerPaceAttackGoal(CompanionEntity c) { super(c, 1.15D, true); this.c = c; }
-        /** At range the bow has him, when he has one (CompanionArchery). */
-        @Override public boolean canUse() { return !c.archery.wants(c.getTarget()) && super.canUse(); }
+        /** A foe already in reach is met this tick, not at vanilla's next once-a-second check: every tick of delay is a blow taken. At range the bow has him, when he has one (CompanionArchery). */
+        @Override public boolean canUse() {
+            LivingEntity target = c.getTarget();
+            if (c.archery.wants(target) || target == null || !target.isAlive()) return false;
+            return c.isWithinMeleeAttackRange(target) || super.canUse();
+        }
         @Override public boolean canContinueToUse() { return !c.archery.wants(c.getTarget()) && super.canContinueToUse(); }
         /** The best weapon before the first swing, not after the ten-tick check: otherwise the first blow goes with the digging pickaxe. */
-        @Override public void start() { super.start(); c.selectWeaponForCombat(); }
-        @Override protected void checkAndPerformAttack(LivingEntity target) {
-            if (!c.combat.swingReady() || !c.isWithinMeleeAttackRange(target) || !c.getSensing().hasLineOfSight(target)) return;
-            c.combat.swung();
-            c.swing(InteractionHand.MAIN_HAND);
-            if (c.doHurtTarget(target) && target instanceof net.minecraft.world.entity.monster.Creeper) c.creeperGuard.landed();
+        @Override public void start() { c.combat.footwork.begin(); super.start(); c.selectWeaponForCombat(); }
+        /**
+         * What is on him is struck before what is not, save the guard order's own pick: the monster nearest to the player stays the target (#129).
+         * Between two swings he steps out of the foe's reach (CompanionFootwork).
+         */
+        @Override public void tick() {
+            if (c.level() instanceof ServerLevel level) {
+                LivingEntity nearer = c.combat.guardWatch.holds(c.getTarget()) || c.getTarget() == c.combat.defended ? null : c.combat.footwork.nearer(level, c.getTarget());
+                if (nearer != null) c.setTarget(nearer);
+                LivingEntity target = c.getTarget();
+                c.combat.footwork.follow(target);
+                if (target != null && c.combat.footwork.keepOut(level, c.combat.swingReady())) {
+                    c.getLookControl().setLookAt(target);
+                    return;
+                }
+            }
+            super.tick();
         }
+        @Override protected void checkAndPerformAttack(LivingEntity target) { c.combat.strike(target); }
+    }
+
+    /** One blow at the pace of his weapon, when the foe is in his reach and in sight. */
+    void strike(LivingEntity target) { strike(target, c.getSensing().hasLineOfSight(target)); }
+
+    /** The same with the sight of the foe judged by the caller: from his column he sees over its edge ({@link CompanionHighGround}). */
+    void strike(LivingEntity target, boolean seen) {
+        if (!swingReady() || !c.isWithinMeleeAttackRange(target) || !seen) return;
+        swung();
+        footwork.struck(target);
+        c.swing(InteractionHand.MAIN_HAND);
+        if (c.doHurtTarget(target) && target instanceof net.minecraft.world.entity.monster.Creeper) c.creeperGuard.landed();
     }
 
     /** One pace for every blow he deals, the melee goal's and the creeper guard's: no second blow a tick after the first. */
@@ -73,7 +105,7 @@ final class CompanionCombat {
                     && hostile(attacker) && c.combat.fairTarget(attacker, true) && c.distanceToSqr(attacker) <= 18 * 18 && c.hasLineOfSight(attacker);
         }
         @Override public void start() {
-            handledTimestamp = timestamp; c.setTarget(attacker); c.selectWeaponForCombat();
+            handledTimestamp = timestamp; c.combat.defended = attacker; c.setTarget(attacker); c.selectWeaponForCombat();
             dev.aicompanion.CompanionDiagnostics.event(c.diagnosticTrace(), "owner_defense", "entity", c.getUUID(), "attacker", attacker.getUUID(), "reason", "recent_visible_attack");
         }
         @Override public boolean canContinueToUse() {
@@ -81,7 +113,7 @@ final class CompanionCombat {
             return player != null && attacker != null && attacker.isAlive() && c.getTarget() == attacker
                     && c.distanceToSqr(player) <= 24 * 24 && attacker.distanceToSqr(player) <= 18 * 18 && !wakesLava(attacker);
         }
-        @Override public void stop() { if (c.getTarget() == attacker) c.setTarget(null); attacker = null; }
+        @Override public void stop() { if (c.getTarget() == attacker) c.setTarget(null); attacker = null; c.combat.defended = null; }
     }
 
     /** A hoglin attacks on sight like any monster, but the game's classes make it an Animal. */
