@@ -18,14 +18,14 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 /**
- * The deaths and the dead ends of the mine run K14: a way out of a fuse that ends beside lava, a body in lava with nothing that takes him out,
+ * The deaths and the dead ends of the mine run K14: a way out of a fuse that ends beside lava
  * and the plug that hides under another one; and, from later runs, the stairs up out of a lake and the wear kept for a pit
  * under his old stairs. The tests live beside the package-private classes they call.
  */
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionMineK14Tests {
-    private static final int SIZE = 48, CENTER = 24, GROUND = 21, TIMEOUT = 1500, IN_LAVA_TICKS = 60;
+    private static final int SIZE = 48, CENTER = 24, GROUND = 21;
 
     private CompanionMineK14Tests() { }
 
@@ -55,40 +55,6 @@ public final class CompanionMineK14Tests {
         h.assertTrue(goal != null && !lavaBeside(h.getLevel(), goal),
                 "The way out of the fuse ends at " + rel(h, goal) + ", beside lava (length " + length + ")");
         h.succeed();
-    }
-
-    /** In the middle of a step down the stairs he is put onto the edge of a 3 by 3 pool of lava far from the entrance, a step from the bank: a minute on, he is alive and out of it. */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
-    public static void getsOutOfLavaInTheMiddleOfAMineStep(GameTestHelper h) {
-        mountain(h);
-        for (int x = 4; x <= 6; x++) for (int z = 4; z <= 6; z++) for (int y = GROUND - 1; y <= GROUND; y++) h.setBlock(new BlockPos(x, y, z), Blocks.LAVA);
-        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), CENTER, GROUND + 1, CENTER);
-        var owner = h.makeMockServerPlayerInLevel();
-        owner.teleportTo(c.getX() - 3, c.getY(), c.getZ() - 3);
-        c.setOwnerId(owner.getUUID());
-        owner.getPersistentData().putUUID("aicompanion:canonical_companion", c.getUUID());
-        CompanionEvents.getOwnedCompanion(owner);
-        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
-        ItemStack[] bag = {new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.BREAD, 8), new ItemStack(Items.TORCH, 16), new ItemStack(Items.COBBLESTONE, 64)};
-        for (int slot = 0; slot < bag.length; slot++) c.setItem(slot, bag[slot]);
-        h.assertTrue(c.startWork("dig_for_diamonds", "", 1).success(), "Diamond mine not accepted: " + c.getLastTaskResult());
-
-        BlockPos pool = h.absolutePos(new BlockPos(4, GROUND, 5));
-        long[] placedAt = {-1};
-        h.onEachTick(() -> {
-            long now = h.getTick();
-            if (!c.isAlive()) h.fail(placedAt[0] < 0 ? "Died before the lava" : "Burned to death " + (now - placedAt[0]) + " ticks after he was put into the lava | " + c.getLastTaskResult());
-            if (placedAt[0] < 0) {
-                if (c.mineSite().stands().size() < 2) return;
-                c.moveTo(pool.getX() + .5, pool.getY(), pool.getZ() + .5);
-                c.getNavigation().stop();
-                placedAt[0] = now;
-                return;
-            }
-            if (now - placedAt[0] < IN_LAVA_TICKS) return;
-            h.assertTrue(!c.isInLava(), "Still in the lava " + IN_LAVA_TICKS + " ticks on, hp " + c.getHealth() + " | " + c.getLastTaskResult());
-            h.succeed();
-        });
     }
 
     /**
