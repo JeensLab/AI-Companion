@@ -512,6 +512,8 @@ final class CompanionHouse {
         if (needsStation && !tableNearby && workbench != null && level.hasChunkAt(workbench) && level.getBlockState(workbench).is(Blocks.CRAFTING_TABLE)) {
             Step station = new Step(workbench, Blocks.CRAFTING_TABLE.defaultBlockState(), 0);
             Path returnPath = route(level, station);
+            // No cells left this tick: a wait, not a bench he cannot get to (a new one would be set down beside it).
+            if (returnPath == null && routeBusy) return Result.working();
             if (returnPath != null && returnPath.canReach()) {
                 owner.work.route.walk(returnPath);
                 owner.workStatus("Вернусь к верстаку подготовить материалы для дома.");
