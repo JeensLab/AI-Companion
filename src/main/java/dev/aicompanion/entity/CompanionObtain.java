@@ -195,7 +195,10 @@ public final class CompanionObtain {
         // a stair, a slab, wool and glass that stand about him are gathered, and only what is nowhere in the search box is
         // crafted below. The word «блок» is no part of it — it only asks for the block of a thing — and a bare kind («забор»)
         // reaches here as the member of the kind that stands (CompanionServerPlanPort#memberOf), so neither a species nor
-        // the measure word decides what is done.
+        // the measure word decides what is done. The count asked is no part of it either: a block that stands is taken though
+        // the order asks for more than stands, and the promise is what the world gives (PATH7) — the chain of another
+        // material is never asked for what already stands (the owner, 27.11: five cherry fences about him, planks in the bag,
+        // «добудь вишнёвый забор» went gather_wood → craft sixteen and said «Доступного дерева больше не нашёл»).
         // Obsidian keeps its own work, which also cools lava and takes the water back, but its blocks are counted by that answer.
         if (carried(carried, item) >= count) return new Plan(List.of(), null);
         // What lies about him of this very item is asked of the one search before anything is made of it — a gourd, a storage
@@ -215,9 +218,12 @@ public final class CompanionObtain {
         // the item, so the chain gathers the block and crafts it (produce's storage step below). A block that IS the item, or
         // drops it, is taken as it lies.
         boolean blockItself = !CompanionPickable.sources(level, item).isEmpty() || !CompanionPickable.identity(level, item).isEmpty();
-        if (lying != null && lying.some() && lying.count() >= count && blockItself) {
+        if (lying != null && lying.some() && blockItself) {
+            // What stands is taken, up to the count asked — the count the world cannot meet is the promise's business
+            // (CompanionServerPlanPort caps it to what stands), never a reason to make the whole order of another material.
+            int taken = Math.min(count, lying.count());
             if (lying.soil() > 0) planner.addSplit("gather_dirt", "", lying.soil(), 64);
-            if (!planner.gather(item, id.toString(), count, 0)) return new Plan(List.of(), planner.why);
+            if (!planner.gather(item, id.toString(), taken, 0)) return new Plan(List.of(), planner.why);
             return new Plan(List.copyOf(merged(planner.steps)), null);
         }
         // Logs the player asked for by name are that species, wherever the plan goes on; inside a chain wood stays a family (key).

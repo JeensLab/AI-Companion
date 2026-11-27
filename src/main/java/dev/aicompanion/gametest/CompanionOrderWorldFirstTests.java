@@ -212,7 +212,151 @@ public final class CompanionOrderWorldFirstTests {
         });
     }
 
+    /**
+     * The owner's live order, 27.11: five cherry fences stand about him, planks and sticks in the bag, and the count asked
+     * is above what stands (his model queued sixteen). At 15593491 the plan left the world for the recipe chain —
+     * gather_wood 8, then craft_item 16 — and the work failed on «Не нашёл доступного дерева для подготовки». What stands
+     * is taken, and no chain of another material is asked for it.
+     */
+    @GameTest(template = "way_wide", timeoutTicks = 12000)
+    public static void moreAskedThanStandsTakesWhatStands(GameTestHelper h) {
+        flat(h, Blocks.GRASS_BLOCK);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_AXE));
+        c.setItem(1, new ItemStack(Items.CHERRY_PLANKS, 8));
+        c.setItem(2, new ItemStack(Items.STICK, 8));
+        c.setItem(3, new ItemStack(Items.CRAFTING_TABLE));
+        fiveFences(h, c);
+        var plan = port(h, c).expand(new PlannedAction("obtain_item", 0, 16, "minecraft:cherry_fence")).join();
+        h.assertTrue(plan.refusal() == null, "Five standing fences were refused for sixteen asked: " + plan.refusal());
+        h.assertTrue(plan.steps().stream().anyMatch(step -> step.type().equals("gather_block")),
+                "The standing fences are not taken when more are asked: " + plan.steps());
+        h.assertTrue(plan.steps().stream().noneMatch(step -> step.type().equals("gather_wood")),
+                "The fences that stand were left for wood: " + plan.steps());
+        h.assertTrue(plan.steps().stream().noneMatch(step -> step.type().equals("craft_item")),
+                "A fence is crafted though five stand: " + plan.steps());
+        h.succeed();
+    }
+
+    /** The same order run for real: the fences that stand are broken and picked up, and no wood line is said. */
+    @GameTest(template = "way_wide", timeoutTicks = 20000)
+    public static void theFencesThatStandAreMinedWhenMoreAreAsked(GameTestHelper h) {
+        flat(h, Blocks.GRASS_BLOCK);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_AXE));
+        c.setItem(1, new ItemStack(Items.CHERRY_PLANKS, 8));
+        c.setItem(2, new ItemStack(Items.STICK, 8));
+        List<BlockPos> fences = fiveFences(h, c);
+        var future = CompanionPlanRunner.run(List.of(new PlannedAction("obtain_item", 0, 16, "minecraft:cherry_fence")), port(h, c));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            for (BlockPos pos : fences) h.assertTrue(h.getBlockState(pos).isAir(), "A standing fence was left: " + report);
+            h.assertTrue(count(c, Items.CHERRY_FENCE) >= 5, "The fences that stood are not in the bag: " + report);
+            h.assertTrue(!report.contains("дерева"), "A wood line was said over standing fences: " + report);
+        });
+    }
+
+    /** The same rule for a stair: two stand, eight are asked, and the world's two are taken instead of crafted. */
+    @GameTest(template = "way_wide", timeoutTicks = 12000)
+    public static void aStairAboveWhatStandsIsTaken(GameTestHelper h) {
+        flat(h, Blocks.GRASS_BLOCK);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_AXE));
+        c.setItem(1, new ItemStack(Items.CHERRY_PLANKS, 8));
+        c.setItem(2, new ItemStack(Items.CRAFTING_TABLE));
+        BlockPos first = new BlockPos(HOME_X + 3, FEET, HOME_Z + 2), second = new BlockPos(HOME_X + 4, FEET, HOME_Z + 2);
+        placedByPlayer(h, c, first, Blocks.CHERRY_STAIRS);
+        placedByPlayer(h, c, second, Blocks.CHERRY_STAIRS);
+        var plan = port(h, c).expand(new PlannedAction("obtain_item", 0, 8, "minecraft:cherry_stairs")).join();
+        h.assertTrue(plan.refusal() == null, "Two standing stairs were refused for eight asked: " + plan.refusal());
+        h.assertTrue(plan.steps().stream().anyMatch(step -> step.type().equals("gather_block")),
+                "The standing stairs are not taken when more are asked: " + plan.steps());
+        h.assertTrue(plan.steps().stream().noneMatch(step -> step.type().equals("craft_item")),
+                "A stair is crafted though two stand: " + plan.steps());
+        h.succeed();
+    }
+
+    /** «Добудь 16 заборов» with five cherry fences standing: the kind's standing member is taken, never its recipe. */
+    @GameTest(template = "way_wide", timeoutTicks = 20000)
+    public static void aBareKindAboveWhatStandsTakesTheMember(GameTestHelper h) {
+        String command = CompanionLocalCommands.route("добудь 16 заборов", "Олег", RU);
+        h.assertTrue(command != null, "«добудь 16 заборов» went to the model");
+        flat(h, Blocks.GRASS_BLOCK);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_AXE));
+        c.setItem(1, new ItemStack(Items.CHERRY_PLANKS, 8));
+        List<BlockPos> fences = fiveFences(h, c);
+        var future = CompanionPlanRunner.run(CompanionLocalCommands.actions(command), port(h, c));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            for (BlockPos pos : fences) h.assertTrue(h.getBlockState(pos).isAir(), "A fence of the kind was left: " + report);
+            h.assertTrue(!report.contains("дерева"), "A wood line was said over fences that stand: " + report);
+        });
+    }
+
+    /**
+     * The owner's words with planks in the bag, five fences standing: the fence is broken, not crafted. A pin: the count
+     * here is one, so 15593491 already takes it.
+     */
+    @GameTest(template = "way_wide", timeoutTicks = 20000)
+    public static void theOrderForACherryFenceTakesTheFence(GameTestHelper h) {
+        takesTheFencesFor(h, "добудь вишнёвый забор");
+    }
+
+    /** The same with the measure word: «блок вишнёвого забора» is the fence, and it is taken. */
+    @GameTest(template = "way_wide", timeoutTicks = 20000)
+    public static void theBlockOfACherryFenceTakesTheFence(GameTestHelper h) {
+        takesTheFencesFor(h, "добудь блок вишнёвого забора");
+    }
+
+    private static void takesTheFencesFor(GameTestHelper h, String phrase) {
+        String command = CompanionLocalCommands.route(phrase, "Олег", RU);
+        h.assertTrue(command != null, "«" + phrase + "» went to the model");
+        flat(h, Blocks.GRASS_BLOCK);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_AXE));
+        c.setItem(1, new ItemStack(Items.CHERRY_PLANKS, 8));
+        c.setItem(2, new ItemStack(Items.STICK, 8));
+        List<BlockPos> fences = fiveFences(h, c);
+        var future = CompanionPlanRunner.run(CompanionLocalCommands.actions(command), port(h, c));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "«" + phrase + "» still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(fences.stream().anyMatch(pos -> h.getBlockState(pos).isAir()), "«" + phrase + "» left every fence standing: " + report);
+            h.assertTrue(!report.contains("дерева"), "«" + phrase + "» said a wood line over fences that stand: " + report);
+        });
+    }
+
+    /** No fence anywhere and planks and sticks in the bag: the fallback survives — he really crafts one. */
+    @GameTest(template = "way_wide", timeoutTicks = 12000)
+    public static void aFenceNowhereAboutIsCraftedForReal(GameTestHelper h) {
+        flat(h, Blocks.GRASS_BLOCK);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_AXE));
+        c.setItem(1, new ItemStack(Items.CHERRY_PLANKS, 8));
+        c.setItem(2, new ItemStack(Items.STICK, 8));
+        c.setItem(3, new ItemStack(Items.CRAFTING_TABLE));
+        var future = CompanionPlanRunner.run(List.of(new PlannedAction("obtain_item", 0, 1, "minecraft:cherry_fence")), port(h, c));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
+            h.assertTrue(count(c, Items.CHERRY_FENCE) >= 1, "No fence anywhere was not crafted: " + future.join().report());
+        });
+    }
+
     // ---- helpers ----
+
+    /** Five cherry fences standing about him, the player's own build. */
+    private static List<BlockPos> fiveFences(GameTestHelper h, CompanionEntity c) {
+        List<BlockPos> fences = new ArrayList<>();
+        for (int at = 0; at < 5; at++) {
+            BlockPos pos = new BlockPos(HOME_X + 3 + at, FEET, HOME_Z + 2);
+            placedByPlayer(h, c, pos, Blocks.CHERRY_FENCE);
+            fences.add(pos);
+        }
+        return fences;
+    }
 
     private static CompanionServerPlanPort port(GameTestHelper h, CompanionEntity c) {
         return new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-world-first", () -> false);
