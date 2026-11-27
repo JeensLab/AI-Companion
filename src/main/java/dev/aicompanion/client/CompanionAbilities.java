@@ -58,6 +58,7 @@ public final class CompanionAbilities {
             new Ability("строю портал, генератор булыжника и голема", List.of("build_portal", "build_cobble_gen", "build_golem"), List.of()),
             new Ability("иду в нужную сторону и захожу в портал", List.of("walk_heading", "enter_portal"), List.of()),
             new Ability("веду к крепости Края по оку и вставляю очи в портал", List.of("walk_heading", "open_end_portal"), List.of()),
+            new Ability("осматриваю местность и веду к замеченной пещере или руде", List.of("survey_terrain", "recall_landmark", "guide_landmark"), List.of()),
             new Ability("рыбачу удочкой", List.of("fish"), List.of()),
             new Ability("надеваю снаряжение, чиню вещи и снимаю чары", List.of("equip_item", "unequip_item", "repair_item", "disenchant_item"), List.of()),
             new Ability("даю тебе вещи и ставлю сундук", List.of("give_items", "give_wood", "place_block"), List.of()),

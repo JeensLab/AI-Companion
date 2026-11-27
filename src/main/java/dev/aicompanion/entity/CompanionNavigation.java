@@ -180,7 +180,7 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
     }
 
     /** The answer to a search that has not finished within this tick's cells: ask again next tick (the search goes on where it was). */
-    static final Path BUSY = new Path(java.util.List.of(), BlockPos.ZERO, false);
+    public static final Path BUSY = new Path(java.util.List.of(), BlockPos.ZERO, false);
     /** The last search that finished found none and stopped at its cell budget: it saw only part of what it could reach, so it proves nothing about the cells it did not get to. */
     boolean lastSearchExhausted() { return ranOut; }
     /** A finished search that did not arrive is kept (and not repeated) this many ticks; one in progress is dropped after this many. */
@@ -195,7 +195,7 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
      * {@code range} from here: what the game's createPath was, with the same limits. A path he is walking to one of them is kept.
      * A search that needs more cells than this tick has left answers {@link #BUSY} and goes on at the next ask.
      */
-    Path search(Set<BlockPos> targets, int accuracy, float range) { return search(targets, accuracy, range, false); }
+    public Path search(Set<BlockPos> targets, int accuracy, float range) { return search(targets, accuracy, range, false); }
 
     /** {@code whole}: the answer is wanted now: the search goes on to its end whatever this tick's share. */
     Path search(Set<BlockPos> targets, int accuracy, float range, boolean whole) {
@@ -263,14 +263,36 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
         return whole.answer(key.targets, key.accuracy, now);
     }
 
-    private CompanionSearch begin(Key key, long now) {
-        int i = (int)(key.range + 8);
+    /** Validate the reverse transitions of an already visible path using the same movement rules as the outward search. */
+    public boolean canRetrace(Path path, int range) {
+        CompanionNodeEvaluator own = evaluatorAround(range);
+        try {
+            CompanionMoves moves = new CompanionMoves(own, mob);
+            for (int i = path.getNodeCount() - 1; i > 0; i--) {
+                BlockPos previous = path.getNodePos(i - 1);
+                boolean[] found = {false};
+                moves.expand(path.getNode(i), (next, cost) -> {
+                    if (next.asBlockPos().equals(previous)) found[0] = true;
+                });
+                if (!found[0]) return false;
+            }
+            return true;
+        } finally { own.done(); }
+    }
+
+    private CompanionNodeEvaluator evaluatorAround(float range) {
+        int i = (int)(range + 8);
         BlockPos at = mob.blockPosition();
         CompanionNodeEvaluator own = new CompanionNodeEvaluator();
         own.setCanPassDoors(evaluator.canPassDoors()); own.setCanOpenDoors(evaluator.canOpenDoors());
         own.setCanFloat(evaluator.canFloat()); own.setCanWalkOverFences(evaluator.canWalkOverFences());
         own.prepare(new net.minecraft.world.level.PathNavigationRegion(level, at.offset(-i, -i, -i), at.offset(i, i, i)), mob);
         own.keepOffBreath(CompanionDragonBreath.clouds(level, new net.minecraft.world.phys.AABB(at).inflate(i)));
+        return own;
+    }
+
+    private CompanionSearch begin(Key key, long now) {
+        CompanionNodeEvaluator own = evaluatorAround(key.range);
         CompanionSearch search = CompanionSearch.create(own, mob, key.targets, key.accuracy, key.range, now);
         if (search == null) own.done(); else search.budget = Math.min(search.budget, budget);
         return search;

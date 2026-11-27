@@ -46,7 +46,7 @@ public final class CompanionOre {
         Kind(String word, String oreName, String genitive, TagKey<Block> blocks, Block sample, Item drop, Item pickaxe) {
             this.word = word; this.oreName = oreName; this.genitive = genitive; this.blocks = blocks; this.sample = sample; this.drop = drop; this.pickaxe = pickaxe;
         }
-        boolean is(BlockState state) { return state.is(blocks); }
+        public boolean is(BlockState state) { return state.is(blocks); }
         /** Nether gold ore breaks with any pickaxe; the iron one is for the overworld gold (review 22.10, М9). */
         private boolean netherGold(net.minecraft.world.level.Level level) { return this == GOLD && level.dimension() == net.minecraft.world.level.Level.NETHER; }
         Block sampleIn(net.minecraft.world.level.Level level) { return netherGold(level) ? Blocks.NETHER_GOLD_ORE : sample; }

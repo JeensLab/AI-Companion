@@ -29,7 +29,7 @@ public final class CompanionPlanRunner {
     /** Steps run for one obtain_item, replans included: twice the longest chain the planner gives (CompanionObtain.MAX_STEPS). */
     public static final int MAX_OBTAIN_STEPS = 32;
     /** Orders that the server rejects while another work order is still active. */
-    public static final Set<String> WORK = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests",
+    public static final Set<String> WORK = Set.of("guide_landmark", "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests",
             "build_house", "craft_item", "place_block", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "scout_traders", "trade_items", "farm_crops", "harvest_crops", "use_bone_meal", "compost_meal", "fill_bucket", "mine_obsidian", "gather_block", "hunt_drop", "build_portal", "build_cobble_gen", "build_golem", "pick_up", "go_to_place", "disenchant_item", "compost_items", "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block", "nether_go", "nether_back");
     private static final Set<String> GATHER = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone");
     /** Steps that may run while a parked batch cooks, unless they produce its input (CompanionParkHold decides that). */

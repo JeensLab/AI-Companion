@@ -48,6 +48,8 @@ public final class CompanionLocalCommands {
     private static String routeInner(String text, String companionName, java.util.function.Function<net.minecraft.world.item.Item, String> names,
                                      java.util.List<String> markers, boolean markersEnabled) {
         String normalized = text.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е');
+        String terrain = dev.aicompanion.terrain.TerrainQuestions.command(normalized, companionName);
+        if (terrain != null) return terrain;
         String memory = memoryCommand(normalized, companionName);
         if (memory != null) return memory;
         // «Что ты умеешь», «расскажи 10 умений»: the list of his real abilities is answered from the code, without the model.
@@ -175,7 +177,7 @@ public final class CompanionLocalCommands {
                 || normalized.contains("подойди ко мне") || normalized.contains("вернись ко мне")) {
             return "companion summon";
         }
-        if (normalized.contains("погуляй") || normalized.contains("прогуляйся") || normalized.contains("осмотрись")) return "companion roam";
+        if (normalized.contains("погуляй") || normalized.contains("прогуляйся")) return "companion roam";
         if (normalized.matches("(?s).*\\d.*")) return null;
         return CompanionEquipmentCommands.parse(normalized);
     }

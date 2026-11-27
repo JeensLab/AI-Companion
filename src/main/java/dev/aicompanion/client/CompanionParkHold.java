@@ -61,7 +61,7 @@ public final class CompanionParkHold {
             case "build_golem" -> "iron".equals(step.item()) && produces(batch, Set.of(id("minecraft:iron_ingot"), id("minecraft:iron_block")));
             case "gather_stone" -> touches("stone", batch);
             case "gather_loose" -> touches(item, batch);
-            case "gather_dirt", "set_home", "follow", "wait", "come", "walk_heading", "protect", "stop_protect", "wander", "stop", "enter_portal", "collect_smelt", "campfire_song",
+            case "survey_terrain", "recall_landmark", "guide_landmark", "gather_dirt", "set_home", "follow", "wait", "come", "walk_heading", "protect", "stop_protect", "wander", "stop", "enter_portal", "collect_smelt", "campfire_song",
                  "take_items", "sort_chests", "build_house", "build_portal", "open_end_portal", "build_cobble_gen", "give_wood", "equip_item", "unequip_item", "hunt_mobs",
                  // Actions that never need a furnace product, so they do not wait for a parked batch: a place to walk to or a word
                  // to save, a crop taken by hand, a grindstone or a composter, a rod cast, the goal bookkeeping.

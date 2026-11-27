@@ -17,7 +17,7 @@ public final class CompanionPlanCodec {
     public static final int MAX_REPEAT = 100;
     public static final int WOOD_STEP = 16;
     public static final Set<String> ACTIONS = Set.of("follow", "wait", "come", "protect", "stop_protect", "wander", "stop", "enter_portal", "open_end_portal",
-            "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "scout_traders", "trade_items", "farm_crops", "harvest_crops", "use_bone_meal", "obtain_item", "pursue_goal", "walk_heading", "set_home", "build_portal", "build_cobble_gen", "build_golem", "pick_up", "remember_place", "go_to_place", "repair_item", "disenchant_item", "compost_items", "campfire_song", "fish");
+            "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "scout_traders", "trade_items", "farm_crops", "harvest_crops", "use_bone_meal", "obtain_item", "pursue_goal", "walk_heading", "survey_terrain", "recall_landmark", "guide_landmark", "set_home", "build_portal", "build_cobble_gen", "build_golem", "pick_up", "remember_place", "go_to_place", "repair_item", "disenchant_item", "compost_items", "campfire_song", "fish");
     /** Flint is dug out of gravel, which drops it rarely: one step asks for at most this much. */
     static final String FLINT = "minecraft:flint";
     static final int FLINT_STEP = 8;
@@ -252,6 +252,9 @@ public final class CompanionPlanCodec {
                 if (("craft_item".equals(type) || "place_block".equals(type) || "equip_item".equals(type) || "smelt_items".equals(type) || "obtain_item".equals(type)
                         || "pick_up".equals(type)) && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
                 String slot = step.has("slot") ? step.get("slot").getAsString() : "auto";
+                if ("survey_terrain".equals(type) && (count != 1 || !slot.equals("auto") || !dev.aicompanion.terrain.TerrainSurvey.TOPICS.contains(item))) throw invalid();
+                if (("recall_landmark".equals(type) || "guide_landmark".equals(type)) &&
+                        (count != 1 || !slot.equals("auto") || !dev.aicompanion.terrain.LandmarkMemory.validQuery(item))) throw invalid();
                 if (!Set.of("auto", "mainhand", "offhand", "head", "chest", "legs", "feet").contains(slot)) throw invalid();
                 String location = step.has("location") ? step.get("location").getAsString() : "near_player";
                 if (!validLocation(location, type)) throw invalid();

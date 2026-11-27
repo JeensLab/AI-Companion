@@ -25,11 +25,33 @@ final class CompanionPlaces {
     private static final int HOME_FINDS_FROM = 24;
     private static final int HOME_FINDS_MAX = 24;
     private final CompanionEntity owner;
+    final dev.aicompanion.terrain.LandmarkMemory landmarks = new dev.aicompanion.terrain.LandmarkMemory();
+    private final dev.aicompanion.terrain.LandmarkObserver observer = new dev.aicompanion.terrain.LandmarkObserver();
+    private String sharedKinds = "";
     private final LinkedHashMap<String, Place> places = new LinkedHashMap<>();
     private long nextDiscovery;
     private HomePlace namedHome;
 
     CompanionPlaces(CompanionEntity owner) { this.owner = owner; }
+    void tick() {
+        if (owner.getOwnerId() != null && owner.canCollectItems() && owner.getTarget() == null && !owner.isSelfRescuing())
+            observer.tick(owner, this::observeLandmark);
+        String kinds = landmarks.witnessedKinds(owner.level().dimension().location());
+        boolean periodic = owner.tickCount % 100 == 0;
+        if (periodic) {
+            discoverHome();
+            owner.refreshTraders();
+        }
+        if (periodic || !kinds.equals(sharedKinds)) {
+            sharedKinds = kinds;
+            owner.refreshPlaces();
+        }
+    }
+
+    private void observeLandmark(String kind, BlockPos pos) {
+        landmarks.observe(dimension(), kind, pos, owner.blockPosition(), owner.level().getGameTime());
+    }
+
     private String dimension() { return owner.level().dimension().location().toString(); }
     private String key(String dimension, BlockPos pos) { return dimension + ":" + pos.asLong(); }
     void remember(BlockPos pos, boolean placed) {
@@ -151,7 +173,9 @@ final class CompanionPlaces {
             if (!marks.isEmpty()) entries.add("метки: " + String.join("; ", marks.stream()
                     .map(mark -> "«" + mark.name() + "» на " + mark.pos().toShortString() + " в " + CompanionMarkers.worldName(mark.dimension())).toList()));
         }
-        return entries.isEmpty() ? "известных рабочих мест нет" : "Известные места: " + String.join("; ", entries);
+        String structures = entries.isEmpty() ? "известных рабочих мест нет" : "Известные места: " + String.join("; ", entries);
+        String kinds = landmarks.witnessedKinds(owner.level().dimension().location());
+        return structures + (kinds.isEmpty() ? ", дорожных находок в этом измерении пока не записано" : ", по пути в этом измерении видел " + kinds);
     }
     void save(CompoundTag tag) {
         ListTag list = new ListTag();

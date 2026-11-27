@@ -39,8 +39,6 @@ public final class GameContext {
         if (minecraft.player == null || minecraft.level == null) return "Игровой мир сейчас недоступен.";
 
         var player = minecraft.player;
-        String biome = minecraft.level.getBiome(player.blockPosition()).unwrapKey()
-                .map(key -> key.location().toString()).orElse("неизвестный биом");
         List<String> inventory = new ArrayList<>();
         for (ItemStack stack : player.getInventory().items) {
             if (!stack.isEmpty()) inventory.add(stack.getCount() + " " + stack.getHoverName().getString());
@@ -63,7 +61,6 @@ public final class GameContext {
 
         String remembered = PromptMemory.section(CompanionMemoryView.current(), message);
         return "Игровая обстановка (снимок на момент сообщения): измерение=" + minecraft.level.dimension().location()
-                + ", биом=" + biome
                 + ", позиция игрока=" + player.blockPosition().getX() + "," + player.blockPosition().getY() + "," + player.blockPosition().getZ()
                 + ", здоровье=" + Math.round(player.getHealth()) + "/" + Math.round(player.getMaxHealth())
                 + ", сытость=" + player.getFoodData().getFoodLevel()
@@ -82,7 +79,7 @@ public final class GameContext {
                         + ", последний использованный сундук=" + companions.getFirst().getStorageForAi()
                         + dev.aicompanion.entity.CompanionContainers.nearbyLine(minecraft.level, companions.getFirst().blockPosition(),
                                 dev.aicompanion.OpenRouterConfig.SEARCH_RADIUS.get(), dev.aicompanion.OpenRouterConfig.OTHER_CONTAINERS.get())
-                        + ", память о местах=" + companions.getFirst().getPlacesForAi()
+                        + ", знакомые постройки и замеченные по дороге находки=" + companions.getFirst().getPlacesForAi()
                         + (companions.getFirst().getFurnacesForAi().isEmpty() ? "" : ", его печи=" + companions.getFirst().getFurnacesForAi())
                         + (companions.getFirst().getGoalForAi().isEmpty() ? "" : ", " + companions.getFirst().getGoalForAi())
                         + ", установленный верстак рядом=" + companions.getFirst().hasCraftingTableNearby()

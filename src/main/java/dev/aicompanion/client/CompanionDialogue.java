@@ -83,7 +83,9 @@ public final class CompanionDialogue {
             case "equip_item" -> "Сейчас возьму.";
             case "unequip_item" -> "Ага, уберу.";
             case "place_block" -> "Поставлю вот тут.";
-            case "wander" -> "Ладно, осмотрюсь. Я недалеко.";
+            case "survey_terrain" -> "Осмотрюсь.";
+            case "guide_landmark" -> "Проверю, смогу ли провести.";
+            case "wander" -> "Ладно, прогуляюсь. Я недалеко.";
             case "campfire_song" -> switch (actions.getFirst().item()) {
                 // The tune itself is picked on the server, and what really started is said when the step returns, by the recording's
                 // own name: a line promised here would be the very lie this used to tell («сыграю другую» over the same recording).
@@ -238,12 +240,15 @@ public final class CompanionDialogue {
             case "remember_place" -> "запомнить место «" + action.item() + "»";
             case "go_to_place" -> "дойти до метки «" + action.item() + "»";
             case "enter_portal" -> "зайти в портал";
+            case "survey_terrain" -> "осмотреть местность";
+            case "recall_landmark" -> "вспомнить, где видел находку";
+            case "guide_landmark" -> "провести к знакомому месту";
             case "walk_heading" -> "провести тебя " + dev.aicompanion.entity.CompanionCourse.where(action.item());
             case "follow" -> "идти за тобой";
             case "wait" -> "подождать";
             case "protect" -> "прикрывать тебя";
             case "stop_protect" -> "закончить охрану";
-            case "wander" -> "осмотреться";
+            case "wander" -> "прогуляться";
             case "campfire_song" -> "сыграть на гитаре";
             case "pursue_goal" -> {
                 var book = dev.aicompanion.entity.CompanionPlaybooks.of(action.item(), action.count());
@@ -301,6 +306,8 @@ public final class CompanionDialogue {
 
     private static String summarizeReport(List<PlannedAction> actions, String report) {
         if (report == null || report.isBlank()) return "";
+        if (actions.size() == 1 && java.util.Set.of("survey_terrain", "recall_landmark", "guide_landmark").contains(actions.getFirst().type()))
+            return report.replace("План остановлен: ", "").strip();
         // The guitar's answer is the server's own line, built from the recording that really started: it names that recording by
         // its mood number and its file name, and nothing else. Said as it is, not through the generic step summary.
         if (actions.stream().allMatch(action -> "campfire_song".equals(action.type()))) return speakable(report);
