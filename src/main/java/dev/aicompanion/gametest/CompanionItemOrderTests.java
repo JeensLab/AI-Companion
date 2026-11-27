@@ -1,6 +1,7 @@
 package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.client.CompanionClientNames;
 import dev.aicompanion.client.CompanionLocalCommands;
 import dev.aicompanion.client.CompanionPlanRequirements;
 import dev.aicompanion.client.CompanionPlanRunner;
@@ -14,6 +15,13 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.packs.PackLocationInfo;
+import net.minecraft.server.packs.PackResources;
+import net.minecraft.server.packs.PackType;
+import net.minecraft.server.packs.PathPackResources;
+import net.minecraft.server.packs.repository.PackSource;
+import net.minecraft.server.packs.resources.MultiPackResourceManager;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -356,6 +364,90 @@ public final class CompanionItemOrderTests {
                             owner.getBoundingBox().inflate(8.0D), drop -> drop.getItem().is(Items.SPRUCE_FENCE_GATE)).isEmpty(),
                     "The gate never reached the player: " + future.join().report());
         });
+    }
+
+    // ---- the Russian names are the game's own, read from real packs ----
+
+    /**
+     * The names the router answers by are read from the game's own packs, never injected here: three folder packs — the
+     * game's namespace, a mod's own and a second game pack — are served by the real resource manager, exactly as the
+     * client's packs are, and every name is the one its own lang/ru_ru.json gives. «Тыкву» and «блок тыквы» are the
+     * gourd, «забора» the fences the game's own tag holds, «калитку» the gates. A reader that looks the file up by its
+     * bare name finds nothing in these packs, and every Russian word falls back to the en_us name the client shows.
+     */
+    @GameTest(template = "empty")
+    public static void theRussianNamesAreReadFromTheGamesOwnPacks(GameTestHelper h) throws Exception {
+        var root = java.nio.file.Files.createTempDirectory("aicompanion-ru");
+        try {
+            try (MultiPackResourceManager resources = new MultiPackResourceManager(PackType.CLIENT_RESOURCES,
+                    List.of(ruPack(root, "game", "minecraft", GAME_RU), ruPack(root, "mod", "aicompanion", MOD_RU),
+                            ruPack(root, "second", "minecraft", SECOND_RU)))) {
+                // Both namespaces and both game packs are read: the file is lang/ru_ru.json of each namespace, and a pack
+                // beside the game's own adds its names instead of hiding them.
+                var read = CompanionClientNames.russianNames(resources);
+                for (String key : List.of("block.minecraft.pumpkin", "entity.aicompanion.companion", "block.minecraft.jungle_fence"))
+                    h.assertTrue(read.containsKey(key), "The names of the packs lack " + key + ": " + read.keySet().size() + " read");
+
+                var names = CompanionClientNames.namesFrom(resources);
+                h.assertTrue("minecraft:pumpkin".equals(CompanionItemLookup.itemFor("тыкву", names)),
+                        "«тыкву» is not the gourd by the packs' own names: " + CompanionItemLookup.itemFor("тыкву", names));
+                h.assertTrue(CompanionItemLookup.blockFor("тыквы", names) == null
+                                && "minecraft:pumpkin".equals(CompanionItemLookup.itemFor("тыквы", names)),
+                        "«блок тыквы» is not the pumpkin: block " + CompanionItemLookup.blockFor("тыквы", names)
+                                + ", item " + CompanionItemLookup.itemFor("тыквы", names));
+                h.assertTrue("#minecraft:fences".equals(CompanionItemLookup.groupFor("забора", names)),
+                        "«забора» is not the fences the game's tag holds: " + CompanionItemLookup.groupFor("забора", names));
+                h.assertTrue("#minecraft:fence_gates".equals(CompanionItemLookup.groupFor("калитку", names)),
+                        "«калитку» is not the game's fence gates: " + CompanionItemLookup.groupFor("калитку", names));
+            }
+        } finally {
+            deleteTree(root);
+        }
+        h.succeed();
+    }
+
+    /** The game's own ru_ru keys of the things ordered here, as the game's own lang file gives them. */
+    private static final String GAME_RU = """
+            {"block.minecraft.pumpkin":"Тыква",
+             "block.minecraft.carved_pumpkin":"Вырезанная тыква",
+             "item.minecraft.pumpkin_seeds":"Семена тыквы",
+             "item.minecraft.pumpkin_pie":"Тыквенный пирог",
+             "block.minecraft.oak_fence":"Дубовый забор",
+             "block.minecraft.spruce_fence":"Еловый забор",
+             "block.minecraft.dark_oak_fence":"Забор из тёмного дуба",
+             "block.minecraft.cherry_fence":"Вишнёвый забор",
+             "block.minecraft.bamboo_fence":"Бамбуковый забор",
+             "block.minecraft.oak_fence_gate":"Дубовые ворота",
+             "block.minecraft.spruce_fence_gate":"Еловые ворота",
+             "block.minecraft.dark_oak_fence_gate":"Ворота из тёмного дуба"}""";
+
+    /** A mod's own namespace: its names stand beside the game's, as the mod's own lang file gives them. */
+    private static final String MOD_RU = """
+            {"entity.aicompanion.companion":"Компаньон",
+             "item.aicompanion.guitar":"Гитара Олега"}""";
+
+    /** A second game pack beside the game's own: its fence is a member of the same kind, and its name must not be lost. */
+    private static final String SECOND_RU = """
+            {"block.minecraft.jungle_fence":"Забор из тропического дерева"}""";
+
+    /** A real folder pack holding one namespace's lang/ru_ru.json, as the game's own packs hold it. */
+    private static PackResources ruPack(java.nio.file.Path root, String id, String namespace, String json) throws java.io.IOException {
+        var pack = root.resolve(id);
+        var lang = pack.resolve("assets").resolve(namespace).resolve("lang").resolve("ru_ru.json");
+        java.nio.file.Files.createDirectories(lang.getParent());
+        java.nio.file.Files.writeString(lang, json, java.nio.charset.StandardCharsets.UTF_8);
+        java.nio.file.Files.writeString(pack.resolve("pack.mcmeta"),
+                "{\"pack\":{\"pack_format\":15,\"description\":\"" + id + "\"}}", java.nio.charset.StandardCharsets.UTF_8);
+        return new PathPackResources(new PackLocationInfo(id, Component.literal(id), PackSource.BUILT_IN, java.util.Optional.empty()), pack);
+    }
+
+    /** Removes the packs a row wrote, so a run leaves nothing behind. */
+    private static void deleteTree(java.nio.file.Path root) {
+        try (var walk = java.nio.file.Files.walk(root)) {
+            walk.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
+                try { java.nio.file.Files.deleteIfExists(path); } catch (java.io.IOException ignored) { }
+            });
+        } catch (java.io.IOException ignored) { }
     }
 
     // ---- helpers ----
