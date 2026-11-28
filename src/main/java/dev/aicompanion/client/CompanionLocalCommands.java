@@ -49,6 +49,8 @@ public final class CompanionLocalCommands {
     private static String routeInner(String text, String companionName, java.util.function.Function<net.minecraft.world.item.Item, String> names,
                                      java.util.List<String> markers, boolean markersEnabled) {
         String normalized = text.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е');
+        String terrain = dev.aicompanion.terrain.TerrainQuestions.command(normalized, companionName);
+        if (terrain != null) return terrain;
         String memory = memoryCommand(normalized, companionName);
         if (memory != null) return memory;
         // «Что ты умеешь», «расскажи 10 умений»: the list of his real abilities is answered from the code, without the model.
@@ -185,7 +187,7 @@ public final class CompanionLocalCommands {
                 || normalized.contains("подойди ко мне") || normalized.contains("вернись ко мне")) {
             return "companion summon";
         }
-        if (normalized.contains("погуляй") || normalized.contains("прогуляйся") || normalized.contains("осмотрись")) return "companion roam";
+        if (normalized.contains("погуляй") || normalized.contains("прогуляйся")) return "companion roam";
         if (normalized.matches("(?s).*\\d.*")) return null;
         return CompanionEquipmentCommands.parse(normalized);
     }
@@ -323,9 +325,17 @@ public final class CompanionLocalCommands {
      */
     private static String abilitiesCommand(String normalized, String companionName) {
         String rest = withoutTrailingAddress(withoutAddress(normalized, companionName), companionName);
-        String question = "(?sU)(?:что\\s+(?:ты\\s+)?(?:вообще\\s+|сейчас\\s+|такого\\s+)*умеешь(?:\\s+делать)?"
-                + "|(?:расскажи|рассказывай|перечисли|назови|скажи|озвучь)\\s*,?\\s*(?:мне\\s+|нам\\s+)?"
-                + "(?:что\\s+(?:ты\\s+)?(?:вообще\\s+|сейчас\\s+|такого\\s+)*умеешь(?:\\s+делать)?"
+        // «расскажи, пожалуйста, что ты умеешь»: the polite word may stand in the middle, after the verb and before the ask,
+        // not only at the end; «расскажи мне, пожалуйста, …» puts it after «мне» too. «что ты ещё умеешь», «расскажи ещё,
+        // что ты умеешь», «расскажи ещё раз, …»: the word of repetition asks the same question, not a question about a
+        // thing. «расскажи всё, что ты умеешь» is the same ask for the whole list. Each of these used to fall through to
+        // the model (review 24.11, judge 25.11).
+        String polite = "(?:(?:,\\s*)?пожалуйста\\s*,?\\s*)?";
+        String again = "(?:(?:ещё|еще)(?:\\s+раз)?\\s*,?\\s*)?";
+        String question = "(?sU)(?:что\\s+(?:ты\\s+" + again + ")?(?:вообще\\s+|сейчас\\s+|такого\\s+)*умеешь(?:\\s+делать)?"
+                + "|(?:расскажи|рассказывай|перечисли|назови|скажи|озвучь)\\s*,?\\s*" + polite + "(?:(?:мне|нам)\\s*,?\\s*)?" + polite + again
+                + "(?:(?:все|всё)\\s*,?\\s*)?"
+                + "(?:что\\s+(?:ты\\s+" + again + ")?(?:вообще\\s+|сейчас\\s+|такого\\s+)*умеешь(?:\\s+делать)?"
                 + "|(?:\\d+\\s+|про\\s+|о\\s+|свои\\s+|своих\\s+|все\\s+|всё\\s+){0,3}умени[а-я]*))"
                 + "(?:\\s*,?\\s*пожалуйста)?\\W*";
         if (!rest.matches(question)) return null;
@@ -359,6 +369,8 @@ public final class CompanionLocalCommands {
 
     /** Every local command but a work request, and the model's plans that start with these, replace the plans in the queue. */
     public static boolean cancelsPlans(String command) {
+        if (command.equals("companion fishing_ask") || command.equals("companion fishing_decline")) return false;
+        if (command.startsWith("companion pet_reply ")) return false;
         // The mode of his own deeds is no order to drop the plans the player gave.
         if (command.equals("companion goal status") || command.equals("companion goal cancel") || command.equals("companion goal defer")) return false;
         if (command.startsWith("companion memory ")) return false;

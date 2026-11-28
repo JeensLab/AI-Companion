@@ -2,6 +2,7 @@ package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.client.SpeechEngine;
+import dev.aicompanion.client.SpeechProvider;
 import dev.aicompanion.client.VoicePcm;
 import dev.aicompanion.client.WindowsVoice;
 import dev.aicompanion.client.WindowsVoiceChoice;
@@ -53,12 +54,12 @@ public final class CompanionWindowsVoiceTests {
 
     @GameTest(template = "empty")
     public static void theWindowsVoiceSpeaksOnlyWithoutAnInworldKeyAndOnlyOnWindows(GameTestHelper h) {
-        h.assertTrue(SpeechEngine.choose("key", true, true) == SpeechEngine.INWORLD, "A set Inworld key did not keep Inworld");
-        h.assertTrue(SpeechEngine.choose("key", false, false) == SpeechEngine.INWORLD, "Inworld depended on the Windows voice setting");
-        h.assertTrue(SpeechEngine.choose("", true, true) == SpeechEngine.WINDOWS, "No key on Windows: the Windows voice was not used");
-        h.assertTrue(SpeechEngine.choose("   ", true, true) == SpeechEngine.WINDOWS, "A blank key was taken for a key");
-        h.assertTrue(SpeechEngine.choose("", false, true) == SpeechEngine.NONE, "The Windows voice spoke while turned off");
-        h.assertTrue(SpeechEngine.choose("", true, false) == SpeechEngine.NONE, "The Windows voice was used off Windows");
+        h.assertTrue(SpeechEngine.choose(SpeechProvider.INWORLD, "key", true, true, false) == SpeechEngine.INWORLD, "A set Inworld key did not keep Inworld");
+        h.assertTrue(SpeechEngine.choose(SpeechProvider.INWORLD, "key", false, false, false) == SpeechEngine.INWORLD, "Inworld depended on the Windows voice setting");
+        h.assertTrue(SpeechEngine.choose(SpeechProvider.INWORLD, "", true, true, false) == SpeechEngine.WINDOWS, "No key on Windows: the Windows voice was not used");
+        h.assertTrue(SpeechEngine.choose(SpeechProvider.INWORLD, "   ", true, true, false) == SpeechEngine.WINDOWS, "A blank key was taken for a key");
+        h.assertTrue(SpeechEngine.choose(SpeechProvider.INWORLD, "", false, true, false) == SpeechEngine.NONE, "The Windows voice spoke while turned off");
+        h.assertTrue(SpeechEngine.choose(SpeechProvider.INWORLD, "", true, false, false) == SpeechEngine.NONE, "The Windows voice was used off Windows");
         h.succeed();
     }
 

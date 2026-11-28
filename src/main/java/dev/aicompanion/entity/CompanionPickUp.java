@@ -38,13 +38,21 @@ public final class CompanionPickUp {
 
     /** «всё»: any drop lying around, taken by «подбери всё» or a bare «подбери». */
     public static final String ANY_ITEM = "minecraft:any";
+    /** «всё, кроме …»: {@link #ANY_ITEM}, this mark and the ids of what is left lying, with commas between them. */
+    public static final String EXCEPT = "!";
+    /** On a drop such an order named: it is left lying when he passes too, until an order takes it. */
+    static final String LEFT = "aicompanion:left_lying";
 
     /**
      * A named meaning: what counts as it, how to call it in the three cases the lines need («предмет «…» лежит»,
      * «подобрал предмет «…»», «нет предмета «…»»), and the work that gets it when nothing of it lies near.
      */
     public record Meaning(String name, String accusative, String genitive, Predicate<ItemStack> matches,
-                   String fallbackAction, String fallbackItem, int fallbackCount, String fallbackNote) {
+                   String fallbackAction, String fallbackItem, int fallbackCount, String fallbackNote, boolean leaving) {
+        Meaning(String name, String accusative, String genitive, Predicate<ItemStack> matches,
+                String fallbackAction, String fallbackItem, int fallbackCount, String fallbackNote) {
+            this(name, accusative, genitive, matches, fallbackAction, fallbackItem, fallbackCount, fallbackNote, false);
+        }
         public boolean is(ItemStack stack) { return !stack.isEmpty() && matches.test(stack); }
     }
 
@@ -89,6 +97,7 @@ public final class CompanionPickUp {
         String id = item.trim().toLowerCase(Locale.ROOT);
         if (id.isEmpty()) return null;
         if (ANY_ITEM.equals(id) || "any".equals(id) || "all".equals(id) || "minecraft:all".equals(id)) return ANY;
+        if (id.startsWith(ANY_ITEM + EXCEPT)) return allBut(id.substring(ANY_ITEM.length() + EXCEPT.length()));
         if (CompanionGame.ANY_MEAT.equals(id)) {
             return new Meaning("мясо", "мясо", "мяса", CompanionPickUp::anyMeat, "hunt_animals", "food", 1, "Иду охотиться.");
         }
@@ -99,6 +108,28 @@ public final class CompanionPickUp {
         Meaning group = group(named);
         if (group != null) return group;
         return single(named);
+    }
+
+    /** How many of the things left lying a line names before «и ещё N». */
+    private static final int NAMED = 3;
+
+    /** Every drop but the named meanings; null when one of them is no item, so nothing is taken on a guess. */
+    private static Meaning allBut(String ids) {
+        List<Meaning> left = new ArrayList<>();
+        StringBuilder names = new StringBuilder();
+        for (String id : ids.split(",")) {
+            Meaning meaning = id.contains(EXCEPT) ? null : of(id);
+            if (meaning == null || meaning == ANY) return null;
+            left.add(meaning);
+            // «кроме «…»»: the frame word of a single thing («предмета») reads badly in a list.
+            if (left.size() <= NAMED) names.append(names.length() == 0 ? ", кроме " : ", ").append(meaning.genitive().replace("предмета ", ""));
+        }
+        // «Кроме редстоуна» is the dust, the ore, the block, the torch…: the line names the first few.
+        if (left.size() > NAMED) names.append(" и ещё ").append(left.size() - NAMED);
+        return new Meaning("вещи" + names, "вещи" + names, "вещей" + names, stack -> {
+            for (Meaning meaning : left) if (meaning.is(stack)) return false;
+            return true;
+        }, null, null, 0, "", true);
     }
 
     /** A meat and its cooked counterpart are one meaning to a player: «курица» is the raw one and the fried one. */
@@ -231,6 +262,20 @@ public final class CompanionPickUp {
     private static boolean hasFormSuffix(String path) {
         for (String suffix : FORM_SUFFIXES) if (path.endsWith(suffix) && path.length() > suffix.length()) return true;
         return false;
+    }
+
+    /**
+     * «Всё, кроме лазурита» has begun: the lapis within the radius is marked, or he would take it in passing on the way
+     * to the rest. What a walk back for lost belongings takes by passing is not marked.
+     */
+    static void leave(ServerLevel level, BlockPos center, int radius, Meaning meaning) {
+        if (!meaning.leaving()) return;
+        for (ItemEntity drop : level.getEntitiesOfClass(ItemEntity.class, new AABB(center).inflate(radius))) {
+            var data = drop.getPersistentData();
+            if (meaning.is(drop.getItem()) || data.hasUUID(CompanionBag.BELONGINGS) || data.hasUUID(CompanionBag.BELONGINGS_SPOT)
+                    || data.getBoolean(CompanionPlayersThings.MARK)) continue;
+            data.putBoolean(LEFT, true);
+        }
     }
 
     /**

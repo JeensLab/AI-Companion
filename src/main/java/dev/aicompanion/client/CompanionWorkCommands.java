@@ -1,5 +1,7 @@
 package dev.aicompanion.client;
 
+import dev.aicompanion.entity.CompanionPet;
+
 import java.util.Locale;
 import java.util.regex.Pattern;
 
@@ -221,12 +223,159 @@ public final class CompanionWorkCommands {
 
     private static String plain(String text, String name) {
         String value = text.toLowerCase(Locale.ROOT).replace('ё', 'е').replace('\u00A0', ' ').trim();
-        if (name != null && !name.isBlank()) value = value.replaceFirst("^" + Pattern.quote(name.toLowerCase(Locale.ROOT).replace('ё', 'е')) + "[,! ]+", "");
+        if (name != null && !name.isBlank()) value = value.replaceFirst("^" + Pattern.quote(name.toLowerCase(Locale.ROOT).replace('ё', 'е')) + "[,.! ]+", "");
         return value.replaceAll("[.!]+$", "").trim();
+    }
+
+    private static String petReplyWords(String text, String name) {
+        // Transcripts can include sounds and asides. Normalize them only while interpreting a pet reply.
+        String value = plain(text.replaceAll("\\[[^\\[\\]]*\\]", " "), name);
+        if (value.contains("?")) return "";
+        String interjection = "бля|блять|блядь|сука|ептель";
+        return value.replaceAll("[,.!:«»\"]+", " ")
+                .strip().replaceAll("\\s+", " ")
+                .replaceFirst("^(?:(?:ну|слушай|хм|э|э?м(?:[-‑–—]?м)*|" + interjection
+                        + "|(?:я )?(?:же )?(?:тебе )?(?:говорю|сказала?)(?: что)?) )+", "")
+                .replaceFirst("(?: (?:" + interjection + "))+$", "");
+    }
+
+    public static String petTripAnswer(String text, String name) {
+        String value = petReplyWords(text, name);
+        String refusal = "неа?|нету?|не надо(?: идти)?|не (?:пойдем|идем|ходи|хочу)(?: туда| идти)?|давай потом|останемся(?: здесь| тут)?|передумал[а]?";
+        if (value.matches("(?:да )?(?:(?:неа?|нету?) )*(?:(?:я|лучше) )?(?:" + refusal + ")(?: спасибо)?"))
+            return "cancel";
+        String consent = "(?:да|ага|угу|давай|ок|окей|хорошо|ладно|можно|конечно|соглас(?:ен|на))";
+        if (value.matches("(?:(?:да|ага|угу)[ -])?" + consent
+                + "|(?:" + consent + " ){0,2}(?:пойдем|пошли|погнали|идем|веди)")) return "go";
+        return "";
+    }
+
+    public static String petSighting(String text, CompanionPet kind, String name) {
+        String value = petReplyWords(text, name);
+        var words = PetNames.of(kind);
+        String mentioned = "(?:его|ее|он|она|" + words.male + "|" + words.female + "|" + words.maleObject + "|" + words.femaleObject
+                + (kind == CompanionPet.CAT ? "|ката" : "") + ")";
+        String seen = "(?:нашел|нашла|вижу|заметил|заметила)";
+        if (value.matches("(?:я )?(?:" + seen + "(?: " + mentioned + ")?|" + mentioned + " " + seen
+                + ")|(?:вот|вон) " + mentioned)) return "found";
+        return "";
+    }
+
+    public static String petAnswer(String text, CompanionPet kind, String name, boolean searchPermission) {
+        String value = petReplyWords(text, name);
+        String refusalPrefix = "(?:да )?(?:(?:неа?|нету?) )*";
+        if (value.matches(refusalPrefix + "(?:не надо|давай потом|передумал|потом заведем|ладно потом заведем)")) return "cancel";
+        var words = BaitWords.of(kind);
+        if (searchPermission) {
+            if (value.matches(refusalPrefix + "(?:не ходи|не ищи|не надо (?:искать|ходить))")) return "cancel";
+            if (petSearchApproved(value, words.search)) return "search";
+        }
+        String bait = words.bait;
+        if (!searchPermission && petBaitWithheld(value, words)) return "no";
+        String owner = "у (?:меня|нас)";
+        String item = "(?:(?:ни одной|ни одного|никаких|никакой) )?(?:" + words.unavailable + ")";
+        String absence = "(?:(?:совсем|вообще|больше) )?(?:нету?|не осталось)";
+        String noBeforeItem = "(?:" + owner + " )?" + absence + "(?: " + owner + ")?(?: " + item + ")?";
+        String noAfterItem = "(?:" + owner + " )?" + item + "(?: " + owner + ")? (?:" + absence + "|(?:за)?кончил(?:ась|ся|ись))";
+        if (value.matches("неа?|(?:да )?(?:(?:неа?|нету?) )?(?:" + noBeforeItem + "|" + noAfterItem + ")")
+                || kind == CompanionPet.CAT && value.matches("(?:я )?(?:всю съел|все съел|рыбу съел)")) return searchPermission ? "cancel" : "no";
+        if (value.matches("держи|на|дал|передал|вот (?:тебе )?(?:" + bait + ")")) return "gift";
+        if (value.matches("да|ага|угу|(?:да )?(?:у меня )?есть(?: (?:" + bait + "))?")) return searchPermission ? "search" : "yes";
+        return "";
+    }
+
+    private record BaitWords(String bait, String unavailable, String supplies, String search) {
+        private static final BaitWords FISH = new BaitWords("рыба|треска|лосось", "рыбы|рыба|трески|треска|лосося|лосось",
+                "рыбу|рыбой|треску|треской|лосося|лососем", "рыбу|треску|лосося|за рыбой");
+        private static final BaitWords BONES = new BaitWords("кости|кость|косточка|косточки", "костей|кости|кость|косточки|косточек",
+                "кость|кости|костями|косточку", "кости|кость|за костями");
+        private static final BaitWords SEEDS = new BaitWords("семена|семечки", "семян|семена|семечек|семечки",
+                "семена|семенами|семечки|семечками", "семена|семечки|за семенами|за семечками");
+
+        static BaitWords of(CompanionPet kind) {
+            return switch (kind) { case CAT -> FISH; case DOG -> BONES; case PARROT -> SEEDS; };
+        }
+    }
+
+    private static boolean petBaitWithheld(String value, BaitWords words) {
+        String item = "(?:" + words.bait + ")";
+        String have = "(?:(?:у меня )?есть(?: " + item + ")?|" + item + " (?:у меня )?есть)";
+        String transferObject = "(?:тебе|их|ее|его|ей|ею|ими|" + words.supplies + ")";
+        String details = "(?: " + transferObject + "){0,2}";
+        String give = "(?:дать|давать|отдать|отдавать|передать|поделиться|делиться)";
+        String refuse = "не (?:могу|смогу|хочу|буду)";
+        return value.matches("(?:(?:да )?" + have + " (?:но|только) )?(?:к сожалению )?(?:я )?(?:" + transferObject + " ){0,2}"
+                + "(?:" + refuse + details + " " + give + "|" + give + details + " " + refuse
+                + "|не (?:дам|отдам|передам|поделюсь))" + details + "(?: к сожалению| извини)?");
+    }
+
+    private static boolean petSearchApproved(String value, String item) {
+        String consent = "(?:да|ага|угу|давай|окей|хорошо|ладно|можно)";
+        String search = "сходи(?: (?:поискать|поищи|посмотреть|посмотри))?|поищи|посмотри|проверь"
+                + "|можешь(?: сам)? (?:поискать|посмотреть|сходить)";
+        return value.matches(consent + "|(?:" + consent + " )?(?:сам )?(?:" + search + ")"
+                + "(?: сам)?(?: (?:" + item + "))?(?: в сундук(?:ах|е)| поблизости| уже)?");
+    }
+
+    private record PetNames(String male, String female, String maleObject, String femaleObject) {
+        private static final PetNames CAT = new PetNames("(?:кот|котик|котенок)", "(?:кошка|кошечка)", "(?:кота|котика|котенка)", "(?:кошку|кошечку)");
+        private static final PetNames DOG = new PetNames("(?:пес|песик|щенок|волк)", "(?:собака|собачка)", "(?:пса|песика|щенка|волка)", "(?:собаку|собачку)");
+        private static final PetNames PARROT = new PetNames("(?:попугай|попугайчик)", "(?:птица|птичка)", "(?:попугая|попугайчика)", "(?:птицу|птичку)");
+
+        static PetNames of(CompanionPet kind) {
+            return switch (kind) { case CAT -> CAT; case DOG -> DOG; case PARROT -> PARROT; };
+        }
+    }
+
+    private static PlannedAction pet(String text, CompanionPet kind) {
+        boolean cat = kind == CompanionPet.CAT;
+        var words = PetNames.of(kind);
+        String male = words.male, female = words.female;
+        String maleObject = words.maleObject, femaleObject = words.femaleObject;
+        String animal = "(?:" + maleObject + "|" + femaleObject + ")";
+        String ourPet = "(?:(?:наш )?" + male + "|(?:наша )?" + female + ")";
+        String ourAnimal = "(?:(?:нашего|нашу|своего|свою) )?" + animal;
+        String searchAnimal = cat ? "(?:" + animal + "|ката)" : animal;
+        if (text.matches("(?:давай(?: (?:пошли|пойдем|погнали))?|пошли|пойдем|погнали) "
+                + "(?:(?:искать|поискать) " + searchAnimal + "|" + searchAnimal + " (?:искать|поискать))"))
+            return new PlannedAction("tame_" + kind.id, 0, 1, kind.habitat);
+        if (kind == CompanionPet.PARROT && text.matches("(?:пошли|пойдем|давай) (?:в джунгли (?:искать|поискать) " + animal
+                + "|(?:искать|поискать) " + animal + " в джунглях)|(?:найди|поищи) " + animal + " в джунглях"))
+            return new PlannedAction("tame_parrot", 0, 1, kind.habitat);
+        if (text.matches("где " + ourPet)) return new PlannedAction("pet_location", 0, 1, kind.id);
+        if (text.matches("(?:у тебя|у нас) (?:уже )?есть (?:(?:свой )?" + male + "|(?:своя )?" + female + ")|как там " + ourPet))
+            return new PlannedAction(kind.id + "_status", 0, 1);
+        if (text.matches("(?:не приручай|не заводи|забудь про|хватит искать) " + animal + "|(?:ладно |давай )?потом заведем " + animal)
+                || cat && text.matches("(?:ладно |давай )?потом заведем"))
+            return new PlannedAction(kind.id + "_cancel", 0, 1);
+        if (text.matches("(?:найди|поищи|проверь где) (?:(?:нашего|своего) " + maleObject + "|(?:нашу|свою) " + femaleObject + ")"))
+            return new PlannedAction("find_" + kind.id, 0, 1);
+        if (text.matches("(?:оставь|посади) " + ourAnimal + "(?: сидеть)? дома|пусть " + ourPet + " останется дома"))
+            return new PlannedAction("sit_" + kind.id, 0, 1, "home");
+        if (text.matches("(?:оставь|посади) " + ourAnimal + "(?: сидеть| здесь)?"))
+            return new PlannedAction("sit_" + kind.id, 0, 1);
+        if (kind == CompanionPet.PARROT && text.matches("(?:позови|возьми|посади) " + ourAnimal + " (?:себе )?на плечо"))
+            return new PlannedAction("follow_parrot", 0, 1);
+        if (text.matches("(?:позови|возьми с собой) " + ourAnimal + "|возьми " + ourAnimal + " с собой|пусть " + ourPet + " идет за тобой"))
+            return new PlannedAction("follow_" + kind.id, 0, 1);
+        if (text.matches("(?:(?:давай )?(?:заведем|приручим|найдем|возьмем)|(?:приручи|заведи|найди|поищи))(?: (?:себе|нам|бездомного|дикого|бездомную|дикую)){0,2} " + animal
+                + "(?: (?:рядом|поблизости))?|хочу чтобы у тебя (?:был " + male + "|была " + female + ")")
+                || (cat || kind == CompanionPet.PARROT) && text.matches("(?:(?:я )?хочу|надо|нужно) (?:(?:завести|приручить) " + animal + "|" + animal + " (?:завести|приручить))"))
+            return new PlannedAction("tame_" + kind.id, 0, 1);
+        return null;
     }
 
     public static PlannedAction parse(String text, String name) {
         String value = plain(text, name);
+        String petRequest = plain(value.replaceFirst("^(?:привет|здорово|здравствуй)[,.! ]+", "")
+                .replaceFirst("^(?:(?:я )?говорю|в смысле)[:, ]+", "").replaceAll("[«»\"]", ""), name)
+                .replaceAll("[?!]+$", "").replaceAll(", *", " ").strip();
+        if (petRequest.matches("где (?:(?:наш|мой|твой) )?питомец|где (?:(?:наши|мои|твои) )?питомцы"))
+            return new PlannedAction("pet_location", 0, 1, "all");
+        for (var kind : CompanionPet.values()) {
+            var order = pet(petRequest, kind);
+            if (order != null) return order;
+        }
         // «Дострой», «достраивай кузницу», «продолжи стройку»: what is left unfinished goes on where it stands. A name or kind said with it never starts another building.
         var resume = java.util.regex.Pattern.compile("^(?:(дострой|достраивай)|продолжи|продолжай)(?: мне| нам| себе)?(?: (.+?))?(?: рядом)?$").matcher(value);
         if (resume.matches()) {
@@ -274,6 +423,8 @@ public final class CompanionWorkCommands {
         String bare = said.rest().replace("-ка", "ка").replaceAll("\\s+", " ").trim();
         // «Порыбачь», «налови рыбы»: until he is stopped; «налови 5 рыб» so many, «поймай рыбу» one (CompanionFishing). A fish by its name and «0 рыб» are the model's.
         boolean zero = said.count() == 0 && !said.rest().equals(value);
+        if (said.count() == 0 && !zero && dev.aicompanion.CompanionFishingInvitation.proposesTrip(value))
+            return new PlannedAction("fish", 0, 3, dev.aicompanion.entity.CompanionFishing.ANY);
         if (said.count() == 0 && bare.matches("^(?:порыбачь(?:ка)?|рыбачь|(?:иди|сходи|пойди) (?:порыбачь|на рыбалку)|полови(?:ка)? (?:рыбу|рыбы|рыбку))(?: рядом| тут| здесь)?$"))
             return new PlannedAction("fish", 0, PlannedAction.ALL_CARRIED, dev.aicompanion.entity.CompanionFishing.ANY);
         var fishing = Pattern.compile("^(налови|поймай|вылови)(?:ка)?(?: мне| нам| себе)? (?:рыбу|рыбы|рыб|рыбку|рыбки|рыбок|рыбину|рыбин)(?: удочкой| на удочку)?$").matcher(bare);

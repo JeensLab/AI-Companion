@@ -4,12 +4,12 @@ package dev.aicompanion.client;
  * The geometry of the behaviour screen's switch rows. Kept out of the screen so that a GameTest can check it without a
  * client: the rows stand one under another, closer together when they would reach the note under them, and go on pages
  * when they do not all fit — every switch must stay reachable on a small GUI (854×480 is 427×240 at GUI scale 2).
- * The first row opens the model screen; the rest are the gameplay switches.
+ * The first row opens the model settings and the last row opens the pet settings.
  */
 public final class CompanionSwitchLayout {
     public static final int ROW_WIDTH = 300, ROW_HEIGHT = 20, ROW_STEP = 30, HIGHEST_ROW = 64, NOTE_FROM_BOTTOM = 64, PAGED_STEP = 24;
-    /** The rows the behaviour screen adds: the model entry first, then the gameplay switches and the two distance rows. */
-    public static final int MODEL_ENTRY_ROW = 0, BEHAVIOUR_ROWS = 27;
+    /** The rows the behaviour screen adds: the model entry first, then the gameplay switches, the two distance rows and the entries that open other screens. */
+    public static final int MODEL_ENTRY_ROW = 0, BEHAVIOUR_ROWS = 33;
     /** The label of that first row: it opens the model screen, and the screen is not loaded where a GameTest runs. */
     public static final String MODEL_ENTRY_LABEL = "Модель и ответы…";
     /** The row that names the search distance instead of a switch: beside «Строить себе путь», the same distance the settings screen holds. */

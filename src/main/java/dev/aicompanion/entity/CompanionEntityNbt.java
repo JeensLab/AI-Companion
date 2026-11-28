@@ -37,10 +37,12 @@ final class CompanionEntityNbt {
         c.temporaryBridge.save(tag);
         c.recovery.save(tag);
         c.work.save(tag);
+        c.work.mine.save(tag);
         c.parked.save(tag);
         c.batches().save(tag);
         c.places.save(tag);
         c.traders().save(tag);
+        c.landmarks().save(tag);
         c.deeds.save(tag);
         c.autonomy.save(tag);
         tag.putBoolean("DeathRecovery", c.deathRecovery());
@@ -91,6 +93,7 @@ final class CompanionEntityNbt {
         c.recovery.load(tag);
         c.deeds.load(tag); c.places.load(tag); c.traders().load(tag); c.refreshTraders(); c.autonomy.load(tag); c.setDeathRecovery(!tag.contains("DeathRecovery") || tag.getBoolean("DeathRecovery"));
         c.setBoatRide(!tag.contains("BoatRide") || tag.getBoolean("BoatRide"));
+        c.landmarks().load(tag);
         c.setGuardByPlayer(!tag.contains("GuardByPlayer") || tag.getBoolean("GuardByPlayer"));
         c.setOtherContainers(!tag.contains("OtherContainers") || tag.getBoolean("OtherContainers"));
         c.setBoatClutch(!tag.contains("BoatClutch") || tag.getBoolean("BoatClutch"));
@@ -145,14 +148,16 @@ final class CompanionEntityNbt {
             c.goals.restorePlayerBehavior();
         }
         if (!c.level().isClientSide) c.social.updateExpression();
+        // Last: setFollowing above cancels the work, and a cancel lets the held blocks fall, which must wait for the first tick.
+        c.work.mine.load(tag);
     }
 
     /** What the companion who comes back remembers: name, settings, journal of deeds, places, the house and the chest. */
     CompoundTag memory() {
         CompoundTag full = new CompoundTag(), memory = new CompoundTag();
         c.addAdditionalSaveData(full);
-        for (String key : new String[]{"CompanionName", "SearchRadius", "ChunkLoading", "AutonomousSpeech", "KnownPlaces", "HomePlace", CompanionTraders.KEY, "Deeds",
-                "SmallHouse", CompanionHouse.TEMPLATE_KEY, "StorageChest", "StorageDimension", "Autonomy", CompanionGoals.KEY, "WorkSequence", CompanionFurnaceBatchNbt.KEY}) if (full.contains(key)) memory.put(key, full.get(key).copy());
+        for (String key : new String[]{"CompanionName", "SearchRadius", "ChunkLoading", "AutonomousSpeech", "KnownPlaces", "HomePlace", CompanionTraders.KEY, dev.aicompanion.terrain.LandmarkMemory.KEY, "Deeds",
+                "SmallHouse", CompanionHouse.TEMPLATE_KEY, "StorageChest", "StorageDimension", "Autonomy", CompanionGoals.KEY, "WorkSequence", CompanionFurnaceBatchNbt.KEY, CompanionMineSite.KEY}) if (full.contains(key)) memory.put(key, full.get(key).copy());
         return memory;
     }
 
@@ -162,7 +167,10 @@ final class CompanionEntityNbt {
         c.chunkLoading = !memory.contains("ChunkLoading") || memory.getBoolean("ChunkLoading");
         c.autonomousSpeech = !memory.contains("AutonomousSpeech") || memory.getBoolean("AutonomousSpeech");
         c.deeds.load(memory); c.places.load(memory); c.traders().load(memory); c.refreshTraders(); c.work.load(memory); c.batches().load(memory); c.autonomy.load(memory); c.refreshPlaces();
+        c.landmarks().load(memory);
         c.goals.load(memory);
+        // Only the record: the blocks the dead body held (HELD_KEY) were dropped by it, and are not part of the memory.
+        c.work.mine.load(memory);
         c.noteDeed("Вернулся к тебе после гибели. Вещи, что были при мне, остались там, где я погиб.", true);
     }
 }

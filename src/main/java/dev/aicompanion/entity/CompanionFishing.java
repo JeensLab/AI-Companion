@@ -13,6 +13,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.pathfinder.Path;
@@ -75,7 +76,7 @@ public final class CompanionFishing {
     CompanionFishing(CompanionWork w) { this.w = w; }
 
     /** Still water under the open air: a source with air over it. */
-    private static boolean surface(ServerLevel level, BlockPos pos) {
+    private static boolean surface(Level level, BlockPos pos) {
         BlockState state = level.getBlockState(pos);
         return state.is(Blocks.WATER) && state.getFluidState().isSource() && level.getBlockState(pos.above()).isAir();
     }
@@ -87,6 +88,14 @@ public final class CompanionFishing {
 
     /** Whether there is water about him to fish in (the planner of «добудь»). */
     static boolean about(CompanionEntity c, ServerLevel level) { return water(c, level, Set.of()) != null; }
+
+    /** A cheap local check for invitations and short autonomous trips, limited to already loaded terrain. */
+    public static boolean waterNearby(Level level, BlockPos center) {
+        for (BlockPos pos : BlockPos.betweenClosed(center.offset(-8, -3, -8), center.offset(8, 2, 8))) {
+            if (level.hasChunkAt(pos) && surface(level, pos)) return true;
+        }
+        return false;
+    }
 
     /** {@code count} more fish in his bag, {@link #ALL} until he is stopped. Null when the work may start, else why not. */
     CompanionActionResult begin(String id, int count) {

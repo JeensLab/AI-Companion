@@ -60,7 +60,7 @@ public final class CompanionAgenda {
     private static final int RECOVER_RADIUS = 8, RECOVER_RANGE = 96, VOID_MARGIN = 4;
     private static final String COLLECT = "collect";
     /** Requests that leave the goal as it is: goals themselves, the bag check, the mode of his own deeds. */
-    private static final Set<String> NEUTRAL = Set.of("pursue_goal", "verify_item", "autonomy");
+    private static final Set<String> NEUTRAL = Set.of("pursue_goal", "verify_item", "autonomy", "recall_landmark");
     /** A request of only these (follow, stay, guard…) holds the goal until the player says to go on. */
     public static final Set<String> MODES = Set.of("follow", "wait", "come", "walk_heading", "protect", "stop_protect", "stop", "wander", "enter_portal", "campfire_song");
     private static final Map<UUID, Integer> LEASES = new ConcurrentHashMap<>();

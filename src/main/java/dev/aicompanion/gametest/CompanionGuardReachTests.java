@@ -57,6 +57,8 @@ public final class CompanionGuardReachTests {
     public static void releaseFenced(ServerLevel level) { release(level); }
     @AfterBatch(batch = "guard_reach_fenced_first")
     public static void releaseFencedFirst(ServerLevel level) { release(level); }
+    @AfterBatch(batch = "guard_reach_beside")
+    public static void releaseBeside(ServerLevel level) { release(level); }
 
     /** The issue's scene: zombies 30 and 10 blocks from the player, the one at 10 dies first, then he goes for the one at 30. */
     @GameTest(template = "empty", timeoutTicks = 900, batch = "guard_reach_order")
@@ -110,6 +112,27 @@ public final class CompanionGuardReachTests {
                 h.assertTrue(companion.getTarget() == nearToPlayer,
                         "Target was " + companion.getTarget() + ", wanted the zombie 12 blocks from the player; " + spots(h, player(h, companion), companion));
                 h.assertTrue(nearToHim.isAlive(), "The zombie 45 blocks from the player fell first");
+                h.succeed();
+            });
+        });
+    }
+
+    /**
+     * A zombie on him does not take the guard order's target over (#129): the one nearest to the player stays it. The fight's own rule
+     * (strike what is on him first, CompanionFootwork.nearer) is for the fights of his own, not for the guard.
+     */
+    @GameTest(template = "empty", timeoutTicks = 200, batch = "guard_reach_beside")
+    public static void aZombieOnHimDoesNotTakeTheGuardTargetOverFromTheOneByThePlayer(GameTestHelper h) {
+        h.startSequence().thenExecute(() -> arena(h)).thenIdle(20).thenExecute(() -> {
+            CompanionEntity companion = guard(h, 20);
+            var nearToPlayer = zombie(h, 3);
+            var onHim = zombie(h, 18);
+            onHim.setNoAi(false);
+            List<String> taken = new ArrayList<>();
+            h.onEachTick(() -> { if (companion.getTarget() == onHim && taken.isEmpty()) taken.add(spots(h, player(h, companion), companion) + " onHim at " + companion.distanceTo(onHim)); });
+            h.runAtTickTime(100, () -> {
+                h.assertTrue(taken.isEmpty(), "The zombie on him took the target over from the one 3 blocks from the player: " + taken);
+                h.assertTrue(companion.getTarget() == nearToPlayer || !nearToPlayer.isAlive(), "Target was " + companion.getTarget() + " " + spots(h, player(h, companion), companion));
                 h.succeed();
             });
         });

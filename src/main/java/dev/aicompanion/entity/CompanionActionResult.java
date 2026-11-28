@@ -9,7 +9,9 @@ public record CompanionActionResult(boolean success, String message, Status stat
         /** A craft refused at once for lack of materials (not a full bag, not a too long chain): the plan may get them instead. */
         SHORTAGE,
         /** A long smelt was handed to a furnace batch: the order is not done, the product is collected later. Never a success. */
-        PARKED }
+        PARKED,
+        /** A wood order ran out its search with no tree to chop (none of the species asked for, or none with a way): a repeat finds none either, nor any other part of the plan that needs wood. */
+        NO_TREE }
     public CompanionActionResult(boolean success, String message, Status status) { this(success, message, status, null); }
     public CompanionActionResult(boolean success, String message) { this(success, message, success ? Status.SUCCESS : Status.FAILED); }
     public CompanionActionResult {
@@ -22,6 +24,7 @@ public record CompanionActionResult(boolean success, String message, Status stat
     public static CompanionActionResult blocked(String message) { return new CompanionActionResult(false, message, Status.BLOCKED); }
     public static CompanionActionResult timeout(String message) { return new CompanionActionResult(false, message, Status.TIMEOUT); }
     public static CompanionActionResult shortage(String message) { return new CompanionActionResult(false, message, Status.SHORTAGE); }
+    public static CompanionActionResult noTree(String message) { return new CompanionActionResult(false, message, Status.NO_TREE); }
     public static CompanionActionResult cancelled(String message) { return new CompanionActionResult(false, message, Status.CANCELLED); }
     public static CompanionActionResult parked(String message, Evidence facts) { return new CompanionActionResult(false, message, Status.PARKED, facts); }
     public CompanionActionResult withEvidence(Evidence facts) { return new CompanionActionResult(success, message, status, facts); }

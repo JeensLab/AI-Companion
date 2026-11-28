@@ -5,8 +5,10 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -24,6 +26,8 @@ import java.util.UUID;
 /** Harvested items are normal world entities. Transfer to the bag requires physical proximity. */
 final class CompanionLoot {
     private static final String HARVESTER = "aicompanion:harvester";
+    /** How near a hostile he is fighting must be for the pickup to wait, and how near any hostile in sight is on him. */
+    private static final double FOE_NEAR = 7, CONTACT = 3;
     /** How near a creeper in sight must be for the pickup to wait, whether or not he fights it: the drop may lie beside it. */
     static final double CREEPER_NEAR = 7;
     private final CompanionEntity owner;
@@ -91,6 +95,7 @@ final class CompanionLoot {
         rescanUntil = level.getGameTime() + 40;
         for (ItemEntity item : items) {
             item.getPersistentData().putUUID(HARVESTER, owner.getUUID());
+            item.getPersistentData().remove(CompanionPickUp.LEFT); // an order for it ends «leave it lying»
             pending.add(item.getUUID()); born.put(item.getUUID(), level.getGameTime());
             sites.addLast(new Site(item.blockPosition(), List.of(item.getItem().copy()), level.getGameTime() + 20 * 300));
         }
@@ -100,6 +105,7 @@ final class CompanionLoot {
     private boolean ours(ItemEntity item) {
         CompoundTag data = item.getPersistentData();
         if (data.getBoolean("aicompanion:gift")) return false; // handed to the player, never taken back
+        if (data.getBoolean(CompanionPickUp.LEFT)) return false; // «всё, кроме него»: his own harvest stays lying too
         if (data.hasUUID(HARVESTER)) return owner.getUUID().equals(data.getUUID(HARVESTER));
         if (item.getTarget() != null && !item.getTarget().equals(owner.getOwnerId())) return false;
         // Thrown by someone (the player dropping cobblestone by his pit): not his harvest (review 22.10, М3).
@@ -167,13 +173,7 @@ final class CompanionLoot {
      */
     private void collectLoose(ServerLevel level) {
         for (ItemEntity item : level.getEntitiesOfClass(ItemEntity.class, owner.getBoundingBox().inflate(2.0D),
-                found -> !found.hasPickUpDelay() && found.getTarget() == null)) {
-            if (pending.contains(item.getUUID())) continue;
-            // His own throw: kept out of the bag on purpose (the mine leaves excess stone this way, PR #48).
-            if (item.getOwner() == owner) continue;
-            if (item.getPersistentData().hasUUID(HARVESTER)) continue;
-            // Junk he let go to make room for his own things: taking it back would fill the freed slot with it again.
-            if (item.getPersistentData().getBoolean(CompanionBag.JUNK)) continue;
+                found -> !found.hasPickUpDelay() && isLoose(found))) {
             if (!touches(owner.position(), item)) continue;
             ItemStack offered = item.getItem().copy();
             int before = offered.getCount();
@@ -187,6 +187,16 @@ final class CompanionLoot {
             // Not counted as harvest progress: this was lying there, not gathered for a task.
             takeFrom(item, offered, moved, true);
         }
+    }
+
+    /**
+     * What may be taken as he passes: nothing aimed at somebody, not a stack he threw himself, not his own harvest, not the junk he
+     * let go, and nothing an order said to leave lying («подбери всё, кроме лазурита», #236) — it waits for an order that names it.
+     */
+    boolean isLoose(ItemEntity item) {
+        return item.getTarget() == null && !pending.contains(item.getUUID()) && item.getOwner() != owner
+                && !item.getPersistentData().hasUUID(HARVESTER) && !item.getPersistentData().getBoolean(CompanionBag.JUNK)
+                && !item.getPersistentData().getBoolean(CompanionPickUp.LEFT);
     }
 
     /** Hands over what was stored: the pickup sound, the note in the log, and the rest of the stack left on the floor. */
@@ -360,7 +370,8 @@ final class CompanionLoot {
         // that stands under a drop it was the way to keeps the chase off (the pickup takes it from the top); a column that stands
         // too long, as after a mine whose drop fell below it, gives the drop to the chase, walked to from where it lies
         // (the owner, 27.11: five minutes on top of a column over a drop below it).
-        boolean otherWay = !ownWay && (owner.temporaryPillar.isActive() || owner.temporaryBridge.isActive() && !owner.temporaryBridge.isWalk());
+        boolean otherWay = !ownWay && (owner.temporaryPillar.isActive() && !owner.temporaryPillar.leftStanding()
+                || owner.temporaryBridge.isActive() && !owner.temporaryBridge.isWalk());
         // A drop that fell below his feet while his own column stands is no reason to wait: the column is the way down to it, and
         // comes down now — the drop is taken from the ground (the owner, 27.11: half a minute standing over a drop below him).
         if (otherWay && owner.temporaryPillar.isActive() && dropsBelow()) {
@@ -371,9 +382,22 @@ final class CompanionLoot {
             if (wayBlockedAt == 0) wayBlockedAt = level.getGameTime();
             if (level.getGameTime() - wayBlockedAt <= WAY_PATIENCE) return false;
         } else wayBlockedAt = 0;
-        if (owner.isSwingingAtBlock() || owner.creeperGuard.nearby(CREEPER_NEAR)) return false;
+        if (owner.isSwingingAtBlock() || foeOnHim() || owner.creeperGuard.nearby(CREEPER_NEAR)) return false;
         for (UUID id : pending) if (chaseable(level, id)) return true;
         return false;
+    }
+
+    /** The pickup shares the melee goal's priority: once it runs it keeps him walking after a drop while the foe he is fighting strikes. */
+    private boolean foeOnHim() {
+        LivingEntity foe = owner.getTarget();
+        if (foe instanceof Monster && foe.isAlive() && owner.distanceToSqr(foe) < FOE_NEAR * FOE_NEAR) return true;
+        if (!(owner.level() instanceof ServerLevel level)) return false;
+        // Series h, 21.11: zombies on him struck while he walked off after a drop. Within three blocks a hostile in sight that goes for him (bow
+        // skeletons too), or that he would fight now, is on him, and the pickup starves the retreat. One that goes for nobody (an idle skeleton, a
+        // zombified piglin, an enderman) is not: the pickup would wait on it for good.
+        return !level.getEntitiesOfClass(Monster.class, owner.getBoundingBox().inflate(CONTACT), mob -> mob.isAlive() && !mob.isNoAi()
+                && owner.distanceToSqr(mob) < CONTACT * CONTACT && owner.hasLineOfSight(mob) && owner.combat.fairTarget(mob, owner.combat.provokes(mob))
+                && (mob.getTarget() == owner || owner.combat.comesForOwner(mob))).isEmpty();
     }
     void tickChase() {
         if (!(owner.level() instanceof ServerLevel level)) return;
@@ -723,7 +747,7 @@ final class CompanionLoot {
     }
     private boolean gone(ServerLevel level, UUID id) {
         var item = level.getEntity(id);
-        return item == null ? level.getGameTime() - born.getOrDefault(id, 0L) > 5 : !item.isAlive();
+        return item == null ? level.getGameTime() - born.getOrDefault(id, 0L) > 5 : !item.isAlive() || item.getPersistentData().getBoolean(CompanionPickUp.LEFT);
     }
     /**
      * Like a player's pickup (Player.aiStep): the item touches the body widened by one block sideways and half a block up and

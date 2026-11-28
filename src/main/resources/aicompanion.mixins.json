@@ -1,0 +1,8 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "dev.aicompanion.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": ["ArenaGridMixin"],
+  "injectors": {"defaultRequire": 1}
+}

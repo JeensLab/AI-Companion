@@ -92,13 +92,17 @@ public final class CompanionBuildReviewTests {
     }
 
     /** The companion as the save of the world holds him when a building was left unfinished: reloaded with that saved build in his data. */
-    public static CompanionEntity reloadedWithUnfinished(GameTestHelper h, CompanionEntity companion, BlockPos base, String building) {
+    public static CompanionEntity reloadedWithUnfinished(GameTestHelper h, CompanionEntity companion, BlockPos base, String building) { return reloadedWithUnfinished(h, companion, base, building, null); }
+
+    /** The same with the bench he set down for it (null: none yet). */
+    public static CompanionEntity reloadedWithUnfinished(GameTestHelper h, CompanionEntity companion, BlockPos base, String building, BlockPos workbench) {
         CompoundTag data = new CompoundTag(); companion.saveWithoutId(data);
         CompoundTag build = new CompoundTag();
         build.putLong("Base", base.asLong()); build.putString("Building", building); build.putInt("Rotation", 0); build.putInt("Total", 200);
         build.putString("Dimension", h.getLevel().dimension().location().toString()); build.putLongArray("Placed", new long[0]);
         // The species were chosen long ago: a reload does not choose them again.
         build.put("Woods", new CompoundTag());
+        if (workbench != null) build.putLong("Workbench", workbench.asLong());
         data.put("TemplateBuild", build);
         companion.discard();
         CompanionEntity reloaded = AICompanionMod.COMPANION.get().create(h.getLevel());

@@ -1,5 +1,6 @@
 package dev.aicompanion.entity;
 
+import dev.aicompanion.terrain.LandmarkMemory;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -8,9 +9,12 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.TamableAnimal;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -18,16 +22,21 @@ import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.HitResult;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Predicate;
 
 /** Bounded server-side work. Prerequisites use real recipes, tools, blocks and inventories. */
 public final class CompanionWork {
-    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, SCOUT, TRADE, FARM, COURSE, WATER, OBSIDIAN, PORTAL, COBBLE_GEN, GOLEM, PICK_UP, PLACE, GRIND, COMPOST, BLOCK, CHORE, ERRAND }
-    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, SCOUT, TRADE, FARM, COURSE, WATER, OBSIDIAN, PORTAL, COBBLE, GOLEM, PICKUP, PLACE, GRIND, COMPOST, BLOCK, DROPS, CHORE, ERRAND }
+    private dev.aicompanion.terrain.TerrainSurvey survey;
+    private CompanionLandmarkGuide guide;
+
+    enum Job { GUIDE, SURVEY, STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, SCOUT, TRADE, FARM, COURSE, WATER, OBSIDIAN, PORTAL, COBBLE_GEN, GOLEM, PICK_UP, PLACE, GRIND, COMPOST, BLOCK, CHORE, ERRAND, PET }
+    enum Phase { GUIDE, SURVEY, CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, SCOUT, TRADE, FARM, COURSE, WATER, OBSIDIAN, PORTAL, COBBLE, GOLEM, PICKUP, PLACE, GRIND, COMPOST, BLOCK, DROPS, CHORE, ERRAND, PET }
     final CompanionEntity owner;
     final CompanionWorkItems items = new CompanionWorkItems(this);
     final CompanionHunting hunting = new CompanionHunting(this);
@@ -36,6 +45,7 @@ public final class CompanionWork {
     final CompanionStoneMining stoneMining = new CompanionStoneMining(this);
     final CompanionOreMining oreMining = new CompanionOreMining(this);
     final CompanionRoute route = new CompanionRoute(this);
+    final CompanionComeBack comeBack = new CompanionComeBack(this);
     final CompanionChests chests = new CompanionChests(this);
     final CompanionSorting sorting = new CompanionSorting(this);
     final CompanionFurnaces furnaces = new CompanionFurnaces(this);
@@ -67,6 +77,9 @@ public final class CompanionWork {
     final CompanionMobDrops drops = new CompanionMobDrops(this);
     /** shear_sheep, milk_animal, collect_eggs, strip_log, harvest_hive, scoop_mob, scoop_block, fish: what a tool in hand gets. */
     final CompanionChores chores = new CompanionChores(this);
+    private final java.util.EnumMap<CompanionPet, CompanionPetWork> petOrders = new java.util.EnumMap<>(CompanionPet.class);
+    CompanionPetWork activePet;
+    CompanionPetWork pet(CompanionPet kind) { return petOrders.get(kind); }
     final CompanionBlockBreaking breaking;
     final CompanionToolSense pickaxeSense, shovelSense;
     CompanionStoneSearch stoneSearch;
@@ -137,6 +150,8 @@ public final class CompanionWork {
     boolean placementMoving;
     boolean insideHouse;
     final List<BlockPos> placedChests = new ArrayList<>();
+    /** The diamond mine he dug: saved with him, outlives a single work. */
+    final CompanionMineSite mine = new CompanionMineSite();
     BlockPos workOrigin;
     boolean returnRouteBlocked;
     long nextReturnCheck;
@@ -146,8 +161,6 @@ public final class CompanionWork {
     final Set<java.util.UUID> huntDead = new HashSet<>();
     int huntKills;
     net.minecraft.world.phys.Vec3 orderProgressPosition;
-    private BlockPos comeFailedAt;
-    private long comeFailedTime;
     long orderProgressTime;
     /**
      * Watchdog for every work (game log 21.10: two minutes on one spot with «Проверяю подход к камню», then a faceless
@@ -352,6 +365,7 @@ public final class CompanionWork {
 
     public CompanionWork(CompanionEntity owner) {
         this.owner = owner; house = new CompanionHouse(owner); templateHouse = new CompanionHouse(owner, true); breaking = new CompanionBlockBreaking(owner); obsidian = new CompanionObsidian(this); portal = new CompanionPortalBuild(this); cobbleGen = new CompanionCobbleGen(this); golem = new CompanionGolem(this);
+        for (var kind : CompanionPet.values()) petOrders.put(kind, new CompanionPetWork(this, kind));
         pickaxeSense = new CompanionToolSense(owner, "pickaxe", ItemTags.PICKAXES, Blocks.STONE.defaultBlockState());
         shovelSense = new CompanionToolSense(owner, "shovel", ItemTags.SHOVELS, Blocks.DIRT.defaultBlockState());
     }
@@ -363,9 +377,12 @@ public final class CompanionWork {
     boolean allowsRouteRecovery() {
         // Inside our own stair descent, walls around and the next cell above are the plan, not a trap. The generic
         // escape used to fill those stairs with soil and break their steps. It acts only once the walk back is confirmed gone.
+        if (survey != null || guide != null) return false;
         if (isActive() && phase == Phase.MINE && !quarrySupports.isEmpty() && !returnRouteBlocked) return false;
         // The own ore tunnel is the same: its walls are not a trap, and the way back is the tunnel itself.
         if (isActive() && phase == Phase.ORE && oreExit != null) return false;
+        // The stairs cut up to a player who stands higher are the plan too.
+        if (isActive() && handOver.climb.running()) return false;
         // Roofs and crowns are interaction targets, not movement destinations.
         return !isActive() || job != Job.HOUSE && job != Job.PEN && phase != Phase.WOOD
                 || workOrigin != null && owner.getY() < workOrigin.getY() - 1.25;
@@ -382,81 +399,16 @@ public final class CompanionWork {
     }
 
     String currentDescription() {
+        if (job == Job.SURVEY) return "осматривает местность";
+        if (job == Job.GUIDE) return "показывает " + guide.landmark.label();
         return job == Job.COME ? "пытается добраться до игрока" : job == Job.HUNT ? "поручение: ближайшие монстры" : job == Job.PICK_UP ? "подбирает лежащее рядом"
                 : job == Job.PLACE ? (placeHome ? "идёт домой" : "идёт к метке «" + placeName + "»") : job == Job.GAME ? "охотится, добыл " + gameKills + " из " + gameWanted
                 : job == Job.SORT ? "раскладывает по сундукам" : job == Job.FARM ? farming.describe() : job == Job.PLACE_CHEST ? "устанавливает " + requestedItem + " (" + newChests + "/" + requestedCount + ")"
                 : job == Job.SMELT ? (lots.stream().anyMatch(lot -> lot.loaded) ? "плавит в печах (" + lots.size() + "), готово " + furnaces.smeltReady() + " из " + smeltCount : "готовит печь для плавки")
                 : "выполняет работу " + job + ", стадия " + phase;
     }
-    String taskDescription() {
-        if (job == null) return "";
-        String stage = phase == null ? "подготовка" : switch (phase) {
-            case CRAFT -> "крафт";
-            case PICKAXE, ORE_PICK, SHOVEL -> "подготовка инструмента";
-            case WOOD, WOOD_DONE -> "заготовка дерева";
-            case MINE, DIGGING, ORE, OBSIDIAN, BLOCK -> "добыча";
-            case STORE, CLOSE, PACK, SORT -> "работа с вещами";
-            case BUILD, PEN, PORTAL, COBBLE, GOLEM -> "строительство";
-            case RETURN, EXIT -> "возвращение";
-            case FIGHT, CHASE, DROPS -> "поиск и бой";
-            case HAND -> "передача вещей";
-            case FURNACE -> "подготовка печи";
-            case COOK -> "плавка / готовка";
-            case IRON -> "подготовка железа";
-            case BREED -> "разведение животных";
-            case SCOUT -> "обход торговцев";
-            case TRADE -> "обмен с торговцем";
-            case FARM -> "в поле";
-            case COURSE -> "в пути";
-            case WATER -> "за водой";
-            case PICKUP -> "подбор";
-            case PLACE -> placeHome ? "в пути домой" : "в пути к метке";
-            case GRIND -> "у точила";
-            case COMPOST -> "у компостера";
-            case CHORE -> "по хозяйству";
-            case ERRAND -> "поход в Незер";
-        };
-        return "Выполняет " + jobName() + " · " + stage;
-    }
-    /** The work in words for the journal of deeds. */
-    String jobName() {
-        String item = requestedItem.isEmpty() || requestedItem.equals("all") || requestedItem.equals("logs") ? "" : " «" + itemName(requestedItem) + "»";
-        return switch (job) {
-            case STONE -> "добычу камня (" + gathered + " из " + wantedStone + ")";
-            case CRAFT -> "крафт" + item;
-            case STORE -> "складывание вещей в сундук";
-            case TAKE -> "взятие вещей из сундука";
-            case SORT -> "раскладку по сундукам";
-            case PLACE_CHEST -> "установку" + item;
-            case HOUSE -> "стройку дома";
-            case PEN -> "постройку загона";
-            case BREED -> "разведение животных";
-            case SCOUT -> "обход торговцев";
-            case TRADE -> "обмен с торговцем";
-            case DIRT -> "добычу " + ground.genitive();
-            case COME -> "путь к тебе";
-            case HUNT -> "бой с монстрами";
-            case GAME -> "охоту (" + gameKills + " из " + gameWanted + ")";
-            case WOOD -> "рубку дерева";
-            case GIVE -> "передачу вещей";
-            case SMELT -> "плавку" + (smelt == null ? "" : " «" + itemName(smelt.input()) + "»");
-            case ORE -> "добычу руды «" + ore.oreName + "» (" + oreMined + " из " + oreWanted + ")";
-            case FARM -> farming.jobName();
-            case COURSE -> course.jobName();
-            case WATER -> "набор воды в ведро";
-            case OBSIDIAN -> obsidian.jobName();
-            case BLOCK -> picking.jobName();
-            case PORTAL -> endPortal.active() ? endPortal.jobName() : portal.jobName();
-            case COBBLE_GEN -> cobbleGen.jobName();
-            case GOLEM -> golem.jobName();
-            case PICK_UP -> "подбор" + (pickUp == null ? " вещей" : " «" + pickUp.name() + "»");
-            case PLACE -> placeHome ? "поход домой" : "поход к метке «" + placeName + "»";
-            case GRIND -> grinding.jobName();
-            case COMPOST -> composting.jobName();
-            case CHORE -> chores.jobName();
-            case ERRAND -> owner.errand.jobName();
-        };
-    }
+    String taskDescription() { return CompanionWorkText.taskDescription(this); }
+    String jobName() { return CompanionWorkText.jobName(this); }
     /** Job and phase in short, for the GameTest observer. */
     String watchPhase() { return job == null ? "" : job + "/" + phase; }
     String diagnosticState() {
@@ -516,6 +468,56 @@ public final class CompanionWork {
         return start(action, item, count, "near_player");
     }
 
+    CompanionActionResult guideLandmark(LandmarkMemory.Entry landmark) {
+        if (landmark == null || !owner.level().dimension().location().toString().equals(landmark.dimension()))
+            return CompanionActionResult.blocked("Я здесь такого места не помню.");
+        if (owner.hasActiveWorkOrder() || owner.fighting() || owner.isSelfRescuing() || owner.hasPendingLoot())
+            return CompanionActionResult.blocked("Сейчас я занят. Покажу, когда освобожусь.");
+        owner.setFollowing(false);
+        owner.travel().reset();
+        guide = new CompanionLandmarkGuide(this, landmark);
+        job = Job.GUIDE;
+        phase = Phase.GUIDE;
+        taskId++;
+        deadline = owner.level().getGameTime() + 20L * CompanionCourse.LIMIT_SECONDS;
+        String answer = "Пойдём, покажу " + landmark.label() + ".";
+        owner.workStatus(answer);
+        return CompanionActionResult.accepted(answer);
+    }
+
+    CompanionActionResult surveyTerrain(String topic) {
+        if (owner.hasActiveWorkOrder() || owner.fighting() || owner.isSelfRescuing() || owner.hasPendingLoot())
+            return CompanionActionResult.ok(dev.aicompanion.terrain.TerrainSurvey.glance(owner, topic));
+        survey = new dev.aicompanion.terrain.TerrainSurvey(owner, topic);
+        job = Job.SURVEY;
+        phase = Phase.SURVEY;
+        taskId++;
+        deadline = owner.level().getGameTime() + 120;
+        owner.getNavigation().stop();
+        owner.syncWorkState();
+        return CompanionActionResult.accepted("Сейчас осмотрюсь.");
+    }
+
+    CompanionActionResult beginCourse(String item, int count) {
+        var refusal = course.begin(item, count);
+        if (refusal != null) return refusal;
+        job = Job.COURSE;
+        phase = Phase.COURSE;
+        deadline = owner.level().getGameTime() + 20L * (CompanionCourse.LIMIT_SECONDS + 60);
+        return null;
+    }
+
+    void beginPetSearchInHabitat(ServerLevel level) {
+        course.cancel();
+        route.stop();
+        owner.travel().reset();
+        resetTarget();
+        job = Job.PET;
+        phase = Phase.PET;
+        deadline = level.getGameTime() + 20L * 600;
+        activePet.beginHabitatSearch(level);
+    }
+
     public CompanionActionResult start(String action, String item, int count, String location) {
         cancel();
         if (!(owner.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Для работы нужен загруженный мир.");
@@ -526,6 +528,14 @@ public final class CompanionWork {
         if (!insideHouse && chests.kind == null && !"near_player".equals(location)) return CompanionActionResult.failed("Неизвестное место выполнения.");
         if (insideHouse && !house.interiorAvailable(level)) return CompanionActionResult.blocked("Не могу подтвердить, где сейчас наш дом. Снаружи вместо этого ставить не буду.");
         switch (action) {
+            case "tame_cat", "find_cat", "sit_cat", "follow_cat", "tame_dog", "find_dog", "sit_dog", "follow_dog",
+                 "tame_parrot", "find_parrot", "sit_parrot", "follow_parrot" -> {
+                var pet = pet(CompanionPet.byId(action.substring(action.indexOf('_') + 1)));
+                var immediate = pet.begin(level, action, item, count);
+                if (immediate != null) return immediate;
+                activePet = pet;
+                job = Job.PET; phase = Phase.PET;
+            }
             case "gather_stone" -> { job = Job.STONE; phase = Phase.PICKAXE; wantedStone = count; }
             case "gather_dirt" -> { job = Job.DIRT; phase = Phase.SHOVEL; ground = CompanionGround.SOIL; }
             case "gather_loose" -> {
@@ -554,7 +564,7 @@ public final class CompanionWork {
                 job = Job.PLACE_CHEST; phase = Phase.STORE;
             }
             case "come" -> { job = Job.COME; phase = Phase.RETURN; }
-            case "walk_heading" -> { CompanionActionResult refusal = course.begin(item, count); if (refusal != null) return refusal; job = Job.COURSE; phase = Phase.COURSE; }
+            case "walk_heading" -> { var refusal = beginCourse(item, count); if (refusal != null) return refusal; }
             case "fill_bucket" -> { CompanionActionResult refusal = owner.waterFill.begin(count, CompanionEvents.goalDispatching()); if (refusal != null) return refusal; job = Job.WATER; phase = Phase.WATER; }
             case "gather_block" -> { CompanionActionResult refusal = picking.begin(item, count); if (refusal != null) return refusal; job = Job.BLOCK; phase = Phase.BLOCK; }
             case "mine_obsidian" -> { CompanionActionResult refusal = obsidian.begin(count); if (refusal != null) return refusal; job = Job.OBSIDIAN; phase = Phase.OBSIDIAN; }
@@ -664,7 +674,7 @@ public final class CompanionWork {
             case "pick_up_nearby" -> {
                 pickUp = CompanionPickUp.of(item);
                 if (pickUp == null) return CompanionActionResult.failed("Не понял, что подобрать: «" + item + "».");
-                job = Job.PICK_UP; phase = Phase.PICKUP;
+                job = Job.PICK_UP; phase = Phase.PICKUP; if (owner.level() instanceof ServerLevel here) CompanionPickUp.leave(here, owner.blockPosition(), owner.pickUpRadius(), pickUp); // «всё, кроме …»
             }
             // «Иди к колодцу»: the marker is found again here, so a stale name in a plan is answered honestly. «Дом» with
             // no marker of that name is the home he knows, as the trip of a store order walks to it.
@@ -687,7 +697,7 @@ public final class CompanionWork {
         if (insideHouse) placementAnchor = house.interiorAnchor();
         placementMoving = false;
         placedChests.clear();
-        orderProgressPosition = owner.position(); orderProgressTime = level.getGameTime(); comeFailedAt = null; huntTargets.clear(); huntDead.clear(); huntKills = 0;
+        orderProgressPosition = owner.position(); orderProgressTime = level.getGameTime(); comeBack.forget(); huntTargets.clear(); huntDead.clear(); huntKills = 0;
         if (job == Job.HUNT && phase != Phase.DROPS) {
             for (var monster : level.getEntitiesOfClass(net.minecraft.world.entity.Mob.class,
                     new AABB(placementAnchor).inflate(18), monster -> CompanionCombat.hostile(monster) && monster.isAlive() && monster.distanceToSqr(placementAnchor.getCenter()) <= 18 * 18
@@ -701,7 +711,7 @@ public final class CompanionWork {
         stoneCollectedBefore = owner.collectedStone(); lastHarvestStand = null;
         // Gathering wood, finishing its crown, collecting drops, returning and crafting are
         // real prerequisite stages. A single three-minute budget used to expire before mining began.
-        deadline = level.getGameTime() + 20 * (job == Job.COURSE ? CompanionCourse.LIMIT_SECONDS + 60 : job == Job.CHORE && chores.fishes() ? CompanionFishing.LIMIT_SECONDS + 60 : job == Job.SCOUT ? CompanionScouting.WORK_SECONDS : job == Job.TRADE ? CompanionTrading.WORK_SECONDS : 600);
+        if (job != Job.COURSE) deadline = level.getGameTime() + 20L * (job == Job.CHORE && chores.fishes() ? CompanionFishing.LIMIT_SECONDS + 60 : job == Job.SCOUT ? CompanionScouting.WORK_SECONDS : job == Job.TRADE ? CompanionTrading.WORK_SECONDS : 600);
         rejected.clear(); triedChests.clear(); stoneCandidates = null; stoneLootRetried = false;
         lots.clear(); triedFurnaces.clear(); heading = furnaceRoom = null; ownFurnaceFailed = furnacesShort = smokerTried = false; furnacesPlaced = 0; benchClimbs = 0;
         stoneSearch = null; quarrySoil.clear(); quarryTried = selectingStone = false; exitCell = null; stairs = 0;
@@ -746,19 +756,24 @@ public final class CompanionWork {
         owner.allowNewBench(false); benchHere = false; packTarget = null;
         if (job != null && completedId != taskId) {
             completedId = taskId;
-            completedResult = CompanionActionResult.cancelled(job == Job.HOUSE && templateJob && templateHouse.takeReplaced() ? CompanionBuildPlacement.DROPPED : "Работа прервана. Уже полученные вещи сохранены." + sorting.stopNote(job == Job.SORT) + furnaces.furnaceNote() + houseNote());
+            completedResult = CompanionActionResult.cancelled(job == Job.GUIDE ? "Остановился по дороге к знакомому месту." : job == Job.HOUSE && templateJob && templateHouse.takeReplaced() ? CompanionBuildPlacement.DROPPED : "Работа прервана. Уже полученные вещи сохранены." + sorting.stopNote(job == Job.SORT) + furnaces.furnaceNote() + houseNote());
             owner.noteDeed("Прервал: " + jobName() + " — остановили или дали другое дело." + furnaces.furnaceNote(), false);
         }
+        if (survey != null) { owner.getNavigation().stop(); survey = null; }
+        if (guide != null) { route.stop(); owner.travel().reset(); guide = null; }
         lots.clear(); heading = null; chests.kind = null;
         // A tool taken for a swing is the work's too: the hand it replaced comes back before the work ends, never into the next one.
         owner.putToolAway();
         items.putHeldStackBack();
+        releaseHeld();
         clearCracks();
         closeChest();
         if (job == Job.ERRAND) owner.errand.cancelled();
         house.cancel(); templateHouse.cancel(); route.abandon(); pen.cancel(); breeding.cancel(); scouting.cancel(); trading.cancel(); course.cancel(); trip.reset(); obsidian.cancel(); portal.cancel(); cobbleGen.cancel(); golem.cancel();
         // The chest he set down served this order only: a later store order goes the old way again.
         if (job == Job.STORE) owner.lastPlacedPosition = null;
+        if (activePet != null) activePet.cancel();
+        activePet = null;
         job = null; phase = null; afterWood = null;
         target = null; path = null; stoneCandidates = null; placeGoal = null; placeName = ""; placeHome = false;
         cooldown = 0;
@@ -773,8 +788,9 @@ public final class CompanionWork {
 
     public void tick() {
         if (!(owner.level() instanceof ServerLevel level) || job == null) return;
-        if (level.getGameTime() > deadline) { finish(CompanionActionResult.timeout("Не успел закончить работу. Остановился, вещи у меня.")); return; }
-        if (stalled()) return;
+        if (level.getGameTime() > deadline) { finish(CompanionActionResult.timeout(job == Job.GUIDE ?
+                "Не успел довести тебя до знакомого места. Остановился." : "Не успел закончить работу. Остановился, вещи у меня.")); return; }
+        if (phase != Phase.SURVEY && phase != Phase.GUIDE && stalled()) return;
         if (job != Job.HOUSE && owner.actionAnimation() != 0) return;
         // Breaking does not wait for the last drop: the next block goes while the drop is still on its way to him, and the
         // pickup settles after the breaking. Waiting per block is what made a crown one block at a time.
@@ -782,13 +798,13 @@ public final class CompanionWork {
         // down and the drop come first, never the pending drop gating the work out of finishMine (the owner, 27.11: the ore
         // order stood on its column for five minutes because no cleanup was ever asked). The drops of the blocks still to come
         // are waited for as before: the cobblestone of the way is what plugs the spring of the next ore.
-        if (job != Job.BLOCK && job != Job.COME && job != Job.COURSE && job != Job.HUNT && job != Job.PICK_UP && job != Job.PLACE
+        if (job != Job.BLOCK && job != Job.COME && job != Job.COURSE && job != Job.GUIDE && job != Job.HUNT && job != Job.PICK_UP && job != Job.PLACE
                 && job != Job.OBSIDIAN && !orePromiseMet()
                 && owner.hasPendingLoot() && !owner.loot.waitsBelowHisColumn() && !(job == Job.HOUSE && templateJob && templateHouse.scaffolding())) return;
         if (owner.getOwnerId() == null || level.getServer().getPlayerList().getPlayer(owner.getOwnerId()) == null) {
             finish(false, "Потерял связь с игроком, остановился."); return;
         }
-        if (cooldown > 0) { cooldown--; return; }
+        if (phase != Phase.SURVEY && cooldown > 0) { cooldown--; return; }
         if (phase == Phase.WOOD) {
             // Goal selection and work run in the same server tick. Do not restart gathering before
             // the gathering goal has actually started (or while it is temporarily yielding).
@@ -797,8 +813,8 @@ public final class CompanionWork {
                 // A full bag is said as it is, not as «no wood».
                 if (CompanionEntity.FULL_BAG_FOR_LOGS.equals(owner.getLastTaskResult())) { finish(false, CompanionEntity.FULL_BAG_FOR_LOGS); return; }
                 if (job == Job.DIRT) { crafting.startDigging(); return; }
-                if (job == Job.WOOD && CompanionWoodKind.of(requestedItem) != null) { finish(false, owner.getLastTaskResult()); return; }
-                finish(false, "Не нашёл доступного дерева для подготовки. Вещи сохранил." + (job == Job.HOUSE ? " Начатый дом можно достроить позже." : "")); return;
+                if (job == Job.WOOD && CompanionWoodKind.of(requestedItem) != null) { finish(owner.gathering.woodEnd(true, owner.getLastTaskResult())); return; }
+                finish(owner.gathering.woodEnd(job == Job.WOOD, (owner.gathering.noTreeFound ? "Не нашёл доступного дерева для подготовки. Вещи сохранил." : "Не хватило доступного дерева для подготовки. Вещи сохранил.") + (job == Job.HOUSE ? " Начатый дом можно достроить позже." : ""))); return;
             }
             phase = afterWood; resetTarget();
         }
@@ -815,7 +831,7 @@ public final class CompanionWork {
             case BUILD -> buildHouse(level);
             case SHOVEL -> crafting.prepareShovel();
             case DIGGING -> { if (job == Job.HOUSE) { phase = Phase.BUILD; resetTarget(); } else finish(owner.didLastTaskSucceed(), owner.getLastTaskResult()); }
-            case RETURN -> returnToPlayer(level);
+            case RETURN -> comeBack.tick(level);
             case FIGHT -> hunting.fightNearby(level);
             case CHASE -> hunting.hunt(level);
             case DROPS -> drops.tick(level);
@@ -830,7 +846,12 @@ public final class CompanionWork {
             case SCOUT -> scouting.tick(level);
             case TRADE -> trading.tick(level);
             case FARM -> farming.tick(level);
+            case SURVEY -> {
+                String answer = survey.tick(owner);
+                if (answer != null) finish(true, answer);
+            }
             case COURSE -> course.tick(level);
+            case GUIDE -> guide.tick(level);
             case WATER -> owner.waterFill.orderTick(level);
             case OBSIDIAN -> obsidian.tick(level);
             case BLOCK -> picking.tick(level);
@@ -843,6 +864,7 @@ public final class CompanionWork {
             case COMPOST -> composting.tick(level);
             case CHORE -> chores.tick(level);
             case ERRAND -> owner.errand.step(level);
+            case PET -> activePet.tick(level);
             case WOOD -> { }
         }
     }
@@ -851,8 +873,8 @@ public final class CompanionWork {
      * True when the work was stopped: a minute and a half on the same spot (within two blocks), with the same bag and
      * counters and no new status. Waiting at a loaded furnace is checked by its product instead.
      */
-    private boolean stalled() {
-        if (phase == Phase.COOK || awaitingHouse() != null || building() != null && building().waitingForRoom()) { stallTicks = 0; return false; }
+    boolean stalled() {
+        if (phase == Phase.COOK || phase == Phase.PET || awaitingHouse() != null || building() != null && building().waitingForRoom()) { stallTicks = 0; return false; }
         // Coming down his own column, walking to the drop of what he just broke, or holding that column standing under the drop it
         // was the way to, is not standing still (PATH7: the order stood on top of its column for ninety seconds waiting for a drop
         // that lay below).
@@ -895,39 +917,14 @@ public final class CompanionWork {
         return level.getGameTime() - orderProgressTime > limit;
     }
 
-    private void returnToPlayer(ServerLevel level) {
-        var player = owner.getOwnerPlayer();
-        if (player == null) { finish(false, "Не вижу тебя в этом измерении."); return; }
-        owner.movementIntent(player.blockPosition());
-        if (owner.distanceToSqr(player) <= 9 && Math.abs(owner.getY() - player.getY()) <= 1.25 && owner.hasLineOfSight(player) && (owner.onGround() || !owner.onClimbable())) {
-            finish(true, "Я рядом."); return;
-        }
-        // The player in the dragon's breath: to its edge, and the order waits there; no way while it lasts is no stall.
-        BlockPos meet = owner.dragonBreath.meetingPoint(player, true);
-        if (meet == null || !meet.equals(player.blockPosition()) || owner.dragonBreath.onTheWay(player.blockPosition())) orderProgressPosition = null;
-        if (meet == null) { owner.getNavigation().stop(); return; }
-        if (!meet.equals(player.blockPosition())) { if (route.follow(meet, 3) != CompanionTravel.Step.WALKING) owner.travel().reset(); return; }
-        owner.workStatus("Пытаюсь добраться до игрока.");
-        // In legs round walls and ridges, as far as the way goes (CompanionTravel): the player may be near by the straight line and
-        // far by the way. Legs that came to nothing are not started again from the same spot at once: the self-rescue takes him over
-        // there (down a cave: up through the rock), and the order ends only when he stands still (stalled). Five seconds on, they
-        // are tried again even from the same spot: the rescue may have opened the way a few blocks off, and he must walk it.
-        if (comeFailedAt == null || level.getGameTime() - comeFailedTime >= 100 || !comeFailedAt.closerThan(owner.blockPosition(), 3)) {
-            var step = route.follow(player.blockPosition(), 2);
-            if (step == CompanionTravel.Step.WALKING) { if (!owner.travel().searchOnly()) orderProgressPosition = null; return; }
-            owner.travel().reset();
-            if (step == CompanionTravel.Step.FAILED) { comeFailedAt = owner.blockPosition(); comeFailedTime = level.getGameTime(); }
-        }
-        if (orderHasStalled(level, 240)) {
-            // No way at all is told as such; «застрял» is for a way that exists and that he could not get on along.
-            Boolean none = route.noWay(player.blockPosition());
-            if (none == null) return;
-            if (none) { finish(false, "Не могу к тебе пройти."); return; }
-            finish(false, "Не смог добраться до тебя. Застрял на " + owner.blockPosition().toShortString() + ". Иду за тобой дальше, как получится."); return;
-        }
+    /** Also lets the stone a save held back mid-column (CompanionMineSite#hold) fall: no column is being dug after a load, and he is there to pick it up. */
+    void watchChase() {
+        hunting.watchChase(); drops.watch();
+        if (mine.loadedHeld()) releaseHeld();
     }
 
-    void watchChase() { hunting.watchChase(); drops.watch(); }
+    /** The stone held back mid-column falls where it was cut: the work that was cutting it is over (cancelled, his death, a hand-over done). */
+    private void releaseHeld() { for (CompanionMineSite.Held drop : mine.takeHeld()) owner.dropHarvest(drop.pos(), drop.drops()); }
     static final java.util.UUID NO_ID = new java.util.UUID(0, 0);
 
     /**
@@ -1013,8 +1010,40 @@ public final class CompanionWork {
 
     boolean approach(ServerLevel level, BlockPos block, double reach) { return approach(level, block, reach, cell -> true); }
 
+    boolean approachPlace(ServerLevel level, BlockPos pos, double reach) {
+        return approach(level, pos, reach, cell -> true, eye -> true);
+    }
+
+    boolean approachLooseItem(ServerLevel level, ItemEntity item) {
+        var center = Vec3.atBottomCenterOf(owner.blockPosition());
+        if (owner.loot.touches(center, item)) {
+            owner.getNavigation().stop();
+            owner.getMoveControl().setWantedPosition(center.x, center.y, center.z, .5);
+            return true;
+        }
+        return approach(level, item.blockPosition(), 2, cell -> true,
+                eye -> owner.loot.touches(eye.subtract(0, owner.getEyeHeight(), 0), item));
+    }
+
+    boolean approachPet(ServerLevel level, TamableAnimal pet, double reach) {
+        // A wild parrot can fly down to bait. Look for a visible opening on the ground around its perch.
+        boolean airborneLure = reach > 4 && pet instanceof net.minecraft.world.entity.animal.Parrot && !pet.isTame();
+        return approach(level, pet.blockPosition(), reach, cell -> true, eye -> level.clip(new ClipContext(eye,
+                pet.getEyePosition(), ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, owner)).getType() == HitResult.Type.MISS,
+                airborneLure ? 9 : 2, airborneLure ? 3 : 1);
+    }
+
     /** The cells he may stand on are chosen by the caller too: outside an End portal's ring, say. */
-    boolean approach(ServerLevel level, BlockPos block, double reach, java.util.function.Predicate<BlockPos> stands) {
+    boolean approach(ServerLevel level, BlockPos block, double reach, Predicate<BlockPos> stands) {
+        return approach(level, block, reach, stands, eye -> items.visibleFrom(level, eye, block));
+    }
+
+    private boolean approach(ServerLevel level, BlockPos block, double reach, Predicate<BlockPos> stands, Predicate<Vec3> visibleFrom) {
+        return approach(level, block, reach, stands, visibleFrom, 2, 1);
+    }
+
+    private boolean approach(ServerLevel level, BlockPos block, double reach, Predicate<BlockPos> stands, Predicate<Vec3> visibleFrom,
+                             int radius, int horizontalStep) {
         double distance = owner.distanceToSqr(block.getCenter());
         if (distance + 0.05D < bestDistance) { bestDistance = distance; lastProgressTick = level.getGameTime(); }
         // A path up a slope or around a hill can lead away from the target for a while. Walking is progress too.
@@ -1022,13 +1051,13 @@ public final class CompanionWork {
         if (level.getGameTime() - lastProgressTick > 80) return false;
         if (path == null || owner.getNavigation().isDone() || owner.getNavigation().isStuck()) {
             Set<BlockPos> feet = new HashSet<>();
-            for (int dy = -2; dy <= 2; dy++) for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
+            for (int dy = -radius; dy <= radius; dy++) for (int dx = -radius; dx <= radius; dx += horizontalStep) for (int dz = -radius; dz <= radius; dz += horizontalStep) {
                 BlockPos pos = block.offset(dx, dy, dz);
                 if (!level.hasChunkAt(pos) || pos.getCenter().distanceToSqr(block.getCenter()) > reach * reach || !stands.test(pos)) continue;
                 if (CompanionLava.at(level, pos) || !level.getFluidState(pos.above()).isEmpty()) continue;
                 if (!level.getBlockState(pos.below()).isFaceSturdy(level, pos.below(), Direction.UP)) continue;
                 if (!level.getBlockState(pos).getCollisionShape(level, pos).isEmpty() || !level.getBlockState(pos.above()).getCollisionShape(level, pos.above()).isEmpty()) continue;
-                if (!items.visibleFrom(level, Vec3.atBottomCenterOf(pos).add(0, owner.getEyeHeight(), 0), block)) continue;
+                if (!visibleFrom.test(Vec3.atBottomCenterOf(pos).add(0, owner.getEyeHeight(), 0))) continue;
                 feet.add(pos);
             }
             var found = route.cells(feet, 0);
@@ -1095,16 +1124,18 @@ public final class CompanionWork {
         // A round of getting what a building lacks that came to nothing is told to the player at the end, with the rest: back to the building.
         if (job == Job.HOUSE && templateJob && templateHouse.gathering() && CompanionHouseOrders.shortRound(phase, result)) { afterStone = null; phase = Phase.BUILD; resetTarget(); return; }
         owner.goals().skillCompleted(result.evidence());
+        boolean terrainOrder = job == Job.SURVEY || job == Job.GUIDE;
+        boolean waitingForHabitat = activePet != null && activePet.waitingForHabitat();
         // A travelling bench is not left behind: pick it up first, then report the original result.
-        if (phase != Phase.PACK && job != null && job != Job.COME && job != Job.COURSE && job != Job.HUNT && job != Job.PLACE) {
+        if (!terrainOrder && !waitingForHabitat && phase != Phase.PACK && job != null && job != Job.COME && job != Job.COURSE && job != Job.HUNT && job != Job.PLACE) {
             BlockPos bench = owner.takeFieldBenchNear(16);
             if (bench != null) { packTarget = bench; packedBenchBefore = items.countCarried(Items.CRAFTING_TABLE); packedBenchFrom = null; packResult = result; phase = Phase.PACK; resetTarget(); return; }
         }
         boolean success = result.success(); String message = result.message();
         owner.allowNewBench(false);
-        boolean returning = job == Job.COME || job == Job.COURSE;
+        boolean returning = job == Job.COME || job == Job.COURSE || job == Job.GUIDE;
         if (!success && job == Job.STORE && transferred > 0) message = "Сложил " + transferred + " предметов. " + message + " Остальное осталось в моей сумке.";
-        message += (job == Job.SORT ? sorting.endNote() : "") + furnaces.furnaceNote() + trip.note() + houseNote();
+        if (!terrainOrder) message += (job == Job.SORT ? sorting.endNote() : "") + furnaces.furnaceNote() + trip.note() + houseNote();
         completedId = taskId;
         completedResult = new CompanionActionResult(success, message, result.status(), result.evidence());
         boolean staying = job == Job.PLACE;
@@ -1112,7 +1143,7 @@ public final class CompanionWork {
         // «Иди ко мне» that did not get there leaves him following, still trying, not standing where he got stuck (marathon 23.10); so does the end of a walk he led (#71).
         // A marker is a place he was sent to: he stays there until the next order, not walks back to the player at once.
         if (staying) owner.setFollowing(false);
-        else if (returning) owner.setFollowing(true); else owner.finishFollowing();
+        else if (returning) owner.setFollowing(true); else if (!terrainOrder && !waitingForHabitat) owner.finishFollowing();
         owner.recordActionResult(completedResult);
         owner.syncWorkState();
     }

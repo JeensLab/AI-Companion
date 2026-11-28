@@ -94,6 +94,119 @@ public final class CompanionOreTests {
         });
     }
 
+    /**
+     * The coal lies on the wall of a pit three deep: he drops into it, mines it, and cannot walk out. The order must not end with him
+     * in the pit: he digs a stair up and reports from the surface.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void anOreOrderLeavesThePitItEndedIn(GameTestHelper h) {
+        int top = 7;
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
+        for (int x = 8; x <= 24; x++) for (int z = 8; z <= 24; z++) for (int y = 1; y < top; y++) h.setBlock(new BlockPos(x, y, z), Blocks.STONE);
+        for (int y = 4; y < top; y++) h.setBlock(new BlockPos(20, y, 20), Blocks.AIR);
+        h.setBlock(new BlockPos(21, 4, 20), Blocks.COAL_ORE);
+        CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), 16, top, 16);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        bind(h, companion);
+        h.assertTrue(companion.startWork("mine_ore", "coal", 1).success(), "Ore order not accepted");
+        boolean[] started = {false};
+        h.onEachTick(() -> {
+            if (companion.hasActiveWorkOrder()) { started[0] = true; return; }
+            if (!started[0]) return;
+            int y = companion.blockPosition().getY() - h.absolutePos(BlockPos.ZERO).getY();
+            h.assertTrue(count(companion, Items.COAL) >= 1, "No coal | " + report(companion));
+            h.assertTrue(y >= top, "The order ended in the pit, at " + y + " | " + report(companion));
+            h.succeed();
+        });
+    }
+
+    /**
+     * The same pit, but he is in the air when the order first asks whether a walk leads out of it (he has fallen from the ore under his
+     * feet, and the drop is picked up mid-fall): no search runs in the air, and that is no answer of «there is a way out». He is held
+     * hovering for a while once he has the coal, then let fall; the order must still dig him out.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void anOreOrderAirborneWhenItAsksForTheWayOutStillLeavesThePit(GameTestHelper h) {
+        int top = 7;
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
+        for (int x = 8; x <= 24; x++) for (int z = 8; z <= 24; z++) for (int y = 1; y < top; y++) h.setBlock(new BlockPos(x, y, z), Blocks.STONE);
+        for (int y = 4; y < top; y++) h.setBlock(new BlockPos(20, y, 20), Blocks.AIR);
+        h.setBlock(new BlockPos(21, 4, 20), Blocks.COAL_ORE);
+        CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), 16, top, 16);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        bind(h, companion);
+        h.assertTrue(companion.startWork("mine_ore", "coal", 1).success(), "Ore order not accepted");
+        boolean[] started = {false};
+        int[] hovered = {0};
+        h.onEachTick(() -> {
+            if (companion.hasActiveWorkOrder()) {
+                started[0] = true;
+                boolean hold = count(companion, Items.COAL) >= 1 && hovered[0] < 60 && companion.blockPosition().getY() - h.absolutePos(BlockPos.ZERO).getY() < top - 1;
+                if (hold && hovered[0] == 0) companion.setPos(companion.getX(), companion.getY() + .6, companion.getZ());
+                if (hold) hovered[0]++;
+                companion.setNoGravity(hold);
+                return;
+            }
+            companion.setNoGravity(false);
+            if (!started[0]) return;
+            int y = companion.blockPosition().getY() - h.absolutePos(BlockPos.ZERO).getY();
+            h.assertTrue(hovered[0] > 0, "He was never held in the air: the test did not run | " + report(companion));
+            h.assertTrue(y >= top, "The order ended in the pit, at " + y + " | " + report(companion));
+            h.succeed();
+        });
+    }
+
+    /**
+     * The tunnel to a coal in sight on its far side (a pocket of air behind it) passes another coal; that one fills the order of one, and
+     * the rest of the tunnel is no longer his to dig: the ore he was sent to is left standing.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void aVeinOnTheTunnelThatFillsTheOrderEndsTheTunnel(GameTestHelper h) {
+        CompanionEntity companion = buried(h);
+        BlockPos far = new BlockPos(16, 3, 24), onTheWay = new BlockPos(16, 4, 22), farEnd = new BlockPos(16, 3, 23);
+        h.setBlock(far, Blocks.COAL_ORE); h.setBlock(new BlockPos(16, 3, 25), Blocks.AIR);
+        h.setBlock(onTheWay, Blocks.COAL_ORE);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        h.assertTrue(companion.startWork("mine_ore", "coal", 1).success(), "Ore order not accepted");
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(count(companion, Items.COAL) == 1 && h.getBlockState(onTheWay).isAir(), "Not the coal on the way: " + report(companion));
+            h.assertTrue(!h.getBlockState(farEnd).isAir() && h.getBlockState(far).is(Blocks.COAL_ORE), "He dug on after the order was filled: " + report(companion));
+        });
+    }
+
+    /**
+     * Coal in a cave he walked down to by a ramp: that is no pit. He takes it where he stands, cuts no stair up through the rock and
+     * does not walk back to where the order began (and never says he is not out yet).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void coalInACaveDownARampIsMinedWhereHeStands(GameTestHelper h) {
+        int top = 7;
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
+        for (int x = 8; x <= 28; x++) for (int z = 8; z <= 28; z++) for (int y = 1; y < top; y++) h.setBlock(new BlockPos(x, y, z), Blocks.STONE);
+        for (int k = 0; k <= 4; k++) for (int y = 6 - k; y <= 8 - k; y++) h.setBlock(new BlockPos(13 + k, y, 20), Blocks.AIR);
+        for (int x = 18; x <= 24; x++) for (int z = 18; z <= 22; z++) for (int y = 2; y <= 4; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        BlockPos coal = new BlockPos(25, 2, 20);
+        h.setBlock(coal, Blocks.COAL_ORE);
+        CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), 16, top, 16);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        bind(h, companion);
+        // The player stays far from the ramp and the cave: no walk back is cut short by his coming near.
+        BlockPos far = h.absolutePos(new BlockPos(2, top, 2));
+        h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId()).teleportTo(far.getX() + .5, far.getY(), far.getZ() + .5);
+        h.assertTrue(companion.startWork("mine_ore", "coal", 1).success(), "Ore order not accepted");
+        boolean[] started = {false};
+        h.onEachTick(() -> {
+            if (companion.hasActiveWorkOrder()) { started[0] = true; return; }
+            if (!started[0]) return;
+            int y = companion.blockPosition().getY() - h.absolutePos(BlockPos.ZERO).getY();
+            h.assertTrue(count(companion, Items.COAL) >= 1 && h.getBlockState(coal).isAir(), "No coal | " + report(companion));
+            h.assertTrue(y <= top - 3, "He walked back up out of the cave, at " + y + " | " + report(companion));
+            h.assertTrue(!companion.getLastTaskResult().contains("выбрался"), "He says he is not out yet | " + report(companion));
+            h.succeed();
+        });
+    }
+
     /** Lava right behind the ore: it is not dug, the reason is said, nothing spills. */
     @GameTest(template = "tall_tree", timeoutTicks = 900)
     public static void oreNextToLavaIsLeftAlone(GameTestHelper h) {

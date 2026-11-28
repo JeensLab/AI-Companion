@@ -83,7 +83,9 @@ public final class CompanionDialogue {
             case "equip_item" -> "Сейчас возьму.";
             case "unequip_item" -> "Ага, уберу.";
             case "place_block" -> "Поставлю вот тут.";
-            case "wander" -> "Ладно, осмотрюсь. Я недалеко.";
+            case "survey_terrain" -> "Осмотрюсь.";
+            case "guide_landmark" -> "Проверю, смогу ли провести.";
+            case "wander" -> "Ладно, прогуляюсь. Я недалеко.";
             case "campfire_song" -> switch (actions.getFirst().item()) {
                 // The tune itself is picked on the server, and what really started is said when the step returns, by the recording's
                 // own name: a line promised here would be the very lie this used to tell («сыграю другую» over the same recording).
@@ -238,12 +240,15 @@ public final class CompanionDialogue {
             case "remember_place" -> "запомнить место «" + action.item() + "»";
             case "go_to_place" -> "дойти до метки «" + action.item() + "»";
             case "enter_portal" -> "зайти в портал";
+            case "survey_terrain" -> "осмотреть местность";
+            case "recall_landmark" -> "вспомнить, где видел находку";
+            case "guide_landmark" -> "провести к знакомому месту";
             case "walk_heading" -> "провести тебя " + dev.aicompanion.entity.CompanionCourse.where(action.item());
             case "follow" -> "идти за тобой";
             case "wait" -> "подождать";
             case "protect" -> "прикрывать тебя";
             case "stop_protect" -> "закончить охрану";
-            case "wander" -> "осмотреться";
+            case "wander" -> "прогуляться";
             case "campfire_song" -> "сыграть на гитаре";
             case "pursue_goal" -> {
                 var book = dev.aicompanion.entity.CompanionPlaybooks.of(action.item(), action.count());
@@ -285,6 +290,10 @@ public final class CompanionDialogue {
     public static String itemName(String id) {
         // «Всё, что лежит» has no item of its own in the registry: its name is the word, not the raw id.
         if (dev.aicompanion.entity.CompanionPickUp.ANY_ITEM.equals(id)) return "вещи";
+        // «Всё, кроме …»: the things left lying are named as the game names them.
+        String allBut = dev.aicompanion.entity.CompanionPickUp.ANY_ITEM + dev.aicompanion.entity.CompanionPickUp.EXCEPT;
+        if (id.startsWith(allBut)) return "вещи, кроме " + java.util.Arrays.stream(id.substring(allBut.length()).split(","))
+                .map(CompanionDialogue::itemName).collect(java.util.stream.Collectors.joining(", "));
         // «Листва» is the family word of the orders until the world names the tree's own leaf block.
         if (dev.aicompanion.entity.CompanionLeaves.isFamily(id)) return "листва";
         // A kind («#minecraft:fences») is said by the player's own word for it: the member is not known before the world is.
@@ -306,6 +315,8 @@ public final class CompanionDialogue {
 
     private static String summarizeReport(List<PlannedAction> actions, String report) {
         if (report == null || report.isBlank()) return "";
+        if (actions.size() == 1 && java.util.Set.of("survey_terrain", "recall_landmark", "guide_landmark").contains(actions.getFirst().type()))
+            return report.replace("План остановлен: ", "").strip();
         // The guitar's answer is the server's own line, built from the recording that really started: it names that recording by
         // its mood number and its file name, and nothing else. Said as it is, not through the generic step summary.
         if (actions.stream().allMatch(action -> "campfire_song".equals(action.type()))) return speakable(report);
@@ -314,6 +325,8 @@ public final class CompanionDialogue {
         // The equip step of a plan is bookkeeping too: «Уже экипирован» answers a standalone order, not a plan that did other work.
         // With nothing else done than a part given up, the hand that took the tool is the only thing that happened: it is said.
         if (actions.size() > 1 && !onlyEquipmentHappened(report)) report = withoutEquipmentLines(report);
+        if (actions.size() == 1 && "pet_location".equals(actions.getFirst().type()))
+            return report.replace("План остановлен: ", "").strip();
         String skipped = "";
         int marker = report.lastIndexOf(SKIPPED_PREFIX);
         if (marker >= 0 && (marker == 0 || report.charAt(marker - 1) == '\n')) {
@@ -522,6 +535,8 @@ public final class CompanionDialogue {
             String failure = dev.aicompanion.CompanionFailureMessages.primary(last);
             // The End portal's eyes: how many he put in and how many are missing is the answer, not «не хватает материалов».
             if (actions.stream().anyMatch(action -> "open_end_portal".equals(action.type()))) return speakable(failure);
+            if (actions.size() == 1 && dev.aicompanion.entity.CompanionPet.forTamingAction(actions.getFirst().type()) != null)
+                return speakable(failure);
             // A pen or a breeding order says its own facts (what stands, who is inside, what is missing), not a general excuse.
             if (actions.stream().anyMatch(action -> "build_pen".equals(action.type()) || "breed_animals".equals(action.type()) || "scout_traders".equals(action.type()) || "trade_items".equals(action.type()))) return speakable(failure);
             String partial = partialGather(actions, failure);

@@ -61,13 +61,15 @@ public final class CompanionParkHold {
             case "build_golem" -> "iron".equals(step.item()) && produces(batch, Set.of(id("minecraft:iron_ingot"), id("minecraft:iron_block")));
             case "gather_stone" -> touches("stone", batch);
             case "gather_loose" -> touches(item, batch);
-            case "gather_dirt", "set_home", "follow", "wait", "come", "walk_heading", "protect", "stop_protect", "wander", "stop", "enter_portal", "collect_smelt", "campfire_song",
+            case "survey_terrain", "recall_landmark", "guide_landmark", "gather_dirt", "set_home", "follow", "wait", "come", "walk_heading", "protect", "stop_protect", "wander", "stop", "enter_portal", "collect_smelt", "campfire_song",
                  "take_items", "sort_chests", "build_house", "build_portal", "open_end_portal", "build_cobble_gen", "give_wood", "equip_item", "unequip_item", "hunt_mobs",
                  // Actions that never need a furnace product, so they do not wait for a parked batch: a place to walk to or a word
                  // to save, a crop taken by hand, a grindstone or a composter, a rod cast, the goal bookkeeping.
                  "harvest_crops", "farm_crops", "use_bone_meal", "pick_up", "build_pen", "breed_animals", "scout_traders", "trade_items", "pursue_goal", "autonomy",
                  "goal_status", "goal_cancel", "goal_defer", "goal_resume",
-                 "repair_item", "disenchant_item", "compost_items", "go_to_place", "remember_place", "fish" -> false;
+                 "repair_item", "disenchant_item", "compost_items", "go_to_place", "remember_place", "fish",
+                 "tame_cat", "cat_status", "find_cat", "sit_cat", "follow_cat", "tame_dog", "dog_status", "find_dog", "sit_dog", "follow_dog",
+                 "tame_parrot", "parrot_status", "find_parrot", "sit_parrot", "follow_parrot", "pet_location" -> false;
             default -> true;
         };
     }

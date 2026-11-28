@@ -190,7 +190,7 @@ final class CompanionBag {
         if (!(c.level() instanceof ServerLevel serverLevel)) return new CompanionObtain.Plan(List.of(), "Для этого нужен загруженный мир.");
         var ordered = ResourceLocation.tryParse(item == null ? "" : item.trim());
         net.minecraft.world.item.Item wanted0 = ordered == null ? null : BuiltInRegistries.ITEM.getOptional(ordered).orElse(null);
-        return CompanionObtain.plan(serverLevel, carriedForPlan(), c.hasCraftingTableNearby() || c.hasKnownCraftingTableWithin(16), item, count,
+        return CompanionObtain.plan(serverLevel, carriedForPlan(), c.hasCraftingTableNearby() || c.hasKnownCraftingTableWithin(16) || c.placement.seesCraftingTableWithin(16), item, count,
                 wanted -> wanted == net.minecraft.world.item.Items.COMPOSTER ? CompanionComposting.find(c, true) != null
                         : wanted == net.minecraft.world.item.Items.FISHING_ROD ? CompanionFishing.about(c, serverLevel)
                         : (wanted == net.minecraft.world.item.Items.OBSIDIAN && CompanionObsidian.liesAbout(c, serverLevel, c.work.portal::laid))

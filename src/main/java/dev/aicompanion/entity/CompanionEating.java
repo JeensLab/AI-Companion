@@ -26,12 +26,25 @@ final class CompanionEating {
         float missing = c.getMaxHealth() - c.getHealth();
         // Fed, out of a fight for ten seconds: slowly better, as a player with a full stomach.
         if (missing >= 1 && c.satiety > 0 && c.tickCount - c.lastHurtTick > 200 && c.tickCount % 80 == 0) { c.heal(1); c.satiety--; }
-        if (c.tickCount % 20 != 0 || missing < 4 && c.getHealth() > c.getMaxHealth() / 2) return;
-        if (c.getTarget() != null && c.getTarget().isAlive() && c.distanceToSqr(c.getTarget()) < 16 && c.getHealth() > 6) return;
+        boolean urgent = needsMealNow(serverLevel);
+        if (!urgent && (c.tickCount % 20 != 0 || missing < 4 && c.getHealth() > c.getMaxHealth() / 2)) return;
+        if (!urgent && c.getTarget() != null && c.getTarget().isAlive() && c.distanceToSqr(c.getTarget()) < 16 && c.getHealth() > 6) return;
         ItemStack food = bestFood(missing);
         if (food.isEmpty()) return;
         c.eating = food.copyWithCount(1); c.eatTicks = CompanionEntity.EAT_TICKS;
         c.animateAction(4, c.blockPosition(), c.eating);
+    }
+
+    /** On an order or a goal he eats at this health whoever is near. */
+    private static final float ORDER_EATS_BELOW = 10;
+
+    /**
+     * The meal that does not wait: a loaf is five health in 32 ticks, as much as a zombie takes from him in that time, and the sword hand
+     * is free while he eats, so a foe at his side is no reason to starve on a long order. Neither the foe's distance nor the twenty-tick
+     * beat holds it, and the next meal starts the tick this one ends, while the wound is below the line.
+     */
+    private boolean needsMealNow(ServerLevel level) {
+        return c.getHealth() <= ORDER_EATS_BELOW && (c.work.isActive() || CompanionAgenda.goal(level.getServer(), c.ownerId) != null);
     }
 
     private void finishEating() {
@@ -68,6 +81,7 @@ final class CompanionEating {
         for (ItemStack stack : c.companionInventory) {
             var food = stack.get(net.minecraft.core.component.DataComponents.FOOD);
             if (stack.isEmpty() || food == null || !playersToo && c.carriedForPlayer(stack) || stack.is(net.minecraft.world.item.Items.CHORUS_FRUIT) || stack.is(net.minecraft.world.item.Items.SUSPICIOUS_STEW)) continue;
+            if (c.work.activePet != null && c.getHealth() > c.getMaxHealth() / 2 && c.work.activePet.kind.accepts(stack)) continue;
             if (food.effects().stream().anyMatch(effect -> !effect.effect().getEffect().value().isBeneficial())) continue;
             int score = Math.round(Math.min(missing, food.nutrition()) * 10 + food.saturation());
             if (score > bestScore) { bestScore = score; best = stack; }

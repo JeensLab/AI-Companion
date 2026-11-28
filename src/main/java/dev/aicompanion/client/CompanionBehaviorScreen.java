@@ -12,7 +12,6 @@ final class CompanionBehaviorScreen extends Screen {
     CompanionBehaviorScreen(Screen parent) { super(Component.literal("Поведение компаньона")); this.parent = parent; }
     @Override protected void init() {
         int left = width / 2 - 150, top = CompanionSwitchLayout.top(height);
-        // The only row here that is not a gameplay switch: the model's own settings live on their own screen now.
         addRenderableWidget(Button.builder(Component.literal(CompanionSwitchLayout.MODEL_ENTRY_LABEL), b -> minecraft.setScreen(new CompanionModelScreen(this)))
                 .bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                         "Размышление модели, температура и top_p: что и как он отвечает."))).build());
@@ -53,8 +52,8 @@ final class CompanionBehaviorScreen extends Screen {
             b.setMessage(windowsVoiceLabel());
         }).bounds(left, top + 120, 300, 20).build());
         windowsVoice.setTooltip(Tooltip.create(Component.literal(
-                MacOsVoice.macos() ? "Без ключа Inworld Олег говорит установленным русским голосом macOS. Если голос недоступен, появится подсказка."
-                        : "Без ключа Inworld Олег говорит русским голосом Windows. Нет такого голоса — добавь русский язык с речью в параметрах Windows.")));
+                MacOsVoice.macos() ? "Если ключ выбранного голосового сервиса пуст, Олег говорит установленным русским голосом macOS."
+                        : "Если ключ выбранного голосового сервиса пуст, Олег говорит русским голосом Windows. Русский язык с речью можно добавить в параметрах Windows.")));
         addRenderableWidget(Button.builder(shortLabel(), b -> {
             OpenRouterConfig.SHORT_MURMURS.set(!OpenRouterConfig.SHORT_MURMURS.get()); OpenRouterConfig.SHORT_MURMURS.save();
             b.setMessage(shortLabel());
@@ -122,6 +121,11 @@ final class CompanionBehaviorScreen extends Screen {
             OpenRouterConfig.SEARCH_RADIUS.save(); b.setMessage(searchRadiusLabel()); CompanionPreferences.sync();
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                 "Насколько далеко он ищет руду, дерево, камень и вещи вокруг себя, блоков. Та же дальность, что в настройках."))).build());
+        addRenderableWidget(Button.builder(highGroundLabel(), b -> {
+            OpenRouterConfig.HIGH_GROUND.set(!OpenRouterConfig.HIGH_GROUND.get()); OpenRouterConfig.HIGH_GROUND.save();
+            b.setMessage(highGroundLabel()); CompanionPreferences.sync();
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "На него идут трое зомби (двое, если он ранен): кладёт под себя два-три блока из сумки, бьёт сверху и после боя забирает блоки. Выключено: дерётся на земле."))).build());
         addRenderableWidget(Button.builder(pickUpLabel(), b -> {
             OpenRouterConfig.PICK_UP_NEARBY.set(!OpenRouterConfig.PICK_UP_NEARBY.get()); OpenRouterConfig.PICK_UP_NEARBY.save();
             b.setMessage(pickUpLabel()); CompanionPreferences.sync();
@@ -137,6 +141,12 @@ final class CompanionBehaviorScreen extends Screen {
             b.setMessage(markersLabel()); CompanionPreferences.sync();
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                 "«Запомни это место, дача» — метка с названием; «иди к даче», «охраняй дачу» ведут к ней. Выключено: названия не распознаются и походов нет, список меток в настройках остаётся."))).build());
+        addRenderableWidget(Button.builder(landscapeLabel(), b -> {
+            OpenRouterConfig.LANDSCAPE_UNDERSTANDING.set(!OpenRouterConfig.LANDSCAPE_UNDERSTANDING.get());
+            OpenRouterConfig.LANDSCAPE_UNDERSTANDING.save();
+            b.setMessage(landscapeLabel()); CompanionPreferences.sync();
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "Осмотр местности, запоминание пещер и руды, сопровождение к находкам. Запомненные места снова доступны после включения."))).build());
         addRenderableWidget(Button.builder(Component.literal("Назад"), b -> onClose()).bounds(width / 2 - 50, height - 35, 100, 20).build());
         addRenderableWidget(Button.builder(damageNumbersLabel(), b -> {
             OpenRouterConfig.DAMAGE_NUMBERS.set(!OpenRouterConfig.DAMAGE_NUMBERS.get()); OpenRouterConfig.DAMAGE_NUMBERS.save();
@@ -154,7 +164,41 @@ final class CompanionBehaviorScreen extends Screen {
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).build());
         addRenderableWidget(Button.builder(Component.literal("Свои анекдоты: файл и перезагрузка"), b -> minecraft.setScreen(new CompanionJokeScreen(this)))
                 .bounds(left, top, ROW_WIDTH, ROW_HEIGHT).build());
+        addRenderableWidget(Button.builder(fishingInvitationsLabel(), b -> {
+            OpenRouterConfig.FISHING_INVITATIONS.set(!OpenRouterConfig.FISHING_INVITATIONS.get());
+            OpenRouterConfig.FISHING_INVITATIONS.save();
+            CompanionAmbientClient.resetFishingInvitations();
+            b.setMessage(fishingInvitationsLabel());
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).build());
+        addRenderableWidget(Button.builder(fishingIntervalLabel(), b -> {
+            int next = OpenRouterConfig.FISHING_INVITE_MINUTES.get() + 5;
+            OpenRouterConfig.FISHING_INVITE_MINUTES.set(next > 60 ? 5 : next);
+            OpenRouterConfig.FISHING_INVITE_MINUTES.save();
+            CompanionAmbientClient.resetFishingInvitations();
+            b.setMessage(fishingIntervalLabel());
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).build());
+        addRenderableWidget(Button.builder(leisureFishingLabel(), b -> {
+            int next = OpenRouterConfig.FISHING_LEISURE_MINUTES.get() + 5;
+            OpenRouterConfig.FISHING_LEISURE_MINUTES.set(next > 60 ? 0 : next);
+            OpenRouterConfig.FISHING_LEISURE_MINUTES.save();
+            b.setMessage(leisureFishingLabel());
+            CompanionPreferences.sync();
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "В режиме самостоятельности Олег может порыбачить рядом с тобой, если у него есть удочка и других дел нет."))).build());
+        addRenderableWidget(Button.builder(Component.literal("Свой питомец"), b -> minecraft.setScreen(new CompanionPetSettingsScreen(this)))
+                .bounds(left, top, ROW_WIDTH, ROW_HEIGHT).build());
         fitRows(top);
+    }
+    private static Component fishingInvitationsLabel() {
+        return Component.literal("Приглашения на рыбалку: " + (OpenRouterConfig.FISHING_INVITATIONS.get() ? "вкл." : "выкл."));
+    }
+    private static Component fishingIntervalLabel() {
+        int minutes = OpenRouterConfig.FISHING_INVITE_MINUTES.get();
+        return Component.literal("Пауза между приглашениями: " + minutes + "–" + (minutes * 2) + " мин.");
+    }
+    private static Component leisureFishingLabel() {
+        int minutes = OpenRouterConfig.FISHING_LEISURE_MINUTES.get();
+        return Component.literal("Сам рыбачит: " + (minutes == 0 ? "выкл." : "раз в " + minutes + "–" + (minutes * 2) + " мин."));
     }
     private Component jokesLabel() { return Component.literal("Анекдоты: " + (OpenRouterConfig.JOKES.get() ? "вкл." : "выкл.")); }
     private Component jokeIntervalLabel() {
@@ -170,6 +214,8 @@ final class CompanionBehaviorScreen extends Screen {
     private static Component boatClutchLabel() { return Component.literal("Лодка при падении: " + (OpenRouterConfig.BOAT_CLUTCH.get() ? "вкл." : "выкл.")); }
     private static Component gateLabel() { return Component.literal("Калитки по пути: " + (OpenRouterConfig.FENCE_GATES.get() ? "вкл." : "выкл.")); }
     private static Component buildWayLabel() { return Component.literal("Строить себе путь: " + (OpenRouterConfig.BUILD_WAY.get() ? "вкл." : "выкл.")); }
+    private static Component highGroundLabel() { return Component.literal("Столбик против толпы зомби: " + (OpenRouterConfig.HIGH_GROUND.get() ? "вкл." : "выкл.")); }
+    private static Component landscapeLabel() { return Component.literal("Понимание ландшафта: " + (OpenRouterConfig.LANDSCAPE_UNDERSTANDING.get() ? "вкл." : "выкл.")); }
     private static Component campfireLabel() { return Component.literal("Олег играет у костра: " + (OpenRouterConfig.PLAYS_BY_THE_FIRE.get() ? "вкл." : "выкл.")); }
     private static Component urgentLabel() { return Component.literal("Срочный приказ откладывает работу: " + (OpenRouterConfig.URGENT_ORDER.get() ? "вкл." : "выкл.")); }
     private static Component boatRideLabel() { return Component.literal("Лодка с игроком: " + (OpenRouterConfig.BOAT_RIDE.get() ? "вкл." : "выкл.")); }
@@ -187,7 +233,7 @@ final class CompanionBehaviorScreen extends Screen {
     private static net.neoforged.neoforge.common.ModConfigSpec.BooleanValue localVoiceSetting() {
         return MacOsVoice.macos() ? OpenRouterConfig.MACOS_VOICE : OpenRouterConfig.WINDOWS_VOICE;
     }
-    private Component windowsVoiceLabel() { return Component.literal("Голос " + (MacOsVoice.macos() ? "macOS" : "Windows") + " без ключа Inworld: " + (localVoiceSetting().get() ? "вкл." : "выкл.")); }
+    private Component windowsVoiceLabel() { return Component.literal("Голос " + (MacOsVoice.macos() ? "macOS" : "Windows") + " без ключа: " + (localVoiceSetting().get() ? "вкл." : "выкл.")); }
     private Component distanceLabel() { return Component.literal("Слышимость голоса: " + OpenRouterConfig.VOICE_DISTANCE.get() + " блоков"); }
     @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);

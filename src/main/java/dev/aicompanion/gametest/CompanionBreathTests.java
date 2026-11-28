@@ -21,6 +21,9 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionBreathTests {
+    /** Drowning a blow or two (two health each) is the price of a ceiling broken under water. */
+    private static final float DROWNED_AT_MOST = 4;
+
     private CompanionBreathTests() { }
 
     /** A one-block-wide tunnel along x at z 16, flooded from x 7 to 55; an air chamber at each end (on the tunnel's floor, higher up). */
@@ -116,16 +119,40 @@ public final class CompanionBreathTests {
     }
 
     /**
-     * Sealed in a flooded box, the air a stone block away behind a wall: no way to it. The work stops and tells why, he does not
-     * stand still but swims for the air he can see (to the wall).
+     * Sealed in a flooded box, the air a stone block away behind a wall and bedrock over the water: no way to it and no ceiling to break.
+     * The work stops and tells why, he does not stand still but swims for the air he can see (to the wall).
      */
     @GameTest(template = "large_search", timeoutTicks = 400)
     public static void withNoWayToAirTheWorkStopsAndTellsWhy(GameTestHelper h) {
-        // Stone all round, so that the nearest air he can see is the chamber behind the wall, not the open air outside the arena.
-        box(h, 0, 1, 3, 30, 13, 29, Blocks.STONE);
-        tunnel(h, 25);
-        box(h, 6, 2, 16, 6, 3, 16, Blocks.STONE);
-        box(h, 26, 2, 16, 26, 3, 16, Blocks.STONE);
+        noWayToAir(h, Blocks.BEDROCK);
+    }
+
+    /** The same under a ceiling of planks (they give to a bare hand too): a player's block is not broken for air (only soil, rock, leaves), the planks stay and the work stops as under bedrock. */
+    @GameTest(template = "large_search", timeoutTicks = 400)
+    public static void aPlayersPlanksOverTheWaterAreNotBrokenForAir(GameTestHelper h) {
+        noWayToAir(h, Blocks.OAK_PLANKS);
+    }
+
+    /** The same under leaves a player set (persistent): his block stays, the work stops as under bedrock. */
+    @GameTest(template = "large_search", timeoutTicks = 400)
+    public static void aPlayersLeavesOverTheWaterAreNotBrokenForAir(GameTestHelper h) {
+        noWayToAir(h, Blocks.OAK_LEAVES, () -> {
+            var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT, true);
+            for (int x = 7; x <= 25; x++) h.setBlock(new BlockPos(x, 4, 16), leaves);
+        });
+    }
+
+    /** A torch stands on the stone over the water: breaking its block would pop the torch off, so the stone stays and the work stops. */
+    @GameTest(template = "large_search", timeoutTicks = 400)
+    public static void aBlockWithATorchOnItIsNotBrokenForAir(GameTestHelper h) {
+        noWayToAir(h, Blocks.STONE, () -> { for (int x = 7; x <= 25; x++) h.setBlock(new BlockPos(x, 5, 16), Blocks.TORCH); });
+    }
+
+    private static void noWayToAir(GameTestHelper h, Block ceiling) { noWayToAir(h, ceiling, () -> { }); }
+
+    private static void noWayToAir(GameTestHelper h, Block ceiling, Runnable setup) {
+        sealedTunnel(h, ceiling);
+        setup.run();
         CompanionEntity c = oleg(h, 14, 24);
         h.runAfterDelay(5, () -> {
             h.assertTrue(c.startWork("come", "", 1).success(), "Come order not accepted");
@@ -137,7 +164,39 @@ public final class CompanionBreathTests {
             h.assertTrue(h.getTick() > 5 && !c.isWorking() && !c.didLastTaskSucceed() && c.getLastTaskResult().contains("воздух"),
                     "The work did not stop with the reason: " + c.getLastTaskResult() + " working " + c.isWorking() + " alive " + c.isAlive());
             h.assertTrue(nearest[0] <= 3, "Did not swim for the air: nearest to the wall " + nearest[0] + ", at " + h.relativePos(c.blockPosition()).toShortString());
+            for (int x = 7; x <= 25; x++) h.assertTrue(h.getBlockState(new BlockPos(x, 4, 16)).is(ceiling), "The ceiling over the water was broken at x " + x);
         });
+    }
+
+    /**
+     * Sealed the same way under a stone ceiling, a pickaxe in the bag (a pocket of water by his stairs: runs m20261031 void-4 and m7 descent
+     * drowned where they stood, «Выныриваю подышать» for six hundred ticks with no way to air): he breaks the ceiling over the water, his head
+     * comes out in the cell he opened, and he breathes before the water has cost him more than a blow or two of drowning.
+     */
+    @GameTest(template = "large_search", timeoutTicks = 600)
+    public static void sealedUnderAStoneCeilingHeBreaksItAndBreathes(GameTestHelper h) {
+        sealedTunnel(h, Blocks.STONE);
+        CompanionEntity c = oleg(h, 14, 24);
+        c.setItem(0, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.STONE_PICKAXE));
+        var watch = new Watch(h, c);
+        h.runAfterDelay(5, () -> {
+            h.assertTrue(c.startWork("come", "", 1).success(), "Come order not accepted");
+            c.setAirSupply(80);
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > 5 && !c.isEyeInFluid(FluidTags.WATER) && c.getAirSupply() >= c.getMaxAirSupply(),
+                    "Not breathing: alive " + c.isAlive() + " air " + c.getAirSupply() + " health " + c.getHealth() + " at " + h.relativePos(c.blockPosition()).toShortString());
+            h.assertTrue(watch.health >= c.getMaxHealth() - DROWNED_AT_MOST, "Drowned: health down to " + watch.health + ", air down to " + watch.air);
+        });
+    }
+
+    /** The flooded tunnel from x 7 to 25 shut at both ends, stone all round (the nearest air he sees is the chamber behind the wall), this over the water. */
+    private static void sealedTunnel(GameTestHelper h, Block ceiling) {
+        box(h, 0, 1, 3, 30, 13, 29, Blocks.STONE);
+        tunnel(h, 25);
+        box(h, 6, 2, 16, 6, 3, 16, Blocks.STONE);
+        box(h, 26, 2, 16, 26, 3, 16, Blocks.STONE);
+        box(h, 7, 4, 16, 25, 4, 16, ceiling);
     }
 
     /**

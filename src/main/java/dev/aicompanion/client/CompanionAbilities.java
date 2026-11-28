@@ -15,7 +15,8 @@ import java.util.Set;
  * an ability. A new plan action or deed without a phrase fails the abilities GameTest, naming the constant (in the game
  * it is only logged); a phrase about something the code has no action or deed for fails the same way, so the list cannot drift
  * from the code. «Что ты умеешь» and «расскажи 10 умений» are answered from it without a model request, as a random
- * selection drawn without repeats, so two asks do not read back the same five (idea 4NTZD, issue #105).
+ * selection drawn without repeats that says how many of the list it shows, so two asks do not read back the same
+ * five and five lines are not taken for all of them (idea 4NTZD, issue #105).
  *
  * Scope: everything the player can ASK him to do — the plan codec's actions and the autonomy deeds
  * ({@link CompanionAutonomy.Deed}). The direct commands only reword those same actions, switch the deeds on and off, or
@@ -41,28 +42,36 @@ public final class CompanionAbilities {
      * autonomy is named at least once.
      */
     private static final List<Ability> DECLARED = List.of(
-            new Ability("добываю дерево, камень, землю, руду и разные вещи",
+            new Ability("добываю дерево, камень, землю, руду и разные вещи, обтёсываю брёвна",
                     List.of("gather_wood", "gather_stone", "gather_dirt", "gather_loose", "mine_ore", "obtain_item", "pick_up"),
                     List.of("WOOD", "STONE", "COAL", "IRON")),
             new Ability("делаю вещи и плавлю руду в печи", List.of("craft_item", "smelt_items"),
                     List.of("PICK", "COOK", "SMELT_IRON", "IRON_PICK", "COLLECT")),
-            new Ability("строю дом и загон для животных", List.of("build_house", "build_pen"), List.of()),
-            new Ability("делаю грядки, собираю урожай и компост", List.of("farm_crops", "harvest_crops", "use_bone_meal", "compost_items"), List.of()),
-            new Ability("раскладываю вещи по сундукам и забираю их оттуда", List.of("store_items", "take_items", "sort_chests"),
+            new Ability("строю дом, загон для животных и деревенские постройки", List.of("build_house", "build_pen"), List.of()),
+            new Ability("делаю грядки, удобряю их костной мукой, собираю урожай и компост", List.of("farm_crops", "harvest_crops", "use_bone_meal", "compost_items"), List.of()),
+            new Ability("раскладываю вещи в сундуки, бочки, печи и воронки, забираю их оттуда", List.of("store_items", "take_items", "sort_chests"),
                     List.of("STORE", "TAKE_WOOD", "TAKE_STONE")),
             new Ability("развожу животных и охочусь на них", List.of("breed_animals", "hunt_animals"), List.of("HUNT")),
             new Ability("стригу овец, дою коров, собираю яйца и мёд", List.of("obtain_item"), List.of()),
             new Ability("бьюсь с монстрами и охраняю тебя", List.of("hunt_mobs", "protect", "stop_protect"), List.of()),
-            new Ability("хожу за тобой, жду на месте и прихожу на зов", List.of("follow", "wait", "come", "wander", "stop"), List.of()),
+            new Ability("хожу за тобой, жду, гуляю и прихожу на зов", List.of("follow", "wait", "come", "wander", "stop"), List.of()),
+            new Ability("подбираю то, что лежит рядом", List.of("pick_up"), List.of()),
             new Ability("запоминаю места и твой дом, вожу тебя туда", List.of("remember_place", "go_to_place", "set_home"), List.of()),
-            new Ability("строю портал, генератор булыжника и голема", List.of("build_portal", "build_cobble_gen", "build_golem"), List.of()),
+            new Ability("строю портал, генератор булыжника, голема и снеговика", List.of("build_portal", "build_cobble_gen", "build_golem"), List.of()),
+            // The Nether trip is no plan action of its own: obtain_item sends him through a lit portal nearby and back.
+            new Ability("хожу в Незер за кварцем и незераком, если рядом портал", List.of("obtain_item"), List.of()),
             new Ability("иду в нужную сторону и захожу в портал", List.of("walk_heading", "enter_portal"), List.of()),
             new Ability("веду к крепости Края по оку и вставляю очи в портал", List.of("walk_heading", "open_end_portal"), List.of()),
-            new Ability("рыбачу удочкой", List.of("fish"), List.of()),
+            new Ability("рыбачу удочкой и иногда ловлю рыбу сам у воды", List.of("fish"), List.of("FISH")),
+            new Ability("осматриваю местность и веду к замеченной пещере или руде", List.of("survey_terrain", "recall_landmark", "guide_landmark"), List.of()),
+            new Ability("ищу и приручаю кота, пса или попугая", List.of("tame_cat", "tame_dog", "tame_parrot"), List.of()),
+            new Ability("рассказываю о питомцах и где их видел", List.of("cat_status", "dog_status", "parrot_status", "pet_location"), List.of()),
+            new Ability("нахожу своих питомцев и зову их за собой", List.of("find_cat", "find_dog", "find_parrot", "follow_cat", "follow_dog", "follow_parrot"), List.of()),
+            new Ability("оставляю питомцев сидеть здесь или дома", List.of("sit_cat", "sit_dog", "sit_parrot"), List.of()),
             new Ability("надеваю снаряжение, чиню вещи и снимаю чары", List.of("equip_item", "unequip_item", "repair_item", "disenchant_item"), List.of()),
-            new Ability("даю тебе вещи и ставлю сундук", List.of("give_items", "give_wood", "place_block"), List.of()),
+            new Ability("даю тебе вещи и ставлю блоки", List.of("give_items", "give_wood", "place_block"), List.of()),
             new Ability("ищу торговцев и торгую с ними", List.of("scout_traders", "trade_items"), List.of()),
-            new Ability("берусь за долгую цель и иду к ней, докуда смогу дойти", List.of("pursue_goal"), List.of()),
+            new Ability("берусь за долгую цель — броня, Незер, дракон — иду, докуда смогу", List.of("pursue_goal"), List.of()),
             new Ability("играю на гитаре у костра", List.of("campfire_song"), List.of()));
 
     private static final List<Ability> ALL = loaded(DECLARED);
@@ -96,7 +105,8 @@ public final class CompanionAbilities {
      */
     public static String answer(String command, Random random) {
         List<Ability> shown = selection(count(command), random);
-        StringBuilder text = new StringBuilder("Умею вот что: ");
+        // The five are a sample: the header says how many there are, so the player does not take it for the whole list.
+        StringBuilder text = new StringBuilder("Умею вот что (" + shown.size() + " из " + ALL.size() + "): ");
         for (int i = 0; i < shown.size(); i++) {
             if (i > 0) text.append("; ");
             text.append(i + 1).append(") ").append(shown.get(i).phrase());

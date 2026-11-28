@@ -38,8 +38,10 @@ public final class CompanionBehaviorScreenTests {
     /** The search distance row exists beside «Строить себе путь» and turns through the whole setting, 128 included. */
     @GameTest(template = "empty")
     public static void theBehaviourScreenHasTheSearchRadiusRow(GameTestHelper h) {
-        h.assertTrue(CompanionSwitchLayout.BEHAVIOUR_ROWS == 27,
-                "The behaviour screen's row count did not grow by the search row: " + CompanionSwitchLayout.BEHAVIOUR_ROWS);
+        // The count is the rows the screen really adds: the switches of the way's side (the search row among them) and of the
+        // mine's (the high ground, the landscape, the fishing rows, the pet entry), thirty-three together.
+        h.assertTrue(CompanionSwitchLayout.BEHAVIOUR_ROWS == 33,
+                "The behaviour screen's row count is not the rows it adds, the search row among them: " + CompanionSwitchLayout.BEHAVIOUR_ROWS);
         h.assertTrue(CompanionSwitchLayout.SEARCH_RADIUS_LABEL.equals("Дальность поиска"),
                 "The search row's label: " + CompanionSwitchLayout.SEARCH_RADIUS_LABEL);
         h.assertTrue(CompanionSwitchLayout.SEARCH_RADIUS_MIN == 16 && CompanionSwitchLayout.SEARCH_RADIUS_MAX == 128,

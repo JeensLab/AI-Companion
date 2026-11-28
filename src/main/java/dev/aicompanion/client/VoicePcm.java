@@ -28,6 +28,19 @@ public final class VoicePcm {
             return output.toByteArray();
         }
     }
+
+    static byte[] wrapAsWav(byte[] pcm, AudioFormat format) {
+        int frameSize = format.getFrameSize();
+        int frames = pcm.length / frameSize;
+        try (AudioInputStream source = new AudioInputStream(
+                new ByteArrayInputStream(pcm, 0, frames * frameSize), format, frames);
+             ByteArrayOutputStream wav = new ByteArrayOutputStream()) {
+            AudioSystem.write(source, AudioFileFormat.Type.WAVE, wav);
+            return wav.toByteArray();
+        } catch (IOException error) {
+            throw new IllegalStateException("Не удалось подготовить WAV-аудио.", error);
+        }
+    }
     public static Pcm decode(byte[] wav) throws Exception {
         try (AudioInputStream source = AudioSystem.getAudioInputStream(new ByteArrayInputStream(wav))) {
             AudioFormat mono = new AudioFormat(AudioFormat.Encoding.PCM_SIGNED, source.getFormat().getSampleRate(), 16, 1, 2, source.getFormat().getSampleRate(), false);

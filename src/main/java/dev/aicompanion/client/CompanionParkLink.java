@@ -6,6 +6,7 @@ import dev.aicompanion.client.CompanionParkHold.Parked;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
 import dev.aicompanion.entity.CompanionFurnaceBatches.Summary;
+import dev.aicompanion.entity.CompanionPet;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.item.ItemStack;
@@ -76,7 +77,7 @@ public final class CompanionParkLink implements CompanionTaskQueue.BatchOwner {
 
     /** Takes the plan into the queue; the future completes with the report. {@code stale} says the plan was invalidated from outside. */
     public CompletableFuture<String> submit(List<PlannedAction> actions, String trace, BooleanSupplier stale) {
-        return queue.submit(actions, task -> {
+        var queued = queue.submit(actions, task -> {
             Binding bound = binding;
             if (bound.server() == null || bound.playerId() == null)
                 return CompletableFuture.failedFuture(new IllegalStateException("Для действий компаньона нужен открытый одиночный мир."));
@@ -92,7 +93,26 @@ public final class CompanionParkLink implements CompanionTaskQueue.BatchOwner {
                 CompanionDiagnostics.event(trace, "plan_finished", "elapsedMs", (System.nanoTime() - started) / 1_000_000,
                         "generationCurrent", !stale.getAsBoolean(), "report", report, "exception", error != null);
             });
-        }).completion();
+        });
+        if (actions.size() == 1) {
+            switch (actions.getFirst().type()) {
+                case "tame_cat" -> switchPetQuestion(queued, stale, CompanionPet.CAT);
+                case "tame_dog" -> switchPetQuestion(queued, stale, CompanionPet.DOG);
+                case "tame_parrot" -> switchPetQuestion(queued, stale, CompanionPet.PARROT);
+            }
+        }
+        return queued.completion();
+    }
+
+    private void switchPetQuestion(CompanionTaskQueue.Task queued, BooleanSupplier stale, CompanionPet requested) {
+        Binding bound = binding;
+        if (bound.server() == null || bound.playerId() == null) return;
+        // The new order is already queued. Release the old question before the new order needs the slot.
+        bound.server().execute(() -> {
+            if (queued.cancelled() || queued.completion().isDone() || stale.getAsBoolean() || !bound.equals(binding)) return;
+            var player = bound.server().getPlayerList().getPlayer(bound.playerId());
+            if (player != null) CompanionEvents.switchPetQuestion(player, requested);
+        });
     }
 
     /** A queued request waits while its first step needs a product that is still cooking. Reads the snapshot only: it runs under the queue lock. */
