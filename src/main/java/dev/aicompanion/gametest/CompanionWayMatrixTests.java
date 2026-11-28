@@ -141,7 +141,7 @@ public final class CompanionWayMatrixTests {
     }
 
     @GameTest(template = "tall_tree", timeoutTicks = 6000)
-    public static void obsidianFourAboveIsMinedWithNoColumn(GameTestHelper h) {
+    public static void obsidianFourAboveIsMinedFromAColumnThatComesDown(GameTestHelper h) {
         obsidianAbove(h, 4);
     }
 
@@ -1945,6 +1945,11 @@ public final class CompanionWayMatrixTests {
     }
 
     private static void obsidianAbove(GameTestHelper h, int height) {
+        obsidianAbove(h, height, true);
+    }
+
+    /** The obsidian work takes a block up a column from four above: its own walk stays short of the reach. */
+    private static void obsidianAbove(GameTestHelper h, int height, boolean column) {
         flat(h, Blocks.GRASS_BLOCK);
         BlockPos target = new BlockPos(16, FEET + height, 16);
         h.setBlock(target, Blocks.OBSIDIAN);
@@ -1954,6 +1959,10 @@ public final class CompanionWayMatrixTests {
         int[] before = snapshot(h);
         int[] most = {0};
         h.onEachTick(() -> most[0] = Math.max(most[0], c.getTemporarySupportCount()));
+        h.assertBlockPresent(Blocks.OBSIDIAN, target);
+        var seen = c.obtainAvailable("minecraft:obsidian");
+        h.assertTrue(seen.some(), "The search does not see the obsidian " + height + " above: " + seen + ", feet "
+                + c.blockPosition() + ", block " + h.absolutePos(target) + ", dirt " + count(c, Items.DIRT) + ", buildWay " + c.buildWay());
         var future = say(h, c, "добудь 1 обсидиан");
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
@@ -1962,7 +1971,7 @@ public final class CompanionWayMatrixTests {
             h.assertBlockPresent(Blocks.AIR, target);
             assertRestored(h, before, target);
             h.assertTrue(count(c, Items.DIRT) == 20, "The soil of the column was lost: " + count(c, Items.DIRT));
-            h.assertTrue(height >= 5 ? most[0] > 0 : most[0] == 0, "The column for " + height + " above is wrong: " + most[0] + ", " + report);
+            h.assertTrue(column ? height >= 4 ? most[0] > 0 : most[0] == 0 : most[0] == 0, "The column for " + height + " above is wrong: " + most[0] + ", " + report);
             h.assertTrue(c.getTemporarySupportCount() == 0 && !report.contains("Полторы минуты"), "A wrong end: " + report);
         });
     }
@@ -1983,7 +1992,7 @@ public final class CompanionWayMatrixTests {
             h.assertTrue(count(c, Items.MELON_SLICE) >= 3, "Not the melon's slices: " + report);
             h.assertBlockPresent(Blocks.AIR, target);
             assertRestored(h, before, target);
-            h.assertTrue(count(c, Items.DIRT) == 20 && most[0] >= (height >= 4 ? 1 : 0), "The soil or the column is wrong: " + report);
+            h.assertTrue(count(c, Items.DIRT) == 20 && most[0] >= (height >= 5 ? 1 : 0), "The soil or the column is wrong: " + report);
             h.assertTrue(c.getTemporarySupportCount() == 0 && !report.contains("Полторы минуты"), "A wrong end: " + report);
         });
     }

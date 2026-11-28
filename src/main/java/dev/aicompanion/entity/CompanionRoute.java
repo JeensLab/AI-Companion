@@ -246,7 +246,7 @@ public final class CompanionRoute {
      * drop, where it can be picked up), 0 walking, -1 no way or no progress. A walk that needed a wider search counts walking as
      * progress; the others, coming closer to the block.
      */
-    int approach(ServerLevel level, BlockPos block, boolean forTheDrop) { return approach(level, block, new Need(4.5, false, true, forTheDrop)); }
+    int approach(ServerLevel level, BlockPos block, boolean forTheDrop) { return approach(level, block, new Need(3.5, false, true, forTheDrop)); }
 
     /** The same for a block worked from other cells than ore is (the stairs down: standing on the dug cell is allowed). */
     int approach(ServerLevel level, BlockPos block, Need need) {
@@ -254,7 +254,7 @@ public final class CompanionRoute {
         if (!block.equals(goal)) begin(block);
         if (w.path != null && farPaths.contains(w.path)) setFar(w.path);
         double distance = w.owner.distanceToSqr(block.getCenter());
-        if (distance <= 4.5D * 4.5D && CompanionMiningNavigation.visible(w.owner, w.owner.getEyePosition(), block)
+        if (distance <= 3.8D * 3.8D && CompanionMiningNavigation.visible(w.owner, w.owner.getEyePosition(), block)
                 && (!forTheDrop || CompanionMiningNavigation.dropCollectable(level, block, w.owner.blockPosition()))) { w.owner.getNavigation().stop(); told("ARRIVED", far ? "far" : "near"); return 1; }
         // The way's own column stands where the block is in a swing: the swing goes on from it even where the drop lies below —
         // the walk to the drop comes after the block is broken, never between two swings (PATH7, #105: an ore in the air was
@@ -322,14 +322,14 @@ public final class CompanionRoute {
         // before the walk's own miss is judged: a block a column or a floor reaches is no refusal over a search that did not prove
         // its miss (the owner, 27.11: an ore three up and nine across was refused as «not proven: no route» while a column of four
         // stood within a step of it).
-        CompanionReach.How how = CompanionReach.how(owner, (ServerLevel) owner.level(), block, 4.5D, true, false, CompanionPillar.WAY_SUPPORTS);
+        CompanionReach.How how = CompanionReach.how(owner, (ServerLevel) owner.level(), block, 3.5D, true, false, CompanionPillar.WAY_SUPPORTS);
         CompanionReach.decision(owner, block, how);
         if (how.bridge()) return tickBridge(block);
         if (how.up()) return tickWay(pillar, block);
         if (how.way() == CompanionReach.Way.WALK || how.way() == CompanionReach.Way.ACROSS) {
             // A stand cell reaches it, yet the walk could not get there (a gap, a wall): a floor laid across the gap before it
             // is the same geometry answer (PATH7: «мост через провал»).
-            CompanionReach.BridgePlan plan = CompanionReach.bridge(owner, (ServerLevel) owner.level(), block, 4.5D, true, CompanionPillar.WAY_SUPPORTS, false);
+            CompanionReach.BridgePlan plan = CompanionReach.bridge(owner, (ServerLevel) owner.level(), block, 3.5D, true, CompanionPillar.WAY_SUPPORTS, false);
             // A floor to lay is what makes a bridge: a bank and the far cell with a floor between them already is no bridge.
             if (plan != null && plan.length() > 0) return tickBridge(block);
             // No bank at its own level to lay a floor from: a column up to the block is the other way the same answer gives — a
@@ -361,7 +361,7 @@ public final class CompanionRoute {
             // Every foot of the column failed: a floor across the gap before it is the other way the same geometry answer gives
             // (PATH7: «мост через провал»), never a refusal while one can still be laid. It waits for the failed column's soil.
             if (!pillar.isActive()) {
-                CompanionReach.BridgePlan plan = CompanionReach.bridge(w.owner, (ServerLevel) w.owner.level(), block, 4.5D, true,
+                CompanionReach.BridgePlan plan = CompanionReach.bridge(w.owner, (ServerLevel) w.owner.level(), block, 3.5D, true,
                         CompanionPillar.WAY_SUPPORTS, false);
                 if (plan != null && plan.length() > 0) return tickBridge(block);
             }

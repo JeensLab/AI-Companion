@@ -22,7 +22,7 @@ import java.util.Set;
 
 final class CompanionOreMining {
     /** Where ore is worked from: within reach, in sight, not on the ore's own block, where its drop can be picked up. */
-    private static final CompanionRoute.Need APPROACH = new CompanionRoute.Need(4.5, false, true, true);
+    private static final CompanionRoute.Need APPROACH = new CompanionRoute.Need(3.5, false, true, true);
     final CompanionWork w;
     /** Ores left alone this order, for the report: lava runs in and he has nothing to plug it with / a spring runs in and nothing is left to plug it with / the ore lies on lava / a lava fall stands beside it. */
     private final Set<BlockPos> lackedPlugs = new HashSet<>(), lackedSpringPlugs = new HashSet<>(), overLava = new HashSet<>(), lavaFalls = new HashSet<>();

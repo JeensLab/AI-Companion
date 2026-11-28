@@ -57,8 +57,8 @@ public final class CompanionWayAnyGeometryTests {
 
     /** One to the side, four up: no stand cell reaches it, a column is raised beside it and comes down. */
     @GameTest(template = "tall_tree", timeoutTicks = 8000)
-    public static void pumpkinUpAndOneToTheSideIsTakenFromAColumn(GameTestHelper h) {
-        sideAbove(h, 1, 0, 4, true);
+    public static void pumpkinUpAndOneToTheSideIsTakenFromWhereHeStands(GameTestHelper h) {
+        sideAbove(h, 1, 0, 4, false);
     }
 
     /** Two to the side, five up: the way is the same geometry, not a column over his own head. */

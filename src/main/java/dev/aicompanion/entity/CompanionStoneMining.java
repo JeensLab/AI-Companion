@@ -20,9 +20,9 @@ import java.util.Set;
 
 final class CompanionStoneMining {
     /** Where stone is worked from: within reach, in sight, not on the stone's own block, where its drop can be picked up. */
-    private static final CompanionRoute.Need APPROACH = new CompanionRoute.Need(4.5, false, true, true);
+    private static final CompanionRoute.Need APPROACH = new CompanionRoute.Need(3.5, false, true, true);
     /** Off a cell he stands on and is about to mine: any cell in reach and sight of it. */
-    private static final CompanionRoute.Need STEP_OFF = new CompanionRoute.Need(4.5, false, true, false);
+    private static final CompanionRoute.Need STEP_OFF = new CompanionRoute.Need(3.5, false, true, false);
     final CompanionWork w;
 
     CompanionStoneMining(CompanionWork w) { this.w = w; }
@@ -250,7 +250,7 @@ final class CompanionStoneMining {
                 return true;
             }
             // The walk (in legs when it is longer than one search) and its patience are the route's.
-            if (w.route.approach(level, w.target, new CompanionRoute.Need(4.5, false, false, !soil)) < 0) {
+            if (w.route.approach(level, w.target, new CompanionRoute.Need(3.5, false, false, !soil)) < 0) {
                 if (soil) w.finish(false, "Проход к камню закрыт, остановился."); else w.rejectTarget();
             }
             return true;
@@ -359,7 +359,7 @@ final class CompanionStoneMining {
             if (generatorWalking == 1) w.path = null; // a path left from other work is no way here
             if (w.path == null || w.route.legOver()) {
                 Set<BlockPos> stands = new java.util.HashSet<>();
-                for (BlockPos cell : CompanionMiningNavigation.standCells(w.owner, generator, 4.5, false, false)) if (workableFrom(level, cell)) stands.add(cell);
+                for (BlockPos cell : CompanionMiningNavigation.standCells(w.owner, generator, 3.5, false, false)) if (workableFrom(level, cell)) stands.add(cell);
                 int busy = w.route.busyAnswers();
                 w.path = stands.isEmpty() ? null : w.route.toCells(stands);
                 // This tick's cells went elsewhere: not "no way" yet, asked again next tick.
@@ -429,7 +429,7 @@ final class CompanionStoneMining {
 
     /** A cell to work the generator from: his feet and head touch neither lava nor water, the stone is in reach and sight, its drop lands where he can take it. */
     private boolean workableFrom(ServerLevel level, BlockPos feet) {
-        if (!CompanionMiningNavigation.standable(w.owner, feet) || Vec3.atBottomCenterOf(feet).distanceToSqr(generator.getCenter()) > 4.5 * 4.5) return false;
+        if (!CompanionMiningNavigation.standable(w.owner, feet) || Vec3.atBottomCenterOf(feet).distanceToSqr(generator.getCenter()) > 3.5 * 3.5) return false;
         // Not on the generator itself (the stone mined from under his feet) and not on a floor that lava touches.
         BlockPos floor = feet.below();
         if (floor.equals(generator)) return false;
