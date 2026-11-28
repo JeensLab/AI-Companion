@@ -127,6 +127,9 @@ public final class CompanionLocalCommands {
         if (grind != null) return grind;
         String compost = CompanionWorkCommands.compost(text, companionName);
         if (compost != null) return compost;
+        // «Сломай печку и отдай мне»: after the work grammar, so «разбей огород» and «убери вещи в сундук» stay what they were.
+        String broken = CompanionWorkCommands.breakBlock(text, companionName, names);
+        if (broken != null) return broken;
         // «Запомни это место, это дом» names a marker: after the work grammar, so «запомни это место как дом» stays the
         // home it always was.
         CompanionPlaceSpeech.Result remembered = CompanionPlaceSpeech.remember(text, companionName, markersEnabled);
@@ -226,6 +229,9 @@ public final class CompanionLocalCommands {
         // " give" is not a container: the step is parsed without it, or it would be read as the place to store into.
         boolean give = command.endsWith(" give");
         PlannedAction action = action(give ? command.substring(0, command.length() - " give".length()) : command);
+        // A broken block is handed over with everything it held: the break itself does it, the step says so in its slot.
+        if (give && "break_block".equals(action.type()))
+            return java.util.List.of(new PlannedAction("break_block", 0, 1, action.item(), "give", action.location()));
         java.util.List<PlannedAction> steps = new java.util.ArrayList<>();
         // A leaf order of several stacks («добудь 500 листвы») is taken as growing targets of a stack each, as the model's plan
         // is split: the bag is checked against the whole count, and no order is refused for being longer than a stack (19.11).

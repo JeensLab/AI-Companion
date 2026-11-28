@@ -17,7 +17,7 @@ public final class CompanionPlanCodec {
     public static final int MAX_REPEAT = 100;
     public static final int WOOD_STEP = 16;
     public static final Set<String> ACTIONS = Set.of("follow", "wait", "come", "protect", "stop_protect", "wander", "stop", "enter_portal", "open_end_portal",
-            "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "scout_traders", "trade_items", "farm_crops", "harvest_crops", "use_bone_meal", "obtain_item", "pursue_goal", "walk_heading", "set_home", "build_portal", "build_cobble_gen", "build_golem", "pick_up", "remember_place", "go_to_place", "repair_item", "disenchant_item", "compost_items", "campfire_song", "fish");
+            "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "scout_traders", "trade_items", "farm_crops", "harvest_crops", "use_bone_meal", "obtain_item", "pursue_goal", "walk_heading", "set_home", "build_portal", "build_cobble_gen", "build_golem", "pick_up", "remember_place", "go_to_place", "repair_item", "disenchant_item", "compost_items", "campfire_song", "fish", "break_block");
     /** Flint is dug out of gravel, which drops it rarely: one step asks for at most this much. */
     static final String FLINT = "minecraft:flint";
     static final int FLINT_STEP = 8;
@@ -195,7 +195,7 @@ public final class CompanionPlanCodec {
                 if ("compost_items".equals(type) && !step.has("count")) count = PlannedAction.ALL_CARRIED;
                 // «Порыбачь» names no number: until he is stopped (CompanionFishing).
                 if ("fish".equals(type) && !step.has("count")) count = PlannedAction.ALL_CARRIED;
-                if (("build_house".equals(type) || "sort_chests".equals(type) || "set_home".equals(type) || "build_portal".equals(type) || "open_end_portal".equals(type) || "build_cobble_gen".equals(type) || "build_golem".equals(type) || "campfire_song".equals(type)) && count != 1) throw invalid();
+                if (("build_house".equals(type) || "sort_chests".equals(type) || "set_home".equals(type) || "build_portal".equals(type) || "open_end_portal".equals(type) || "build_cobble_gen".equals(type) || "build_golem".equals(type) || "campfire_song".equals(type) || "break_block".equals(type)) && count != 1) throw invalid();
                 if ("wait".equals(type) && (seconds < 1 || seconds > 30)) throw invalid();
                 String item = step.has("item") ? step.get("item").getAsString().trim() : "";
                 // gather_stone digs any stone: granite, tuff or cobbled deepslate named there is obtain_item's, dug by name where it shows
@@ -250,9 +250,15 @@ public final class CompanionPlanCodec {
                 if ("fish".equals(type) && item.isEmpty()) item = dev.aicompanion.entity.CompanionFishing.ANY;
                 if ("fish".equals(type) && !dev.aicompanion.entity.CompanionFishing.NAMES.contains(item)) throw invalid();
                 if (("craft_item".equals(type) || "place_block".equals(type) || "equip_item".equals(type) || "smelt_items".equals(type) || "obtain_item".equals(type)
-                        || "pick_up".equals(type)) && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
+                        || "pick_up".equals(type) || "break_block".equals(type)) && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
+                // «Сломай печку»: a block the game has, never air; the model cannot make one up.
+                if ("break_block".equals(type) && (!net.minecraft.core.registries.BuiltInRegistries.BLOCK.containsKey(net.minecraft.resources.ResourceLocation.parse(item))
+                        || "minecraft:air".equals(item))) throw invalid();
                 String slot = step.has("slot") ? step.get("slot").getAsString() : "auto";
                 if (!Set.of("auto", "mainhand", "offhand", "head", "chest", "legs", "feet").contains(slot)) throw invalid();
+                // «…и отдай мне»: break_block carries it in the slot, the field the step has no other use for.
+                // ponytail: a boolean of PlannedAction when a second step wants one; until then the slot spares a record change in every constructor call.
+                if ("break_block".equals(type)) slot = step.has("give") && step.get("give").getAsBoolean() ? "give" : "auto";
                 String location = step.has("location") ? step.get("location").getAsString() : "near_player";
                 if (!validLocation(location, type)) throw invalid();
                 // A marker is named by the player's own word: 1..24 characters, never a coordinate triple.

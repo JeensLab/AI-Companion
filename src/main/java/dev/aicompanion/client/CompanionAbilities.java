@@ -61,6 +61,7 @@ public final class CompanionAbilities {
             new Ability("рыбачу удочкой", List.of("fish"), List.of()),
             new Ability("надеваю снаряжение, чиню вещи и снимаю чары", List.of("equip_item", "unequip_item", "repair_item", "disenchant_item"), List.of()),
             new Ability("даю тебе вещи и ставлю сундук", List.of("give_items", "give_wood", "place_block"), List.of()),
+            new Ability("ломаю стоящий рядом блок и отдаю тебе", List.of("break_block"), List.of()),
             new Ability("ищу торговцев и торгую с ними", List.of("scout_traders", "trade_items"), List.of()),
             new Ability("берусь за долгую цель и иду к ней, докуда смогу дойти", List.of("pursue_goal"), List.of()),
             new Ability("играю на гитаре у костра", List.of("campfire_song"), List.of()));
