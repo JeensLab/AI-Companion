@@ -5,8 +5,10 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -24,6 +26,8 @@ import java.util.UUID;
 /** Harvested items are normal world entities. Transfer to the bag requires physical proximity. */
 final class CompanionLoot {
     private static final String HARVESTER = "aicompanion:harvester";
+    /** How near a hostile he is fighting must be for the pickup to wait, and how near any hostile in sight is on him. */
+    private static final double FOE_NEAR = 7, CONTACT = 3;
     /** How near a creeper in sight must be for the pickup to wait, whether or not he fights it: the drop may lie beside it. */
     static final double CREEPER_NEAR = 7;
     private final CompanionEntity owner;
@@ -254,9 +258,21 @@ final class CompanionLoot {
     }
     boolean canChase() {
         if (!hasPending() || !owner.canCollectItems() || owner.isRecoveringSupports() || owner.getTemporarySupportCount() > 0
-                || owner.isSwingingAtBlock() || owner.creeperGuard.nearby(CREEPER_NEAR)) return false;
+                || owner.isSwingingAtBlock() || foeOnHim() || owner.creeperGuard.nearby(CREEPER_NEAR)) return false;
         if (owner.level() instanceof ServerLevel level) for (UUID id : pending) if (chaseable(level, id)) return true;
         return false;
+    }
+    /** The pickup shares the melee goal's priority: once it runs it keeps him walking after a drop while the foe he is fighting strikes. */
+    private boolean foeOnHim() {
+        LivingEntity foe = owner.getTarget();
+        if (foe instanceof Monster && foe.isAlive() && owner.distanceToSqr(foe) < FOE_NEAR * FOE_NEAR) return true;
+        if (!(owner.level() instanceof ServerLevel level)) return false;
+        // Series h, 21.11: zombies on him struck while he walked off after a drop. Within three blocks a hostile in sight that goes for him (bow
+        // skeletons too), or that he would fight now, is on him, and the pickup starves the retreat. One that goes for nobody (an idle skeleton, a
+        // zombified piglin, an enderman) is not: the pickup would wait on it for good.
+        return !level.getEntitiesOfClass(Monster.class, owner.getBoundingBox().inflate(CONTACT), mob -> mob.isAlive() && !mob.isNoAi()
+                && owner.distanceToSqr(mob) < CONTACT * CONTACT && owner.hasLineOfSight(mob) && owner.combat.fairTarget(mob, owner.combat.provokes(mob))
+                && (mob.getTarget() == owner || owner.combat.comesForOwner(mob))).isEmpty();
     }
     void tickChase() {
         if (!(owner.level() instanceof ServerLevel level)) return;
