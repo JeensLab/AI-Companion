@@ -316,6 +316,75 @@ public final class CompanionWoodcutterTests {
             h.assertTrue(count(companion, Items.IRON_INGOT) == 3 && count(companion, Items.STICK) == 2 && h.getBlockState(bench).is(Blocks.CRAFTING_TABLE), "His things are not kept: " + report);
         });
     }
+    /**
+     * Review of the climb: the check for a building looked only a few blocks round his feet, while the steps may go twenty out. A bench on a cliff top
+     * with a ring of fence two blocks from it (a yard), he in a cut ten blocks below it and well beyond that reach of the feet: the order is refused
+     * as before, and neither the fence nor the rock between is cut.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void aBenchByAYardFarFromHisFeetIsNoWayCutThroughIt(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        for (int x = 12; x <= 20; x++) for (int y = 1; y <= 8; y++) for (int z = 12; z <= 20; z++) {
+            boolean shaft = Math.abs(x - 16) <= 1 && Math.abs(z - 16) <= 1;
+            h.setBlock(new BlockPos(x, y, z), shaft ? Blocks.AIR : Blocks.STONE);
+        }
+        BlockPos bench = new BlockPos(19, 9, 16);
+        h.setBlock(bench, Blocks.CRAFTING_TABLE);
+        for (int x = 17; x <= 21; x++) for (int z = 14; z <= 18; z++)
+            if (Math.max(Math.abs(x - 19), Math.abs(z - 16)) == 2) for (int y = 9; y <= 10; y++) h.setBlock(new BlockPos(x, y, z), Blocks.OAK_FENCE);
+        companion.rememberPlaced(h.absolutePos(bench));
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        companion.setItem(0, new ItemStack(Items.IRON_INGOT, 3)); companion.setItem(1, new ItemStack(Items.STICK, 2));
+        int stone = around(h, Blocks.STONE), fence = around(h, Blocks.OAK_FENCE);
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        h.assertTrue(CompanionEvents.executeAction(owner, "craft_item", "minecraft:iron_pickaxe", 1).success(), "Craft order not accepted");
+        java.util.Set<String> said = new java.util.LinkedHashSet<>();
+        h.onEachTick(() -> said.add(companion.getLastTaskResult()));
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(companion.getLastTaskResult().contains("Помню верстак"), "Not the refusal of a bench with no way to it; he said " + said);
+            h.assertTrue(around(h, Blocks.STONE) == stone && around(h, Blocks.OAK_FENCE) == fence,
+                    "The rock or the yard was cut: stone " + around(h, Blocks.STONE) + "/" + stone + ", fence " + around(h, Blocks.OAK_FENCE) + "/" + fence + "; he said " + said);
+        });
+    }
+
+    /**
+     * Review of the climb: the check knew only crafted-looking blocks, and the rescue digs raw stone. A bench on the roof of a hut of andesite the
+     * player set down himself (the game tells of each block, as CompanionPlayerBuilds learns it), no door, he inside: refused as before, the hut whole.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void aBenchOnTheRoofOfAStoneHutOfThePlayersIsNoWayCutThroughIt(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        for (int x = 11; x <= 21; x++) for (int y = 1; y <= 8; y++) for (int z = 11; z <= 21; z++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        for (int x = 11; x <= 21; x++) for (int y = 1; y <= 6; y++) for (int z = 11; z <= 21; z++) {
+            int ring = Math.max(Math.abs(x - 16), Math.abs(z - 16));
+            if (y <= 5 && ring == 2 || y == 6 && ring <= 2) placedByPlayer(h, companion, new BlockPos(x, y, z), Blocks.ANDESITE);
+        }
+        BlockPos bench = new BlockPos(16, 7, 16);
+        h.setBlock(bench, Blocks.CRAFTING_TABLE);
+        companion.rememberPlaced(h.absolutePos(bench));
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        companion.setItem(0, new ItemStack(Items.IRON_INGOT, 3)); companion.setItem(1, new ItemStack(Items.STICK, 2));
+        int hut = around(h, Blocks.ANDESITE);
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        h.assertTrue(CompanionEvents.executeAction(owner, "craft_item", "minecraft:iron_pickaxe", 1).success(), "Craft order not accepted");
+        java.util.Set<String> said = new java.util.LinkedHashSet<>();
+        h.onEachTick(() -> said.add(companion.getLastTaskResult()));
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(companion.getLastTaskResult().contains("Помню верстак"), "Not the refusal of a bench with no way to it; he said " + said);
+            h.assertTrue(around(h, Blocks.ANDESITE) == hut, "The hut was cut: andesite " + around(h, Blocks.ANDESITE) + "/" + hut + "; he said " + said);
+        });
+    }
+
+    /** A block set down by the player, as the game tells it (CompanionPlayerBuilds learns his buildings so). */
+    private static void placedByPlayer(GameTestHelper h, CompanionEntity c, BlockPos cell, Block block) {
+        h.setBlock(cell, block);
+        var player = (net.minecraft.server.level.ServerPlayer) h.getLevel().getPlayerByUUID(c.getOwnerId());
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.post(new net.neoforged.neoforge.event.level.BlockEvent.EntityPlaceEvent(
+                net.neoforged.neoforge.common.util.BlockSnapshot.create(h.getLevel().dimension(), h.getLevel(), h.absolutePos(cell)), Blocks.GRASS_BLOCK.defaultBlockState(), player));
+    }
+
     /** One wait for the self-rescue (30 s) and the two tries of the approach after it, in ticks. */
     private static final int GIVEN_UP = 1200;
 

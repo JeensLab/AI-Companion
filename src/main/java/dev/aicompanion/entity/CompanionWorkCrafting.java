@@ -213,7 +213,7 @@ final class CompanionWorkCrafting {
         if (w.benchCutRescues >= 0) {
             if (w.owner.isSelfRescuing()) { w.owner.workStatus("Выбираюсь наверх, к верстаку."); return true; }
             if (w.owner.recovery.begun() == w.benchCutRescues && w.owner.canRecoverRoute() && w.benchCutWait++ < CUT_PATIENCE) {
-                w.owner.getNavigation().stop(); w.owner.workStatus("Выбираюсь наверх, к верстаку."); return true;
+                w.owner.getNavigation().stop(); w.owner.workStatus("Ищу, как выбраться к верстаку."); return true;
             }
             w.benchCutRescues = -1;
             w.resetApproach();
@@ -239,13 +239,21 @@ final class CompanionWorkCrafting {
      */
     private static final int BENCH_AT_HAND = 3;
 
-    /** A block of a player's making (CompanionShaftPlan.built) within reach of the steps the self-rescue would cut from where he stands, or beside the bench; the bench itself is none. */
+    /**
+     * A block of the player's within reach of the way the self-rescue would cut: the box between where he stands and the bench, padded by
+     * BUILT_NEAR (and as far above his feet as before). A crafted-looking block or a chest (CompanionShaftPlan.built), a building the game
+     * learned from his placing (CompanionPlayerBuilds.sites) or raw stone he set down (placedStone) counts; the bench itself is none.
+     */
     private boolean byABuilding(ServerLevel level, BlockPos bench) {
         BlockPos at = w.owner.blockPosition();
-        for (BlockPos pos : BlockPos.betweenClosed(at.offset(-BUILT_NEAR, -BUILT_NEAR, -BUILT_NEAR), at.offset(BUILT_NEAR, BUILT_NEAR + 3, BUILT_NEAR))) {
-            if (!pos.equals(bench) && level.hasChunkAt(pos) && CompanionShaftPlan.built(level, pos)) return true;
+        var site = CompanionPicking.sites(w.owner, level);
+        var stone = w.owner.getOwnerId() == null ? (java.util.function.Predicate<BlockPos>) pos -> false : CompanionPlayerBuilds.get(level.getServer()).placedStone(w.owner.getOwnerId(), level);
+        BlockPos min = new BlockPos(Math.min(at.getX(), bench.getX()) - BUILT_NEAR, Math.min(at.getY(), bench.getY()) - BUILT_NEAR, Math.min(at.getZ(), bench.getZ()) - BUILT_NEAR);
+        BlockPos max = new BlockPos(Math.max(at.getX(), bench.getX()) + BUILT_NEAR, Math.max(at.getY() + BUILT_NEAR + 3, bench.getY() + BUILT_NEAR), Math.max(at.getZ(), bench.getZ()) + BUILT_NEAR);
+        for (BlockPos pos : BlockPos.betweenClosed(min, max)) {
+            if (pos.equals(bench) || !level.hasChunkAt(pos)) continue;
+            if (CompanionShaftPlan.built(level, pos) || site.test(pos) || stone.test(pos)) return true;
         }
-        for (var side : net.minecraft.core.Direction.values()) if (CompanionShaftPlan.built(level, bench.relative(side))) return true;
         return false;
     }
     private static final int BUILT_NEAR = 4;
