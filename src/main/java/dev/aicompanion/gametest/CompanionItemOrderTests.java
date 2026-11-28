@@ -207,7 +207,7 @@ public final class CompanionItemOrderTests {
     @GameTest(template = "empty")
     public static void anOrderWithoutAStepSaysWhy(GameTestHelper h) {
         // A taking order gets its step: no «шага нет» over it.
-        var taken = CompanionPlanRequirements.apply("добудь тыкву", new CompanionReply("Ага сейчас сорву", List.of()));
+        var taken = CompanionPlanRequirements.apply("добудь тыкву", new CompanionReply("Ага сейчас сорву", List.of()), RU);
         h.assertTrue(taken.actions().size() == 1 && taken.actions().getFirst().type().equals("obtain_item"),
                 "A words-only taking order left no step: " + taken.actions());
         h.assertTrue(journal("order_no_step", "добудь тыкву").isEmpty(), "«шага нет» was said over an order that got its step");

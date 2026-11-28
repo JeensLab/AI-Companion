@@ -50,12 +50,10 @@ public final class CompanionScreenLayoutTests {
                         "Not every switch is reachable at height " + height + " with " + rows + " rows: " + seen);
             }
         }
-        // The pages are the rows the screen adds, whatever that number is: a row added to the screen must not break the layout.
-        h.assertTrue(CompanionSwitchLayout.perPage(240) >= 1
-                        && CompanionSwitchLayout.pages(CompanionSwitchLayout.BEHAVIOUR_ROWS, 240) * CompanionSwitchLayout.perPage(240) >= CompanionSwitchLayout.BEHAVIOUR_ROWS,
-                "854×480 does not page the behaviour switches");
-        h.assertTrue(CompanionSwitchLayout.pages(CompanionSwitchLayout.BEHAVIOUR_ROWS, 540) >= 1,
-                "1920×1080 pages no row");
+        // The pages are the rows the screen adds, whatever that number is: a small GUI shows fewer of them at a time than a
+        // large one, and a row added to the screen must not break the layout (the loop above proves every row reachable).
+        h.assertTrue(CompanionSwitchLayout.perPage(240) < CompanionSwitchLayout.perPage(540),
+                "854×480 no longer pages fewer rows at a time than 1920×1080");
         int rows = CompanionSwitchLayout.BEHAVIOUR_ROWS;
         h.assertTrue(CompanionSwitchLayout.firstRow(rows, 240, CompanionSwitchLayout.pages(rows, 240)) == 0,
                 "A page past the last does not wrap to the first");
