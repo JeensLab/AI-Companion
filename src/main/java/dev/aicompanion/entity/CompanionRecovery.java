@@ -30,6 +30,7 @@ final class CompanionRecovery {
     private BlockPos pickaxeCheckedFor, bench;
     private Vec3 start;
     private int stalled;
+    private int begun;
     private int elapsed;
     private int placed;
     private int dug;
@@ -56,6 +57,8 @@ final class CompanionRecovery {
     private boolean playerFell;
     CompanionRecovery(CompanionEntity owner) { this.owner = owner; breaking = new CompanionBlockBreaking(owner); }
     boolean active() { return active; }
+    /** How many rescues have started: a work paused by one reads the change once it runs again. */
+    int begun() { return begun; }
 
     /** Skyblock probe 15.11: a player who fell off an island is waited for, not dug to; one who dug or walked down is followed. */
     private void watchFall() {
@@ -125,7 +128,7 @@ final class CompanionRecovery {
     }
     void begin() {
         previousHand = owner.getMainHandItem().isEmpty() ? "" : BuiltInRegistries.ITEM.getKey(owner.getMainHandItem().getItem()).toString();
-        active = true; elapsed = placed = dug = jumpTicks = 0; climbing = false; stairDirection = null; stepUp = null; blockedStairs.clear();
+        active = true; begun++; elapsed = placed = dug = jumpTicks = 0; climbing = false; stairDirection = null; stepUp = null; blockedStairs.clear();
         destination = owner.recoveryDestination(); start = owner.position();
         var player = owner.getOwnerPlayer();
         exitingToPlayer = player != null && destination != null && destination.equals(player.blockPosition());
