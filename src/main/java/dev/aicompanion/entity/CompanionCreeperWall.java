@@ -140,13 +140,16 @@ final class CompanionCreeperWall {
         return false;
     }
 
-    /** A block of a player's making within a few blocks of him: a crafted block or a chest ({@link CompanionShaftPlan#built}), a site the game saw him build, stone he set down. */
+    /**
+     * A block of a player's making within a few blocks of him: a crafted block or a chest ({@link CompanionShaftPlan#built}), or stone he set down
+     * (it is looked up block by block). Not the site zones of {@link CompanionPlayerBuilds#sites}: a zone is sixteen blocks round a building and
+     * says nothing of the blocks by the wall (a live world has one wherever the player has built), and a home is {@link CompanionCreeperGuard}'s.
+     */
     private boolean byABuilding(ServerLevel level) {
         BlockPos at = c.blockPosition();
-        Predicate<BlockPos> site = CompanionPicking.sites(c, level);
         Predicate<BlockPos> stone = c.getOwnerId() == null ? pos -> false : CompanionPlayerBuilds.get(level.getServer()).placedStone(c.getOwnerId(), level);
         for (BlockPos pos : BlockPos.betweenClosed(at.offset(-BUILT_NEAR, -BUILT_NEAR, -BUILT_NEAR), at.offset(BUILT_NEAR, BUILT_NEAR, BUILT_NEAR))) {
-            if (level.hasChunkAt(pos) && (CompanionShaftPlan.built(level, pos) || stone.test(pos) || site.test(pos))) return true;
+            if (level.hasChunkAt(pos) && (CompanionShaftPlan.built(level, pos) || stone.test(pos))) return true;
         }
         return false;
     }

@@ -71,10 +71,27 @@ public final class CompanionCreeperGuardTests {
      * does not reach him. The blocks are his own (the bag is that much lighter).
      */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
-    public static void aLitFuseInADeadEndIsShutOutWithBlocks(GameTestHelper h) {
+    public static void aLitFuseInADeadEndIsShutOutWithBlocks(GameTestHelper h) { deadEnd(h, false); }
+
+    /**
+     * The same dead end, the player on the roof above and behind him (twelve blocks off: on the surface, not in the tunnel), and a building
+     * of the player's fourteen blocks off, in whose zone of sixteen the dead end lies (in a live world the player has built somewhere nearby): the
+     * building is not by the wall, and he sets it all the same.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aLitFuseInADeadEndWithTheZoneOfAFarBuildingIsShutOutWithBlocks(GameTestHelper h) { deadEnd(h, true); }
+
+    private static void deadEnd(GameTestHelper h, boolean farBuilding) {
         mountain(h, false);
         CompanionEntity c = armed(h);
         for (int x = 0; x <= DEAD_END_LENGTH; x++) bore(h, x, 0);
+        if (farBuilding) {
+            // Forty-five blocks of cobblestone set down by the player, as the game tells it, with the middle fourteen blocks off.
+            for (int x = 0; x <= DEAD_END_LENGTH; x++) for (int z = 12; z <= 16; z++) placedByPlayer(h, c, cell(h, x, 0, z), Blocks.COBBLESTONE);
+            ServerPlayer player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+            BlockPos roof = cell(h, 6, 11, 0);
+            player.teleportTo(roof.getX() + .5, roof.getY(), roof.getZ() + .5);
+        }
         place(c, cell(h, 0, 0));
         Creeper creeper = creeper(h, cell(h, DEAD_END_CREEPER, 0));
         creeper.ignite();
@@ -367,15 +384,15 @@ public final class CompanionCreeperGuardTests {
         mountain(h, false);
         CompanionEntity c = armed(h);
         for (int x = 0; x <= DEAD_END_LENGTH; x++) bore(h, x, 0);
-        for (int x = 1; x <= 2; x++) for (int z = -1; z <= 1; z += 2) placedByPlayer(h, c, cell(h, x, 0, z));
+        for (int x = 1; x <= 2; x++) for (int z = -1; z <= 1; z += 2) placedByPlayer(h, c, cell(h, x, 0, z), Blocks.ANDESITE);
         place(c, cell(h, 0, 0));
         creeper(h, cell(h, DEAD_END_CREEPER, 0)).ignite();
         setsNoBlock(h, c);
     }
 
-    /** A block of stone set down by the player, as the game tells it (CompanionPlayerBuilds learns his stones so). */
-    private static void placedByPlayer(GameTestHelper h, CompanionEntity c, BlockPos world) {
-        h.getLevel().setBlock(world, Blocks.ANDESITE.defaultBlockState(), 2 | 16);
+    /** A block set down by the player, as the game tells it (CompanionPlayerBuilds learns his buildings and his stones so). */
+    private static void placedByPlayer(GameTestHelper h, CompanionEntity c, BlockPos world, net.minecraft.world.level.block.Block block) {
+        h.getLevel().setBlock(world, block.defaultBlockState(), 2 | 16);
         var player = (ServerPlayer) h.getLevel().getPlayerByUUID(c.getOwnerId());
         NeoForge.EVENT_BUS.post(new BlockEvent.EntityPlaceEvent(BlockSnapshot.create(h.getLevel().dimension(), h.getLevel(), world), Blocks.GRASS_BLOCK.defaultBlockState(), player));
     }
