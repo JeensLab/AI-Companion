@@ -705,11 +705,13 @@ public final class CompanionOreTests {
 
     /**
      * The owner's false refusal (27.11): standing on four supports of his own, an ore twenty-three across and four up. Every
-     * foot a column could stand at on the ground is four below his feet, and the way said «no column he can walk to».
+     * foot a column could stand at on the ground is four below his feet, and the way said «no column he can walk to». The
+     * owner's own search distance is the way's span, so it is set to his sixty-four here: twenty-three across is inside it.
      */
     @GameTest(template = "tall_tree")
     public static void aColumnTopFindsTheGroundFootOfAnOreAcross(GameTestHelper h) {
         CompanionEntity companion = flat(h);
+        companion.setSearchRadius(64);
         for (int y = 1; y <= 4; y++) h.setBlock(new BlockPos(6, y, 16), Blocks.DIRT);
         BlockPos top = new BlockPos(6, 5, 16);
         BlockPos topAbs = h.absolutePos(top);
