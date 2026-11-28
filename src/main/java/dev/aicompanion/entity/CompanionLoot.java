@@ -95,6 +95,7 @@ final class CompanionLoot {
         rescanUntil = level.getGameTime() + 40;
         for (ItemEntity item : items) {
             item.getPersistentData().putUUID(HARVESTER, owner.getUUID());
+            item.getPersistentData().remove(CompanionPickUp.LEFT); // an order for it ends «leave it lying»
             pending.add(item.getUUID()); born.put(item.getUUID(), level.getGameTime());
             sites.addLast(new Site(item.blockPosition(), List.of(item.getItem().copy()), level.getGameTime() + 20 * 300));
         }
@@ -104,6 +105,7 @@ final class CompanionLoot {
     private boolean ours(ItemEntity item) {
         CompoundTag data = item.getPersistentData();
         if (data.getBoolean("aicompanion:gift")) return false; // handed to the player, never taken back
+        if (data.getBoolean(CompanionPickUp.LEFT)) return false; // «всё, кроме него»: his own harvest stays lying too
         if (data.hasUUID(HARVESTER)) return owner.getUUID().equals(data.getUUID(HARVESTER));
         if (item.getTarget() != null && !item.getTarget().equals(owner.getOwnerId())) return false;
         // Thrown by someone (the player dropping cobblestone by his pit): not his harvest (review 22.10, М3).
@@ -159,6 +161,8 @@ final class CompanionLoot {
             if (item.getPersistentData().hasUUID(HARVESTER)) continue;
             // Junk he let go to make room for his own things: taking it back would fill the freed slot with it again.
             if (item.getPersistentData().getBoolean(CompanionBag.JUNK)) continue;
+            // «Подбери всё, кроме лазурита»: the lapis stays where it lies until an order takes it.
+            if (item.getPersistentData().getBoolean(CompanionPickUp.LEFT)) continue;
             if (!touches(owner.position(), item)) continue;
             ItemStack offered = item.getItem().copy();
             int before = offered.getCount();
@@ -486,7 +490,7 @@ final class CompanionLoot {
     }
     private boolean gone(ServerLevel level, UUID id) {
         var item = level.getEntity(id);
-        return item == null ? level.getGameTime() - born.getOrDefault(id, 0L) > 5 : !item.isAlive();
+        return item == null ? level.getGameTime() - born.getOrDefault(id, 0L) > 5 : !item.isAlive() || item.getPersistentData().getBoolean(CompanionPickUp.LEFT);
     }
     /**
      * Like a player's pickup (Player.aiStep): the item touches the body widened by one block sideways and half a block up and

@@ -577,7 +577,7 @@ public final class CompanionWork {
             case "pick_up_nearby" -> {
                 pickUp = CompanionPickUp.of(item);
                 if (pickUp == null) return CompanionActionResult.failed("Не понял, что подобрать: «" + item + "».");
-                job = Job.PICK_UP; phase = Phase.PICKUP;
+                job = Job.PICK_UP; phase = Phase.PICKUP; if (owner.level() instanceof ServerLevel here) CompanionPickUp.leave(here, owner.blockPosition(), owner.pickUpRadius(), pickUp); // «всё, кроме …»
             }
             // «Иди к колодцу»: the marker is found again here, so a stale name in a plan is answered honestly. «Дом» with
             // no marker of that name is the home he knows, as the trip of a store order walks to it.
