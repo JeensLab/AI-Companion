@@ -94,7 +94,7 @@ neoForge {
             // The whole pool in one process needs more than the JVM's ergonomic default on a small host (it was 1 GB here,
             // and the run died with OutOfMemoryError on a full suite). A fixed ceiling keeps a full local run and CI's
             // endurance job deterministic; the shards below get their own smaller one.
-            jvmArgument '-Xmx4G'
+            jvmArgument "-Xmx${providers.gradleProperty('gameTestHeap').orElse('4G').get()}"
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
             // Optional comma-separated narrowing, read by gametest/CompanionTestSelection.
             systemProperty 'aicompanion.gameTests.classes', providers.gradleProperty('gameTestClasses').orElse('').get()
