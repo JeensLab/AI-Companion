@@ -428,7 +428,7 @@ final class CompanionFurnaces {
                     // One verified load at a time, one workId for the whole request. Never burn someone else's input.
                     w.smelt = next; w.smeltCount = w.requestedCount = Math.min(64, CompanionSmelting.count(w.items.carriedItems(), next.input()));
                     w.lots.clear(); w.triedFurnaces.clear(); w.heading = w.furnaceRoom = null;
-                    w.ownFurnaceFailed = w.furnacesShort = false; w.furnacesPlaced = 0; w.benchClimbs = 0;
+                    w.ownFurnaceFailed = w.furnacesShort = false; w.furnacesPlaced = 0; w.benchClimbs = w.benchCutWait = 0; w.benchCutRescues = -1;
                     w.phase = CompanionWork.Phase.FURNACE; w.resetTarget();
                     w.owner.workStatus("Пожарил одну часть мяса, готовлю остальное.");
                     return;

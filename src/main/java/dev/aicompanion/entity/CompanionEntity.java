@@ -127,6 +127,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final NonNullList<ItemStack> companionInventory = NonNullList.withSize(27, ItemStack.EMPTY);
     final CompanionPillar temporaryPillar = new CompanionPillar(this);
     final CompanionWork work = new CompanionWork(this);
+    public CompanionMineSite mineSite() { return work.mine; }
     private final CompanionFurnaceBatches batches = new CompanionFurnaceBatches(this);
     final CompanionGathering gathering = new CompanionGathering(this);
     final CompanionEquipment equipment = new CompanionEquipment(this);
@@ -373,6 +374,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public String diagnosticTrace() { return diagnostics.trace(); }
     public void diagnosticSnapshot(String event) { if (dev.aicompanion.CompanionDiagnostics.enabled()) diagnostics.snapshot(event); }
     String diagnosticState() { return diagnostics.diagnosticState(); }
+    /** For the diagnostics: where the mine expedition is (its stage), empty outside one. */
+    public String expeditionStage() { return work.expedition.stageName(); }
+    public String expeditionCavePhase() { return work.expedition.cavePhase(); }
+    public void expireExpeditionStep() { if (level() instanceof ServerLevel s) work.expedition.expireStep(s); }
     net.minecraft.world.entity.ai.goal.GoalSelector goalSelector() { return goalSelector; }
 
     /** The game's ground navigation with the companion's own route search (CompanionNavigation). */
@@ -397,6 +402,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER_BORDER, 0.0F);
         // The cell over powder snow is floor to the game (its trap for mobs): he sinks there and freezes, so it is never his way.
         setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DANGER_POWDER_SNOW, -1.0F);
+        // Ahead of the goals at 0 that hold the move flag (the creeper guard, breath, the dragon's breath): lava is the one thing none of them may keep him in.
+        this.goalSelector.addGoal(-1, new CompanionLavaExit(this));
         this.goalSelector.addGoal(0, new CompanionSwimming.WadingFloatGoal(this));
         this.goalSelector.addGoal(0, new net.minecraft.world.entity.ai.goal.OpenDoorGoal(this, true));
         this.goalSelector.addGoal(0, this.gateGoal);
@@ -406,10 +413,13 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(1, new CompanionWaterBucket.FetchGoal(this));
         this.goalSelector.addGoal(1, new CompanionBoatClutch.BreakGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverBelongingsGoal(this));
+        this.goalSelector.addGoal(1, new CompanionHighGround(this));
         this.goalSelector.addGoal(0, new CompanionEntityGoals.BreatheGoal(this));
         this.goalSelector.addGoal(0, new CompanionEntityGoals.DragonBreathGoal(this));
+        this.goalSelector.addGoal(1, new CompanionWaterExit(this));
         this.goalSelector.addGoal(2, new CompanionArchery.BowAttackGoal(this));
         this.goalSelector.addGoal(2, new CompanionCombat.PlayerPaceAttackGoal(this));
+        this.goalSelector.addGoal(2, new CompanionCombat.StepOffGoal(this));
         this.goalSelector.addGoal(2, new CompanionEntityGoals.PickupLootGoal(this));
         this.goalSelector.addGoal(3, new CompanionEndCrystals.CrystalGoal(this));
         this.goalSelector.addGoal(3, new CompanionPortals.FollowThroughPortalGoal(this));
@@ -437,12 +447,12 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(7, new RandomLookAroundGoal(this));
         // Review 22.10, В1: vanilla «hit back whoever hurt me» also hit back the player after a stray blow.
         this.targetSelector.addGoal(1, new HurtByTargetGoal(this) {
-            @Override public boolean canUse() { return super.canUse() && fairTarget(getLastHurtByMob(), true); }
+            @Override public boolean canUse() { return super.canUse() && fairTarget(getLastHurtByMob(), true) && !combat.leavesAlone(getLastHurtByMob()); }
         });
         this.targetSelector.addGoal(1, new CompanionCombat.OwnerDefenseGoal(this));
         this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, net.minecraft.world.entity.Mob.class, 10,
                 true, false, target -> protecting ? (!guardByPlayer || work.isHunting()) && combat.isThreateningOwner(target) : combat.comesForOwner(target)));
-        this.targetSelector.addGoal(2, new CompanionGuardWatch(this));
+        this.targetSelector.addGoal(2, combat.guardWatch);
         // Who flies is out of the blade's reach: only with a bow (ghasts, phantoms).
         this.targetSelector.addGoal(2, new CompanionArchery.FlierTargetGoal(this));
     }
@@ -572,10 +582,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     }
     private void setFollowing(boolean following, boolean keepHarvest) {
         woodBreaking.reset(); dirtBreaking.reset();
-        if (!keepHarvest) loot.cancel();
         recovery.cancel(); movementIntent = null;
         supportSoilTask = false;
-        work.cancel();
+        work.cancel(); // first: its end lets the held stone fall, and the pickup stopped below must not take it up again
+        if (!keepHarvest) loot.cancel();
         temporaryPillar.requestCleanup();
         roaming = false;
         entityData.set(DATA_ROAMING, false);
@@ -792,46 +802,6 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     void storageStatus(String location) { entityData.set(DATA_STORAGE_CHEST, location); }
     public CompanionActionResult startWork(String action, String item, int count) {
         return startWork(action, item, count, "near_player");
-    }
-
-    /**
-     * «Подбери <X>»: what of that meaning lies on the ground around him is walked to and taken by the game's own pickup,
-     * in water and at another height too. Nothing of it near: the honest answer names what does lie around, and only
-     * then does he take up the usual work (a hunt for meat, a dig for stone and the like). With the setting off he
-     * skips the ground and goes straight to that work.
-     */
-    CompanionActionResult pickUpNearby(String item, int count) {
-        CompanionPickUp.Meaning meaning = CompanionPickUp.of(item);
-        if (meaning == null) return CompanionActionResult.failed("Не понял, что подобрать: «" + item + "».");
-        if (count < 1 || count > 64) return CompanionActionResult.failed("За раз подбираю от 1 до 64 предметов.");
-        if (!(level() instanceof ServerLevel level)) return CompanionActionResult.failed("Для подбора нужен загруженный мир.");
-        boolean fallback = meaning.fallbackAction() != null;
-        // The order says how much: «подбери 8 брёвен» falls back on 8, the route's 64 («no number») keeps the meaning's own amount.
-        int wanted = count < CompanionPickUp.ALL_AT_ONCE ? count : meaning.fallbackCount();
-        if (!pickUpNearby && fallback) return startWork(meaning.fallbackAction(), meaning.fallbackItem(), wanted);
-        var found = CompanionPickUp.find(level, blockPosition(), pickUpRadius, meaning, count, getOwnerId());
-        var room = new java.util.ArrayList<ItemEntity>();
-        for (ItemEntity drop : found) if (canStoreDrops(java.util.List.of(drop.getItem().copyWithCount(1)))) room.add(drop);
-        if (!room.isEmpty()) {
-            CompanionActionResult started = startWork("pick_up_nearby", item, count);
-            if (started.success()) loot.claim(room);
-            return started;
-        }
-        if (!found.isEmpty()) {
-            // Matching drops lie there, but none of them fits: the bag is full, not the ground empty.
-            return CompanionActionResult.failed("Лежит рядом: " + meaning.name() + " (" + CompanionPickUp.total(found) + "), но сумка полна.");
-        }
-        String honest = "Рядом нет " + meaning.genitive() + ". " + CompanionPickUp.lying(level, blockPosition(), pickUpRadius, getOwnerId());
-        if (!fallback) return CompanionActionResult.failed(honest);
-        CompanionActionResult taken = startWork(meaning.fallbackAction(), meaning.fallbackItem(), wanted);
-        if (!taken.success()) return CompanionActionResult.failed(honest);
-        // The fallback is the rest of this order, not a refusal of it: the workId is kept so the plan waits for that work,
-        // the honest answer stays in the report, and the following steps of the plan still run.
-        long workId = activeWorkId();
-        if (workId <= 0) return CompanionActionResult.failed(honest);
-        return recordActionResult(CompanionActionResult.accepted(honest + " " + meaning.fallbackNote())
-                .withEvidence(new CompanionActionResult.Evidence(workId, meaning.fallbackAction(), meaning.fallbackItem(),
-                        wanted, null, null, null)));
     }
 
     /**
@@ -1112,7 +1082,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         work.course.watch();
         loot.tickNearby();
         if (level() instanceof ServerLevel serverLevel) playersThings.tick(serverLevel);
-        recovery.observe();
+        recovery.observe(); gathering.watchWork();
         work.watchChase();
         social.updateExpression();
         social.tick();
@@ -1160,8 +1130,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             activityMoved = previousActivityPosition != null && position().distanceToSqr(previousActivityPosition) > .01;
             previousActivityPosition = position(); entityData.set(DATA_ACTIVITY, getActivityForAi());
         }
-        // A fight for the player does not lead away from him: guard order, or any monster outside a hunt.
-        var guardedOwner = protecting || !work.fightsByOrder() && CompanionCombat.hostile(getTarget()) ? getOwnerPlayer() : null;
+        // A fight for the player does not lead away from him: guard order, or any monster outside a hunt and outside his mine. A foe of his
+        // expedition is its own fight, wherever the player is: dropped here, it was his target again in the same tick, every tick.
+        var guardedOwner = (protecting || !work.fightsByOrder() && CompanionCombat.hostile(getTarget())) && !work.expedition.underground() && !work.expedition.fight.engages(getTarget()) ? getOwnerPlayer() : null;
         if (guardedOwner != null && getTarget() != null && CompanionGuardWatch.strayed(this, guardedOwner, getTarget())) setTarget(null);
         if (getTarget() instanceof net.minecraft.world.entity.FlyingMob && !archery.armed()) setTarget(null);
         if (inventoryViewers == 0 && getTarget() != null && tickCount % 10 == 0) selectWeaponForCombat();
@@ -1178,6 +1149,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         if (!dead && !isRemoved() && level() instanceof ServerLevel) {
             String where = blockPosition().toShortString();
             String cause = source.getLocalizedDeathMessage(this).getString();
+            diagnostics.died(source);
             work.cancel(); gatheringLogs = gatheringDirt = false; loot.cancel();
             if (deathTrip.active() && getOwnerId() != null)
                 CompanionDeathSpots.get(((ServerLevel) level()).getServer()).deathOnTheWay(getOwnerId(), deathTrip.spotId());
@@ -1203,6 +1175,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         }
         super.die(source);
     }
+
+    @Override public void onRemovedFromLevel() { if (!level().isClientSide) CompanionChunkTicket.release(this); super.onRemovedFromLevel(); }
 
     /** A gate he opened is shut when he is taken out of the world in the middle of it: a goal is not stopped then. */
     @Override public void remove(net.minecraft.world.entity.Entity.RemovalReason reason) {
@@ -1255,6 +1229,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     @Override public void lerpTo(double x, double y, double z, float yRot, float xRot, int steps) {
         super.lerpTo(x, y, z, yRot, xRot, getY() - y > .8 ? 1 : steps);
     }
+
+    /** In his mine a blow at a run throws a foe back as a running player's does (Player.attack: one more while sprinting); from a standstill only the hit's own push. */
+    @Override protected float getKnockback(Entity target, net.minecraft.world.damagesource.DamageSource source) { return super.getKnockback(target, source) + (isSprinting() && work.expedition.active() ? 1 : 0); }
 
     @Override public boolean doHurtTarget(Entity target) {
         boolean hit = super.doHurtTarget(target);

@@ -19,12 +19,13 @@ public final class CompanionFacts {
     private final Map<Item, Integer> carried;
     private final Map<EquipmentSlot, Item> worn;
     private final boolean dragonDead;
+    private final boolean belowMine;
     /** Looked up when asked (a goal with a portal stage), not every second for any goal. */
     private final CompanionEntity c;
     private Boolean portal;
 
-    private CompanionFacts(Map<Item, Integer> carried, Map<EquipmentSlot, Item> worn, boolean dragonDead, CompanionEntity c) {
-        this.carried = Map.copyOf(carried); this.worn = Map.copyOf(worn); this.dragonDead = dragonDead; this.c = c;
+    private CompanionFacts(Map<Item, Integer> carried, Map<EquipmentSlot, Item> worn, boolean dragonDead, boolean belowMine, CompanionEntity c) {
+        this.carried = Map.copyOf(carried); this.worn = Map.copyOf(worn); this.dragonDead = dragonDead; this.belowMine = belowMine; this.c = c;
     }
 
     public static CompanionFacts of(CompanionEntity c) {
@@ -36,7 +37,10 @@ public final class CompanionFacts {
         for (EquipmentSlot slot : ARMOR) if (usable(c.getItemBySlot(slot))) worn.put(slot, c.getItemBySlot(slot).getItem());
         var end = c.getServer() == null ? null : c.getServer().getLevel(Level.END);
         boolean dragonDead = end != null && end.getDragonFight() != null && end.getDragonFight().hasPreviouslyKilledDragon();
-        return new CompanionFacts(carried, worn, dragonDead, c);
+        // The record of the mine keeps no dimension, and a mine is dug in the Overworld only.
+        boolean belowMine = c.level().dimension() == Level.OVERWORLD && c.mineSite().exists() && !CompanionExpeditionRecord.underSky(c.level(), c.blockPosition().above())
+                && (c.getY() < c.mineSite().entrance().getY() - CompanionMineSite.UNDERGROUND_DEPTH || c.mineSite().buried());
+        return new CompanionFacts(carried, worn, dragonDead, belowMine, c);
     }
 
     /** How many of the item he carries in the bag and in his hands; armour he wears is not counted here. */
@@ -45,6 +49,9 @@ public final class CompanionFacts {
     public int carried(Predicate<Item> kind) {
         return carried.entrySet().stream().filter(entry -> kind.test(entry.getKey())).mapToInt(Map.Entry::getValue).sum();
     }
+
+    /** He stands down in his mine: a climb to the surface that ended there did not bring him up. */
+    public boolean belowMine() { return belowMine; }
 
     /** The armour piece in the slot, or null. */
     public Item worn(EquipmentSlot slot) { return worn.get(slot); }

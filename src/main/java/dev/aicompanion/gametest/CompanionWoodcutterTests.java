@@ -228,6 +228,103 @@ public final class CompanionWoodcutterTests {
         });
     }
 
+    /**
+     * Series w, restart and void-3 of seed 7 (21.11): down in a cut under a cliff, his bench on top of it, no walk up and no wood for a new one.
+     * The way out of a cut to a bench above (cutting steps up, as a player does) was only tried for a bench already chosen, and a bench with
+     * no walk to it was never chosen: «Помню верстак неподалёку, но пройти к нему сейчас не могу» five times over. He climbs out to it.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void aBenchAboveHisCutIsClimbedOutTo(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        for (int x = 12; x <= 20; x++) for (int y = 1; y <= 8; y++) for (int z = 12; z <= 20; z++) {
+            boolean shaft = Math.abs(x - 16) <= 1 && Math.abs(z - 16) <= 1;
+            h.setBlock(new BlockPos(x, y, z), shaft ? Blocks.AIR : Blocks.STONE);
+        }
+        BlockPos bench = new BlockPos(19, 9, 16);
+        h.setBlock(bench, Blocks.CRAFTING_TABLE);
+        companion.rememberPlaced(h.absolutePos(bench));
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        companion.setItem(0, new ItemStack(Items.IRON_INGOT, 3)); companion.setItem(1, new ItemStack(Items.STICK, 2));
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        h.assertTrue(CompanionEvents.executeAction(owner, "craft_item", "minecraft:iron_pickaxe", 1).success(), "Craft order not accepted");
+        java.util.Set<String> said = new java.util.LinkedHashSet<>();
+        h.onEachTick(() -> said.add(companion.getLastTaskResult()));
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(count(companion, Items.IRON_PICKAXE) == 1, "No iron pickaxe; he said " + said);
+            h.assertTrue(h.getBlockState(bench).is(Blocks.CRAFTING_TABLE) && blocks(h, Blocks.CRAFTING_TABLE) == 0, "Not his bench on the cliff used: " + companion.getStoredItemsSummary());
+        });
+    }
+
+    /**
+     * Review of M5: the climb out to a bench above him went through a house too. A bench on the roof of a hut of planks, he inside with blocks in his
+     * bag: the order is refused as it was before, and neither the hut nor the ground round it is touched, no block of his laid.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void aBenchOnTheRoofOverHimIsNoWayCutThroughTheHouse(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        for (int x = 11; x <= 21; x++) for (int y = 1; y <= 8; y++) for (int z = 11; z <= 21; z++) {
+            int ring = Math.max(Math.abs(x - 16), Math.abs(z - 16));
+            boolean hut = y <= 5 && ring == 2 || y == 6 && ring <= 2;
+            h.setBlock(new BlockPos(x, y, z), hut ? Blocks.OAK_PLANKS : y == 1 && ring >= 3 ? Blocks.DIRT : Blocks.AIR);
+        }
+        BlockPos bench = new BlockPos(16, 7, 16);
+        h.setBlock(bench, Blocks.CRAFTING_TABLE);
+        companion.rememberPlaced(h.absolutePos(bench));
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        companion.setItem(0, new ItemStack(Items.IRON_INGOT, 3)); companion.setItem(1, new ItemStack(Items.STICK, 2));
+        companion.setItem(2, new ItemStack(Items.COBBLESTONE, 16));
+        int planks = around(h, Blocks.OAK_PLANKS), dirt = around(h, Blocks.DIRT);
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        h.assertTrue(CompanionEvents.executeAction(owner, "craft_item", "minecraft:iron_pickaxe", 1).success(), "Craft order not accepted");
+        java.util.Set<String> said = new java.util.LinkedHashSet<>();
+        h.onEachTick(() -> said.add(companion.getLastTaskResult()));
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(companion.getLastTaskResult().contains("Помню верстак"), "Not the refusal of a bench with no way to it; he said " + said);
+            h.assertTrue(around(h, Blocks.OAK_PLANKS) == planks && around(h, Blocks.DIRT) == dirt && around(h, Blocks.COBBLESTONE) == 0 && count(companion, Items.COBBLESTONE) == 16,
+                    "The hut or the ground was cut, or a block of his laid: planks " + around(h, Blocks.OAK_PLANKS) + "/" + planks + ", dirt " + around(h, Blocks.DIRT) + "/" + dirt
+                            + ", cobblestone laid " + around(h, Blocks.COBBLESTONE) + "; he said " + said);
+        });
+    }
+
+    /**
+     * Review of M5: the end of the climb out to a bench that cannot be got to. Down a shaft of bedrock with no block to lay, the bench on top: the order
+     * ends «Не смог добраться до верстака» after one wait for the way up, his things kept.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void aBenchAboveAShaftHeCannotCutIsGivenUp(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        for (int x = 12; x <= 20; x++) for (int y = 1; y <= 8; y++) for (int z = 12; z <= 20; z++) {
+            boolean shaft = Math.abs(x - 16) <= 1 && Math.abs(z - 16) <= 1;
+            h.setBlock(new BlockPos(x, y, z), shaft ? Blocks.AIR : Blocks.BEDROCK);
+        }
+        BlockPos bench = new BlockPos(19, 9, 16);
+        h.setBlock(bench, Blocks.CRAFTING_TABLE);
+        companion.rememberPlaced(h.absolutePos(bench));
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        companion.setItem(0, new ItemStack(Items.IRON_INGOT, 3)); companion.setItem(1, new ItemStack(Items.STICK, 2));
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        h.assertTrue(CompanionEvents.executeAction(owner, "craft_item", "minecraft:iron_pickaxe", 1).success(), "Craft order not accepted");
+        int[] ticks = new int[2];
+        h.onEachTick(() -> { ticks[0]++; if (companion.getLastTaskResult().contains("Выбираюсь наверх")) ticks[1]++; });
+        h.succeedWhen(() -> {
+            done(h, companion);
+            String report = "he said «" + companion.getLastTaskResult() + "» after " + ticks[0] + " ticks, " + ticks[1] + " of them on the way up";
+            h.assertTrue(companion.getLastTaskResult().contains("Не смог добраться до верстака"), "Not the end of a bench he could not get to: " + report);
+            h.assertTrue(ticks[1] <= GIVEN_UP, "The wait for the way up went round: " + report);
+            h.assertTrue(count(companion, Items.IRON_INGOT) == 3 && count(companion, Items.STICK) == 2 && h.getBlockState(bench).is(Blocks.CRAFTING_TABLE), "His things are not kept: " + report);
+        });
+    }
+    /** One wait for the self-rescue (30 s) and the two tries of the approach after it, in ticks. */
+    private static final int GIVEN_UP = 1200;
+
+    private static int around(GameTestHelper h, Block block) {
+        int result = 0;
+        for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(9, 1, 9), new BlockPos(23, 12, 23))) if (h.getBlockState(pos).is(block)) result++;
+        return result;
+    }
+
     private static CompanionEntity setup(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
         CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), 16, 1, 16);
