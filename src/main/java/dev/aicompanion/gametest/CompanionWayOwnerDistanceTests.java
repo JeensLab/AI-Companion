@@ -61,7 +61,7 @@ public final class CompanionWayOwnerDistanceTests {
     /** His lapis block twenty-two to the side and four up: farther than the ten the column's foot was allowed. */
     @GameTest(template = "way_wide", timeoutTicks = 20000)
     public static void lapisBlockTwentyTwoAcrossFourUpIsTaken(GameTestHelper h) {
-        floatingTaken(h, Blocks.LAPIS_BLOCK, Items.LAPIS_BLOCK, 22, 0, 4, "добудь блок лазурита", "minecraft:lapis_block");
+        floatingTaken(h, Blocks.LAPIS_BLOCK, Items.LAPIS_BLOCK, 22, 0, 4, "добудь блок лазурита", "minecraft:lapis_block", false);
     }
 
     /** His pumpkin twenty to the side and twenty up: the way's own height, and the farthest across of his scene. */
@@ -259,6 +259,11 @@ public final class CompanionWayOwnerDistanceTests {
 
     /** A block floating {@code dx}, {@code dz} to the side and {@code height} up, nothing under it: found and taken. */
     private static void floatingTaken(GameTestHelper h, Block block, Item item, int dx, int dz, int height, String phrase, String id) {
+        floatingTaken(h, block, item, dx, dz, height, phrase, id, true);
+    }
+
+    /** {@code column} false for a block four up: a player reaches it from the cell under it, no column is raised (28.11). */
+    private static void floatingTaken(GameTestHelper h, Block block, Item item, int dx, int dz, int height, String phrase, String id, boolean column) {
         flat(h, Blocks.GRASS_BLOCK);
         BlockPos target = new BlockPos(HOME_X + dx, FEET + height, HOME_Z + dz);
         h.setBlock(target, block);
@@ -280,7 +285,7 @@ public final class CompanionWayOwnerDistanceTests {
             assertRestored(h, before, target);
             h.assertTrue(count(c, Items.DIRT) + looseDirt(h) >= 24, "The soil of the column was lost: " + count(c, Items.DIRT)
                     + " in the bag and " + looseDirt(h) + " on the ground, " + report);
-            h.assertTrue(most[0] > 0, "No column was raised for " + height + " up: " + report);
+            h.assertTrue(column ? most[0] > 0 : most[0] == 0, "The column for " + height + " up is wrong: " + most[0] + ", " + report);
             h.assertTrue(c.getTemporarySupportCount() == 0, "The column is still standing: " + c.getTemporarySupportCount());
             h.assertTrue(!report.contains("Полторы минуты") && !report.contains("не выполнено")
                     && !report.contains("Рядом нечего копать") && !report.contains("Рядом не вижу"), "A wrong end: " + report);

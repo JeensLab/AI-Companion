@@ -65,7 +65,7 @@ public final class CompanionWayMatrixTests {
 
     /** Four above: the first height a stand cell cannot reach; the column comes back down and the ground is restored. */
     @GameTest(template = "tall_tree", timeoutTicks = 6000)
-    public static void pumpkinFourAboveIsMinedFromAColumnThatComesDown(GameTestHelper h) {
+    public static void pumpkinFourAboveIsMinedWithNoColumn(GameTestHelper h) {
         gourdAbove(h, 4, Blocks.PUMPKIN, Items.PUMPKIN, 1);
     }
 
@@ -141,7 +141,7 @@ public final class CompanionWayMatrixTests {
     }
 
     @GameTest(template = "tall_tree", timeoutTicks = 6000)
-    public static void obsidianFourAboveIsMinedFromAColumnThatComesDown(GameTestHelper h) {
+    public static void obsidianFourAboveIsMinedWithNoColumn(GameTestHelper h) {
         obsidianAbove(h, 4);
     }
 
@@ -166,7 +166,7 @@ public final class CompanionWayMatrixTests {
     }
 
     @GameTest(template = "tall_tree", timeoutTicks = 6000)
-    public static void melonFourAboveGivesItsSlicesFromAColumn(GameTestHelper h) {
+    public static void melonFourAboveGivesItsSlicesWithNoColumn(GameTestHelper h) {
         melonAbove(h, 4);
     }
 
@@ -277,11 +277,30 @@ public final class CompanionWayMatrixTests {
         });
     }
 
-    /** Four above on bare stone is the first height that asks for soil: with none he says so and builds nothing. */
+    /** Four above on bare stone is still within a player's reach: taken without soil and no column. */
     @GameTest(template = "tall_tree", timeoutTicks = 800)
-    public static void aBlockFourAboveOnStoneIsRefusedWithNoColumn(GameTestHelper h) {
+    public static void aBlockFourAboveOnStoneIsMinedWithoutSoil(GameTestHelper h) {
         flat(h, Blocks.STONE);
         BlockPos target = new BlockPos(16, FEET + 4, 16);
+        h.setBlock(target, Blocks.PUMPKIN);
+        CompanionEntity c = spawn(h);
+        int[] before = snapshot(h);
+        int[] most = {0};
+        h.onEachTick(() -> most[0] = Math.max(most[0], c.getTemporarySupportCount()));
+        var future = sayModel(h, c, "добудь тыкву", pumpkinPlan(1));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
+            h.assertTrue(count(c, Items.PUMPKIN) == 1 && most[0] == 0, "A column for four above: " + future.join().report());
+            h.assertBlockPresent(Blocks.AIR, target);
+            assertRestored(h, before, target);
+        });
+    }
+
+    /** Five above on bare stone is past the reach: with no soil he says so and builds nothing. */
+    @GameTest(template = "tall_tree", timeoutTicks = 800)
+    public static void aBlockFiveAboveOnStoneIsRefusedWithNoColumn(GameTestHelper h) {
+        flat(h, Blocks.STONE);
+        BlockPos target = new BlockPos(16, FEET + 5, 16);
         h.setBlock(target, Blocks.PUMPKIN);
         CompanionEntity c = spawn(h);
         int[] before = snapshot(h);
@@ -1918,7 +1937,7 @@ public final class CompanionWayMatrixTests {
             h.assertBlockPresent(Blocks.AIR, target);
             assertRestored(h, before, target);
             h.assertTrue(count(c, Items.DIRT) == 20, "The soil of the column was lost: " + count(c, Items.DIRT));
-            h.assertTrue(height >= 4 ? most[0] > 0 : most[0] == 0, "The column for " + height + " above is wrong: " + most[0] + ", " + report);
+            h.assertTrue(height >= 5 ? most[0] > 0 : most[0] == 0, "The column for " + height + " above is wrong: " + most[0] + ", " + report);
             h.assertTrue(c.getTemporarySupportCount() == 0, "The column is still standing: " + c.getTemporarySupportCount() + ", recovering " + c.isRecoveringSupports() + ", last: " + c.getLastTaskResult());
             h.assertTrue(!report.contains("Полторы минуты") && !report.contains("не выполнено"), "A wrong end: " + report);
             h.assertTrue(c.getHealth() == c.getMaxHealth(), "The climb hurt him: " + c.getHealth() + " of " + c.getMaxHealth());
@@ -1943,7 +1962,7 @@ public final class CompanionWayMatrixTests {
             h.assertBlockPresent(Blocks.AIR, target);
             assertRestored(h, before, target);
             h.assertTrue(count(c, Items.DIRT) == 20, "The soil of the column was lost: " + count(c, Items.DIRT));
-            h.assertTrue(height >= 4 ? most[0] > 0 : most[0] == 0, "The column for " + height + " above is wrong: " + most[0] + ", " + report);
+            h.assertTrue(height >= 5 ? most[0] > 0 : most[0] == 0, "The column for " + height + " above is wrong: " + most[0] + ", " + report);
             h.assertTrue(c.getTemporarySupportCount() == 0 && !report.contains("Полторы минуты"), "A wrong end: " + report);
         });
     }

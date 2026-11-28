@@ -95,11 +95,12 @@ public final class CompanionWayAnyGeometryTests {
     /**
      * A gold block one to the side and four up, nothing under it. Nine ingots smelted and crafted make one, but the block itself
      * lies there: the way takes what lies in the world before a chain of his own skills makes it (PATH7, #105). Before this, the
-     * order went to the mine for gold ore that was not there and ended with nothing.
+     * order went to the mine for gold ore that was not there and ended with nothing. Four up is a player's own reach from the
+     * cell under it, so no column is raised (the owner, 28.11).
      */
     @GameTest(template = "tall_tree", timeoutTicks = 8000)
-    public static void aGoldBlockUpAndOneToTheSideIsTakenFromAColumn(GameTestHelper h) {
-        chainAbove(h, Blocks.GOLD_BLOCK, Items.GOLD_BLOCK, 1, 0, 4);
+    public static void aGoldBlockUpAndOneToTheSideIsTakenFromWhereHeStands(GameTestHelper h) {
+        chainAbove(h, Blocks.GOLD_BLOCK, Items.GOLD_BLOCK, 1, 0, 4, false);
     }
 
     /** Two to the side, five up: the same block, the same geometry as any other. */
@@ -327,6 +328,11 @@ public final class CompanionWayAnyGeometryTests {
      * {@code height} above his feet, nothing under it: taken as it lies from a column of his own soil, never made again.
      */
     private static void chainAbove(GameTestHelper h, Block block, Item item, int dx, int dz, int height) {
+        chainAbove(h, block, item, dx, dz, height, true);
+    }
+
+    /** {@code column} false for a block a player reaches from where he stands: no column is raised for it. */
+    private static void chainAbove(GameTestHelper h, Block block, Item item, int dx, int dz, int height, boolean column) {
         flat(h, Blocks.GRASS_BLOCK);
         BlockPos target = new BlockPos(HOME_X + dx, FEET + height, HOME_Z + dz);
         h.setBlock(target, block);
@@ -346,7 +352,7 @@ public final class CompanionWayAnyGeometryTests {
             h.assertBlockPresent(Blocks.AIR, target);
             assertRestored(h, before, target);
             h.assertTrue(count(c, Items.DIRT) == 20, "The soil of the column was lost: " + count(c, Items.DIRT) + ", " + report);
-            h.assertTrue(most[0] > 0, "No column was raised for " + height + " up: " + most[0] + ", " + report);
+            h.assertTrue(column ? most[0] > 0 : most[0] == 0, "The column for " + height + " up is wrong: " + most[0] + ", " + report);
             h.assertTrue(c.getTemporarySupportCount() == 0, "The column is still standing: " + c.getTemporarySupportCount());
             h.assertTrue(!report.contains("Полторы минуты") && !report.contains("не выполнено"), "A wrong end: " + report);
         });

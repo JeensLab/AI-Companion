@@ -329,7 +329,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             // The chain is asked for the total it must hold, not only the part missing: the bag's own count is no part of the
             // plan's work, so a block that stands is taken even where the bag already meets a count that was not said (one of
             // them at least, the owner 28.11).
-            need = have + Math.max(1, asked - have);
+            need = all ? asked + have : have + Math.max(1, asked - have);
             // What lies about him of the thing is taken before anything is made or dug for it — the same rule a block lying there
             // follows: a drop still waiting is fetched by the pickup, and the bag is checked after it. A re-search that finds no
             // block of the item is no reason to give the order up while its drop lies on the ground.
