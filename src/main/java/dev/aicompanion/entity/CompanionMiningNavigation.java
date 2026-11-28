@@ -254,9 +254,9 @@ final class CompanionMiningNavigation {
      * The height his feet stand at in this cell, or {@link #NO_STAND} when no body fits there. The game's own walk stands a body
      * on the collision top of what is under it (WalkNodeEvaluator.getFloorLevel), so a cell is a stand wherever a player walks:
      * on the ground, on a stair's top step, on a bottom slab, on a path or a farm bed, in a ladder's or a vine's own cell, and on
-     * the half step a bottom slab or a farm bed makes inside its cell. A cell of a partial shape the route has no node in — an
-     * azalea's plate, a berry bush, a layer of snow, a carpet — is no stand, and neither is the cell over a half-high floor: the
-     * walk would jam there (CompanionPartialBlockTests), and {@link CompanionFootwork#stands} refuses the same cells.
+     * the half step a bottom slab, a carpet or a layer of snow makes inside its cell. A partial shape the walk must jump onto — a
+     * berry bush's 0.8, an azalea's plate — is no stand: the walk jams there (CompanionPartialBlockTests), and
+     * {@link CompanionFootwork#stands} refuses the same cells.
      */
     static double standHeight(CompanionEntity owner, BlockPos pos) {
         var level = owner.level();
@@ -280,16 +280,13 @@ final class CompanionMiningNavigation {
             if (floor.isFaceSturdy(level, pos.below(), Direction.UP)) feet = pos.getY();
             else if (!floor.is(BlockTags.LEAVES) && !floor.is(BlockTags.LOGS)) {
                 double top = floor.getCollisionShape(level, pos.below()).max(Direction.Axis.Y);
-                // A half-high floor (a bottom slab, a layer of snow, a farm bed) is no floor for the cell over it: its own cell
-                // is the stand the walk stands him in.
-                if (top < .99D) return NO_STAND;
-                feet = pos.getY();
+                if (top <= 0) return NO_STAND;
+                feet = pos.getY() - 1 + Math.min(top, 1.0);
             } else return NO_STAND;
         }
         AABB body = new AABB(pos.getX() + .2, feet, pos.getZ() + .2, pos.getX() + .8, feet + owner.getBbHeight(), pos.getZ() + .8);
         return level.noCollision(owner, body) ? feet : NO_STAND;
     }
-
 
     /** A cell he can stand in and work from: the floor sturdy, room for the body, his head in the air; his feet may be in water, not in lava. */
     static boolean standable(CompanionEntity owner, BlockPos pos) {
