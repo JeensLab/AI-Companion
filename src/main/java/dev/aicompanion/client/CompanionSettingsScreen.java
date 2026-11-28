@@ -14,6 +14,7 @@ import net.minecraft.network.chat.Style;
 import net.minecraft.util.FormattedCharSequence;
 
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
 
 /**
@@ -26,12 +27,12 @@ import java.util.List;
  */
 public final class CompanionSettingsScreen extends Screen {
     private static final int MAX_RADIUS = dev.aicompanion.entity.CompanionEntity.MAX_SEARCH_RADIUS;
-    /** The labels of the field rows, by row; the second column of rows 0 and 2 has its own label in render. */
-    private static final String[] LABELS = {"Имя компаньона", "Ключ API", "Модель", "Inworld Basic credential",
-            "ID голоса Inworld", "Характер компаньона"};
+    private static final String[] LABELS = {"Имя компаньона", "Ключ API", "Модель", "Ключ голосового сервиса",
+            "ID голоса", "Характер компаньона"};
     private final Screen parent;
     /** The widgets of every field row: the field, the second field of a split row, and its «Показать» button. */
     private final List<List<AbstractWidget>> rowWidgets = new ArrayList<>();
+    private final EnumMap<SpeechProvider, SpeechCredentials> speechCredentials = new EnumMap<>(SpeechProvider.class);
     private EditBox openRouterKey;
     private EditBox companionName;
     private EditBox searchRadius;
@@ -41,11 +42,15 @@ public final class CompanionSettingsScreen extends Screen {
     private Button pager;
     private EditBox model;
     private EditBox apiUrl;
-    private EditBox inworldKey;
+    private SpeechProvider speechProvider;
+    private EditBox speechKey;
+    private Button speechKeyVisibility;
     private EditBox voiceId;
     private EditBox personality;
     private boolean showOpenRouterKey;
-    private boolean showInworldKey;
+    private boolean showSpeechKey;
+
+    private record SpeechCredentials(String key, String voiceId) { }
 
     public CompanionSettingsScreen(Screen parent) {
         super(Component.literal("Настройки AI Companion"));
@@ -58,7 +63,12 @@ public final class CompanionSettingsScreen extends Screen {
     protected void init() {
         rowWidgets.clear();
         for (int row = 0; row < CompanionSettingsLayout.ROW_COUNT; row++) rowWidgets.add(new ArrayList<>());
-        showOpenRouterKey = showInworldKey = false;
+        showOpenRouterKey = showSpeechKey = false;
+        speechProvider = OpenRouterConfig.SPEECH_PROVIDER.get();
+        for (SpeechProvider provider : SpeechProvider.values()) {
+            speechCredentials.put(provider, new SpeechCredentials(OpenRouterConfig.speechKey(provider).get(),
+                    OpenRouterConfig.speechVoiceId(provider).get()));
+        }
         pager = null;
         header = CompanionSettingsLayout.header(this.width);
         page = Math.clamp(page, 0, CompanionSettingsLayout.pages(this.width, this.height) - 1);
@@ -97,9 +107,17 @@ public final class CompanionSettingsScreen extends Screen {
         // The server shares the model's row: one more full row would push the last field under the buttons at small heights.
         model = addRowField(2, left, fieldWidth / 2 - 8, "openrouter/auto", OpenRouterConfig.MODEL.get(), false);
         apiUrl = addRowField(2, left + fieldWidth / 2 + 8, fieldWidth / 2 - 8, "OpenRouter", OpenRouterConfig.API_URL.get(), false);
-        inworldKey = addRowField(3, left, fieldWidth - 70, "Inworld Basic credential", OpenRouterConfig.INWORLD_API_KEY.get(), true);
-        addRowToggle(3, left + fieldWidth - 66, false);
-        voiceId = addRowField(4, left, fieldWidth, "ID голоса Inworld", OpenRouterConfig.INWORLD_VOICE_ID.get(), false);
+        speechKey = addRowField(3, left, fieldWidth - 70, LABELS[3], "", true);
+        speechKeyVisibility = addRowToggle(3, left + fieldWidth - 66, false);
+        voiceId = addRowField(4, left, fieldWidth / 2 - 8, "ID голоса", "", false);
+        loadSpeechFields();
+        Button providerButton = addRenderableWidget(Button.builder(Component.literal(speechProvider.displayName()), button -> {
+            readSpeechFields();
+            speechProvider = speechProvider == SpeechProvider.INWORLD ? SpeechProvider.ELEVENLABS : SpeechProvider.INWORLD;
+            loadSpeechFields();
+            button.setMessage(Component.literal(speechProvider.displayName()));
+        }).bounds(left + fieldWidth / 2 + 8, 0, fieldWidth / 2 - 8, CompanionSettingsLayout.FIELD_HEIGHT).build());
+        rowWidgets.get(4).add(providerButton);
         personality = addRowField(5, left, fieldWidth, "Характер компаньона", OpenRouterConfig.PERSONALITY.get(), false);
         personality.setMaxLength(2000);
 
@@ -131,20 +149,41 @@ public final class CompanionSettingsScreen extends Screen {
         return field;
     }
 
-    private void addRowToggle(int row, int x, boolean openRouter) {
+    private Button addRowToggle(int row, int x, boolean openRouter) {
         Button toggle = addRenderableWidget(Button.builder(Component.literal("Показать"), button -> {
             boolean visible = openRouter ? (showOpenRouterKey = !showOpenRouterKey)
-                    : (showInworldKey = !showInworldKey);
-            EditBox field = openRouter ? openRouterKey : inworldKey;
+                    : (showSpeechKey = !showSpeechKey);
+            EditBox field = openRouter ? openRouterKey : speechKey;
             if (visible) field.setFormatter((text, cursor) -> FormattedCharSequence.forward(text, Style.EMPTY));
             else mask(field);
             button.setMessage(Component.literal(visible ? "Скрыть" : "Показать"));
         }).bounds(x, 0, 66, CompanionSettingsLayout.FIELD_HEIGHT).build());
         rowWidgets.get(row).add(toggle);
+        return toggle;
     }
 
     private static void mask(EditBox field) {
         field.setFormatter((text, cursor) -> FormattedCharSequence.forward("•".repeat(text.length()), Style.EMPTY));
+    }
+
+    private void readSpeechFields() {
+        speechCredentials.put(speechProvider, new SpeechCredentials(speechKey.getValue().trim(), voiceId.getValue().trim()));
+    }
+
+    private void loadSpeechFields() {
+        SpeechCredentials credentials = speechCredentials.get(speechProvider);
+        showSpeechKey = false;
+        mask(speechKey);
+        speechKeyVisibility.setMessage(Component.literal("Показать"));
+        speechKey.setValue(credentials.key());
+        speechKey.setHint(Component.literal(speechKeyLabel()).withStyle(ChatFormatting.GRAY));
+        voiceId.setValue(credentials.voiceId());
+        voiceId.setHint(Component.literal(speechProvider == SpeechProvider.ELEVENLABS ? "Нужен для озвучки" : "Ashley")
+                .withStyle(ChatFormatting.GRAY));
+    }
+
+    private String speechKeyLabel() {
+        return speechProvider == SpeechProvider.INWORLD ? "Ключ Inworld (Basic)" : "Ключ ElevenLabs";
     }
 
     /**
@@ -180,10 +219,14 @@ public final class CompanionSettingsScreen extends Screen {
         OpenRouterConfig.MODEL.save();
         OpenRouterConfig.API_URL.set(apiUrl.getValue().trim());
         OpenRouterConfig.API_URL.save();
-        OpenRouterConfig.INWORLD_API_KEY.set(inworldKey.getValue().trim());
-        OpenRouterConfig.INWORLD_API_KEY.save();
-        OpenRouterConfig.INWORLD_VOICE_ID.set(voiceId.getValue().trim());
-        OpenRouterConfig.INWORLD_VOICE_ID.save();
+        readSpeechFields();
+        for (SpeechProvider provider : SpeechProvider.values()) {
+            SpeechCredentials credentials = speechCredentials.get(provider);
+            OpenRouterConfig.speechKey(provider).set(credentials.key());
+            OpenRouterConfig.speechVoiceId(provider).set(credentials.voiceId());
+        }
+        OpenRouterConfig.SPEECH_PROVIDER.set(speechProvider);
+        OpenRouterConfig.SPEECH_PROVIDER.save();
         OpenRouterConfig.PERSONALITY.set(personality.getValue().trim());
         OpenRouterConfig.PERSONALITY.save();
         onClose();
@@ -201,11 +244,14 @@ public final class CompanionSettingsScreen extends Screen {
         int fieldWidth = Math.min(380, this.width - 80);
         int left = (this.width - fieldWidth) / 2;
         for (CompanionSettingsLayout.Row row : CompanionSettingsLayout.page(this.width, this.height, this.page)) {
-            graphics.drawString(font, LABELS[row.index()], left, row.labelY(), 0xFFFFFF);
+            graphics.drawString(font, row.index() == 3 ? speechKeyLabel() : LABELS[row.index()], left, row.labelY(), 0xFFFFFF);
             if (row.index() == 0)
                 graphics.drawString(font, "Дальность поиска (16–" + MAX_RADIUS + ")", left + fieldWidth / 2 + 8, row.labelY(), 0xFFFFFF);
             if (row.index() == 2)
                 graphics.drawString(font, "Адрес сервера модели", left + fieldWidth / 2 + 8, row.labelY(), 0xFFFFFF);
+            if (row.index() == 4)
+                graphics.drawString(font, font.plainSubstrByWidth("Голосовой сервис", fieldWidth / 2 - 8),
+                        left + fieldWidth / 2 + 8, row.labelY(), 0xFFFFFF);
         }
         // The note has a line of its own under the fields; a narrow window cuts it instead of painting it off the edge.
         String note = "Ключи скрыты по умолчанию. Нажми «Показать» рядом с полем; данные хранятся локально.";

@@ -2,13 +2,6 @@ package dev.aicompanion.client;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import dev.aicompanion.OpenRouterConfig;
-
-import javax.sound.sampled.AudioFileFormat;
-import javax.sound.sampled.AudioInputStream;
-import javax.sound.sampled.AudioSystem;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -18,7 +11,7 @@ import java.util.Base64;
 import java.util.concurrent.CompletableFuture;
 
 /** Sends captured LINEAR16 audio to Inworld speech-to-text. */
-public final class InworldSttClient {
+final class InworldSttClient {
     private static final URI TRANSCRIBE = URI.create("https://api.inworld.ai/stt/v1/transcribe");
     private static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(15))
@@ -27,15 +20,7 @@ public final class InworldSttClient {
     private InworldSttClient() {
     }
 
-    public static CompletableFuture<String> transcribe(byte[] audio) {
-        if (audio.length < 1600) {
-            return CompletableFuture.failedFuture(new IllegalStateException("Запись слишком короткая. Удерживай V и говори, затем отпусти клавишу."));
-        }
-        String credential = OpenRouterConfig.INWORLD_API_KEY.get().trim();
-        if (credential.isEmpty()) {
-            return CompletableFuture.failedFuture(new IllegalStateException("Добавь ключ Inworld в настройках мода."));
-        }
-
+    static CompletableFuture<String> transcribe(byte[] audio, String credential) {
         JsonObject config = new JsonObject();
         config.addProperty("modelId", "inworld/inworld-stt-1");
         config.addProperty("audioEncoding", "AUTO_DETECT");
@@ -44,7 +29,7 @@ public final class InworldSttClient {
         config.addProperty("numberOfChannels", 1);
 
         JsonObject audioData = new JsonObject();
-        audioData.addProperty("content", Base64.getEncoder().encodeToString(wrapAsWav(audio)));
+        audioData.addProperty("content", Base64.getEncoder().encodeToString(VoicePcm.wrapAsWav(audio, MicrophoneRecorder.FORMAT)));
         JsonObject body = new JsonObject();
         body.add("transcribeConfig", config);
         body.add("audioData", audioData);
@@ -64,21 +49,6 @@ public final class InworldSttClient {
                     JsonObject root = JsonParser.parseString(response.body()).getAsJsonObject();
                     return root.getAsJsonObject("transcription").get("transcript").getAsString().trim();
                 });
-    }
-
-    private static byte[] wrapAsWav(byte[] pcm) {
-        int frameSize = MicrophoneRecorder.FORMAT.getFrameSize();
-        int completeFramesLength = pcm.length - (pcm.length % frameSize);
-        try (AudioInputStream audioStream = new AudioInputStream(
-                new ByteArrayInputStream(pcm, 0, completeFramesLength),
-                MicrophoneRecorder.FORMAT,
-                completeFramesLength / frameSize);
-             ByteArrayOutputStream wav = new ByteArrayOutputStream()) {
-            AudioSystem.write(audioStream, AudioFileFormat.Type.WAVE, wav);
-            return wav.toByteArray();
-        } catch (Exception exception) {
-            throw new IllegalStateException("Не удалось подготовить WAV-запись для Inworld.", exception);
-        }
     }
 
     private static String readError(String body, int statusCode) {

@@ -53,8 +53,8 @@ final class CompanionBehaviorScreen extends Screen {
             b.setMessage(windowsVoiceLabel());
         }).bounds(left, top + 120, 300, 20).build());
         windowsVoice.setTooltip(Tooltip.create(Component.literal(
-                MacOsVoice.macos() ? "Без ключа Inworld Олег говорит установленным русским голосом macOS. Если голос недоступен, появится подсказка."
-                        : "Без ключа Inworld Олег говорит русским голосом Windows. Нет такого голоса — добавь русский язык с речью в параметрах Windows.")));
+                MacOsVoice.macos() ? "Если ключ выбранного голосового сервиса пуст, Олег говорит установленным русским голосом macOS."
+                        : "Если ключ выбранного голосового сервиса пуст, Олег говорит русским голосом Windows. Русский язык с речью можно добавить в параметрах Windows.")));
         addRenderableWidget(Button.builder(shortLabel(), b -> {
             OpenRouterConfig.SHORT_MURMURS.set(!OpenRouterConfig.SHORT_MURMURS.get()); OpenRouterConfig.SHORT_MURMURS.save();
             b.setMessage(shortLabel());
@@ -220,7 +220,7 @@ final class CompanionBehaviorScreen extends Screen {
     private static net.neoforged.neoforge.common.ModConfigSpec.BooleanValue localVoiceSetting() {
         return MacOsVoice.macos() ? OpenRouterConfig.MACOS_VOICE : OpenRouterConfig.WINDOWS_VOICE;
     }
-    private Component windowsVoiceLabel() { return Component.literal("Голос " + (MacOsVoice.macos() ? "macOS" : "Windows") + " без ключа Inworld: " + (localVoiceSetting().get() ? "вкл." : "выкл.")); }
+    private Component windowsVoiceLabel() { return Component.literal("Голос " + (MacOsVoice.macos() ? "macOS" : "Windows") + " без ключа: " + (localVoiceSetting().get() ? "вкл." : "выкл.")); }
     private Component distanceLabel() { return Component.literal("Слышимость голоса: " + OpenRouterConfig.VOICE_DISTANCE.get() + " блоков"); }
     @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);

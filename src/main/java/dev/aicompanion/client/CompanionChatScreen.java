@@ -107,7 +107,7 @@ public final class CompanionChatScreen extends Screen {
                                 if (executionGeneration == CompanionActionExecutor.currentPlanGeneration()) finishActions(reply.actions(), actionReport, actionError, false, trace);
                             }));
                 }
-                if (!replyText.isBlank()) InworldTtsClient.speak(replyText, trace).exceptionally(speechError -> {
+                if (!replyText.isBlank()) CompanionSpeech.speak(replyText, trace).exceptionally(speechError -> {
                     dev.aicompanion.AICompanionMod.LOGGER.warn("Speech could not be played: {}", speechError.getMessage());
                     return null;
                 });
@@ -412,7 +412,7 @@ public final class CompanionChatScreen extends Screen {
         appendHistory(reply);
         minecraft.gui.getChat().addMessage(reply);
         if (!voiced) return;
-        ("joke".equals(source) ? InworldTtsClient.speakJoke(text, trace) : InworldTtsClient.speak(text, trace)).exceptionally(speechError -> {
+        ("joke".equals(source) ? CompanionSpeech.speakJoke(text, trace) : CompanionSpeech.speak(text, trace)).exceptionally(speechError -> {
             dev.aicompanion.AICompanionMod.LOGGER.warn("Speech could not be played: {}", speechError.getMessage());
             return null;
         });

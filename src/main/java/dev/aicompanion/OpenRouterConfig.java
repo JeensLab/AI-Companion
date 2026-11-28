@@ -1,5 +1,6 @@
 package dev.aicompanion;
 
+import dev.aicompanion.client.SpeechProvider;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 /** Client-local settings for the OpenRouter connection and companion personality. */
@@ -52,11 +53,11 @@ public final class OpenRouterConfig {
             .define("diagnosticLogging", true);
     public static final ModConfigSpec.IntValue VOICE_DISTANCE = BUILDER.defineInRange("voiceDistance", 32, 8, 64);
     public static final ModConfigSpec.BooleanValue WINDOWS_VOICE = BUILDER
-            .comment("Without an Inworld key, speak with a Russian voice installed in Windows (nothing is sent anywhere).")
+            .comment("Without a key for the selected speech provider, speak with an installed Russian Windows voice.")
             .define("windowsVoice", true);
 
     public static final ModConfigSpec.BooleanValue MACOS_VOICE = BUILDER
-            .comment("Without an Inworld key, speak using an installed Russian macOS voice. No network or voice downloads.")
+            .comment("Without a key for the selected speech provider, speak with an installed Russian macOS voice.")
             .define("macosVoice", true);
 
     public static final ModConfigSpec.ConfigValue<String> API_KEY = BUILDER
@@ -92,8 +93,13 @@ public final class OpenRouterConfig {
             .translation("config.aicompanion.top_p")
             .define("topP", "");
 
+    public static final ModConfigSpec.EnumValue<SpeechProvider> SPEECH_PROVIDER = BUILDER
+            .comment("Cloud provider for microphone transcription and voice synthesis.")
+            .translation("config.aicompanion.speech_provider")
+            .defineEnum("speechProvider", SpeechProvider.INWORLD);
+
     public static final ModConfigSpec.ConfigValue<String> INWORLD_API_KEY = BUILDER
-            .comment("Inworld Basic credential copied from the Inworld portal. Leave blank to use an installed local Russian voice on Windows (windowsVoice) or macOS (macosVoice).")
+            .comment("Inworld Basic credential copied from the Inworld portal.")
             .translation("config.aicompanion.inworld_api_key")
             .define("inworldApiKey", "");
 
@@ -101,6 +107,30 @@ public final class OpenRouterConfig {
             .comment("Inworld voice ID used for the companion's speech.")
             .translation("config.aicompanion.inworld_voice_id")
             .define("inworldVoiceId", "Ashley");
+
+    public static final ModConfigSpec.ConfigValue<String> ELEVENLABS_API_KEY = BUILDER
+            .comment("Your ElevenLabs API key. Stored locally in the Minecraft config folder.")
+            .translation("config.aicompanion.elevenlabs_api_key")
+            .define("elevenLabsApiKey", "");
+
+    public static final ModConfigSpec.ConfigValue<String> ELEVENLABS_VOICE_ID = BUILDER
+            .comment("ElevenLabs voice ID used for the companion's speech.")
+            .translation("config.aicompanion.elevenlabs_voice_id")
+            .define("elevenLabsVoiceId", "");
+
+    public static ModConfigSpec.ConfigValue<String> speechKey(SpeechProvider provider) {
+        return switch (provider) {
+            case INWORLD -> INWORLD_API_KEY;
+            case ELEVENLABS -> ELEVENLABS_API_KEY;
+        };
+    }
+
+    public static ModConfigSpec.ConfigValue<String> speechVoiceId(SpeechProvider provider) {
+        return switch (provider) {
+            case INWORLD -> INWORLD_VOICE_ID;
+            case ELEVENLABS -> ELEVENLABS_VOICE_ID;
+        };
+    }
 
     public static final ModConfigSpec.ConfigValue<String> PERSONALITY = BUILDER
             .comment("Additional personality preferences. Shared character directions also apply to existing saved settings.")

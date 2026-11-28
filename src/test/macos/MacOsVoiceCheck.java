@@ -1,6 +1,7 @@
 import dev.aicompanion.client.MacOsVoice;
 import dev.aicompanion.client.MacOsVoiceHint;
 import dev.aicompanion.client.SpeechEngine;
+import dev.aicompanion.client.SpeechProvider;
 import dev.aicompanion.client.VoicePcm;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
@@ -8,18 +9,18 @@ import java.util.concurrent.TimeUnit;
 /** Pure regression checks, with an explicit optional offline synthesis probe on a real Mac. */
 public class MacOsVoiceCheck {
     public static void main(String[] args) throws Exception {
-        check(SpeechEngine.choose("key", true, false, true) == SpeechEngine.INWORLD, "Inworld priority");
-        check(SpeechEngine.choose(" ", true, false, true) == SpeechEngine.MACOS, "macOS without key");
-        check(SpeechEngine.choose("", false, false, true) == SpeechEngine.NONE, "macOS switch");
-        check(SpeechEngine.choose("", true, true) == SpeechEngine.WINDOWS, "Windows compatibility");
-        check(SpeechEngine.choose("", true, false, false) == SpeechEngine.NONE, "Other platforms");
+        check(SpeechEngine.choose(SpeechProvider.INWORLD, "key", true, false, true) == SpeechEngine.INWORLD, "Inworld priority");
+        check(SpeechEngine.choose(SpeechProvider.INWORLD, " ", true, false, true) == SpeechEngine.MACOS, "macOS without key");
+        check(SpeechEngine.choose(SpeechProvider.INWORLD, "", false, false, true) == SpeechEngine.NONE, "macOS switch");
+        check(SpeechEngine.choose(SpeechProvider.INWORLD, "", true, true, false) == SpeechEngine.WINDOWS, "Windows compatibility");
+        check(SpeechEngine.choose(SpeechProvider.INWORLD, "", true, false, false) == SpeechEngine.NONE, "Other platforms");
         String english = "Alex en_US # Hello\n";
         check(MacOsVoice.chooseVoice(english).isEmpty(), "English substitute");
         check(MacOsVoice.chooseVoice(english + "Milena ru_RU # Привет\n").orElseThrow().equals("Milena"), "Russian selection");
         check(MacOsVoice.chooseVoice("Milena ru_RU # Привет\nYuri ru_RU # Привет\n").orElseThrow().equals("Yuri"), "Yuri preference");
         check(MacOsVoice.chooseVoice("Milena (Enhanced) ru_RU # Привет\n").orElseThrow().equals("Milena (Enhanced)"), "Multiword name");
         var hint = new MacOsVoiceHint();
-        check(hint.take().contains("Inworld") && hint.take() == null, "One-time explanation");
+        check(hint.take().contains("голосовой сервис") && hint.take() == null, "One-time explanation");
         check("no_russian_voice".equals(MacOsVoice.unavailableReason(new CompletionException(new MacOsVoice.Unavailable("no_russian_voice")))), "Wrapped failure");
         check(MacOsVoice.unavailableReason(new IllegalStateException("Unexpected")) == null, "Unexpected errors hidden");
         System.out.println("All 12 local voice checks passed");

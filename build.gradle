@@ -261,6 +261,7 @@ tasks.withType(JavaCompile).configureEach {
 tasks.named('jar', Jar).configure {
     exclude 'dev/aicompanion/gametest/**'
     exclude 'dev/aicompanion/entity/*Tests*.class'
+    exclude 'dev/aicompanion/client/CompanionElevenLabsVoiceTests*.class'
     exclude 'data/aicompanion/structure/empty.nbt'
     exclude 'data/aicompanion/structure/large_search.nbt'
     exclude 'data/aicompanion/structure/tall_tree.nbt'
