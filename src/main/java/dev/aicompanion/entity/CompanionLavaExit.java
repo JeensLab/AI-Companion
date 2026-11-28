@@ -92,7 +92,7 @@ final class CompanionLavaExit extends Goal {
     }
 
     /** The cells of lava a straight wade from {@code from} to {@code to} goes through at his feet, his own cell apart. */
-    private static int crossed(ServerLevel level, BlockPos from, BlockPos to) {
+    static int crossed(ServerLevel level, BlockPos from, BlockPos to) {
         Vec3 start = Vec3.atBottomCenterOf(from), end = Vec3.atBottomCenterOf(to);
         int steps = (int) Math.ceil(start.distanceTo(end) / CROSS_STEP), count = 0;
         BlockPos last = from;

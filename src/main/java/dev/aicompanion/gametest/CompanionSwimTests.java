@@ -11,6 +11,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.ai.goal.GoalSelector;
+import net.minecraft.world.entity.ai.goal.WrappedGoal;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
@@ -313,6 +314,17 @@ public final class CompanionSwimTests {
         ((LevelTicks<Fluid>) h.getLevel().getFluidTicks()).clearArea(BoundingBox.fromCorners(h.absolutePos(new BlockPos(8, 0, 12)), h.absolutePos(new BlockPos(24, 16, 20))));
     }
 
+    /**
+     * The foot of a shut shaft: falling water at x 12, z 16 up to his neck (y 1 and 2, stone above it), and a niche of air beside it, at
+     * x 13 to 16, y 1 to 2. Nothing takes him up (the float lifts him to the ceiling of the shaft) and no route leads him out.
+     */
+    private static void foot(GameTestHelper h) {
+        fall(h, Blocks.STONE, 0, -1);
+        for (int y = 3; y <= 14; y++) h.setBlock(new BlockPos(12, y, 16), Blocks.STONE);
+        h.setBlock(new BlockPos(12, 2, 16), Fluids.FLOWING_WATER.getFlowing(7, false).createLegacyBlock());
+        for (int x = 13; x <= 16; x++) for (int y = 1; y <= 2; y++) h.setBlock(new BlockPos(x, y, 16), Blocks.AIR);
+    }
+
     /** The owner on the plateau and the order to come to him. */
     private static ServerPlayer called(GameTestHelper h, CompanionEntity oleg) {
         var owner = player(h, oleg);
@@ -322,24 +334,30 @@ public final class CompanionSwimTests {
         return owner;
     }
 
-    /** His way out of falling water has the turn. The goals of a mob are the game's own and closed to a test: read as the game holds them. */
-    private static boolean leaving(CompanionEntity c) {
+    /** His way out of falling water, as the game holds it (null: not among his goals). The goals of a mob are the game's own and closed to a test. */
+    private static WrappedGoal exitGoal(CompanionEntity c) {
         try {
             var field = Mob.class.getDeclaredField("goalSelector");
             field.setAccessible(true);
             return ((GoalSelector) field.get(c)).getAvailableGoals().stream()
-                    .anyMatch(goal -> goal.isRunning() && goal.getGoal().getClass().getSimpleName().equals("CompanionWaterExit"));
+                    .filter(goal -> goal.getGoal().getClass().getSimpleName().equals("CompanionWaterExit")).findFirst().orElse(null);
         } catch (ReflectiveOperationException e) { throw new IllegalStateException(e); }
+    }
+
+    /** His way out of falling water has the turn. */
+    private static boolean leaving(CompanionEntity c) {
+        var goal = exitGoal(c);
+        return goal != null && goal.isRunning();
     }
 
     private static String where(GameTestHelper h, CompanionEntity c) { return c.blockPosition().subtract(h.absolutePos(BlockPos.ZERO)).toShortString(); }
 
-    /** The opening three blocks high: he gets out onto the plateau and loses neither health nor all his air. */
+    /** The foot of a shut shaft with a niche beside it, and the owner out of reach: he gets out to the niche and loses neither health nor all his air. */
     @GameTest(template = "tall_tree", timeoutTicks = 400)
     public static void inAColumnOfFallingWaterWithAirOneStepAwayHeGetsOutAndDoesNotDrown(GameTestHelper h) {
-        fall(h, Blocks.STONE, 12, 14);
+        foot(h);
         still(h);
-        CompanionEntity oleg = spawn(h, 12, 7, 16);
+        CompanionEntity oleg = spawn(h, 12, 1, 16);
         called(h, oleg);
         float[] lowestHealth = {oleg.getMaxHealth()};
         int[] lowestAir = {oleg.getAirSupply()};
@@ -421,6 +439,93 @@ public final class CompanionSwimTests {
         h.succeedWhen(() -> {
             h.assertTrue(left[0], "The way out of the fall never had the turn");
             h.assertTrue(back[0], "The order has not had its turn back, he is at " + where(h, oleg) + (oleg.isWorking() ? "" : ", and it is over: " + oleg.getLastTaskResult()));
+        });
+    }
+
+    /** The floor of the niche is lava for two cells, and dry floor lies beyond: the line to that floor is a wade over the lava. */
+    @GameTest(template = "tall_tree", timeoutTicks = 300)
+    public static void theWayOutOfTheFallDoesNotWadeThroughLava(GameTestHelper h) {
+        foot(h);
+        for (int x = 13; x <= 14; x++) h.setBlock(new BlockPos(x, 0, 16), Blocks.LAVA);
+        still(h);
+        CompanionEntity oleg = spawn(h, 12, 1, 16);
+        called(h, oleg);
+        boolean[] burned = {false};
+        float[] lowestHealth = {oleg.getMaxHealth()};
+        h.onEachTick(() -> {
+            burned[0] |= oleg.isInLava() || oleg.isOnFire();
+            lowestHealth[0] = Math.min(lowestHealth[0], oleg.getHealth());
+        });
+        h.runAfterDelay(200, () -> {
+            h.assertTrue(!burned[0], "Waded into the lava, he is at " + where(h, oleg));
+            h.assertTrue(lowestHealth[0] >= oleg.getMaxHealth(), "Lost health: " + lowestHealth[0]);
+            h.succeed();
+        });
+    }
+
+    /** A swim up a shaft of falling water, open at the top only, with a niche at its foot: going up on purpose is not treading water. */
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void aSwimUpTheFallIsNotTreadingWater(GameTestHelper h) {
+        fall(h, Blocks.STONE, 12, 14);
+        for (int x = 13; x <= 14; x++) for (int y = 1; y <= 2; y++) h.setBlock(new BlockPos(x, y, 16), Blocks.AIR);
+        still(h);
+        CompanionEntity oleg = spawn(h, 12, 1, 16);
+        called(h, oleg);
+        int topOfTheClimb = h.absolutePos(new BlockPos(12, 11, 16)).getY();
+        int[] early = {0};
+        h.onEachTick(() -> { if (leaving(oleg) && oleg.getY() < topOfTheClimb) early[0]++; });
+        h.succeedWhen(() -> {
+            h.assertTrue(early[0] == 0, "Taken to the niche at the foot for " + early[0] + " ticks on his way up, he is at " + where(h, oleg));
+            h.assertTrue(oleg.getY() >= topOfTheClimb, "Not at the top yet, he is at " + where(h, oleg));
+        });
+    }
+
+    /** A rest of the way out in the fall (here set by hand) is not treading: the clock starts again when it is over. */
+    @GameTest(template = "tall_tree", timeoutTicks = 300)
+    public static void aRestInTheFallDoesNotLeaveTheTreadingClockRunning(GameTestHelper h) {
+        foot(h);
+        still(h);
+        CompanionEntity oleg = spawn(h, 12, 1, 16);
+        called(h, oleg);
+        int[] early = {0};
+        h.runAfterDelay(15, () -> {
+            try {
+                var goal = exitGoal(oleg).getGoal();
+                var field = goal.getClass().getDeclaredField("restUntil");
+                field.setAccessible(true);
+                field.setLong(goal, h.getLevel().getGameTime() + 100);
+            } catch (ReflectiveOperationException e) { throw new IllegalStateException(e); }
+        });
+        h.onEachTick(() -> { if (leaving(oleg) && h.getTick() < 150) early[0]++; });
+        h.runAfterDelay(150, () -> {
+            h.assertTrue(early[0] == 0, "Taken out at once when the rest was over, " + early[0] + " ticks before tick 150");
+            h.succeed();
+        });
+    }
+
+    /** The way out begins, and then the niche is a splash ring of shallow water: he is on his feet there, and the way out is over. */
+    @GameTest(template = "tall_tree", timeoutTicks = 300)
+    public static void atASplashRingTheWayOutEndsWhenHeHasArrived(GameTestHelper h) {
+        foot(h);
+        still(h);
+        CompanionEntity oleg = spawn(h, 12, 1, 16);
+        called(h, oleg);
+        double pastTheWall = h.absoluteVec(new Vec3(13.3, 0, 0)).x;
+        boolean[] left = {false};
+        int[] held = {0};
+        h.onEachTick(() -> {
+            if (!leaving(oleg)) return;
+            if (!left[0]) {
+                for (int x = 13; x <= 14; x++) h.setBlock(new BlockPos(x, 1, 16), Fluids.FLOWING_WATER.getFlowing(3, false).createLegacyBlock());
+                still(h);
+            }
+            left[0] = true;
+            if (oleg.onGround() && oleg.getX() > pastTheWall) held[0]++;
+        });
+        h.runAfterDelay(250, () -> {
+            h.assertTrue(left[0], "The way out of the fall never had the turn");
+            h.assertTrue(held[0] <= 8, "Held the move for " + held[0] + " ticks on his feet in the shallow water, he is at " + where(h, oleg));
+            h.succeed();
         });
     }
 }

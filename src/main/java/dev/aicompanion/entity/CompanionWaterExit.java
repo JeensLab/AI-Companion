@@ -1,6 +1,7 @@
 package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.level.material.FlowingFluid;
@@ -19,12 +20,12 @@ import java.util.EnumSet;
  * order, which has its own way with the water; the push is tried again later.
  */
 final class CompanionWaterExit extends Goal {
-    private static final int STEP_DOWN = 3, REPLAN_EVERY = 10, TREADING_TICKS = 60, PATIENCE = 20 * 8, REST = 20 * 10;
-    private static final double DRIFT = 2;
+    private static final int STEP_DOWN = 3, REPLAN_EVERY = 10, TREADING_TICKS = 60, PATIENCE = 20 * 8, REST = 20 * 10, NO_BANK_REST = 20;
+    private static final double DRIFT = 2, REACHED = .4;
 
     private final CompanionEntity c;
     private BlockPos target;
-    private long nextPlan, treadingSince, giveUpAt, restUntil;
+    private long nextPlan, treadingSince, giveUpAt, restUntil, begun;
     private Vec3 anchor;
 
     CompanionWaterExit(CompanionEntity c) {
@@ -33,35 +34,50 @@ final class CompanionWaterExit extends Goal {
     }
 
     @Override public boolean canUse() {
-        return c.inventoryViewers == 0 && c.work.isActive() && !c.gatheringLogs && !c.gatheringDirt && c.canWorkNow()
-                && c.level().getGameTime() >= restUntil
-                && c.getNavigation().isDone() && treadingWater() && (target = nearestDry()) != null;
+        boolean free = c.inventoryViewers == 0 && c.work.isActive() && !c.gatheringLogs && !c.gatheringDirt && c.canWorkNow()
+                && c.level().getGameTime() >= restUntil && c.getNavigation().isDone();
+        // The treading clock runs only while nothing else holds him: a path that was followed for a while, or a rest, is not treading.
+        if (!free) { anchor = null; return false; }
+        if (!treadingWater()) return false;
+        if ((target = nearestDry()) != null) return true;
+        restUntil = c.level().getGameTime() + NO_BANK_REST;
+        return false;
     }
 
     /**
      * A swim that gets somewhere is left alone: crossing a river to the player is not a reason to turn back to the nearest bank. So is
      * a swing at a block from the fall: taken off ore at the foot of a low fall a few ticks before it broke, he lost the swing and then
-     * the order, with no stand for that ore from the floor beside.
+     * the order, with no stand for that ore from the floor beside. Nor is a swim up the fall, a block or more of height, on purpose.
      */
     private boolean treadingWater() {
         if (!deepInWater() || c.work.swinging()) { anchor = null; return false; }
         long now = c.level().getGameTime();
         double dx = anchor == null ? 0 : c.getX() - anchor.x, dz = anchor == null ? 0 : c.getZ() - anchor.z;
-        if (anchor == null || dx * dx + dz * dz > DRIFT * DRIFT) { anchor = c.position(); treadingSince = now; return false; }
+        if (anchor == null || dx * dx + dz * dz > DRIFT * DRIFT || Math.abs(c.getY() - anchor.y) > 1) { anchor = c.position(); treadingSince = now; return false; }
         return now - treadingSince >= TREADING_TICKS;
     }
 
-    /** The way out is the order's and ends with it («стой» on the way to the bank). */
-    @Override public boolean canContinueToUse() { return c.inventoryViewers == 0 && c.isAlive() && c.work.isActive() && c.isInWater() && c.level().getGameTime() < giveUpAt; }
+    /** The way out is the order's and ends with it («стой» on the way to the bank), and with his arrival: a cell of shallow water is a bank too. */
+    @Override public boolean canContinueToUse() {
+        return c.inventoryViewers == 0 && c.isAlive() && c.work.isActive() && c.isInWater() && c.level().getGameTime() < giveUpAt && !arrived();
+    }
+
+    private boolean arrived() {
+        return target != null && c.onGround() && Math.hypot(c.getX() - (target.getX() + .5), c.getZ() - (target.getZ() + .5)) < REACHED
+                && Math.abs(c.getY() - target.getY()) < 1;
+    }
     @Override public boolean requiresUpdateEveryTick() { return true; }
     @Override public void start() {
         long now = c.level().getGameTime();
         nextPlan = now + REPLAN_EVERY;
         giveUpAt = now + PATIENCE;
+        begun = now;
         c.getNavigation().stop();
     }
     @Override public void stop() {
         restUntil = c.level().getGameTime() + REST;
+        // The turns he held the order off are not the order's: its deadline moves by them.
+        c.work.credit(c.level().getGameTime() - begun);
         target = null;
         anchor = null;
     }
@@ -84,5 +100,11 @@ final class CompanionWaterExit extends Goal {
         return fluid.is(FluidTags.WATER) && !fluid.isSource() && fluid.getValue(FlowingFluid.FALLING);
     }
 
-    private BlockPos nearestDry() { return CompanionLavaExit.nearest(c, STEP_DOWN, false, pos -> 0); }
+    /** Not a cell beside lava, nor one past it, at his feet or under them: the line to the bank is a wade, and a cell of lava on it burns. */
+    private BlockPos nearestDry() {
+        ServerLevel level = (ServerLevel) c.level();
+        BlockPos from = c.blockPosition();
+        return CompanionLavaExit.nearest(c, STEP_DOWN, false, pos -> CompanionLavaExit.beside(level, pos)
+                || CompanionLavaExit.crossed(level, from, pos) + CompanionLavaExit.crossed(level, from.below(), pos.below()) > 0 ? Double.POSITIVE_INFINITY : 0);
+    }
 }
