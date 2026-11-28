@@ -54,6 +54,10 @@ public final class CompanionPreferences {
             if (companion != null) {
                 companion.setCompanionName(name); companion.setSearchRadius(radius); companion.setLifestyle(chunks, speech);
                 companion.setMurmurIntervalPercent(murmurInterval);
+                companion.setPetEnabled(dev.aicompanion.entity.CompanionPet.CAT, OpenRouterConfig.PET_CAT.get());
+                companion.setPetEnabled(dev.aicompanion.entity.CompanionPet.DOG, OpenRouterConfig.PET_DOG.get());
+                companion.setPetEnabled(dev.aicompanion.entity.CompanionPet.PARROT, OpenRouterConfig.PET_PARROT.get());
+                companion.setPetSearchRadius(OpenRouterConfig.PET_SEARCH_RADIUS.get());
                 companion.setConversationAvailable(conversationAvailable);
                 companion.autonomy().configureFishing(leisureFishing);
                 companion.setDeathRecovery(OpenRouterConfig.DEATH_RECOVERY.get());

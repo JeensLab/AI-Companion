@@ -32,6 +32,7 @@ final class CompanionWorkText {
             case COMPOST -> "у компостера";
             case CHORE -> "по хозяйству";
             case ERRAND -> "поход в Незер";
+            case PET -> work.activePet.stageText();
         };
         return "Выполняет " + jobName(work) + " · " + stage;
     }
@@ -74,6 +75,7 @@ final class CompanionWorkText {
             case COMPOST -> work.composting.jobName();
             case CHORE -> work.chores.jobName();
             case ERRAND -> work.owner.errand.jobName();
+            case PET -> "поручение о " + work.activePet.kind.about;
         };
     }
 }

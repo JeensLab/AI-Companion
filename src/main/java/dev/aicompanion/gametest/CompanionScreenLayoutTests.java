@@ -15,7 +15,7 @@ import java.util.Set;
 
 /**
  * Review of PR #158: at 854×480 (427×240 at GUI scale 2) the behaviour screen pages its switches four rows at a time —
- * six pages for the switches there are now — while 1920×1080 (960×540) keeps two. Paging is deliberate, and no switch
+ * seven pages for the current rows — while 1920×1080 (960×540) keeps two. Paging is deliberate, and no switch
  * may become unreachable on the smaller screen. The model settings have their own screen behind the first row of
  * «Поведение»: its switch, fields and reference block must not overlap and must stay reachable at every GUI size too.
  * No client is needed: the geometry is pure arithmetic.
@@ -50,11 +50,11 @@ public final class CompanionScreenLayoutTests {
                         "Not every switch is reachable at height " + height + " with " + rows + " rows: " + seen);
             }
         }
-        int smallPages = CompanionSwitchLayout.pages(CompanionSwitchLayout.BEHAVIOUR_ROWS, 240);
-        h.assertTrue(CompanionSwitchLayout.perPage(240) == 4 && smallPages == 6,
-                "854×480 no longer has six pages of up to four switches");
+        h.assertTrue(CompanionSwitchLayout.perPage(240) == 4 && CompanionSwitchLayout.pages(CompanionSwitchLayout.BEHAVIOUR_ROWS, 240) == 7,
+                "854×480 no longer pages four rows at a time");
         h.assertTrue(CompanionSwitchLayout.pages(CompanionSwitchLayout.BEHAVIOUR_ROWS, 540) == 2, "1920×1080 no longer keeps two pages");
-        h.assertTrue(CompanionSwitchLayout.firstRow(CompanionSwitchLayout.BEHAVIOUR_ROWS, 240, smallPages) == 0,
+        int rows = CompanionSwitchLayout.BEHAVIOUR_ROWS;
+        h.assertTrue(CompanionSwitchLayout.firstRow(rows, 240, CompanionSwitchLayout.pages(rows, 240)) == 0,
                 "A page past the last does not wrap to the first");
         // The model settings left the behaviour screen, but its first row still opens their own screen, on the first page.
         h.assertTrue(CompanionSwitchLayout.MODEL_ENTRY_ROW == 0 && CompanionSwitchLayout.MODEL_ENTRY_LABEL.startsWith("Модель и ответы"),

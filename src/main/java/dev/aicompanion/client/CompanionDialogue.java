@@ -320,6 +320,8 @@ public final class CompanionDialogue {
         // The equip step of a plan is bookkeeping too: «Уже экипирован» answers a standalone order, not a plan that did other work.
         // With nothing else done than a part given up, the hand that took the tool is the only thing that happened: it is said.
         if (actions.size() > 1 && !onlyEquipmentHappened(report)) report = withoutEquipmentLines(report);
+        if (actions.size() == 1 && "pet_location".equals(actions.getFirst().type()))
+            return report.replace("План остановлен: ", "").strip();
         String skipped = "";
         int marker = report.lastIndexOf(SKIPPED_PREFIX);
         if (marker >= 0 && (marker == 0 || report.charAt(marker - 1) == '\n')) {
@@ -528,6 +530,8 @@ public final class CompanionDialogue {
             String failure = dev.aicompanion.CompanionFailureMessages.primary(last);
             // The End portal's eyes: how many he put in and how many are missing is the answer, not «не хватает материалов».
             if (actions.stream().anyMatch(action -> "open_end_portal".equals(action.type()))) return speakable(failure);
+            if (actions.size() == 1 && dev.aicompanion.entity.CompanionPet.forTamingAction(actions.getFirst().type()) != null)
+                return speakable(failure);
             // A pen or a breeding order says its own facts (what stands, who is inside, what is missing), not a general excuse.
             if (actions.stream().anyMatch(action -> "build_pen".equals(action.type()) || "breed_animals".equals(action.type()) || "scout_traders".equals(action.type()) || "trade_items".equals(action.type()))) return speakable(failure);
             String partial = partialGather(actions, failure);

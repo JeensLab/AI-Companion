@@ -154,15 +154,7 @@ final class CompanionLoot {
      */
     private void collectLoose(ServerLevel level) {
         for (ItemEntity item : level.getEntitiesOfClass(ItemEntity.class, owner.getBoundingBox().inflate(2.0D),
-                found -> !found.hasPickUpDelay() && found.getTarget() == null)) {
-            if (pending.contains(item.getUUID())) continue;
-            // His own throw: kept out of the bag on purpose (the mine leaves excess stone this way, PR #48).
-            if (item.getOwner() == owner) continue;
-            if (item.getPersistentData().hasUUID(HARVESTER)) continue;
-            // Junk he let go to make room for his own things: taking it back would fill the freed slot with it again.
-            if (item.getPersistentData().getBoolean(CompanionBag.JUNK)) continue;
-            // «Подбери всё, кроме лазурита»: the lapis stays where it lies until an order takes it.
-            if (item.getPersistentData().getBoolean(CompanionPickUp.LEFT)) continue;
+                found -> !found.hasPickUpDelay() && isLoose(found))) {
             if (!touches(owner.position(), item)) continue;
             ItemStack offered = item.getItem().copy();
             int before = offered.getCount();
@@ -176,6 +168,12 @@ final class CompanionLoot {
             // Not counted as harvest progress: this was lying there, not gathered for a task.
             takeFrom(item, offered, moved, true);
         }
+    }
+
+    boolean isLoose(ItemEntity item) {
+        return item.getTarget() == null && !pending.contains(item.getUUID()) && item.getOwner() != owner
+                && !item.getPersistentData().hasUUID(HARVESTER) && !item.getPersistentData().getBoolean(CompanionBag.JUNK)
+                && !item.getPersistentData().getBoolean(CompanionPickUp.LEFT); // «подбери всё, кроме лазурита» (#236): left lying until an order takes it
     }
 
     /** Hands over what was stored: the pickup sound, the note in the log, and the rest of the stack left on the floor. */

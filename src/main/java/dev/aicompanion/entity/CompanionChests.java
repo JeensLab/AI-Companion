@@ -467,6 +467,47 @@ final class CompanionChests {
         return false;
     }
 
+    BlockPos petBaitChest(ServerLevel level, CompanionPet kind) {
+        return w.owner.placedByMe("minecraft:chest").stream()
+                .filter(pos -> pos.distSqr(w.owner.blockPosition()) <= 32 * 32 && baitAvailable(level, pos, kind))
+                .min(Comparator.comparingDouble(pos -> pos.distSqr(w.owner.blockPosition()))).orElse(null);
+    }
+
+    private boolean baitAvailable(ServerLevel level, BlockPos pos, CompanionPet kind) {
+        if (w.triedChests.contains(pos) || !level.hasChunkAt(pos) || w.owner.batches().reserved(level, pos)) return false;
+        Container chest = CompanionContainers.chestAt(level, pos);
+        if (chest == null) return false;
+        for (int slot = 0; slot < chest.getContainerSize(); slot++) {
+            if (kind.accepts(chest.getItem(slot)) && CompanionContainers.takeable(chest, slot)) return true;
+        }
+        return false;
+    }
+
+    boolean takePetBait(ServerLevel level, BlockPos pos, CompanionPet kind) {
+        if (!baitAvailable(level, pos, kind)) return false;
+        Container chest = CompanionContainers.chestAt(level, pos);
+        for (int slot = 0; slot < chest.getContainerSize(); slot++) {
+            ItemStack stack = chest.getItem(slot);
+            if (!kind.accepts(stack) || !CompanionContainers.takeable(chest, slot)) continue;
+            ItemStack portion = stack.copyWithCount(Math.min(3, stack.getCount()));
+            int requested = portion.getCount();
+            w.owner.storeLoot(portion);
+            int moved = requested - portion.getCount();
+            if (moved == 0) continue;
+            ItemStack shown = stack.copyWithCount(moved);
+            stack.shrink(moved);
+            chest.setItem(slot, stack.isEmpty() ? ItemStack.EMPTY : stack);
+            chest.setChanged();
+            w.owner.setChanged();
+            w.openedChest = pos.immutable();
+            w.animateChest(level, pos, 1);
+            CompanionContainers.playOpen(level, pos);
+            w.owner.animateAction(3, pos, shown);
+            return true;
+        }
+        return false;
+    }
+
     /**
      * "Put the stone sword in the chest" means one sword, not every sword he carries: for a named tool, weapon or
      * armour piece only the requested count goes in (game log 22.10 put away his own sword too). Resources move whole.
