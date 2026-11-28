@@ -35,6 +35,7 @@ public final class CompanionWork {
     final CompanionStoneMining stoneMining = new CompanionStoneMining(this);
     final CompanionOreMining oreMining = new CompanionOreMining(this);
     final CompanionRoute route = new CompanionRoute(this);
+    final CompanionComeBack comeBack = new CompanionComeBack(this);
     final CompanionChests chests = new CompanionChests(this);
     final CompanionSorting sorting = new CompanionSorting(this);
     final CompanionFurnaces furnaces = new CompanionFurnaces(this);
@@ -136,6 +137,8 @@ public final class CompanionWork {
     boolean placementMoving;
     boolean insideHouse;
     final List<BlockPos> placedChests = new ArrayList<>();
+    /** The diamond mine he dug: saved with him, outlives a single work. */
+    final CompanionMineSite mine = new CompanionMineSite();
     BlockPos workOrigin;
     boolean returnRouteBlocked;
     long nextReturnCheck;
@@ -145,8 +148,6 @@ public final class CompanionWork {
     final Set<java.util.UUID> huntDead = new HashSet<>();
     int huntKills;
     net.minecraft.world.phys.Vec3 orderProgressPosition;
-    private BlockPos comeFailedAt;
-    private long comeFailedTime;
     long orderProgressTime;
     /**
      * Watchdog for every work (game log 21.10: two minutes on one spot with «Проверяю подход к камню», then a faceless
@@ -328,6 +329,8 @@ public final class CompanionWork {
         if (isActive() && phase == Phase.MINE && !quarrySupports.isEmpty() && !returnRouteBlocked) return false;
         // The own ore tunnel is the same: its walls are not a trap, and the way back is the tunnel itself.
         if (isActive() && phase == Phase.ORE && oreExit != null) return false;
+        // The stairs cut up to a player who stands higher are the plan too.
+        if (isActive() && handOver.climb.running()) return false;
         // Roofs and crowns are interaction targets, not movement destinations.
         return !isActive() || job != Job.HOUSE && job != Job.PEN && phase != Phase.WOOD
                 || workOrigin != null && owner.getY() < workOrigin.getY() - 1.25;
@@ -600,7 +603,7 @@ public final class CompanionWork {
         if (insideHouse) placementAnchor = house.interiorAnchor();
         placementMoving = false;
         placedChests.clear();
-        orderProgressPosition = owner.position(); orderProgressTime = level.getGameTime(); comeFailedAt = null; huntTargets.clear(); huntDead.clear(); huntKills = 0;
+        orderProgressPosition = owner.position(); orderProgressTime = level.getGameTime(); comeBack.forget(); huntTargets.clear(); huntDead.clear(); huntKills = 0;
         if (job == Job.HUNT && phase != Phase.DROPS) {
             for (var monster : level.getEntitiesOfClass(net.minecraft.world.entity.Mob.class,
                     new AABB(placementAnchor).inflate(18), monster -> CompanionCombat.hostile(monster) && monster.isAlive() && monster.distanceToSqr(placementAnchor.getCenter()) <= 18 * 18
@@ -666,6 +669,7 @@ public final class CompanionWork {
         // A tool taken for a swing is the work's too: the hand it replaced comes back before the work ends, never into the next one.
         owner.putToolAway();
         items.putHeldStackBack();
+        releaseHeld();
         clearCracks();
         closeChest();
         if (job == Job.ERRAND) owner.errand.cancelled();
@@ -722,7 +726,7 @@ public final class CompanionWork {
             case BUILD -> buildHouse(level);
             case SHOVEL -> crafting.prepareShovel();
             case DIGGING -> { if (job == Job.HOUSE) { phase = Phase.BUILD; resetTarget(); } else finish(owner.didLastTaskSucceed(), owner.getLastTaskResult()); }
-            case RETURN -> returnToPlayer(level);
+            case RETURN -> comeBack.tick(level);
             case FIGHT -> hunting.fightNearby(level);
             case CHASE -> hunting.hunt(level);
             case DROPS -> drops.tick(level);
@@ -794,39 +798,14 @@ public final class CompanionWork {
         return level.getGameTime() - orderProgressTime > limit;
     }
 
-    private void returnToPlayer(ServerLevel level) {
-        var player = owner.getOwnerPlayer();
-        if (player == null) { finish(false, "Не вижу тебя в этом измерении."); return; }
-        owner.movementIntent(player.blockPosition());
-        if (owner.distanceToSqr(player) <= 9 && Math.abs(owner.getY() - player.getY()) <= 1.25 && owner.hasLineOfSight(player) && (owner.onGround() || !owner.onClimbable())) {
-            finish(true, "Я рядом."); return;
-        }
-        // The player in the dragon's breath: to its edge, and the order waits there; no way while it lasts is no stall.
-        BlockPos meet = owner.dragonBreath.meetingPoint(player, true);
-        if (meet == null || !meet.equals(player.blockPosition()) || owner.dragonBreath.onTheWay(player.blockPosition())) orderProgressPosition = null;
-        if (meet == null) { owner.getNavigation().stop(); return; }
-        if (!meet.equals(player.blockPosition())) { if (route.follow(meet, 3) != CompanionTravel.Step.WALKING) owner.travel().reset(); return; }
-        owner.workStatus("Пытаюсь добраться до игрока.");
-        // In legs round walls and ridges, as far as the way goes (CompanionTravel): the player may be near by the straight line and
-        // far by the way. Legs that came to nothing are not started again from the same spot at once: the self-rescue takes him over
-        // there (down a cave: up through the rock), and the order ends only when he stands still (stalled). Five seconds on, they
-        // are tried again even from the same spot: the rescue may have opened the way a few blocks off, and he must walk it.
-        if (comeFailedAt == null || level.getGameTime() - comeFailedTime >= 100 || !comeFailedAt.closerThan(owner.blockPosition(), 3)) {
-            var step = route.follow(player.blockPosition(), 2);
-            if (step == CompanionTravel.Step.WALKING) { if (!owner.travel().searchOnly()) orderProgressPosition = null; return; }
-            owner.travel().reset();
-            if (step == CompanionTravel.Step.FAILED) { comeFailedAt = owner.blockPosition(); comeFailedTime = level.getGameTime(); }
-        }
-        if (orderHasStalled(level, 240)) {
-            // No way at all is told as such; «застрял» is for a way that exists and that he could not get on along.
-            Boolean none = route.noWay(player.blockPosition());
-            if (none == null) return;
-            if (none) { finish(false, "Не могу к тебе пройти."); return; }
-            finish(false, "Не смог добраться до тебя. Застрял на " + owner.blockPosition().toShortString() + ". Иду за тобой дальше, как получится."); return;
-        }
+    /** Also lets the stone a save held back mid-column (CompanionMineSite#hold) fall: no column is being dug after a load, and he is there to pick it up. */
+    void watchChase() {
+        hunting.watchChase(); drops.watch();
+        if (mine.loadedHeld()) releaseHeld();
     }
 
-    void watchChase() { hunting.watchChase(); drops.watch(); }
+    /** The stone held back mid-column falls where it was cut: the work that was cutting it is over (cancelled, his death, a hand-over done). */
+    private void releaseHeld() { for (CompanionMineSite.Held drop : mine.takeHeld()) owner.dropHarvest(drop.pos(), drop.drops()); }
     static final java.util.UUID NO_ID = new java.util.UUID(0, 0);
 
     /**

@@ -574,10 +574,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     }
     private void setFollowing(boolean following, boolean keepHarvest) {
         woodBreaking.reset(); dirtBreaking.reset();
-        if (!keepHarvest) loot.cancel();
         recovery.cancel(); movementIntent = null;
         supportSoilTask = false;
-        work.cancel();
+        work.cancel(); // first: its end lets the held stone fall, and the pickup stopped below must not take it up again
+        if (!keepHarvest) loot.cancel();
         temporaryPillar.requestCleanup();
         roaming = false;
         entityData.set(DATA_ROAMING, false);
