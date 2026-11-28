@@ -136,7 +136,8 @@ public final class CompanionItemOrderTests {
 
     /**
      * A reply in words to an order is the engine's own action, never only a sentence: the thing the player named (or the one
-     * the model's reply names, when the registry cannot answer the player's word) is obtained. The order_no_step line stays.
+     * the model's reply names, when the registry cannot answer the player's word) is obtained. The order_no_step line is no
+     * longer said over it: the step was found, so there is no «шага нет».
      */
     @GameTest(template = "empty")
     public static void aWordsOnlyReplyBecomesTheObtain(GameTestHelper h) {
@@ -150,8 +151,8 @@ public final class CompanionItemOrderTests {
                         && byReply.actions().getFirst().item().equals("minecraft:porkchop"),
                 "A words-only reply to an unnamable order left no obtain: " + byReply.actions());
         List<String> lines = journal("order_no_step", "добудь тухлое мясо");
-        h.assertTrue(!lines.isEmpty() && lines.getLast().contains("имени нет в игре"),
-                "The order_no_step line of an unnamable order is gone: " + lines);
+        h.assertTrue(lines.isEmpty(),
+                "«шага нет» was said over an order the reply's own word gave a step: " + lines);
         // A talk is still a talk: no step is invented for it.
         h.assertTrue(CompanionPlanRequirements.apply("привет, как дела", new CompanionReply("Хорошо", List.of()), RU).actions().isEmpty(),
                 "A talk became an order");
@@ -199,22 +200,31 @@ public final class CompanionItemOrderTests {
         h.succeed();
     }
 
-    /** The order the model answers with words only says so in the log, with the thing the registry names — and a talk is no line. */
+    /**
+     * An order the engine's own step cannot take says so in the log, with the thing the registry names — and a talk is no line.
+     * A taking order is turned into its step first ({@link CompanionPlanRequirements#obtainAfterWords}), so it is no «шага нет».
+     */
     @GameTest(template = "empty")
     public static void anOrderWithoutAStepSaysWhy(GameTestHelper h) {
-        CompanionPlanRequirements.apply("добудь тыкву", new CompanionReply("Ага сейчас сорву", List.of()));
+        // A taking order gets its step: no «шага нет» over it.
+        var taken = CompanionPlanRequirements.apply("добудь тыкву", new CompanionReply("Ага сейчас сорву", List.of()));
+        h.assertTrue(taken.actions().size() == 1 && taken.actions().getFirst().type().equals("obtain_item"),
+                "A words-only taking order left no step: " + taken.actions());
+        h.assertTrue(journal("order_no_step", "добудь тыкву").isEmpty(), "«шага нет» was said over an order that got its step");
         CompanionPlanRequirements.apply("привет, как дела", new CompanionReply("Хорошо", List.of()));
         CompanionPlanRequirements.apply("Как думаешь, что лучше построить?", new CompanionReply("Дом", List.of()));
-        List<String> lines = journal("order_no_step", "добудь тыкву");
+        // A verb the taking rule does not own, with the thing the registry names: the line says there was no step, and names it.
+        CompanionPlanRequirements.apply("поставь сундук", new CompanionReply("Ага сейчас поставлю", List.of()));
+        List<String> lines = journal("order_no_step", "поставь сундук");
         h.assertTrue(!lines.isEmpty(), "An order without a step was not said: " + lines);
         String line = lines.getLast();
-        h.assertTrue(line.contains("добудь тыкву") && line.contains("шага нет"), "The line does not name the order or say there was no step: " + line);
-        h.assertTrue(line.contains("Ага сейчас сорву"), "The line does not say what was said: " + line);
-        h.assertTrue(line.contains("\"reply\":\"Ага сейчас сорву\""), "The line does not carry the reply as a field: " + line);
+        h.assertTrue(line.contains("поставь сундук") && line.contains("шага нет"), "The line does not name the order or say there was no step: " + line);
+        h.assertTrue(line.contains("Ага сейчас поставлю"), "The line does not say what was said: " + line);
+        h.assertTrue(line.contains("\"reply\":\"Ага сейчас поставлю\""), "The line does not carry the reply as a field: " + line);
         // The thing is named by the game's registry: on this server the names are en_us, so an English name proves the branch.
-        CompanionPlanRequirements.apply("добудь pumpkin", new CompanionReply("Сейчас", List.of()));
-        List<String> named = journal("order_no_step", "добудь pumpkin");
-        h.assertTrue(!named.isEmpty() && named.getLast().contains("minecraft:pumpkin")
+        CompanionPlanRequirements.apply("поставь chest", new CompanionReply("Сейчас", List.of()));
+        List<String> named = journal("order_no_step", "поставь chest");
+        h.assertTrue(!named.isEmpty() && named.getLast().contains("minecraft:chest")
                 && named.getLast().contains("\"why\":\"предмет назван, а шага нет\""), "A named thing without a step is not said as such: " + named);
         // A name the game cannot answer: the reason is the name itself.
         CompanionPlanRequirements.apply("добудь куру", new CompanionReply("Не понял", List.of()));

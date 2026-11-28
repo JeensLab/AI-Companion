@@ -176,10 +176,22 @@ final class CompanionBag {
         obtainBaselines.put(id, id.startsWith("#") ? groupCarried(id) : carriedCount(id));
     }
 
-    /** What the running order for this item itself brought: the bag now, less what it held when the order began. */
+    /**
+     * What the running order for this item itself brought: the bag now, less what it held when the order began. A member of a
+     * kind order («добудь калитку» takes one gate of the tag) is counted as the kind: the order asked for one more of it, and
+     * the member the chain picked is no narrower than that.
+     */
     public int obtainGathered(String item) {
         String id = item == null ? "" : item;
-        return Math.max(0, carriedCount(id) - obtainBaselines.getOrDefault(id, 0));
+        Integer base = obtainBaselines.get(id);
+        if (base != null) return Math.max(0, (id.startsWith("#") ? groupCarried(id) : carriedCount(id)) - base);
+        for (var entry : obtainBaselines.entrySet()) {
+            if (!entry.getKey().startsWith("#")) continue;
+            for (var member : CompanionItemLookup.members(entry.getKey()))
+                if (BuiltInRegistries.ITEM.getKey(member).toString().equals(id))
+                    return Math.max(0, groupCarried(entry.getKey()) - entry.getValue());
+        }
+        return carriedCount(id);
     }
 
     /** What the bag holds of a kind («#minecraft:fence_gates»): every member of the game's own tag, counted together. */
