@@ -182,7 +182,7 @@ final class CompanionAmbientClient {
     private static boolean inviteFishing(dev.aicompanion.entity.CompanionEntity speaker) {
         if (!OpenRouterConfig.FISHING_INVITATIONS.get() || now() % 20 != 0
                 || !fishing.due(now(), OpenRouterConfig.FISHING_INVITE_MINUTES.get(), java.util.concurrent.ThreadLocalRandom.current().nextInt())
-                || !conversation.ready(now()) || !conversation.canAskQuestion() || busy() || InworldTtsClient.isSpeaking()
+                || !conversation.ready(now()) || !conversation.canAskQuestion() || busy() || CompanionSpeech.isSpeaking()
                 || speaker.distanceToSqr(Minecraft.getInstance().player) > 12 * 12 || !safe(speaker)
                 || speaker.isVisiblyBusy() || speaker.isGatheringTask() || speaker.fighting()) return false;
         fishing.checked(now());
