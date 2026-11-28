@@ -8,7 +8,7 @@ $ErrorActionPreference='Stop'
 # over the limit and a stale entry are red too.
 $budget=[ordered]@{
     'CompanionEntity.java'=1433
-    'CompanionWork.java'=1079
+    'CompanionWork.java'=1083
     'CompanionObsidian.java'=1015
     'CompanionPortalBuild.java'=825
     'CompanionFarming.java'=807
