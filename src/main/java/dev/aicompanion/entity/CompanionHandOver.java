@@ -64,10 +64,18 @@ final class CompanionHandOver {
     int reserved(ItemStack stack) {
         if (w.job != CompanionWork.Job.GIVE) return 0;
         int left = w.requestedCount, size = w.owner.getContainerSize();
+        // A bundle keeps each kind's own share, as handOver gives it: the first stack does not keep the whole count.
+        java.util.Map<ItemStack, Integer> share = new java.util.IdentityHashMap<>();
         for (int index = 0; index <= size && left > 0; index++) {
             ItemStack held = index == size ? w.owner.getMainHandItem() : w.owner.getItem(index);
             if (!giftMatches(held)) continue;
             int take = Math.min(left, held.getCount());
+            if (bundled()) {
+                ItemStack template = templateOf(held);
+                int rest = share.getOrDefault(template, template.getCount());
+                take = Math.min(take, rest);
+                share.put(template, rest - take);
+            }
             if (held == stack) return take;
             left -= take;
         }
