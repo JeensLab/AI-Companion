@@ -35,7 +35,7 @@ final class CompanionDigGoal extends Goal {
     private boolean farApproach;
     private net.minecraft.world.phys.Vec3 farMoved;
     /** Dirt is dug from within reach and sight, off its own cell, where its drop can be picked up. */
-    private static final CompanionRoute.Need DIRT = new CompanionRoute.Need(3.5, false, true, true);
+    private static final CompanionRoute.Need DIRT = new CompanionRoute.Need(4.5, false, true, true);
     private double targetBest;
 
     CompanionDigGoal(CompanionEntity c) {

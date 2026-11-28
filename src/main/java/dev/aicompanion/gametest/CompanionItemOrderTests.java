@@ -293,16 +293,90 @@ public final class CompanionItemOrderTests {
         c.setItem(0, new ItemStack(Items.DIAMOND_AXE));
         c.setItem(1, new ItemStack(Items.DIRT, 32));
         List<String> phrases = List.of("добудь калитку", "сломай калитку", "раздобудь калитку");
+        List<BlockPos> standing = new ArrayList<>();
         inTurn(h, c, phrases,
                 at -> {
                     for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.SPRUCE_FENCE_GATE)) c.setItem(slot, ItemStack.EMPTY);
-                    for (int i = 0; i < 3; i++) placedByPlayer(h, c, new BlockPos(HOME_X + 3 + i, FEET, HOME_Z + 2), Blocks.SPRUCE_FENCE_GATE);
+                    standing.clear();
+                    for (int i = 0; i < 3; i++) {
+                        BlockPos gate = new BlockPos(HOME_X + 3 + i, FEET, HOME_Z + 2);
+                        placedByPlayer(h, c, gate, Blocks.SPRUCE_FENCE_GATE);
+                        standing.add(gate);
+                    }
                 },
                 at -> {
                     h.assertTrue(count(c, Items.SPRUCE_FENCE_GATE) >= 1, "«" + phrases.get(at) + "» left no gate in the bag: " + c.getLastTaskResult());
+                    // The analogue of the bag count: the gate the order planned is gone from the world, not only counted in
+                    // the bag it was already in (the owner, 28.11).
+                    h.assertTrue(standing.stream().anyMatch(pos -> h.getBlockState(pos).isAir()),
+                            "«" + phrases.get(at) + "» left every standing gate where it was: " + c.getLastTaskResult());
+                    h.assertTrue(journal(c, "block_taken").stream().anyMatch(line -> line.contains("spruce_fence_gate")),
+                            "«" + phrases.get(at) + "» has no block_taken line for a gate: " + journal(c, "block_taken"));
                     h.assertTrue(journal(c, "way_search").stream().anyMatch(line -> line.contains("fence_gate") && line.contains("\"chosen\":\"")),
                             "«" + phrases.get(at) + "» never searched for a standing gate: " + journal(c, "way_search"));
                 });
+    }
+
+    /**
+     * «Добудь калитку» again over a gate the order before already put in the bag: the gate that still stands on the map is
+     * the next order's, and it is broken and picked up — «готово» over the bag alone left the second gate standing (the
+     * owner, 28.11). The count asked was not said, so it is one more gate, never the bag's own.
+     */
+    @GameTest(template = "way_wide", timeoutTicks = 24000)
+    public static void aSecondGateOrderTakesTheNextStandingGate(GameTestHelper h) {
+        flat(h, Blocks.GRASS_BLOCK);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_AXE));
+        c.setItem(1, new ItemStack(Items.DIRT, 32));
+        // A gate of the order before is in the bag, as the owner had it when he said «добудь калитку» again.
+        c.setItem(2, new ItemStack(Items.SPRUCE_FENCE_GATE));
+        BlockPos first = new BlockPos(HOME_X + 3, FEET, HOME_Z + 2), second = new BlockPos(HOME_X + 4, FEET, HOME_Z + 2);
+        placedByPlayer(h, c, first, Blocks.SPRUCE_FENCE_GATE);
+        placedByPlayer(h, c, second, Blocks.SPRUCE_FENCE_GATE);
+        var future = say(h, c, "добудь калитку");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.SPRUCE_FENCE_GATE) == 2,
+                    "The second gate order left " + count(c, Items.SPRUCE_FENCE_GATE) + " gates, not the one of before and one more: " + report);
+            h.assertTrue(h.getBlockState(first).isAir() || h.getBlockState(second).isAir(),
+                    "The gate on the map still stands, the order answered from the bag: " + report);
+            h.assertTrue(journal(c, "block_taken").stream().anyMatch(line -> line.contains("spruce_fence_gate")),
+                    "No gate was broken for the second order: " + journal(c, "block_taken"));
+        });
+    }
+
+    /**
+     * «Добудь золото» over gold the earlier blocks already gave: the gold block on the player's staircase is still the
+     * order's, and it is broken and picked up (the owner, 28.11: he climbed the stair, broke the dirt in the way, and left
+     * the gold block standing because the bag counted the gold of the blocks before).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 12000)
+    public static void theGoldBlockOnTheStaircaseIsMinedThoughTheBagHasGold(GameTestHelper h) {
+        flat(h, Blocks.GRASS_BLOCK);
+        // The staircase of the player's, a step of one block each, as the owner's L-shaped one.
+        for (int step = 0; step <= 6; step++) h.setBlock(new BlockPos(HOME_X + 4 + step, FEET + step, HOME_Z), Blocks.OAK_STAIRS);
+        CompanionEntity c = spawn(h);
+        BlockPos target = new BlockPos(HOME_X + 9, FEET + 7, HOME_Z);
+        placedByPlayer(h, c, target, Blocks.GOLD_BLOCK);
+        h.assertBlockPresent(Blocks.AIR, target.below());
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.DIRT, 32));
+        // The gold block of the block of before: what the bag already holds is no answer for the block that stands.
+        c.setItem(2, new ItemStack(Items.GOLD_BLOCK));
+        int[] most = {0};
+        h.onEachTick(() -> most[0] = Math.max(most[0], c.getTemporarySupportCount()));
+        var future = say(h, c, "добудь золотой блок");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(h.getBlockState(target).isAir(), "The gold block on the staircase still stands, the bag answered for it: " + report);
+            h.assertTrue(count(c, Items.GOLD_BLOCK) >= 2, "The gold block was broken but it is not in the bag: " + report);
+            String at = h.absolutePos(target).toShortString();
+            h.assertTrue(journal(c, "block_taken").stream().anyMatch(line -> line.contains("gold_block") && line.contains(at)),
+                    "No block_taken line names the gold block at " + at + ": " + journal(c, "block_taken"));
+            h.assertTrue(most[0] == 0, "A column was raised where the staircase already reached the gold: " + most[0]);
+        });
     }
 
     /**
@@ -326,8 +400,14 @@ public final class CompanionItemOrderTests {
                     for (int i = 0; i < stand[at]; i++)
                         placedByPlayer(h, c, new BlockPos(HOME_X + 3 + i % 10, FEET + i / 10, HOME_Z + 2), Blocks.OAK_FENCE);
                 },
-                at -> h.assertTrue(count(c, Items.OAK_FENCE) == want[at],
-                        "«" + phrases.get(at) + "» left " + count(c, Items.OAK_FENCE) + " fences, not " + want[at] + ": " + c.getLastTaskResult()));
+                at -> {
+                    h.assertTrue(count(c, Items.OAK_FENCE) == want[at],
+                            "«" + phrases.get(at) + "» left " + count(c, Items.OAK_FENCE) + " fences, not " + want[at] + ": " + c.getLastTaskResult());
+                    // The analogue of the bag count: the fences the order names were broken in the world, one block_taken
+                    // line for each of them (the owner, 28.11).
+                    long taken = journal(c, "block_taken").stream().filter(line -> line.contains("oak_fence")).count();
+                    h.assertTrue(taken >= want[at], "«" + phrases.get(at) + "» broke " + taken + " fences, not " + want[at] + ": " + journal(c, "block_taken"));
+                });
     }
 
     /** «Сделай забор» with planks in the bag and no fence standing: the verb is the craft, and the fence is made. */

@@ -194,6 +194,8 @@ public final class CompanionWork {
     int oreLootWait;
     /** The autonomy's own ore deed: a batch to add, not the player's total — its bag is no answer and no part of the promise. */
     boolean oreBatch;
+    /** The mine was ordered over a bag that already met the count: only what it brings is its answer, never the bag. */
+    boolean oreDig;
     /** The id of the item this ore order is about, as the bag names it. */
     String dropId() { return ore == null ? "" : BuiltInRegistries.ITEM.getKey(ore.drop).toString(); }
     /** How many of that drop the bag really holds: a block that makes it counts for what it gives (a redstone block is nine). */
@@ -644,7 +646,9 @@ public final class CompanionWork {
                 List<CompanionPickable.Source> storage = CompanionPickable.storage(level, ore.drop);
                 Item lying = storage.isEmpty() ? ore.drop : storage.getFirst().block().asItem();
                 CompanionReach.Available blocks = CompanionWaySearch.available(owner, level, lying, CompanionPicking.requested(owner, level, lying));
-                if (held >= count) { job = Job.ORE; phase = Phase.ORE_PICK; oreBatch = batch; oreWanted = count; break; }
+                // The bag is the answer only where no block of the ore is about him: a block that stands is dug even when the
+                // bag already holds the count (the owner, 28.11), and what the mine brings is the answer then, not the bag.
+                if (held >= count && !blocks.some()) { job = Job.ORE; phase = Phase.ORE_PICK; oreBatch = batch; oreDig = false; oreWanted = count; break; }
                 if (blocks.some()) {
                     // The promise is what lies there, never more than what is still missing: one redstone block over a four-redstone
                     // order with two redstone in the bag is one block of it, and the nine it gives meet the order in the bag.
@@ -657,6 +661,8 @@ public final class CompanionWork {
                 // what it finds, and the bag answers at the end: the promise met in it is the order done, never «не справился»
                 // (CompanionOreMining.finishOre).
                 job = Job.ORE; phase = Phase.ORE_PICK; oreBatch = batch;
+                // A mine ordered over a bag that already meets the count: only what it brings is the answer for it.
+                oreDig = held >= count;
                 oreWanted = orePromise(item, count);
             }
             case "pick_up_nearby" -> {

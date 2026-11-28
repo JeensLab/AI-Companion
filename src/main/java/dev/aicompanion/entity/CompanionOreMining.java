@@ -22,7 +22,7 @@ import java.util.Set;
 
 final class CompanionOreMining {
     /** Where ore is worked from: within reach, in sight, not on the ore's own block, where its drop can be picked up. */
-    private static final CompanionRoute.Need APPROACH = new CompanionRoute.Need(3.5, false, true, true);
+    private static final CompanionRoute.Need APPROACH = new CompanionRoute.Need(4.5, false, true, true);
     final CompanionWork w;
     /** Ores left alone this order, for the report: lava runs in and he has nothing to plug it with / a spring runs in and nothing is left to plug it with / the ore lies on lava / a lava fall stands beside it. */
     private final Set<BlockPos> lackedPlugs = new HashSet<>(), lackedSpringPlugs = new HashSet<>(), overLava = new HashSet<>(), lavaFalls = new HashSet<>();
@@ -280,7 +280,7 @@ final class CompanionOreMining {
                 // or a floor across the gap before it, the same geometry answer as for any block (PATH7, #105). An ore closed in
                 // stone keeps the mine's own answer: a column would stand beside stone that hides it. A plain walk is the mine's
                 // own answer too, already asked: the ore across a trench is not crossed for while one on his side is there.
-                CompanionReach.How way = CompanionReach.how(w.owner, level, candidate, 3.5D, true, true, CompanionPillar.WAY_SUPPORTS);
+                CompanionReach.How way = CompanionReach.how(w.owner, level, candidate, 4.5D, true, true, CompanionPillar.WAY_SUPPORTS);
                 CompanionReach.decision(w.owner, candidate, way);
                 if (way.up() || way.bridge() || offFoot && way.yes()) return chosenOre(candidate, null);
                 // A plain walk is the mine's own answer, asked again once the ores nearer him are gone: the candidate stays.
@@ -500,7 +500,7 @@ final class CompanionOreMining {
         // redstone — is done too, never «не справился». The blocks the promise names are the answer while their drop came: a vein
         // taken with Silk Touch gives the blocks, and they are the order's.
         // A batch deed is met by what it gained: the bag it already had is no answer for it (the autonomy's stock deeds).
-        boolean met = gained >= w.oreWanted || (!w.oreBatch && have >= w.oreWanted) || w.oreMined >= w.oreWanted && anyDrop;
+        boolean met = gained >= w.oreWanted || (!w.oreBatch && !w.oreDig && have >= w.oreWanted) || w.oreMined >= w.oreWanted && anyDrop;
         if (!w.ironPrep && met) {
             w.finish(true, gained > 0 ? "Добыл " + CompanionWorkItems.blocks(w.oreMined) + " " + got + below + bag
                     : "«" + CompanionWork.itemName(w.ore.drop) + "» у меня: " + have + " шт." + below + bag);

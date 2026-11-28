@@ -110,7 +110,10 @@ public final class CompanionReach {
                 stands.addAll(CompanionMiningNavigation.standCells(c, block, reach, false, true));
                 // A stand cell the drop is taken from: a cell of a stair's own top or a ledge counts the same as the ground (the
                 // owner's staircase, 25.11: the block was taken from the step, never built up to beside it).
-                if (forTheDrop) stands.removeIf(stand -> !CompanionMiningNavigation.dropCollectable(level, block, stand));
+                // The drop is taken where it lies beside the stand, or walked to where it rests after the block is broken: a
+                // player does not refuse a block four blocks away for the drop being a step farther (the owner, 28.11).
+                if (forTheDrop) stands.removeIf(stand -> !CompanionMiningNavigation.dropCollectable(level, block, stand)
+                        && !CompanionMiningNavigation.dropWalkable(level, block));
             } else {
                 for (int dy = -2; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
                     BlockPos cell = block.offset(dx, dy, dz);
@@ -174,7 +177,7 @@ public final class CompanionReach {
      * whose body touches the drop, the bank he walks to, and the cells of floor to lay between them. Null when no line is there.
      */
     public static BridgePlan bridgeToCell(CompanionEntity c, ServerLevel level, BlockPos cell) {
-        return bridge(c, level, cell, 3.5D, end -> airForBody(c, level, end)
+        return bridge(c, level, cell, 4.5D, end -> airForBody(c, level, end)
                 && CompanionMiningNavigation.pickupStand(c, end)
                 && CompanionMiningNavigation.touchesCell(c, Vec3.atBottomCenterOf(end), cell), CompanionPillar.WAY_SUPPORTS, false);
     }

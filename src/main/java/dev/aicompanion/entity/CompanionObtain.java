@@ -200,10 +200,6 @@ public final class CompanionObtain {
         // material is never asked for what already stands (the owner, 27.11: five cherry fences about him, planks in the bag,
         // «добудь вишнёвый забор» went gather_wood → craft sixteen and said «Доступного дерева больше не нашёл»).
         // Obsidian keeps its own work, which also cools lava and takes the water back, but its blocks are counted by that answer.
-        if (carried(carried, item) >= count) return new Plan(List.of(), null);
-        // What lies about him of this very item is asked of the one search before anything is made of it — a gourd, a storage
-        // block, an ore's item, a plain block: the same rule for every item, no names (PATH7, #105). The two paths that are
-        // another skill's own say why they do not ask it, so a line of the search is never missing without a reason.
         CompanionReach.Available lying = null;
         if (reachable != null) {
             if (item == Items.OBSIDIAN) CompanionWaySearch.skipped("", item, "обсидиан — своя работа (mine_obsidian), её блоки считает тот же поиск");
@@ -214,6 +210,11 @@ public final class CompanionObtain {
             else lying = reachable.apply(item);
         }
         planner.noteSeen(item, lying);
+        // The bag is the answer only when no block of the item stands about him (the owner, 28.11: gold from the blocks of
+        // before met an order whose planned gold block still stood on his staircase, and a second «добудь калитку» answered
+        // «готово» over the gate on the map). A block that stands is planned even when the bag already holds the count; the
+        // count asked is met from the bag only where the world has no block of it at all.
+        if ((lying == null || !lying.some()) && carried(carried, item) >= count) return new Plan(List.of(), null);
         // A block that makes the item (a lapis block for nine lapis) is no block OF the item: its own break gives the block, not
         // the item, so the chain gathers the block and crafts it (produce's storage step below). A block that IS the item, or
         // drops it, is taken as it lies.
@@ -225,7 +226,9 @@ public final class CompanionObtain {
         // more per block than the search's least count, so there the gather takes the whole count and reports what it got
         // («Собрал 1 из 3», as the chain's own pick does).
         if (lying != null && lying.some() && blockItself && (asItself || lying.count() >= count)) {
-            int taken = asItself ? Math.min(count, lying.count()) : count;
+            // What the order still lacks is taken: the blocks that stand, less what the bag already holds, but never none —
+            // a block that stands is taken even where the bag meets a count that was not said (the owner, 28.11).
+            int taken = asItself ? Math.min(Math.max(1, count - carried(carried, item)), lying.count()) : count;
             if (lying.soil() > 0) planner.addSplit("gather_dirt", "", lying.soil(), 64);
             if (!planner.gather(item, id.toString(), taken, 0)) return new Plan(List.of(), planner.why);
             return new Plan(List.copyOf(merged(planner.steps)), null);

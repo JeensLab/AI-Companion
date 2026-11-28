@@ -55,6 +55,14 @@ public final class CompanionPlanRunner {
         default CompletableFuture<Expansion> expand(PlannedAction action) {
             return CompletableFuture.completedFuture(new Expansion(List.of(), "Не умею добывать этот предмет."));
         }
+        /**
+         * A new obtain_item order begins: what the bag holds of the item now is no part of what the order brings, so a gate
+         * taken by the order before is no answer for this one (the owner, 28.11). Called once for a new order, never for its
+         * replans — those must count what the order itself gathered.
+         */
+        default CompletableFuture<Void> beginObtain(PlannedAction action) {
+            return CompletableFuture.completedFuture(null);
+        }
         /** True when the queue lets this plan's long smelt park; a port without a queue never parks, so everything stands at the furnace as before. */
         default boolean parkable() { return false; }
         /** The plan owns the parked batch from now on, even if it is cancelled before it ever waits for it. */
@@ -127,7 +135,7 @@ public final class CompanionPlanRunner {
         if (run.replan) return replan(run, index);
         // «Добудь X»: the chain of real steps is planned now, from the bag as it is after the steps before (CompanionObtain).
         // After each of its steps the chain is planned again (replan), so steps that became needless drop out and a shortage is dug up.
-        if ("obtain_item".equals(action.type())) return port.expand(action).thenCompose(expansion -> {
+        if ("obtain_item".equals(action.type())) return port.beginObtain(action).thenCompose(began -> port.expand(action)).thenCompose(expansion -> {
             CompanionDiagnostics.event(port.trace(), "obtain_planned", "step", number, "action", action, "steps", expansion.steps(), "refusal", expansion.refusal());
             if (expansion.refusal() != null) {
                 run.obtain = action; run.obtainEnd = index + 1;

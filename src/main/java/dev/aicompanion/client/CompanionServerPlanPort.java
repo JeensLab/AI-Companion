@@ -309,18 +309,27 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             // An order is done when the thing is in the bag, in the count asked — never because a block of it still stands in the
             // world. The bag answers before any search and any plan: a block mined and its drop picked up leaves no block to find,
             // and a search finding none must not call a met order a failure (the owner, 25.11).
-            // THE BAG IS NOT THE ARBITER while a block of the item still stands (the owner's three reports, 28.11): a second
-            // «добудь калитку» over a gate already in the bag answered «готово» and never went for the gate on the map, and in
-            // the L-staircase scene the gold already in the bag met the order without the planned gold block being broken. So a
-            // bag answer stands only when no block of the item is about him, or when the order named its count («добудь 2
-            // калитки»): then the bag is the answer the player asked for. The fix tracks the planned blocks by position and
-            // counts only the ones the work broke and picked; the check at the end is that planned-block ledger, not the bag.
+            // THE BAG IS NOT THE ARBITER while a block of the item still stands (the owner's reports, 28.11): a second «добудь
+            // калитку» over a gate already in the bag answered «готово» and never went for the gate on the map, and gold from
+            // the blocks of before met an order whose planned gold block still stood on his staircase. So the bag answers only
+            // when the order itself brought the count (what it held at its start is no part of it), or when a number was said
+            // («добудь 2 калитки»), or when no block of the item is about him at all — and then it says so honestly.
             int have = companion.carriedCount(item);
             // In the Nether on the errand the way home is part of the chain (nether_back): the bag's answer must not drop it, so
             // there the plan is made as before and its own steps carry him out.
             boolean away = level.dimension() == net.minecraft.world.level.Level.NETHER;
-            if (have >= asked && !away)
+            // An order for more than the world gives promises only what is there (PATH7: «добудь обсидиан» is a portal frame's
+            // ten, and one block above him is one): the same reach answer the work asks, so the phrasing cannot change it.
+            CompanionReach.Available world = leafOrder || away ? null : companion.obtainAvailable(item);
+            boolean standing = world != null && world.some();
+            boolean counted = asked > 1;
+            int gathered = leafOrder ? have : companion.obtainGathered(item);
+            if (!away && (counted ? have >= asked : gathered >= asked || !standing && have >= asked))
                 return new CompanionPlanRunner.Expansion(java.util.List.of(new PlannedAction("verify_item", 0, asked, check)), null);
+            // The chain is asked for the total it must hold, not only the part missing: the bag's own count is no part of the
+            // plan's work, so a block that stands is taken even where the bag already meets a count that was not said (one of
+            // them at least, the owner 28.11).
+            need = have + Math.max(1, asked - have);
             // What lies about him of the thing is taken before anything is made or dug for it — the same rule a block lying there
             // follows: a drop still waiting is fetched by the pickup, and the bag is checked after it. A re-search that finds no
             // block of the item is no reason to give the order up while its drop lies on the ground.
@@ -329,9 +338,6 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             // fetched by the chase as he digs, not by a step of the chain.
             if (!leafOrder && !away) lying = dev.aicompanion.entity.CompanionPickUp.lying(level, companion.blockPosition(), companion.pickUpRadius(),
                     item, companion.getOwnerId());
-            // An order for more than the world gives promises only what is there (PATH7: «добудь обсидиан» is a portal frame's
-            // ten, and one block above him is one): the same reach answer the work asks, so the phrasing cannot change it.
-            CompanionReach.Available world = leafOrder ? null : companion.obtainAvailable(item);
             var plan = companion.obtainPlan(item, need);
             if (plan.refused() && lying == 0) return new CompanionPlanRunner.Expansion(java.util.List.of(), plan.refusal());
             // The promise is what the chain really produces (one block of his own lava is one obsidian), never more. The errand's
@@ -407,6 +413,15 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
         var key = net.minecraft.resources.ResourceLocation.tryParse(id);
         var item = key == null ? null : net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(key).orElse(null);
         return item == null ? id : new net.minecraft.world.item.ItemStack(item).getHoverName().getString();
+    }
+
+    /** A new obtain order begins: the bag it starts with is no part of what it brings (CompanionBag.beginObtain). */
+    @Override public CompletableFuture<Void> beginObtain(PlannedAction action) {
+        return onServer(player -> {
+            CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
+            if (companion != null) companion.beginObtain(action.item());
+            return null;
+        });
     }
 
     @Override public CompletableFuture<Integer> carried(String item) {

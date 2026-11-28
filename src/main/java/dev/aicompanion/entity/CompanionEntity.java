@@ -950,6 +950,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public boolean didLastTaskSucceed() { return lastTaskSucceeded; }
 
     public CompanionObtain.Plan obtainPlan(String item, int count) { return bag.obtainPlan(item, count); }
+    /** A new obtain order begins: the bag it starts with is no part of what it brings (CompanionBag). */
+    public void beginObtain(String item) { bag.beginObtain(item); }
+    /** What the running obtain order itself brought, never what the bag held before it. */
+    public int obtainGathered(String item) { return bag.obtainGathered(item); }
     /** What an ore order really promises, from the bag, the drops on the ground and the ore blocks about him (CompanionWork). */
     public int orePromise(String item, int count) { return work.orePromise(item, count); }
     /** What the world about him really gives of the item by the one reach answer (CompanionReach); null where it is not about blocks. */

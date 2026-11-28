@@ -74,7 +74,7 @@ final class CompanionBridge {
         if (inReach(level, block, forTheDrop)) { stalledTicks = 0; return Outcome.READY; }
         if (plan == null || !block.equals(target)) {
             CompanionReach.BridgePlan found = forTheDrop ? CompanionReach.bridgeToCell(owner, level, block)
-                    : CompanionReach.bridge(owner, level, block, 3.5D, true, CompanionPillar.WAY_SUPPORTS, false);
+                    : CompanionReach.bridge(owner, level, block, 4.5D, true, CompanionPillar.WAY_SUPPORTS, false);
             if (found == null) return fail("негде класть мост");
             plan = found;
             target = block.immutable();

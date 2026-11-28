@@ -70,7 +70,7 @@ final class CompanionPicking {
     /** A player's reach, from the eyes to the middle of the block. */
     private static final double REACH = 4.5;
     /** How far from a leaf a cell he works it from may be: the same reach the stand cells are searched in. */
-    private static final double STAND_REACH = 3.5;
+    private static final double STAND_REACH = 4.5;
     /** Ticks over the block, down and up for air, before it is passed over. */
     private static final int DIVE = 900;
     /**
@@ -95,6 +95,12 @@ final class CompanionPicking {
     private boolean noWay;
     /** Ordered, in his bag at the order, dropped by the blocks he broke (picked up or not). */
     private int wanted, before, due;
+    /**
+     * The blocks of the item this gather broke, by position: the order's own ledger of what it mined. The bag is no proof —
+     * it may hold the item from the blocks of an earlier order or an earlier step, and that is no reason to leave the planned
+     * block standing (the owner, 28.11: gold from the blocks of before over the gold block on his staircase).
+     */
+    private final List<BlockPos> taken = new ArrayList<>();
     private long settleAt;
     private boolean retried;
     private BlockPos target;
@@ -149,7 +155,7 @@ final class CompanionPicking {
         stone = sources.stream().allMatch(source -> CompanionPickable.stone(source.block()));
         missed = 0;
         release();
-        passed.clear(); lavaKept.clear(); unreached.clear(); soilAboutKnown = false;
+        passed.clear(); lavaKept.clear(); unreached.clear(); soilAboutKnown = false; taken.clear();
         return null;
     }
 
@@ -596,7 +602,9 @@ final class CompanionPicking {
                 // his own (the same rule the ground reach follows), so a crown whose only cells are leaf tops is climbed, and
                 // the walk is not sent up to a leaf top it cannot come down from (the owner, 18.11).
                 if (leaf && (level.getBlockState(stand.below()).is(BlockTags.LEAVES) || level.getBlockState(stand.below()).is(BlockTags.LOGS))) continue;
-                if (leaf || CompanionMiningNavigation.dropCollectable(level, block, stand)) cells.add(stand);
+                // The drop is picked up from where it rests, walked to when the stand is a player's reach away: a block is no
+                // reason to leave standing for the drop lying a step farther (the owner, 28.11).
+                if (leaf || CompanionMiningNavigation.dropCollectable(level, block, stand) || CompanionMiningNavigation.dropWalkable(level, block)) cells.add(stand);
             }
             return cells;
         }
@@ -757,7 +765,9 @@ final class CompanionPicking {
 
     void tick(ServerLevel level) {
         int got = got();
-        if (got >= wanted) {
+        // Enough in the bag AND enough broken by this gather: the bag alone may already hold the item from before the order,
+        // so its count is no proof that the planned block was taken (the owner, 28.11).
+        if (got >= wanted && due >= wanted) {
             // The floor across the gap is taken back once the drops are in his bag: it was his walk to them (PATH7, #105).
             if (down()) return;
             end(true, "Собрал: «" + name() + "», " + got + " шт.");
@@ -795,7 +805,8 @@ final class CompanionPicking {
             String rest = passed.isEmpty() ? "больше рядом нет" : "до остального (" + seenAt() + ") не добрался";
             String lava = lavaKept.isEmpty() ? "" : " Рядом с лавой " + CompanionWorkItems.blocks(lavaKept.size()) + " — не трогал.";
             // Some gathered: obtain_item plans the rest again (red dye goes on with the tulips once the poppies are out). None: it ends here.
-            if (got > 0) { release(); w.finish(CompanionActionResult.failed("Собрал «" + name() + "»: " + got + " из " + wanted + ", " + rest + "." + lava)); return; }
+            // What counts as gathered is what this gather broke, never what the bag held before it.
+            if (due > 0) { release(); w.finish(CompanionActionResult.failed("Собрал «" + name() + "»: " + got + " из " + wanted + ", " + rest + "." + lava)); return; }
             // The stone's ask in one line short enough to be spoken whole with the longest name (CompanionDialogue).
             // The refusal names the distance of the block he saw, never only that he saw one: «5 блоков вверх и 6 вбок».
             if (stone) end(false, (!passed.isEmpty() ? "«" + name() + "» вижу — " + seenAt() + ", но подойти не смог" : !lavaKept.isEmpty() ? "«" + name() + "» вижу только у лавы, не трогал"
@@ -885,6 +896,11 @@ final class CompanionPicking {
             var drops = CompanionTools.drops(broken, level, pos, null, c, tool);
             if (!level.destroyBlock(pos, false, c, 512)) { passed.add(pos); continue; }
             c.dropHarvest(pos, drops);
+            taken.add(pos.immutable());
+            // The ledger of what this gather mined, one line per block: the position and the block, so a planned block is
+            // proven taken by the work and not by the bag (the owner, 28.11).
+            dev.aicompanion.CompanionDiagnostics.event(c.diagnosticTrace(), "block_taken", "entity", c.getUUID(),
+                    "pos", pos.toShortString(), "block", BuiltInRegistries.BLOCK.getKey(broken.getBlock()), "for", name(), "taken", taken.size());
             for (ItemStack drop : drops) if (leafOrder ? drop.is(ItemTags.LEAVES) : drop.is(item)) due += drop.getCount();
         }
         CompanionTools.wearOnBreak(tool, level, state, target, c);

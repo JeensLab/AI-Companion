@@ -43,7 +43,7 @@ final class CompanionWaySearch {
     /** How many of the nearest are named in the line: enough to read why each was refused, few enough for one line. */
     private static final int SHOWN = 3;
     /** The reach a block is worked from, as the one geometry answer's own (CompanionReach). */
-    private static final double REACH = 3.5D;
+    private static final double REACH = 4.5D;
     /**
      * The wider box asked only when the box holds nothing: whether a block of the item is there at all, just not seen here —
      * the widest the player's own setting allows, so a block just past the box is named as seen-outside, not as absent.

@@ -66,6 +66,23 @@ final class CompanionMiningNavigation {
     }
 
     /**
+     * Whether the drop of this block rests where a body can walk to it: on a floor, with room to stand in its cell, no lava
+     * or water there. A player takes a block from a stand up to his own reach away and walks to the drop after it; the drop
+     * need not lie beside the very stand the block was broken from (the owner, 28.11: gold in a portal's corner, four blocks
+     * from the only cell he could stand in, is broken and the drop picked up from the ground).
+     */
+    static boolean dropWalkable(net.minecraft.world.level.Level level, BlockPos block) {
+        BlockPos rest = dropRest(level, block);
+        if (rest == null || CompanionLava.at(level, rest)) return false;
+        if (!level.getFluidState(rest).isEmpty() || !level.getFluidState(rest.above()).isEmpty()) return false;
+        for (BlockPos cell : new BlockPos[]{rest, rest.above()}) {
+            if (cell.equals(block)) continue;
+            if (!level.getBlockState(cell).getCollisionShape(level, cell).isEmpty()) return false;
+        }
+        return holds(level, rest.below());
+    }
+
+    /**
      * Like a player who mines for the drop (marathon 23.10: at the bottom of the ravine of game log 05cdd3a7 he mined twenty
      * stones from one spot and picked up none — they fell into crevices and shafts). From this stand the drop is touched where
      * it rests (a column aside, from his feet to two blocks over them), or it rests in a free cell beside him, level with his
@@ -108,7 +125,8 @@ final class CompanionMiningNavigation {
     static Set<BlockPos> standCells(CompanionEntity owner, BlockPos block, double reach, boolean clearLeaves, boolean avoidStandingOnTarget) {
         ServerLevel level = (ServerLevel)owner.level();
         Set<BlockPos> feet = new HashSet<>();
-        for (int dy = -4; dy <= 1; dy++) for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) {
+        int span = Math.max(3, (int) Math.ceil(reach));
+        for (int dy = -span; dy <= 1; dy++) for (int dx = -span; dx <= span; dx++) for (int dz = -span; dz <= span; dz++) {
             BlockPos pos = block.offset(dx, dy, dz);
             if (Vec3.atBottomCenterOf(pos).distanceToSqr(block.getCenter()) > reach * reach || !standable(owner, pos)) continue;
             if (avoidStandingOnTarget && new AABB(pos.getX() + .2, pos.getY(), pos.getZ() + .2,

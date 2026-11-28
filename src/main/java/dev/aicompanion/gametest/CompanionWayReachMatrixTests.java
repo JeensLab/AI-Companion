@@ -74,6 +74,44 @@ public final class CompanionWayReachMatrixTests {
                 new int[]{8, 12, 0, 1}, new int[]{48, 32, 0, 0}, new int[]{32, 6, 0, 0}, new int[]{48, 6, 1, 0}));
     }
 
+    /**
+     * The owner's portal corner (28.11): a gold block four blocks across and one up behind the frame's edge, the only cells
+     * he can stand in four blocks from it. A player takes it from where he stands and walks to the drop after it — no column,
+     * no climb. At 3.5 no cell of his reached it, and the work raised a column (or refused a block in plain sight).
+     */
+    @GameTest(template = "way_wide", timeoutTicks = 8000)
+    public static void aBlockFourAcrossAndOneUpIsTakenFromWhereHeStands(GameTestHelper h) {
+        flat(h);
+        CompanionEntity c = spawn(h);
+        // The frame's edge between him and the block: panes are no floor a body stands on, so no cell of the edge is a stand.
+        for (int dx = 1; dx <= 3; dx++) for (int dz = -1; dz <= 1; dz++)
+            place(h, c, new BlockPos(HOME + dx, FEET, HOME + dz), Blocks.GLASS_PANE);
+        place(h, c, new BlockPos(HOME + 4, FEET, HOME - 1), Blocks.GLASS_PANE);
+        place(h, c, new BlockPos(HOME + 4, FEET, HOME + 1), Blocks.GLASS_PANE);
+        BlockPos pedestal = new BlockPos(HOME + 4, FEET, HOME);
+        h.setBlock(pedestal, Blocks.STONE);
+        BlockPos target = new BlockPos(HOME + 4, FEET + 1, HOME);
+        place(h, c, target, Blocks.GOLD_BLOCK);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.DIRT, 64));
+        c.setItem(2, new ItemStack(Items.CRAFTING_TABLE));
+        int[] most = {0};
+        h.onEachTick(() -> most[0] = Math.max(most[0], c.getTemporarySupportCount()));
+        var future = say(h, c, "добудь золотой блок");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.GOLD_BLOCK) >= 1, "The gold block four across and one up is not in the bag: " + report);
+            h.assertBlockPresent(Blocks.AIR, target);
+            h.assertTrue(most[0] == 0, "A column was raised for a block a player reaches from the ground: " + most[0]);
+            String at = h.absolutePos(target).toShortString();
+            h.assertTrue(journal(c, "block_taken").stream().anyMatch(line -> line.contains(at)),
+                    "No block_taken line names the gold block at " + at + ": " + journal(c, "block_taken"));
+            h.assertTrue(journal(c, "way_search").stream().anyMatch(line -> line.contains("minecraft:gold_block") && line.contains("\"shape\":\"walk\"")),
+                    "The search did not answer with the walk: " + journal(c, "way_search"));
+        });
+    }
+
     /** A plant: a poppy is picked, not mined — the same way to it, the same column and the same soil back, floating and on the ground. */
     @GameTest(template = "way_wide", timeoutTicks = 8000)
     public static void everyPlantOfTheMatrixIsGot(GameTestHelper h) {
@@ -111,6 +149,13 @@ public final class CompanionWayReachMatrixTests {
             // The column's soil comes back; a floor laid across a gap is a way and stays where he laid it, so a few cells of
             // it are in the world, not in the bag (PATH7's own rule, a bridge is no scaffold).
             h.assertTrue(count(c, Items.DIRT) >= 60, "The row «" + scene.name() + "» did not give the soil back: " + count(c, Items.DIRT));
+            // The analogue of the bag count: the block the row placed is gone from the world, mined by the work — a bag
+            // that already held the item (or a drop of an earlier row) cannot meet the row (the owner, 28.11).
+            BlockPos target = new BlockPos(HOME + row[0], FEET + row[1], HOME);
+            h.assertBlockPresent(Blocks.AIR, target);
+            String where = h.absolutePos(target).toShortString();
+            h.assertTrue(journal(c, "block_taken").stream().anyMatch(line -> line.contains(where)),
+                    "The row «" + scene.name() + "» has no block_taken line for " + where + ": " + journal(c, "block_taken"));
             List<String> lines = journal(c, "way_search");
             h.assertTrue(lines.stream().anyMatch(line -> line.contains("\"item\":\"" + id + "\"") && line.contains("\"chosen\":\"")),
                     "The row «" + scene.name() + "» has no way_search line naming the chosen block: " + lines);
@@ -182,7 +227,13 @@ public final class CompanionWayReachMatrixTests {
         }
     }
 
-    /** A real placement by the player: the event the game fires, the bookkeeping the mod keeps. */
+    /** A block set down in the world, and the player's own placement event for it, as the game fires it. */
+    private static void place(GameTestHelper h, CompanionEntity c, BlockPos cell, Block block) {
+        h.setBlock(cell, block);
+        placedByPlayer(h, c, cell, block);
+    }
+
+    /** The event the game fires when the player sets a block down, and the bookkeeping the mod keeps. */
     private static void placedByPlayer(GameTestHelper h, CompanionEntity c, BlockPos cell, Block block) {
         var player = (net.minecraft.server.level.ServerPlayer) h.getLevel().getPlayerByUUID(c.getOwnerId());
         NeoForge.EVENT_BUS.post(new BlockEvent.EntityPlaceEvent(
@@ -214,7 +265,8 @@ public final class CompanionWayReachMatrixTests {
             java.util.Map.entry("lapis_block", "Лазуритовый блок"),
             java.util.Map.entry("white_wool", "Белая шерсть"),
             java.util.Map.entry("oak_planks", "Дубовые доски"),
-            java.util.Map.entry("poppy", "Мак"));
+            java.util.Map.entry("poppy", "Мак"),
+            java.util.Map.entry("gold_block", "Золотой блок"));
 
     private static final Function<Item, String> RU = CompanionWayReachMatrixTests::russianName;
 
