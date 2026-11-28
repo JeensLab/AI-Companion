@@ -162,7 +162,9 @@ public final class CompanionPickupWayTests {
         BlockPos stone = new BlockPos(TRENCH_TO, GROUND, HOME_Z);
         h.setBlock(stone, Blocks.STONE);
         BlockPos drop = new BlockPos(TRENCH_TO, FEET, HOME_Z);
-        BlockPos wool = new BlockPos(TRENCH_TO, FEET + 4, HOME_Z);
+        // Five above, past a player's own reach from the trench's stone: the way to it is the mining's column or floor,
+        // and the drop falls into the trench where no walk reaches it (the owner's reach of 4.5, 28.11).
+        BlockPos wool = new BlockPos(TRENCH_TO, FEET + 5, HOME_Z);
         h.setBlock(wool, Blocks.WHITE_WOOL);
         h.assertBlockPresent(Blocks.AIR, new BlockPos(TRENCH_FROM, GROUND, HOME_Z));
         h.assertBlockPresent(Blocks.AIR, new BlockPos(TRENCH_FROM, FEET, HOME_Z));
