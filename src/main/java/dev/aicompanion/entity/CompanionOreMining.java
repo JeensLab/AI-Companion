@@ -500,7 +500,7 @@ final class CompanionOreMining {
         // redstone — is done too, never «не справился». The blocks the promise names are the answer while their drop came: a vein
         // taken with Silk Touch gives the blocks, and they are the order's.
         // A batch deed is met by what it gained: the bag it already had is no answer for it (the autonomy's stock deeds).
-        boolean met = gained >= w.oreWanted || (!w.oreBatch && !w.oreDig && have >= w.oreWanted) || w.oreMined >= w.oreWanted && anyDrop;
+        boolean met = gained >= w.oreWanted || (!w.oreBatch && have >= w.oreWanted) || w.oreMined >= w.oreWanted && anyDrop;
         if (!w.ironPrep && met) {
             w.finish(true, gained > 0 ? "Добыл " + CompanionWorkItems.blocks(w.oreMined) + " " + got + below + bag
                     : "«" + CompanionWork.itemName(w.ore.drop) + "» у меня: " + have + " шт." + below + bag);

@@ -328,8 +328,10 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
                 return new CompanionPlanRunner.Expansion(java.util.List.of(new PlannedAction("verify_item", 0, asked, check)), null);
             // The chain is asked for the total it must hold, not only the part missing: the bag's own count is no part of the
             // plan's work, so a block that stands is taken even where the bag already meets a count that was not said (one of
-            // them at least, the owner 28.11).
-            need = all ? asked + have : have + Math.max(1, asked - have);
+            // them at least, the owner 28.11). A leaf order counts every kind of leaf it carries and keeps its own part.
+            // On the errand in the Nether the chain is asked for the count it asked (the way home is part of it): the bag
+            // that already meets it must not make it ask for more.
+            if (!leafOrder) need = away ? asked : all ? asked + have : have + Math.max(1, asked - have);
             // What lies about him of the thing is taken before anything is made or dug for it — the same rule a block lying there
             // follows: a drop still waiting is fetched by the pickup, and the bag is checked after it. A re-search that finds no
             // block of the item is no reason to give the order up while its drop lies on the ground.

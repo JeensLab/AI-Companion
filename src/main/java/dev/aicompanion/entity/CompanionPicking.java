@@ -69,8 +69,10 @@ final class CompanionPicking {
     private static final int DEEP = 10;
     /** A player's reach, from the eyes to the middle of the block. */
     private static final double REACH = 4.5;
-    /** How far from a leaf a cell he works it from may be: the same reach the stand cells are searched in. */
+    /** How far from a block a cell he works it from may be: a player's own block reach (4.5). */
     private static final double STAND_REACH = 4.5;
+    /** How far from a leaf a cell he works it from may be: a crown keeps its own short column (CompanionLeaves). */
+    private static final double LEAF_REACH = 3.5;
     /** Ticks over the block, down and up for air, before it is passed over. */
     private static final int DIVE = 900;
     /**
@@ -541,7 +543,7 @@ final class CompanionPicking {
             BlockPos cell = pos.offset(dx, dy, dz);
             BlockState floor = level.getBlockState(cell.below());
             if (floor.is(BlockTags.LEAVES) || floor.is(BlockTags.LOGS)) continue;
-            if (Vec3.atBottomCenterOf(cell).distanceToSqr(pos.getCenter()) > STAND_REACH * STAND_REACH) continue;
+            if (Vec3.atBottomCenterOf(cell).distanceToSqr(pos.getCenter()) > LEAF_REACH * LEAF_REACH) continue;
             if (CompanionMiningNavigation.standable(c, cell)) return true;
         }
         return false;
@@ -595,7 +597,7 @@ final class CompanionPicking {
         }
         if (!level.getBlockState(block).getCollisionShape(level, block).isEmpty()) {
             boolean leaf = level.getBlockState(block).is(BlockTags.LEAVES);
-            for (BlockPos stand : CompanionMiningNavigation.standCells(c, block, STAND_REACH, false, true)) {
+            for (BlockPos stand : CompanionMiningNavigation.standCells(c, block, leaf ? LEAF_REACH : STAND_REACH, false, true)) {
                 // A leaf's drop falls off a crown or a stair to the ground below: the stand is still his, and the pickup walks
                 // down for what fell. Any standable cell within reach counts — a stair the player built, a ledge, a pillar.
                 // A cell on top of a leaf or of the trunk is no stand for a leaf: nothing walks up there without a column of
