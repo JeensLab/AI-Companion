@@ -322,14 +322,14 @@ public final class CompanionRoute {
         // before the walk's own miss is judged: a block a column or a floor reaches is no refusal over a search that did not prove
         // its miss (the owner, 27.11: an ore three up and nine across was refused as «not proven: no route» while a column of four
         // stood within a step of it).
-        CompanionReach.How how = CompanionReach.how(owner, (ServerLevel) owner.level(), block, 3.5D, true, false, CompanionPillar.WAY_SUPPORTS);
+        CompanionReach.How how = CompanionReach.how(owner, (ServerLevel) owner.level(), block, 3.5D, true, false, owner.temporaryPillar.waySpan());
         CompanionReach.decision(owner, block, how);
         if (how.bridge()) return tickBridge(block);
         if (how.up()) return tickWay(pillar, block);
         if (how.way() == CompanionReach.Way.WALK || how.way() == CompanionReach.Way.ACROSS) {
             // A stand cell reaches it, yet the walk could not get there (a gap, a wall): a floor laid across the gap before it
             // is the same geometry answer (PATH7: «мост через провал»).
-            CompanionReach.BridgePlan plan = CompanionReach.bridge(owner, (ServerLevel) owner.level(), block, 3.5D, true, CompanionPillar.WAY_SUPPORTS, false);
+            CompanionReach.BridgePlan plan = CompanionReach.bridge(owner, (ServerLevel) owner.level(), block, 3.5D, true, owner.temporaryPillar.waySpan(), false);
             // A floor to lay is what makes a bridge: a bank and the far cell with a floor between them already is no bridge.
             if (plan != null && plan.length() > 0) return tickBridge(block);
             // No bank at its own level to lay a floor from: a column up to the block is the other way the same answer gives — a
@@ -351,7 +351,7 @@ public final class CompanionRoute {
     }
 
     private int tickWay(CompanionPillar pillar, BlockPos block) {
-        CompanionPillar.Outcome outcome = pillar.tickToward(block, false, CompanionPillar.WAY_SUPPORTS);
+        CompanionPillar.Outcome outcome = pillar.tickToward(block, false, pillar.waySpan());
         if (outcome == CompanionPillar.Outcome.FAILED) {
             String why = pillar.failureReason();
             // A column that stood but cannot serve this block comes down (its foot was planned for another block): the block is
@@ -362,7 +362,7 @@ public final class CompanionRoute {
             // (PATH7: «мост через провал»), never a refusal while one can still be laid. It waits for the failed column's soil.
             if (!pillar.isActive()) {
                 CompanionReach.BridgePlan plan = CompanionReach.bridge(w.owner, (ServerLevel) w.owner.level(), block, 3.5D, true,
-                        CompanionPillar.WAY_SUPPORTS, false);
+                        w.owner.temporaryPillar.waySpan(), false);
                 if (plan != null && plan.length() > 0) return tickBridge(block);
             }
             return noWay(block, "column failed: " + why);

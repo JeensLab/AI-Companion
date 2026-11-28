@@ -547,7 +547,7 @@ final class CompanionLoot {
         if (owner.temporaryPillar.isActive() || owner.temporaryPillar.isRecovering()
                 || owner.temporaryBridge.isActive() && !owner.temporaryBridge.isWalk() || owner.temporaryBridge.isRecovering()) return true;
         if (wayTries >= WAY_TRIES) return false;
-        int steps = owner.temporaryPillar.leastStepsNearCell(cell, CompanionPillar.WAY_SUPPORTS);
+        int steps = owner.temporaryPillar.leastStepsNearCell(cell, owner.temporaryPillar.waySpan());
         boolean soil = steps > 0 && steps <= owner.temporaryPillar.soilCarried();
         CompanionReach.BridgePlan bridge = soil ? null : CompanionReach.bridgeToCell(owner, level, cell);
         if (bridge != null) {
@@ -588,7 +588,7 @@ final class CompanionLoot {
             owner.workStatus("Мостю провал к выпавшему.");
             return true;
         }
-        CompanionPillar.Outcome outcome = owner.temporaryPillar.tickTowardCell(cell, CompanionPillar.WAY_SUPPORTS);
+        CompanionPillar.Outcome outcome = owner.temporaryPillar.tickTowardCell(cell, owner.temporaryPillar.waySpan());
         if (outcome == CompanionPillar.Outcome.FAILED) {
             sayWay(cell, "none", 0, 0, owner.temporaryPillar.failureReason());
             finishWay();
@@ -644,8 +644,7 @@ final class CompanionLoot {
     private static final int LEAVES_PER_DROP = 6;
     /** Where a leaf in the way is broken from: within reach and sight, off its own cell. */
     private static final CompanionRoute.Need LEAF_STAND = new CompanionRoute.Need(3.5, false, true, false);
-    private static final double REACH = 4.5;
-    /** Leaves that grew on a tree; those a player set (persistent) are his, not in the way. */
+        /** Leaves that grew on a tree; those a player set (persistent) are his, not in the way. */
     private static boolean naturalLeaves(net.minecraft.world.level.block.state.BlockState state) {
         return state.is(net.minecraft.tags.BlockTags.LEAVES) && state.hasProperty(net.minecraft.world.level.block.LeavesBlock.PERSISTENT)
                 && !state.getValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT);
@@ -701,7 +700,7 @@ final class CompanionLoot {
         if (!naturalLeaves(state)) {
             leafBreaking.reset(); owner.putToolAway(); leaf = null; path = null; return;
         }
-        if (owner.getEyePosition().distanceToSqr(leaf.getCenter()) > REACH * REACH
+        if (owner.getEyePosition().distanceToSqr(leaf.getCenter()) > CompanionReach.WORK_REACH * CompanionReach.WORK_REACH
                 || !CompanionMiningNavigation.visible(owner, owner.getEyePosition(), leaf)) {
             leafBreaking.reset();
             // The swing is let go: the hand the tool replaced comes back while he walks to it.

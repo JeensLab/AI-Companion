@@ -42,9 +42,7 @@ final class CompanionWaySearch {
     private static final int LOOK = 24;
     /** How many of the nearest are named in the line: enough to read why each was refused, few enough for one line. */
     private static final int SHOWN = 3;
-    /** The reach a block is worked from, as the one geometry answer's own (CompanionReach). */
-    private static final double REACH = 4.5D;
-    /**
+        /**
      * The wider box asked only when the box holds nothing: whether a block of the item is there at all, just not seen here —
      * the widest the player's own setting allows, so a block just past the box is named as seen-outside, not as absent.
      */
@@ -150,7 +148,7 @@ final class CompanionWaySearch {
         int count = 0, soil = 0;
         for (int index = 0; index < looked; index++) {
             BlockPos pos = found.get(index);
-            CompanionReach.How how = CompanionReach.how(c, level, pos, REACH, true, true, CompanionPillar.WAY_SUPPORTS);
+            CompanionReach.How how = CompanionReach.how(c, level, pos, CompanionReach.WORK_REACH, true, true, c.temporaryPillar.waySpan());
             if (examined.size() < SHOWN) examined.add(new Examined(pos, how));
             if (!how.yes()) continue;
             int yield = gives.getOrDefault(level.getBlockState(pos).getBlock(), 1);
@@ -302,7 +300,7 @@ final class CompanionWaySearch {
         if (!beyond.isEmpty()) {
             BlockPos first = beyond.getFirst();
             String out = "«" + id + "»: за коробкой " + radius + " вбок есть " + beyond.size() + ", ближайший "
-                    + describe(c, first, CompanionReach.how(c, level, first, REACH, true, true, CompanionPillar.WAY_SUPPORTS))
+                    + describe(c, first, CompanionReach.how(c, level, first, CompanionReach.WORK_REACH, true, true, c.temporaryPillar.waySpan()))
                     + " — он вне коробки, отсюда не вижу его; подойди ближе или скажи искать дальше";
             // One line per changed answer: the same block outside the same box said once, not once per tick of the search.
             sayOnce(c, SAID_OUTSIDE, "outside|" + id + "|" + radius + "|" + beyond.size() + "|" + first.toShortString(), out,

@@ -35,6 +35,9 @@ import java.util.UUID;
  * what he can dig about him. A way that cannot be made names its distance, never the first thing that comes to mind.
  */
 public final class CompanionReach {
+    /** How far from a block a cell he works it from may be: a player's own block reach, one rule for every way and pickup. */
+    public static final double WORK_REACH = 4.5D;
+
     public enum Way { WALK, ACROSS, UP, BRIDGE, DOWN, NONE }
 
     /** The way to the block and what it asks: for UP the least steps of soil, for BRIDGE the cells of floor, else why there is none. */
@@ -148,8 +151,8 @@ public final class CompanionReach {
         // The way up is the player's switch («Строить себе путь»): off, no column is raised.
         if (!c.buildWay()) return new How(Way.NONE, 0, 0, "switch off");
         int rise = block.getY() - c.blockPosition().getY();
-        if (rise < 2 || rise > CompanionPillar.WAY_HEIGHT) return new How(Way.NONE, 0, 0, "rise " + rise);
-        int limit = Math.clamp(maxSteps, 1, CompanionPillar.WAY_SUPPORTS);
+        if (rise < 2 || rise > c.temporaryPillar.waySpan()) return new How(Way.NONE, 0, 0, "rise " + rise);
+        int limit = Math.clamp(maxSteps, 1, c.temporaryPillar.waySpan());
         int carried = c.temporaryPillar.soilCarried();
         int least = c.temporaryPillar.leastStepsNear(block, limit);
         if (least <= 0) return new How(Way.NONE, 0, 0, "no column he can walk to");
@@ -177,15 +180,15 @@ public final class CompanionReach {
      * whose body touches the drop, the bank he walks to, and the cells of floor to lay between them. Null when no line is there.
      */
     public static BridgePlan bridgeToCell(CompanionEntity c, ServerLevel level, BlockPos cell) {
-        return bridge(c, level, cell, 4.5D, end -> airForBody(c, level, end)
+        return bridge(c, level, cell, WORK_REACH, end -> airForBody(c, level, end)
                 && CompanionMiningNavigation.pickupStand(c, end)
-                && CompanionMiningNavigation.touchesCell(c, Vec3.atBottomCenterOf(end), cell), CompanionPillar.WAY_SUPPORTS, false);
+                && CompanionMiningNavigation.touchesCell(c, Vec3.atBottomCenterOf(end), cell), c.temporaryPillar.waySpan(), false);
     }
 
     private static BridgePlan bridge(CompanionEntity c, ServerLevel level, BlockPos block, double reach, java.util.function.Predicate<BlockPos> endOk,
                                      int maxGap, boolean allowDugSoil) {
         if (!c.buildWay()) return null;
-        int limit = Math.clamp(maxGap, 1, CompanionPillar.WAY_SUPPORTS);
+        int limit = Math.clamp(maxGap, 1, c.temporaryPillar.waySpan());
         int material = bridgeBlocks(c);
         boolean dig = allowDugSoil && soilAbout(c, level);
         // The cells he can take it from, nearest him first: air for a body, in reach, and the drop collectable there.

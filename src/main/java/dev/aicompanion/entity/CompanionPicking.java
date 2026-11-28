@@ -68,10 +68,7 @@ final class CompanionPicking {
     /** Blocks of water over a block on the bed he dives for: half his breath down and up again, as the dive for a foe. */
     private static final int DEEP = 10;
     /** A player's reach, from the eyes to the middle of the block. */
-    private static final double REACH = 4.5;
-    /** How far from a block a cell he works it from may be: a player's own block reach (4.5). */
-    private static final double STAND_REACH = 4.5;
-    /** How far from a leaf a cell he works it from may be: a crown keeps its own short column (CompanionLeaves). */
+            /** How far from a leaf a cell he works it from may be: a crown keeps its own short column (CompanionLeaves). */
     private static final double LEAF_REACH = 3.5;
     /** Ticks over the block, down and up for air, before it is passed over. */
     private static final int DIVE = 900;
@@ -565,7 +562,7 @@ final class CompanionPicking {
         // A block no stand cell and no short column reaches: the one reach answer's way up, which may take sixteen steps
         // (PATH7: a pumpkin hanging ten blocks above was never taken). A leaf crown keeps its short column (CompanionLeaves).
         return !level.getBlockState(pos).is(BlockTags.LEAVES)
-                && CompanionReach.how(c, level, pos, STAND_REACH, true, dugSoil, CompanionPillar.WAY_SUPPORTS).up();
+                && CompanionReach.how(c, level, pos, CompanionReach.WORK_REACH, true, dugSoil, c.temporaryPillar.waySpan()).up();
     }
 
     /** A leaf that does not fade: set down by a player, his own hedge or roof, and still a leaf a shears gives. */
@@ -597,7 +594,7 @@ final class CompanionPicking {
         }
         if (!level.getBlockState(block).getCollisionShape(level, block).isEmpty()) {
             boolean leaf = level.getBlockState(block).is(BlockTags.LEAVES);
-            for (BlockPos stand : CompanionMiningNavigation.standCells(c, block, leaf ? LEAF_REACH : STAND_REACH, false, true)) {
+            for (BlockPos stand : CompanionMiningNavigation.standCells(c, block, leaf ? LEAF_REACH : CompanionReach.WORK_REACH, false, true)) {
                 // A leaf's drop falls off a crown or a stair to the ground below: the stand is still his, and the pickup walks
                 // down for what fell. Any standable cell within reach counts — a stair the player built, a ledge, a pillar.
                 // A cell on top of a leaf or of the trunk is no stand for a leaf: nothing walks up there without a column of
@@ -655,23 +652,23 @@ final class CompanionPicking {
         // and the answer — a column, a floor or none with its reason — once for this target, never one line per tick.
         if (!target.equals(decided)) {
             decided = target.immutable();
-            CompanionReach.decision(c, target, CompanionReach.how(c, level, target, STAND_REACH, true, false,
-                    level.getBlockState(target).is(BlockTags.LEAVES) ? CompanionPillar.LEAF_SUPPORTS : CompanionPillar.WAY_SUPPORTS));
+            CompanionReach.decision(c, target, CompanionReach.how(c, level, target, CompanionReach.WORK_REACH, true, false,
+                    level.getBlockState(target).is(BlockTags.LEAVES) ? CompanionPillar.LEAF_SUPPORTS : c.temporaryPillar.waySpan()));
         }
         // A floor across the gap already being laid is ticked before anything else: its plan is kept while it stands, and the
         // material of its cells is already in the world (no plan is made anew for a floor that is laid).
         if (c.temporaryBridge.isActive() || c.temporaryBridge.isRecovering()) return bridge(level);
         // Already within a swing from the top of his own column: no more steps up, the crown is cut from here.
         if (c.temporaryPillar.isActive() && c.temporaryPillar.inReach(target)) { stands = Set.of(c.blockPosition()); return true; }
-        int limit = level.getBlockState(target).is(BlockTags.LEAVES) ? CompanionPillar.LEAF_SUPPORTS : CompanionPillar.WAY_SUPPORTS;
+        int limit = level.getBlockState(target).is(BlockTags.LEAVES) ? CompanionPillar.LEAF_SUPPORTS : c.temporaryPillar.waySpan();
         Set<BlockPos> feet = c.temporaryPillar.buildCells(target, limit, c.temporaryPillar.soilCarried());
         if (feet.isEmpty()) {
             // No column reaches it: a floor laid across the gap between him and it, the same geometry answer (PATH7: «мост»).
             // A stand cell that reaches it but no walk does (a gap, a wall) is the same case.
-            CompanionReach.How how = CompanionReach.how(c, level, target, STAND_REACH, true, false, CompanionPillar.WAY_SUPPORTS);
+            CompanionReach.How how = CompanionReach.how(c, level, target, CompanionReach.WORK_REACH, true, false, c.temporaryPillar.waySpan());
             CompanionReach.decision(c, target, how);
             CompanionReach.BridgePlan plan = (how.way() == CompanionReach.Way.WALK || how.way() == CompanionReach.Way.ACROSS)
-                    ? CompanionReach.bridge(c, level, target, STAND_REACH, true, CompanionPillar.WAY_SUPPORTS, false) : null;
+                    ? CompanionReach.bridge(c, level, target, CompanionReach.WORK_REACH, true, c.temporaryPillar.waySpan(), false) : null;
             if (how.bridge() || plan != null && plan.length() > 0) return bridge(level);
             dev.aicompanion.CompanionDiagnostics.event(c.diagnosticTrace(), "climb_refused", "entity", c.getUUID(), "target", target,
                     "reason", how.why(), "limit", limit, "soil", c.temporaryPillar.soilCarried());
@@ -754,7 +751,7 @@ final class CompanionPicking {
     /** Within a player's reach of it, nothing solid between: a block under water is broken from there, the water does not stop the eye. */
     private boolean reaches(ServerLevel level) {
         Vec3 eye = c.getEyePosition();
-        if (eye.distanceTo(target.getCenter()) > REACH) return false;
+        if (eye.distanceTo(target.getCenter()) > CompanionReach.WORK_REACH) return false;
         var hit = level.clip(new ClipContext(eye, target.getCenter(), ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, c));
         return hit.getType() == HitResult.Type.MISS || hit.getBlockPos().equals(target);
     }

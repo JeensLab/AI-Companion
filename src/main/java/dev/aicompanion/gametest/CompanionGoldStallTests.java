@@ -238,12 +238,12 @@ public final class CompanionGoldStallTests {
         String[] last = {""};
         h.onEachTick(() -> {
             if (!climbed[0]) {
-                CompanionPillar.Outcome outcome = c.temporaryPillar().tickToward(firstAt, false, CompanionPillar.WAY_SUPPORTS);
+                CompanionPillar.Outcome outcome = c.temporaryPillar().tickToward(firstAt, false, c.temporaryPillar().waySpan());
                 last[0] = outcome + "/" + c.temporaryPillar().failureReason() + "/" + c.temporaryPillar().isActive() + "/" + c.getTemporarySupportCount();
                 if (c.getTemporarySupportCount() == 4) {
                     climbed[0] = true;
-                    steps[0] = c.temporaryPillar().leastStepsNear(nextAt, CompanionPillar.WAY_SUPPORTS);
-                    var answer = CompanionReach.how(c, h.getLevel(), nextAt, 3.5D, true, false, CompanionPillar.WAY_SUPPORTS);
+                    steps[0] = c.temporaryPillar().leastStepsNear(nextAt, c.temporaryPillar().waySpan());
+                    var answer = CompanionReach.how(c, h.getLevel(), nextAt, 3.5D, true, false, c.temporaryPillar().waySpan());
                     how[0] = answer.way() + "/" + answer.steps() + "/" + answer.why();
                     // The column comes down as the recovery goal walks it down, block by block.
                     c.temporaryPillar().requestCleanup();

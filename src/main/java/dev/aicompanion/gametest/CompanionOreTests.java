@@ -719,7 +719,7 @@ public final class CompanionOreTests {
             BlockPos ore = new BlockPos(29, top.getY() + 4, 16);
             h.setBlock(ore, kind);
             var how = dev.aicompanion.entity.CompanionReach.how(companion, h.getLevel(), h.absolutePos(ore), 3.5D, true, true,
-                    dev.aicompanion.entity.CompanionPillar.WAY_SUPPORTS);
+                    companion.temporaryPillar().waySpan());
             h.assertTrue(how.up() && how.steps() > 0 && how.steps() <= 16,
                     "The way refused " + kind + " twenty-three across and four up from a column top: " + how.way() + " " + how.why());
             h.setBlock(ore, Blocks.AIR);

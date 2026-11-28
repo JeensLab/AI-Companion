@@ -302,7 +302,7 @@ final class CompanionOreMining {
                 // or a floor across the gap before it, the same geometry answer as for any block (PATH7, #105). An ore closed in
                 // stone keeps the mine's own answer: a column would stand beside stone that hides it. A plain walk is the mine's
                 // own answer too, already asked: the ore across a trench is not crossed for while one on his side is there.
-                CompanionReach.How way = CompanionReach.how(w.owner, level, candidate, 4.5D, true, true, CompanionPillar.WAY_SUPPORTS);
+                CompanionReach.How way = CompanionReach.how(w.owner, level, candidate, CompanionReach.WORK_REACH, true, true, w.owner.temporaryPillar.waySpan());
                 CompanionReach.decision(w.owner, candidate, way);
                 if (way.up() || way.bridge() || offFoot && way.yes()) return chosenOre(candidate, null);
                 // A plain walk is the mine's own answer, asked again once the ores nearer him are gone: the candidate stays.
