@@ -16,6 +16,9 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.neoforged.fml.loading.FMLPaths;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.common.util.BlockSnapshot;
+import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -40,7 +43,9 @@ import static dev.aicompanion.gametest.CompanionMineArena.rig;
 @PrefixGameTestTemplate(false)
 public final class CompanionCreeperGuardTests {
     private static final int TUNNEL_Y = 10, BEND_LEG = 3, BEND_LENGTH = 12, DEAD_END_LENGTH = 8, DEAD_END_CREEPER = 3, BLAST_TICKS = 200;
-    private static final int TRENCH_LENGTH = 8, FUSE_SETTLED = 100, BAG_OF_COBBLESTONE = 128, ROOM = 6, ROOM_HEIGHT = 4, LIGHT_WAIT = 400, SWUM_OFF = 3;
+    private static final int TRENCH_LENGTH = 8, FUSE_SETTLED = 100, BAG_OF_COBBLESTONE = 128, ROOM = 6, ROOM_HEIGHT = 4, LIGHT_WAIT = 400, TAKEN_DOWN = 300, SWUM_OFF = 3;
+    /** A speed at which a run gains less than a block in twelve ticks, and how far he may drift from where the wall went up. */
+    private static final double SLOW = .08, STAYED = .4;
     private static final float UNHURT = 10, WALLED = 4, SWUM_THROUGH = 4;
 
     private CompanionCreeperGuardTests() { }
@@ -268,6 +273,111 @@ public final class CompanionCreeperGuardTests {
             h.assertTrue(count(c, Items.COBBLESTONE) == BAG_OF_COBBLESTONE, "He walled a run that was going somewhere | " + report(c));
             return true;
         });
+    }
+
+    /**
+     * A normal hiss goes out when the creeper loses its sight of him, and the wall cuts exactly that: no blast, the wall stands, the creeper
+     * outside. The fuse is out and the creeper stays outside (its AI off): his wall comes down and its blocks are back in the bag.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aWallThatPutOutTheFuseIsTakenDownAndPickedUp(GameTestHelper h) { takenDown(h, false); }
+
+    /** The same with the creeper gone (killed, or wandered off) behind the wall. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aWallWithTheCreeperGoneIsTakenDownAndPickedUp(GameTestHelper h) { takenDown(h, true); }
+
+    private static void takenDown(GameTestHelper h, boolean gone) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        for (int x = 0; x <= DEAD_END_LENGTH; x++) bore(h, x, 0);
+        place(c, cell(h, 0, 0));
+        Creeper creeper = creeper(h, cell(h, 2, 0));
+        creeper.setTarget(c);
+        long begun = h.getTick();
+        long[] raised = {-1};
+        h.onEachTick(() -> {
+            String trace = " | " + (creeper.isAlive() ? "creeper alive, fuse " + creeper.getSwellDir() : "creeper gone") + ", walls " + setInTheTunnel(h) + ", health " + c.getHealth() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            long now = h.getTick() - begun;
+            if (raised[0] < 0) {
+                h.assertTrue(now < BLAST_TICKS, "No wall was set" + trace);
+                if (setInTheTunnel(h) < 2 || !creeper.isAlive()) return;
+                // Still standing before the fuse has gone out: the wall is held, not taken down under a burning fuse.
+                if (creeper.getSwellDir() > 0) return;
+                raised[0] = now;
+                if (gone) creeper.discard(); else creeper.setNoAi(true);
+            }
+            boolean standing = setInTheTunnel(h) > 0 || count(c, Items.COBBLESTONE) < BAG_OF_COBBLESTONE;
+            h.assertTrue(!standing || now - raised[0] < TAKEN_DOWN, "The wall still stands, or its blocks are not back in the bag, " + (now - raised[0]) + " ticks after the fuse went out: "
+                    + count(c, Items.COBBLESTONE) + " of " + BAG_OF_COBBLESTONE + trace);
+            if (standing) return;
+            h.succeed();
+        });
+    }
+
+    /**
+     * Stuck where he stands, the creeper lit three blocks off, and a slow run (it gains nothing): the wall goes up and he stays behind it. He does
+     * not take the next step of the run out from behind it, and no second pair is set at the next stand.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aWallRaisedForAStalledRunIsHeldBehind(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        for (int x = -ROOM; x <= ROOM; x++) for (int z = -ROOM; z <= ROOM; z++) for (int up = 0; up < ROOM_HEIGHT; up++) h.getLevel().setBlock(cell(h, x, up, z), Blocks.AIR.defaultBlockState(), 2 | 16);
+        for (int up = 0; up < 2; up++) h.getLevel().setBlock(cell(h, 3, up, 0), Blocks.STONE.defaultBlockState(), 2 | 16);
+        place(c, cell(h, 0, 0));
+        c.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(SLOW);
+        Creeper creeper = creeper(h, cell(h, 2, 0));
+        creeper.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        creeper.ignite();
+        long begun = h.getTick();
+        net.minecraft.world.phys.Vec3[] behind = {null};
+        h.onEachTick(() -> {
+            String trace = " | creeper " + (creeper.isAlive() ? "alive" : "gone") + ", he at " + c.position() + ", health " + c.getHealth() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            h.assertTrue(count(c, Items.COBBLESTONE) >= BAG_OF_COBBLESTONE - 2, "More than the one pair was set: " + (BAG_OF_COBBLESTONE - count(c, Items.COBBLESTONE)) + " blocks" + trace);
+            if (behind[0] == null && count(c, Items.COBBLESTONE) < BAG_OF_COBBLESTONE) behind[0] = c.position();
+            if (behind[0] != null) h.assertTrue(c.position().distanceTo(behind[0]) < STAYED, "He left the cover of the wall for the next step of the run: " + c.position().distanceTo(behind[0]) + " blocks" + trace);
+            if (creeper.isAlive()) { h.assertTrue(h.getTick() - begun < BLAST_TICKS, "The creeper never blew" + trace); return; }
+            h.assertTrue(count(c, Items.COBBLESTONE) < BAG_OF_COBBLESTONE, "No wall was set" + trace);
+            h.succeed();
+        });
+    }
+
+    /** The tunnel goes on behind him and the player stands twelve blocks deeper in it: a wall would shut him in. He is stuck, the creeper lit. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void setsNoWallWithThePlayerDeeperInTheTunnelBehindHim(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        for (int x = -2 * ROOM; x <= DEAD_END_LENGTH; x++) bore(h, x, 0);
+        ServerPlayer player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        BlockPos at = cell(h, -2 * ROOM, 0);
+        place(c, cell(h, 0, 0));
+        c.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        player.teleportTo(at.getX() + .5, at.getY(), at.getZ() + .5);
+        Creeper creeper = creeper(h, cell(h, DEAD_END_CREEPER, 0));
+        creeper.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        creeper.ignite();
+        setsNoBlock(h, c);
+    }
+
+    /** A few blocks of stone the player set down by the dead end (no building, no home: the game only knows the blocks): a wall of his there would stay. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void setsNoWallByAFewStonesThePlayerSetDown(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        for (int x = 0; x <= DEAD_END_LENGTH; x++) bore(h, x, 0);
+        for (int x = 1; x <= 2; x++) for (int z = -1; z <= 1; z += 2) placedByPlayer(h, c, cell(h, x, 0, z));
+        place(c, cell(h, 0, 0));
+        creeper(h, cell(h, DEAD_END_CREEPER, 0)).ignite();
+        setsNoBlock(h, c);
+    }
+
+    /** A block of stone set down by the player, as the game tells it (CompanionPlayerBuilds learns his stones so). */
+    private static void placedByPlayer(GameTestHelper h, CompanionEntity c, BlockPos world) {
+        h.getLevel().setBlock(world, Blocks.ANDESITE.defaultBlockState(), 2 | 16);
+        var player = (ServerPlayer) h.getLevel().getPlayerByUUID(c.getOwnerId());
+        NeoForge.EVENT_BUS.post(new BlockEvent.EntityPlaceEvent(BlockSnapshot.create(h.getLevel().dimension(), h.getLevel(), world), Blocks.GRASS_BLOCK.defaultBlockState(), player));
     }
 
     /** Whether the journal holds a line of the creeper guard with this action for him. */

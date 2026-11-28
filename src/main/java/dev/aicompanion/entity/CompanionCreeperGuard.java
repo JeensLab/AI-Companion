@@ -64,6 +64,9 @@ final class CompanionCreeperGuard {
      */
     private static final int STALL_TICKS = 12;
     private static final double STALL_GAIN = 1;
+    /** His wall comes down when no lit fuse has burned within this many ticks of it; a creeper's fuse is looked for this far round him. */
+    private static final int WALL_QUIET = 40;
+    private static final double FUSE_NEAR = NEAR + 3;
     /** The blow that kills a lit creeper ({@link #finishes}) is waited for only with this many ticks of the fuse to spare, and its hurt time down to this. */
     private static final int FINISH_SPARE = 2, HURT_HALF = 10;
     /**
@@ -99,7 +102,7 @@ final class CompanionCreeperGuard {
 
     private final CompanionEntity owner;
     private boolean active, finished, fighting, shielded, dashing, leading, mayStrike, room = true;
-    private long begun, lastSeen, nextLook, nextPlan, nextProbe, lastRetreat, lastFlee, fuseSince, fuseLook, leadAgainAt, runSince, runTick;
+    private long begun, lastSeen, nextLook, nextPlan, nextProbe, lastRetreat, lastFlee, fuseSince, fuseLook, leadAgainAt, runSince, runTick, quietSince;
     /** The gap to the creeper when the run last gained on it ({@link #stalled}); below nought before the first step of the run. */
     private double runGap = -1;
     private int retreats, flees, leadTried;
@@ -131,6 +134,7 @@ final class CompanionCreeperGuard {
 
     boolean canStart() {
         if (!(owner.level() instanceof ServerLevel level) || !owner.isAlive()) return false;
+        if (wall.standing()) return true;
         long now = level.getGameTime();
         if (now < nextLook) return false;
         nextLook = now + (fights() ? FIGHT_LOOK_EVERY : LOOK_EVERY);
@@ -179,6 +183,12 @@ final class CompanionCreeperGuard {
         owner.getNavigation().stop();
         escape.reset();
         shown = "";
+        if (wall.standing()) {
+            // The wall of an earlier fuse still stands: held behind, then taken down (tickWall).
+            quietSince = now;
+            fighting = dashing = leading = mayStrike = shielded = false;
+            return;
+        }
         int path = -1;
         // The melee goal does not run while the guard holds the turn, so it cannot bring a weapon out for it.
         if (fighting || dashing) {
@@ -210,9 +220,29 @@ final class CompanionCreeperGuard {
         dev.aicompanion.CompanionDiagnostics.event(owner.diagnostics.trace(), "creeper_guard", "entity", owner.getUUID(), "action", "leave_loot");
     }
 
+    /**
+     * His wall stands: behind it, no step out and no second wall, while a fuse burns near; with none for a while (the creeper's sight of him is
+     * cut, so its hiss goes out, or it is dead or gone) the wall is taken down and its blocks picked up. A creeper still there then is the guard's
+     * again as before.
+     */
+    private void tickWall(ServerLevel level, long now) {
+        boolean burning = !level.getEntitiesOfClass(Creeper.class, owner.getBoundingBox().inflate(FUSE_NEAR), creeper -> creeper.isAlive() && lit(creeper)).isEmpty();
+        owner.getNavigation().stop();
+        if (burning) {
+            quietSince = now;
+            wall.rest();
+            wall.complete(level);
+            mention("held", null, null);
+        } else if (now - quietSince >= WALL_QUIET) {
+            mention("down", null, null);
+            finished = wall.takeDown(level);
+        }
+    }
+
     void tick() {
         if (!(owner.level() instanceof ServerLevel level)) return;
         long now = level.getGameTime();
+        if (wall.standing()) { tickWall(level, now); return; }
         Creeper creeper = seen(level);
         lookAtFuse(creeper, now);
         if (shielded) {
@@ -248,6 +278,7 @@ final class CompanionCreeperGuard {
         active = fighting = shielded = dashing = leading = mayStrike = false;
         shield.release();
         escape.reset();
+        wall.rest();
         flee = null;
         owner.getNavigation().stop();
         owner.work.credit(owner.level().getGameTime() - begun);
@@ -322,7 +353,7 @@ final class CompanionCreeperGuard {
     private void retreat(ServerLevel level, Creeper creeper) {
         if (finishes(creeper)) { finish(creeper); return; }
         Vec3 step = escape.step(level, threats(level), creeper);
-        if (step != null && !escape.holding() && stalled(creeper) && !byTheHouse() && wall.raise(level, creeper)) { mention("wall", creeper, null); return; }
+        if (step != null && !escape.holding() && stalled(creeper) && !byTheHouse() && wallUp(level, creeper)) return;
         if (step != null) {
             mention(escape.holding() ? "hold" : "path", creeper, escape.goal());
             owner.getNavigation().stop();
@@ -340,7 +371,7 @@ final class CompanionCreeperGuard {
             return;
         }
         // No wall of cobblestone is left standing in the player's house.
-        if (!byTheHouse() && wall.raise(level, creeper)) { mention("wall", creeper, null); return; }
+        if (!byTheHouse() && wallUp(level, creeper)) return;
         mention("strike", creeper, null);
         strike(creeper);
     }
@@ -355,6 +386,14 @@ final class CompanionCreeperGuard {
         // A creeper struck less than half its hurt time before the blow takes only what exceeds that hit (LivingEntity#hurt): no sure kill.
         return creeper.getHealth() <= owner.getAttributeValue(Attributes.ATTACK_DAMAGE) && owner.isWithinMeleeAttackRange(creeper)
                 && creeper.invulnerableTime - swing <= HURT_HALF && swing + FINISH_SPARE <= (1 - creeper.getSwelling(0)) * SWELL_TICKS;
+    }
+
+    /** The wall between him and the creeper is set (the first block of it at least); from now on he holds behind it ({@link #tickWall}). */
+    private boolean wallUp(ServerLevel level, Creeper creeper) {
+        if (!wall.raise(level, creeper)) return false;
+        quietSince = level.getGameTime();
+        mention("wall", creeper, null);
+        return true;
     }
 
     /**
