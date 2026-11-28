@@ -309,6 +309,12 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             // An order is done when the thing is in the bag, in the count asked — never because a block of it still stands in the
             // world. The bag answers before any search and any plan: a block mined and its drop picked up leaves no block to find,
             // and a search finding none must not call a met order a failure (the owner, 25.11).
+            // THE BAG IS NOT THE ARBITER while a block of the item still stands (the owner's three reports, 28.11): a second
+            // «добудь калитку» over a gate already in the bag answered «готово» and never went for the gate on the map, and in
+            // the L-staircase scene the gold already in the bag met the order without the planned gold block being broken. So a
+            // bag answer stands only when no block of the item is about him, or when the order named its count («добудь 2
+            // калитки»): then the bag is the answer the player asked for. The fix tracks the planned blocks by position and
+            // counts only the ones the work broke and picked; the check at the end is that planned-block ledger, not the bag.
             int have = companion.carriedCount(item);
             // In the Nether on the errand the way home is part of the chain (nether_back): the bag's answer must not drop it, so
             // there the plan is made as before and its own steps carry him out.
