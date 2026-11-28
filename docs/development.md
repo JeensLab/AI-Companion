@@ -76,7 +76,7 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Грядки, посадка и урожай | `entity/CompanionFarming.java` (поле у воды, мотыга, семена, посадка, сбор), `CompanionCrops.java` (культуры, стебли тыквы и арбуза); костная мука на грядки и саженец (`use_bone_meal`) и дозревание в цепочке «добудь» — там же; тесты `gametest/CompanionFarmTests.java`, `CompanionFarmObtainTests.java`, `CompanionStemTests.java` (тыква и арбуз) |
 | Сохранение, бой, питание и плавание | `entity/CompanionEntityNbt.java`, `CompanionCombat.java`, `CompanionEating.java`, `CompanionSwimming.java` |
 | Лук в бою: натяжение, стрелы из сумки, линия огня | `entity/CompanionArchery.java`; тесты `gametest/CompanionBowTests.java` |
-| Рыбалка («порыбачь», «налови 5 рыб», `fish`; «добудь треску» без рыбы рядом): берег ближайшей воды, заброс, поклёвка, улов по таблице рыбалки игры, износ удочки | `entity/CompanionFishing.java` (шаг, вызывается из `CompanionChores`), `entity/CompanionBobber.java` (свой поплавок: ванильный `FishingHook` живёт только на леске игрока), `client/CompanionBobberRenderer.java`, фразы — `client/CompanionWorkCommands.java`; тесты `gametest/CompanionFishingTests.java` |
+| Рыбалка («порыбачь», «налови 5 рыб», `fish`; «добудь треску» без рыбы рядом): берег ближайшей воды, заброс, поклёвка, улов по таблице рыбалки игры, износ удочки | `entity/CompanionFishing.java` (шаг, вызывается из `CompanionChores`), `entity/CompanionBobber.java` (ванильный `FishingHook` живёт только на леске игрока), `client/CompanionBobberRenderer.java`, фразы — `client/CompanionWorkCommands.java`; приглашения — `CompanionFishingInvitation.java`, `client/CompanionAmbientClient.java`; самостоятельные вылазки — `entity/CompanionAutonomy.java`; тесты `gametest/CompanionFishingTests.java` |
 | Бой с драконом: кристаллы на колоннах, полёт стрелы навесом | `entity/CompanionEndCrystals.java`, `entity/CompanionArrowFlight.java`; тесты `gametest/CompanionEndCrystalTests.java` |
 | Долговременная цель и подтверждение выдачи | `entity/CompanionGoals.java`, `CompanionActionResult.java` |
 | Долгая цель (броня, Незер, дракон): каталог, этапы, состояние, экран | `entity/CompanionAgenda.java` (движок, раз в секунду), `CompanionPlaybooks.java` (каталог), `CompanionMilestones.java` и `CompanionFacts.java` (этапы по фактам), `CompanionAgendaData.java` (сохранение `aicompanion_agenda`), `CompanionAgendaView.java` (экран и строка «Долгая цель» для модели); действие `pursue_goal` — `client/CompanionPlanCodec.java`; фразы «отмени цель», «отложи цель» — `client/CompanionLocalCommands.java`; экран — `client/CompanionTasksScreen.java`, `entity/CompanionTaskBoard.java`; тесты `gametest/CompanionAgendaTests.java`, `CompanionAgendaModelTests.java`, `CompanionAgendaBoardTests.java` |
@@ -293,3 +293,28 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 задаются через синхронизируемые флаги тестового Олега: это проверка клиентского
 допуска, а не физического поведения мобов. Голос провайдеров и микрофон не используются.
 Успех требует маркера `JOKE_CLIENT_PROBE_PASSED`, одного кода Gradle 0 недостаточно.
+
+## Рыбалка вместе с Олегом
+
+«Погнали рыбачить», «айда к речке, рыбки половим» или «а теперь порыбачим» дают
+Олегу поручение на три рыбы. На «может, посидим с удочками?» он уточняет, идёте ли
+вы рыбачить. Прямые команды «налови пять рыб» и «порыбачь» сохраняют свои условия.
+Если у Олега нет удочки, действует обычная цепочка добычи и крафта.
+
+Олег иногда зовёт порыбачить у воды, если рядом спокойно и он свободен. После
+приглашения есть минута на согласие или отказ. Подойдут «да погнали тогда» и
+«дада емае». Другая реплика или переход в другой мир закрывает приглашение.
+В «Поведении» можно выключить приглашения и настроить паузу. По умолчанию
+это 20–40 минут активной игры.
+
+В режиме самостоятельности Олег может поймать до трёх рыб рядом с игроком,
+если уже носит удочку и других подходящих дел нет. Интервал этой вылазки
+настраивается отдельно. Поручение игрока, бой или уход игрока прерывают вылазку.
+
+Игровая проверка `CompanionFishingTests` проверяет разговорные команды,
+срок действия согласия и отмену самостоятельной ловли. Команда
+`./gradlew runClient -PfishingTogetherProbe` запускает отдельный клиент в
+`build/fishing-together-client` с новым плоским миром. Используются пустые
+настройки провайдеров. Прогон ускоряет только таймер приглашения, затем проверяет
+ответ через экран чата, появление поплавка на клиенте и его удаление по «стоп».
+Успех отмечается строкой `FISHING_TOGETHER_CLIENT_PASS`.

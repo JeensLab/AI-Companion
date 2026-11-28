@@ -168,6 +168,8 @@ public final class CompanionWorkCommands {
         String bare = said.rest().replace("-ка", "ка").replaceAll("\\s+", " ").trim();
         // «Порыбачь», «налови рыбы»: until he is stopped; «налови 5 рыб» so many, «поймай рыбу» one (CompanionFishing). A fish by its name and «0 рыб» are the model's.
         boolean zero = said.count() == 0 && !said.rest().equals(value);
+        if (said.count() == 0 && !zero && dev.aicompanion.CompanionFishingInvitation.proposesTrip(value))
+            return new PlannedAction("fish", 0, 3, dev.aicompanion.entity.CompanionFishing.ANY);
         if (said.count() == 0 && bare.matches("^(?:порыбачь(?:ка)?|рыбачь|(?:иди|сходи|пойди) (?:порыбачь|на рыбалку)|полови(?:ка)? (?:рыбу|рыбы|рыбку))(?: рядом| тут| здесь)?$"))
             return new PlannedAction("fish", 0, PlannedAction.ALL_CARRIED, dev.aicompanion.entity.CompanionFishing.ANY);
         var fishing = Pattern.compile("^(налови|поймай|вылови)(?:ка)?(?: мне| нам| себе)? (?:рыбу|рыбы|рыб|рыбку|рыбки|рыбок|рыбину|рыбин)(?: удочкой| на удочку)?$").matcher(bare);

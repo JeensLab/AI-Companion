@@ -357,6 +357,7 @@ public final class CompanionLocalCommands {
 
     /** Every local command but a work request, and the model's plans that start with these, replace the plans in the queue. */
     public static boolean cancelsPlans(String command) {
+        if (command.equals("companion fishing_ask") || command.equals("companion fishing_decline")) return false;
         // The mode of his own deeds is no order to drop the plans the player gave.
         if (command.equals("companion goal status") || command.equals("companion goal cancel") || command.equals("companion goal defer")) return false;
         if (command.startsWith("companion memory ")) return false;

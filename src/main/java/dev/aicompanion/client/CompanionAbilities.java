@@ -62,7 +62,7 @@ public final class CompanionAbilities {
             new Ability("хожу в Незер за кварцем и незераком, если рядом портал", List.of("obtain_item"), List.of()),
             new Ability("иду в нужную сторону и захожу в портал", List.of("walk_heading", "enter_portal"), List.of()),
             new Ability("веду к крепости Края по оку и вставляю очи в портал", List.of("walk_heading", "open_end_portal"), List.of()),
-            new Ability("рыбачу удочкой", List.of("fish"), List.of()),
+            new Ability("рыбачу удочкой и иногда ловлю рыбу сам у воды", List.of("fish"), List.of("FISH")),
             new Ability("надеваю снаряжение, чиню вещи и снимаю чары", List.of("equip_item", "unequip_item", "repair_item", "disenchant_item"), List.of()),
             new Ability("даю тебе вещи и ставлю блоки", List.of("give_items", "give_wood", "place_block"), List.of()),
             new Ability("ищу торговцев и торгую с ними", List.of("scout_traders", "trade_items"), List.of()),

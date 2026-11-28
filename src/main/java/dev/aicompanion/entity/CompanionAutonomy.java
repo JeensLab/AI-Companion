@@ -61,6 +61,7 @@ public final class CompanionAutonomy {
         COAL("mine_ore", "добыть угля"), IRON("mine_ore", "добыть железа"),
         SMELT_IRON("smelt_items", "переплавить железо"), IRON_PICK("craft_item", "сделать железную кирку"),
         HUNT("hunt_animals", "добыть еду"),
+        FISH("fish", "порыбачить у берега"),
         TAKE_WOOD("take_items", "взять свои дрова"), TAKE_STONE("take_items", "взять свой камень"),
         /** A batch left in its furnaces: started by the batches themselves, with deeds switched off too. */
         COLLECT("collect_smelt", "забрать плавку из печей");
@@ -89,6 +90,8 @@ public final class CompanionAutonomy {
     private BlockPos workArea;
     private String workDimension = "";
     private long nextSpeech = Long.MIN_VALUE;
+    private int fishingMinutes;
+    private long nextFishing;
     private int idleTicks;
     private Deed deed;
     private long deedWorkId;
@@ -222,6 +225,7 @@ public final class CompanionAutonomy {
         if (owner.batches().ownReadyWaiting(level)) return;
         idleTicks = 0;
         Deed next = choose(level);
+        if (next == null && fishingReady(level, level.getGameTime())) next = Deed.FISH;
         if (next == null && explain) say(nothingToDo());
         explain = false;
         if (next != null) begin(player, next);
@@ -307,6 +311,28 @@ public final class CompanionAutonomy {
 
     private boolean available(Deed deed, long now) { return breakUntil.getOrDefault(deed, Long.MIN_VALUE) <= now; }
 
+    public void configureFishing(int minutes) {
+        if (fishingMinutes == minutes) return;
+        fishingMinutes = minutes;
+        restFishing(owner.level().getGameTime());
+    }
+
+    private void restFishing(long now) {
+        int gap = fishingMinutes * 20 * 60;
+        nextFishing = now + gap + owner.getRandom().nextInt(gap + 1);
+    }
+
+    private boolean fishingReady(ServerLevel level, long now) {
+        if (fishingMinutes == 0 || now < nextFishing || !available(Deed.FISH, now)
+                || count(Items.FISHING_ROD) == 0 || freeSlots() < 2 || owner.isInWater() || !owner.onGround()) return false;
+        var player = owner.getOwnerPlayer();
+        if (player == null || owner.distanceToSqr(player) > 12 * 12) return false;
+        nextFishing = now + 30 * 20;
+        if (!CompanionFishing.waterNearby(level, owner.blockPosition())) return false;
+        restFishing(now);
+        return true;
+    }
+
     private int reserve(net.minecraft.tags.TagKey<net.minecraft.world.item.Item> kind) {
         return reserve(stack -> stack.is(kind));
     }
@@ -378,6 +404,7 @@ public final class CompanionAutonomy {
             case COAL -> 8;
             case IRON -> 4;
             case HUNT -> 6;
+            case FISH -> 3;
             case WOOD -> Math.max(1, Math.min(WOOD_BATCH, WOOD_RESERVE - reserve(ItemTags.LOGS)));
             case STONE -> Math.max(1, Math.min(STONE_BATCH, STONE_RESERVE - reserve(ItemTags.STONE_TOOL_MATERIALS)));
             case COOK, SMELT_IRON -> CompanionWork.ALL_CARRIED;
@@ -392,6 +419,7 @@ public final class CompanionAutonomy {
             case IRON -> "minecraft:iron";
             case SMELT_IRON -> "minecraft:raw_iron";
             case HUNT -> "food";
+            case FISH -> CompanionFishing.ANY;
             case COOK -> CompanionGame.ANY_MEAT;
             case WOOD, STONE, COLLECT -> "";
         };
@@ -416,6 +444,10 @@ public final class CompanionAutonomy {
             return;
         }
         if (!enabled && !own) { drop("disabled"); return; }
+        if (deed == Deed.FISH && (fishingMinutes == 0 || owner.distanceToSqr(player) > 16 * 16)) {
+            drop("fishing_break_over");
+            return;
+        }
         String danger = danger(level, player);
         if (danger != null) { drop(danger); say(REASONS.get(danger)); return; }
         CompanionActionResult result = owner.workResult(deedWorkId);
@@ -435,6 +467,7 @@ public final class CompanionAutonomy {
         event("autonomy_deed_finished", "deed", was.action, "success", result.success(), "status", result.status(), "message", result.message());
         if (result.status() == CompanionActionResult.Status.CANCELLED) return;
         if (was == Deed.COLLECT) { report(result.message()); return; }
+        if (was == Deed.FISH && result.success()) { report(result.message()); return; }
         if (result.status() == CompanionActionResult.Status.PARKED) { reportedFailures.remove(was); report(result.message()); return; }
         if (result.success()) { reportedFailures.remove(was); return; }
         breakUntil.put(was, owner.level().getGameTime() + FAILURE_BREAK_TICKS);

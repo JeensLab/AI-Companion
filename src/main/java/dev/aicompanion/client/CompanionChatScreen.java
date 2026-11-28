@@ -125,9 +125,26 @@ public final class CompanionChatScreen extends Screen {
         }));
     }
 
-    private static String companionAction(String text) { return CompanionLocalCommands.route(text, companionName()); }
+    private static String companionAction(String text) {
+        return switch (CompanionAmbientClient.fishingAnswer(text)) {
+            case ACCEPT -> dev.aicompanion.CompanionFishingInvitation.ORDER;
+            case DECLINE -> "companion fishing_decline";
+            case OTHER -> dev.aicompanion.CompanionFishingInvitation.asksAboutTrip(text)
+                    ? "companion fishing_ask" : CompanionLocalCommands.route(text, companionName());
+        };
+    }
 
     static void runLocalCommand(String command, String trace) {
+        if (command.equals("companion fishing_ask")) {
+            CompanionAmbientClient.offerFishing("Рыбачить идём?");
+            return;
+        }
+        if (command.equals("companion fishing_decline")) {
+            String answer = "Ладно, порыбачим в другой раз.";
+            OpenRouterClient.recordSpokenLine(answer);
+            addVoiceReply(answer, trace, "fishing_declined");
+            return;
+        }
         CompanionDiagnostics.event(trace, "message_route", "route", "local_parser", "command", command);
         List<PlannedAction> actions = CompanionLocalCommands.actions(command);
         if ("build_house".equals(actions.getFirst().type())) addVoiceReply(CompanionDialogue.acknowledge(actions), trace, "local_acknowledgement");
