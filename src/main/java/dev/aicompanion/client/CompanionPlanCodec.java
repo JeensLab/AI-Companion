@@ -252,8 +252,14 @@ public final class CompanionPlanCodec {
                 if (("craft_item".equals(type) || "place_block".equals(type) || "equip_item".equals(type) || "smelt_items".equals(type) || "obtain_item".equals(type)
                         || "pick_up".equals(type) || "break_block".equals(type)) && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
                 // «Сломай печку»: a block the game has, never air; the model cannot make one up.
-                if ("break_block".equals(type) && (!net.minecraft.core.registries.BuiltInRegistries.BLOCK.containsKey(net.minecraft.resources.ResourceLocation.parse(item))
-                        || "minecraft:air".equals(item))) throw invalid();
+                if ("break_block".equals(type)) {
+                    var blockId = net.minecraft.resources.ResourceLocation.parse(item);
+                    // Any air (cave_air, void_air too) is no block to break.
+                    if (!net.minecraft.core.registries.BuiltInRegistries.BLOCK.containsKey(blockId)
+                            || net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(blockId).defaultBlockState().isAir()) throw invalid();
+                    // «give» is a true or false and nothing else: a string or a number spoils the plan.
+                    if (step.has("give") && !(step.get("give").isJsonPrimitive() && step.get("give").getAsJsonPrimitive().isBoolean())) throw invalid();
+                }
                 String slot = step.has("slot") ? step.get("slot").getAsString() : "auto";
                 if (!Set.of("auto", "mainhand", "offhand", "head", "chest", "legs", "feet").contains(slot)) throw invalid();
                 // «…и отдай мне»: break_block carries it in the slot, the field the step has no other use for.

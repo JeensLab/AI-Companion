@@ -78,6 +78,7 @@ public final class CompanionBreakBlockTests {
             h.assertTrue(h.getLevel().getBlockState(chest).is(Blocks.CHEST), "The chest was touched");
             h.assertTrue(((net.minecraft.world.Container) h.getLevel().getBlockEntity(chest)).getItem(0).is(Items.CRAFTING_TABLE), "The chest lost its bench");
             h.assertTrue(atPlayer(h, player, Items.CRAFTING_TABLE) == 1, "Not the one bench to the player: " + atPlayer(h, player, Items.CRAFTING_TABLE));
+            h.assertTrue(companion.didLastTaskSucceed(), "No success: " + companion.getLastTaskResult());
         });
     }
 
@@ -119,6 +120,77 @@ public final class CompanionBreakBlockTests {
                     "At the player: chest " + atPlayer(h, player, Items.CHEST) + ", stone " + atPlayer(h, player, Items.COBBLESTONE)
                             + ", sticks " + atPlayer(h, player, Items.STICK) + "; " + plan.join().report());
             h.assertTrue(stored(companion, Items.CHEST) + stored(companion, Items.COBBLESTONE) + stored(companion, Items.STICK) == 0, "He kept some of it");
+            h.assertTrue(companion.didLastTaskSucceed(), "No success: " + companion.getLastTaskResult());
+        });
+    }
+
+    @GameTest(template = "large_search", timeoutTicks = 900)
+    public static void giveHandsOverTheStackOfTheBlockNotHisOwnOfTheSameItem(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        ServerPlayer player = player(h, companion);
+        ItemStack mine = new ItemStack(Items.IRON_PICKAXE);
+        mine.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, net.minecraft.network.chat.Component.literal("mine"));
+        companion.setItem(0, mine);
+        BlockPos chest = h.absolutePos(new BlockPos(12, 1, 8));
+        h.getLevel().setBlockAndUpdate(chest, Blocks.CHEST.defaultBlockState());
+        ((net.minecraft.world.Container) h.getLevel().getBlockEntity(chest)).setItem(0, new ItemStack(Items.IRON_PICKAXE));
+        var plan = say(h, companion, "разбей сундук и дай мне", "break-same-item");
+        h.succeedWhen(() -> {
+            h.assertTrue(plan.isDone() && !plan.isCompletedExceptionally(), "The plan is still running: " + companion.getLastTaskResult());
+            List<ItemStack> given = new java.util.ArrayList<>();
+            for (ItemStack stack : player.getInventory().items) if (stack.is(Items.IRON_PICKAXE)) given.add(stack);
+            for (ItemEntity drop : h.getLevel().getEntitiesOfClass(ItemEntity.class, player.getBoundingBox().inflate(2), found -> found.getItem().is(Items.IRON_PICKAXE))) given.add(drop.getItem());
+            h.assertTrue(given.size() == 1 && !given.getFirst().has(net.minecraft.core.component.DataComponents.CUSTOM_NAME), "Given: " + given + "; " + plan.join().report());
+            h.assertTrue(companion.getItem(0).is(Items.IRON_PICKAXE) && companion.getItem(0).has(net.minecraft.core.component.DataComponents.CUSTOM_NAME), "He lost his own pickaxe");
+        });
+    }
+
+    @GameTest(template = "large_search", timeoutTicks = 200)
+    public static void aBlockThatDropsNothingIsRefusedAndStands(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        BlockPos glass = h.absolutePos(new BlockPos(10, 1, 8));
+        h.getLevel().setBlockAndUpdate(glass, Blocks.GLASS.defaultBlockState());
+        CompanionActionResult result = CompanionEvents.executeAction(player(h, companion), "break_block", "minecraft:glass", 1);
+        h.assertTrue(!result.success() && result.message().contains("ничего не даёт"), "Glass: " + result.status() + " " + result.message());
+        h.assertTrue(h.getLevel().getBlockState(glass).is(Blocks.GLASS) && !companion.isWorking(), "The glass was touched");
+        h.succeed();
+    }
+
+    @GameTest(template = "large_search", timeoutTicks = 900)
+    public static void whatSomeoneElseTookFirstIsSaidAndTheRestIsGiven(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        ServerPlayer player = player(h, companion);
+        BlockPos chest = h.absolutePos(new BlockPos(12, 1, 8));
+        h.getLevel().setBlockAndUpdate(chest, Blocks.CHEST.defaultBlockState());
+        var inside = (net.minecraft.world.Container) h.getLevel().getBlockEntity(chest);
+        inside.setItem(0, new ItemStack(Items.COBBLESTONE, 5));
+        inside.setItem(1, new ItemStack(Items.STICK, 3));
+        // Someone beside the chest takes the stone the moment it spills.
+        h.onEachTick(() -> h.getLevel().getEntitiesOfClass(ItemEntity.class, h.getBounds().inflate(2), found -> found.getItem().is(Items.COBBLESTONE)).forEach(ItemEntity::discard));
+        var plan = say(h, companion, "разбей сундук и отдай мне", "break-taken");
+        h.succeedWhen(() -> {
+            h.assertTrue(plan.isDone() && !plan.isCompletedExceptionally(), "The plan is still running: " + companion.getLastTaskResult());
+            h.assertTrue(atPlayer(h, player, Items.CHEST) == 1 && atPlayer(h, player, Items.STICK) == 3, "Not given what he got: " + plan.join().report());
+            h.assertTrue(plan.join().report().contains("кто-то другой") && !plan.join().report().contains("подобрал только"), "Not said honestly: " + plan.join().report());
+        });
+    }
+
+    @GameTest(template = "large_search", timeoutTicks = 900)
+    public static void theBlockUnderThePlayerIsNeverTheOneBroken(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        companion.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        BlockPos under = h.absolutePos(new BlockPos(5, 0, 8)), far = h.absolutePos(new BlockPos(12, 1, 8));
+        h.getLevel().setBlockAndUpdate(under, Blocks.FURNACE.defaultBlockState());
+        h.getLevel().setBlockAndUpdate(far, Blocks.FURNACE.defaultBlockState());
+        var plan = say(h, companion, "сломай печку", "break-under");
+        h.succeedWhen(() -> {
+            h.assertTrue(plan.isDone() && !plan.isCompletedExceptionally(), "The plan is still running: " + companion.getLastTaskResult());
+            h.assertTrue(h.getLevel().getBlockState(under).is(Blocks.FURNACE), "The block under the player was broken");
+            h.assertTrue(h.getLevel().getBlockState(far).isAir(), "The other furnace still stands");
         });
     }
 
@@ -196,7 +268,9 @@ public final class CompanionBreakBlockTests {
     public static void theCodecRejectsAnUnknownOrEmptyBlock(GameTestHelper h) {
         for (String bad : List.of("{\"action\":\"break_block\",\"item\":\"minecraft:no_such_block\"}", "{\"action\":\"break_block\",\"item\":\"\"}",
                 "{\"action\":\"break_block\"}", "{\"action\":\"break_block\",\"item\":\"minecraft:air\"}",
-                "{\"action\":\"break_block\",\"item\":\"minecraft:furnace\",\"count\":3}"))
+                "{\"action\":\"break_block\",\"item\":\"minecraft:furnace\",\"count\":3}",
+                "{\"action\":\"break_block\",\"item\":\"minecraft:cave_air\"}", "{\"action\":\"break_block\",\"item\":\"minecraft:void_air\"}",
+                "{\"action\":\"break_block\",\"item\":\"minecraft:furnace\",\"give\":\"yes\"}", "{\"action\":\"break_block\",\"item\":\"minecraft:furnace\",\"give\":1}"))
             h.assertTrue(rejected("[" + bad + ",{\"action\":\"come\"}]"), "The plan with " + bad + " was not rejected as a whole");
         var plan = CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"break_block\",\"item\":\"minecraft:furnace\",\"give\":true}]"));
         h.assertTrue(plan.size() == 1 && "break_block".equals(plan.getFirst().type()) && "minecraft:furnace".equals(plan.getFirst().item())
@@ -212,8 +286,8 @@ public final class CompanionBreakBlockTests {
         h.assertTrue("companion work break_block 1 minecraft:furnace".equals(broken), "сломай печку -> " + broken);
         String given = CompanionLocalCommands.route("Олег, разбей верстак и отдай мне", "Олег", RU);
         h.assertTrue("companion work break_block 1 minecraft:crafting_table give".equals(given), "разбей верстак и отдай мне -> " + given);
-        String removed = CompanionLocalCommands.route("убери бочку и дай мне", "Олег", RU);
-        h.assertTrue("companion work break_block 1 minecraft:barrel give".equals(removed), "убери бочку и дай мне -> " + removed);
+        String removed = CompanionLocalCommands.route("разбей бочку и дай мне", "Олег", RU);
+        h.assertTrue("companion work break_block 1 minecraft:barrel give".equals(removed), "разбей бочку и дай мне -> " + removed);
         var step = CompanionLocalCommands.actions(given);
         h.assertTrue(step.size() == 1 && "break_block".equals(step.getFirst().type()) && "give".equals(step.getFirst().slot())
                 && "minecraft:crafting_table".equals(step.getFirst().item()), "The step of the command: " + step);
@@ -221,6 +295,12 @@ public final class CompanionBreakBlockTests {
         h.assertTrue(field != null && field.startsWith("companion work farm_crops "), "разбей огород -> " + field);
         String chests = CompanionLocalCommands.route("убери вещи в сундук", "Олег", RU);
         h.assertTrue(chests != null && !chests.contains("break_block"), "убери вещи в сундук -> " + chests);
+        // «Убери» is «put away» (a torch in his hand), and a name many blocks answer to is the model's.
+        String put = CompanionLocalCommands.route("убери верстак", "Олег", RU);
+        h.assertTrue(put == null || !put.contains("break_block"), "убери верстак -> " + put);
+        Function<Item, String> beds = item -> BuiltInRegistries.ITEM.getKey(item).getPath().endsWith("_bed") ? "Кровать " + BuiltInRegistries.ITEM.getKey(item).getPath() : RU.apply(item);
+        String bed = CompanionLocalCommands.route("сломай кровать", "Олег", beds);
+        h.assertTrue(bed == null || !bed.contains("break_block"), "сломай кровать -> " + bed);
         String fetch = CompanionLocalCommands.route("принеси верстак", "Олег", RU);
         h.assertTrue(fetch == null || !fetch.contains("break_block"), "принеси верстак -> " + fetch);
         h.succeed();
@@ -242,7 +322,7 @@ public final class CompanionBreakBlockTests {
     /** What lies at the player: in his hands' reach on the ground, or already in his inventory. */
     private static int atPlayer(GameTestHelper h, ServerPlayer player, Item item) {
         int total = player.getInventory().countItem(item);
-        for (ItemEntity drop : h.getLevel().getEntitiesOfClass(ItemEntity.class, player.getBoundingBox().inflate(8), found -> found.getItem().is(item)))
+        for (ItemEntity drop : h.getLevel().getEntitiesOfClass(ItemEntity.class, player.getBoundingBox().inflate(2), found -> found.getItem().is(item)))
             total += drop.getItem().getCount();
         return total;
     }
