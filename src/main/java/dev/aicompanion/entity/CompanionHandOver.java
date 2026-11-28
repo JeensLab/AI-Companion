@@ -21,14 +21,14 @@ final class CompanionHandOver {
     /** Near by the legs' measure but not yet within reach and sight: the last short step to the player's feet is being walked. */
     private boolean closing;
 
+    CompanionHandOver(CompanionWork w) { this.w = w; }
+
     /** The requested item of a break_block order with «отдай»: the hand-over gives the stacks of {@link #bundle}, not one item. */
     static final String BUNDLE = "break_block";
     /** What the broken block gave, each stack (item and components) as many as he got: handed over by {@link #BUNDLE} only, set by the break. */
     java.util.List<ItemStack> bundle;
     /** A word on the end of the answer of a bundle: what someone else took first. */
     String note = "";
-
-    CompanionHandOver(CompanionWork w) { this.w = w; }
 
     private boolean bundled() { return bundle != null && BUNDLE.equals(w.requestedItem); }
 

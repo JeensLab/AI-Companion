@@ -52,12 +52,14 @@ final class CompanionParkedOrder {
         boolean digging = owner.gatheringLogs || owner.gatheringDirt;
         String location = work.insideHouse ? "inside_house" : "near_player";
         return switch (work.job) {
+            // A broken block is not resumed after a reload: the player asks again for the block he means.
+            case BREAK -> null;
             case STONE -> rest("gather_stone", "", work.wantedStone - (owner.collectedStone() - work.stoneCollectedBefore), location);
             case ORE -> rest("mine_ore", work.requestedItem, work.oreWanted - work.oreMined, location);
             case WOOD -> rest("gather_wood", work.requestedItem, digging ? owner.logsRemaining : 0, location);
             case DIRT -> rest(work.ground.isLoose() ? "gather_loose" : "gather_dirt", work.ground.id(),
                     digging ? owner.logsRemaining : work.phase == CompanionWork.Phase.SHOVEL ? work.requestedCount : 0, location);
-            case CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, COME, HUNT, GIVE, SMELT, GAME, SORT, PEN, BREED, SCOUT, TRADE, FARM, COURSE, WATER, OBSIDIAN, PORTAL, COBBLE_GEN, GOLEM, PICK_UP, PLACE, GRIND, COMPOST, BLOCK, CHORE, ERRAND, BREAK -> null;
+            case CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, COME, HUNT, GIVE, SMELT, GAME, SORT, PEN, BREED, SCOUT, TRADE, FARM, COURSE, WATER, OBSIDIAN, PORTAL, COBBLE_GEN, GOLEM, PICK_UP, PLACE, GRIND, COMPOST, BLOCK, CHORE, ERRAND -> null;
         };
     }
 
