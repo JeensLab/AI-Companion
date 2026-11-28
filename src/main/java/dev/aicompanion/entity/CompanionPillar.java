@@ -36,6 +36,13 @@ public final class CompanionPillar {
     private static final int MAX_ATTEMPT_TICKS = 200;
     private static final int STALLED_TICKS = 80;
     private static final int STEP_INTERVAL = 10;
+    /** A stand ({@link #tickUp}): how many times a mob in the cell of a support may stop its jump, and the pace of its supports. */
+    private static final int STAND_JUMPS = 4, STAND_INTERVAL = 2;
+    /** How often the way back to a column out of his reach is set while it is taken down. */
+    private static final int WALK_BACK_EVERY = 10;
+    private static final double STAND_OFF_CENTRE_SQR = .25 * .25;
+    /** How long in all the descent of a stand waits with mobs about that cannot get at him, and with one that can, before it goes on regardless; how often they are looked for. */
+    private static final int WAIT_ABOUT = 20 * 30, WAIT_SOUGHT = 20 * 120, WAIT_LOOK_EVERY = 20;
 
     public enum Outcome { WORKING, READY, FAILED }
 
@@ -44,6 +51,7 @@ public final class CompanionPillar {
 
     private final CompanionEntity owner;
     private final CompanionBlockBreaking breaking;
+    private final CompanionStandCells cells;
     private final List<Support> supports = new ArrayList<>();
     private BlockPos base;
     private BlockPos target;
@@ -58,6 +66,13 @@ public final class CompanionPillar {
     private int cooldown;
     private int cleanupTicks;
     private boolean recovering;
+    /** The column is a stand of {@link #tickUp}, not a climb toward a block. */
+    private boolean stand;
+    /** The stand is left standing with him off it ({@link #leaveStanding}). */
+    private boolean leftStanding;
+    /** The descent of a stand waits for a fight ({@link #waitsForFight}): asked for by its goal, how long it has waited in all, when it last looked, and what that look said. */
+    private boolean heldForFight, fightNear;
+    private int waited, lookedAt = -1;
     private String failureReason = "";
     /** The hand a gather keeps while its column comes down: the tool for a support goes back into it after each break. */
     private ItemStack keptHand;
@@ -67,6 +82,7 @@ public final class CompanionPillar {
     public CompanionPillar(CompanionEntity owner) {
         this.owner = owner;
         breaking = new CompanionBlockBreaking(owner);
+        cells = new CompanionStandCells(owner);
     }
 
     public boolean isActive() { return base != null || jumpCell != null || !supports.isEmpty(); }
@@ -86,6 +102,8 @@ public final class CompanionPillar {
      */
     public Outcome tickToward(BlockPos block, boolean wood) {
         if (!(owner.level() instanceof ServerLevel level) || recovering) return Outcome.FAILED;
+        // The stand of a fight is not a column for a tree or a leaf: it waits for the goal that raised it to take it down.
+        if (stand) return Outcome.WORKING;
         if (!level.hasChunkAt(block) || (wood ? !level.getBlockState(block).is(BlockTags.LOGS) : level.getBlockState(block).isAir())) return Outcome.FAILED;
         if (owner.distanceToSqr(block.getX() + 0.5D, block.getY() + 0.5D, block.getZ() + 0.5D) <= REACH_SQR) {
             if (jumpCell == null && owner.onGround()) return Outcome.READY;
@@ -160,6 +178,104 @@ public final class CompanionPillar {
         return Outcome.WORKING;
     }
 
+    /**
+     * A column raised where he stands, this many supports high, with nothing to reach from it: a stand out of the reach of a crowd
+     * ({@link CompanionHighGround}). READY once he stands on it; a failure with supports laid takes them down as any other.
+     */
+    public Outcome tickUp(int height) {
+        if (!(owner.level() instanceof ServerLevel level) || recovering) return Outcome.FAILED;
+        if (base == null) {
+            BlockPos feet = owner.onGround() && soilCount() >= height ? cells.standFor(level, height) : null;
+            if (feet == null) return Outcome.FAILED;
+            base = feet;
+            stand = true;
+            resetWatchdog(base);
+        }
+        if (jumpCell != null) return tickJump(level);
+        if (supports.size() >= height && owner.onGround()) return Outcome.READY;
+        // Also with every support laid: knocked into water or onto a ladder he is not on the ground again, and the stand is given up.
+        if (++attemptTicks > MAX_ATTEMPT_TICKS) return fail("Не получилось подняться на опору");
+        if (supports.size() >= height) return Outcome.WORKING;
+        if (cooldown > 0) cooldown--;
+        int surfaceY = base.getY() + supports.size();
+        if (!supports.isEmpty() && owner.getY() < surfaceY - 0.2D) return fail("Соскользнул с опоры, сначала уберу её");
+        owner.getNavigation().stop();
+        // Not the middle of the cell to a hair, as for a climb at a tree: blows move him, and the block holds him from anywhere over it.
+        if (horizontalDistanceSqr(base) > STAND_OFF_CENTRE_SQR) {
+            owner.getMoveControl().setWantedPosition(base.getX() + 0.5D, surfaceY, base.getZ() + 0.5D, 0.6D);
+            return Outcome.WORKING;
+        }
+        if (!owner.onGround() || cooldown > 0) return Outcome.WORKING;
+        BlockPos placement = base.above(supports.size());
+        if (!cells.roomFor(level, placement, height - supports.size())) return fail("Над опорой не хватает свободного места");
+        // Grass, a fern or thin snow in the cell comes out first, as for a plug of the stairs: the support takes a cell of air.
+        if (!level.getBlockState(placement).isAir()) { level.destroyBlock(placement, true, owner); return Outcome.WORKING; }
+        if (!prepareSoil()) return fail("Не могу взять блок для опоры в руку");
+        Vec3 motion = owner.getDeltaMovement();
+        owner.setDeltaMovement(motion.x * 0.15D, motion.y, motion.z * 0.15D);
+        jumpCell = placement.immutable();
+        jumpTicks = 0;
+        owner.getJumpControl().jump();
+        return Outcome.WORKING;
+    }
+
+    /** A column of this height can be raised now: nothing of his stands, the bag has the blocks, and there is a cell for it ({@link #tickUp}). */
+    public boolean canStandUp(int height) {
+        return owner.level() instanceof ServerLevel level && !isActive() && !recovering && owner.onGround() && soilCount() >= height && cells.standFor(level, height) != null;
+    }
+
+    /** A column of this height would stand in this cell, were he in it: the bag has the blocks and the cell takes them ({@link #tickUp}). */
+    public boolean standsAt(BlockPos feet, int height) { return owner.level() instanceof ServerLevel level && soilCount() >= height && cells.stands(level, feet, height); }
+
+    /** The cell his column stands in, or null with no column. */
+    public BlockPos foot() { return base; }
+
+    /** The fight took him off his stand: it stays in the world and in the record until he comes back for it, takes it down by an order, or gives it up. */
+    public void leaveStanding() {
+        if (!stand || supports.isEmpty() || recovering) return;
+        leftStanding = true;
+        jumpCell = null;
+    }
+
+    /** His stand is left standing and he is off it: no climb is under way, so the pickup of a drop does not wait for it. */
+    public boolean leftStanding() { return leftStanding; }
+
+    /** The supports stay in the world as blocks anybody may take, and the column is forgotten: he could not come back for them. Nothing is refunded. */
+    public void abandon() {
+        supports.clear();
+        failureReason = "Опоры оставил на месте: вернуться за ними не вышло";
+        clearColumn();
+    }
+
+    /**
+     * The descent of a stand that its goal asked for ({@link #requestCleanupAfterFight}) is not gone on with in the middle of a fight: the
+     * supports are the way out of the crowd's reach, and the walk back to them or the blows at their foot are turns the melee goal needs.
+     * Nobody about, and it goes on; mobs about that cannot get at him (a fence between) it waits out {@link #WAIT_ABOUT} in all, one that
+     * can {@link #WAIT_SOUGHT}, the looks adding up over the whole stand. A block half broken is broken first. An order of the player, a
+     * climb at a tree: the descent at once ({@link #requestCleanup}).
+     */
+    public boolean waitsForFight() {
+        if (!heldForFight || breaking.swinging()) return false;
+        if (lookedAt < 0 || owner.tickCount - lookedAt >= WAIT_LOOK_EVERY) {
+            int near = CompanionHighGround.nearby(owner);
+            if (near != 0 && lookedAt >= 0) waited += Math.min(owner.tickCount - lookedAt, 2 * WAIT_LOOK_EVERY);
+            lookedAt = owner.tickCount;
+            fightNear = near != 0 && waited <= (near == 2 ? WAIT_SOUGHT : WAIT_ABOUT);
+        }
+        return fightNear;
+    }
+
+    /** The descent of his stand, asked for by the goal that raised it: it waits for the fight ({@link #waitsForFight}). */
+    public void requestCleanupAfterFight() {
+        requestCleanup(false);
+        heldForFight = stand && recovering;
+    }
+
+    /** He stands on the top support of his column. */
+    public boolean onTop() {
+        return !supports.isEmpty() && owner.onGround() && Math.abs(owner.getY() - (supports.getLast().pos().getY() + 1.0D)) < 0.2D && overlapsColumn(owner.getBoundingBox(), supports.getLast().pos());
+    }
+
     private Outcome tickJump(ServerLevel level) {
         owner.getNavigation().stop();
         owner.getMoveControl().setWantedPosition(base.getX() + 0.5D, owner.getY(), base.getZ() + 0.5D, 0.35D);
@@ -167,6 +283,12 @@ public final class CompanionPillar {
         AABB cell = new AABB(jumpCell);
         if (owner.getBoundingBox().minY >= jumpCell.getY() + 1.001D
                 && !owner.getBoundingBox().intersects(cell)) {
+            // A stand in a fight: a mob pressed against him is in the cell. Not the end of the column: his next blow throws it back, and the jump is tried again.
+            if (stand && !level.getEntities(owner, cell, CompanionPillar::blocksSupport).isEmpty()) {
+                jumpCell = null;
+                cooldown = STEP_INTERVAL;
+                return ++failedJumps >= STAND_JUMPS ? fail("Место для опоры занято") : Outcome.WORKING;
+            }
             if (!prepareSoil() || !level.getBlockState(jumpCell).isAir()
                     || !level.getFluidState(jumpCell).isEmpty() || !level.getWorldBorder().isWithinBounds(jumpCell)
                     || !level.getEntities(owner, cell, CompanionPillar::blocksSupport).isEmpty()) return fail("Место для опоры занято, попробую другое дерево");
@@ -185,7 +307,8 @@ public final class CompanionPillar {
                     (sound.getVolume() + 1.0F) * 0.5F, sound.getPitch() * 0.8F);
             level.gameEvent(GameEvent.BLOCK_PLACE, jumpCell, GameEvent.Context.of(owner, state));
             jumpCell = null;
-            cooldown = STEP_INTERVAL;
+            // A stand goes up at the pace of a player with mobs on the way; a climb at a tree is unhurried and seen.
+            cooldown = stand ? STAND_INTERVAL : STEP_INTERVAL;
             failedJumps = 0;
             stalledTicks = 0;
             lastProgress = owner.position();
@@ -209,6 +332,7 @@ public final class CompanionPillar {
      */
     public void requestCleanup(boolean keepTool) {
         breaking.reset();
+        heldForFight = false;
         this.keepTool = keepTool && isActive();
         if (this.keepTool) {
             keptHand = owner.getMainHandItem().copy();
@@ -230,7 +354,6 @@ public final class CompanionPillar {
         if (!(owner.level() instanceof ServerLevel level)) return true;
         if (!recovering) requestCleanup();
         if (!recovering) return true;
-        owner.getNavigation().stop();
         cleanupTicks++;
         if (cooldown > 0) cooldown--;
 
@@ -270,9 +393,16 @@ public final class CompanionPillar {
         } else {
             double distance = owner.distanceToSqr(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D);
             if (distance > REACH_SQR) {
+                // Out of his reach, he walks back to the cell beside it instead of standing out the budget: a blow that took him a few
+                // steps off in the middle of the descent, or a fight on the ground beside a stand.
+                if (base != null && cleanupTicks % WALK_BACK_EVERY == 1) {
+                    Path back = owner.work.route.toCells(Set.of(base.north(), base.south(), base.east(), base.west()));
+                    if (back != null) CompanionMiningNavigation.walk(owner, back);
+                }
                 return false;
             }
         }
+        owner.getNavigation().stop();
         if (anotherEntityDependsOn(level, pos)) return false;
         owner.getLookControl().setLookAt(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D);
         owner.takeToolForBlock(highest.state());
@@ -395,7 +525,7 @@ public final class CompanionPillar {
         return true;
     }
 
-    private boolean safeFoundation(ServerLevel level, BlockPos pos) {
+    static boolean safeFoundation(ServerLevel level, BlockPos pos) {
         return level.hasChunkAt(pos) && level.getWorldBorder().isWithinBounds(pos)
                 && level.getFluidState(pos).isEmpty()
                 && level.getBlockState(pos).isFaceSturdy(level, pos, Direction.UP);
@@ -531,7 +661,7 @@ public final class CompanionPillar {
                 && box.maxZ > pos.getZ() && box.minZ < pos.getZ() + 1;
     }
 
-    private static boolean blocksSupport(Entity entity) {
+    static boolean blocksSupport(Entity entity) {
         return entity.isAlive() && (entity instanceof LivingEntity || entity.canBeCollidedWith());
     }
 
@@ -559,7 +689,8 @@ public final class CompanionPillar {
 
     private Outcome fail(String reason) {
         failureReason = reason;
-        requestCleanup(keepTool);
+        // A stand that does not go up in a fight stays as far as it went: whether to take it down is the decision of its goal, with the mobs in view.
+        if (!stand || supports.isEmpty()) requestCleanup(keepTool);
         return Outcome.FAILED;
     }
 
@@ -569,7 +700,10 @@ public final class CompanionPillar {
         approach = null;
         lastProgress = null;
         attemptTicks = stalledTicks = jumpTicks = failedJumps = cooldown = cleanupTicks = 0;
-        recovering = false;
+        recovering = stand = leftStanding = false;
+        heldForFight = fightNear = false;
+        waited = 0;
+        lookedAt = -1;
         keptHand = null;
         keepTool = false;
     }

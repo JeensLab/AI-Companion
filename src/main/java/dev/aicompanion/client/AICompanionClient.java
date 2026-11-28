@@ -65,6 +65,7 @@ public final class AICompanionClient {
             "key.categories.aicompanion"
     );
     private boolean wasPushToTalkDown;
+    private SpeechProvider recordingProvider;
     private int preferenceSyncTicks;
     private Object previousWorld;
     static boolean recordingSpeech() { return PUSH_TO_TALK.isDown(); }
@@ -154,13 +155,17 @@ public final class AICompanionClient {
     private void onClientTick(ClientTickEvent.Post event) {
         Minecraft minecraft = Minecraft.getInstance();
         if (preferenceSyncTicks <= 0) dev.aicompanion.CompanionDiagnostics.configure(OpenRouterConfig.DIAGNOSTICS.get(),
-                OpenRouterConfig.API_KEY.get(), OpenRouterConfig.INWORLD_API_KEY.get());
+                OpenRouterConfig.API_KEY.get(), OpenRouterConfig.INWORLD_API_KEY.get(), OpenRouterConfig.ELEVENLABS_API_KEY.get());
         if (previousWorld != minecraft.level) {
             previousWorld = minecraft.level; preferenceSyncTicks = 0;
             dev.aicompanion.CompanionDiagnostics.event("", "world_changed", "dimension",
                     minecraft.level == null ? "disconnected" : minecraft.level.dimension().location());
-            CompanionActionExecutor.cancelPendingPlans("", "world_changed"); InworldTtsClient.resetPlaybackQueue();
+            CompanionActionExecutor.cancelPendingPlans("", "world_changed"); CompanionSpeech.resetPlaybackQueue();
             CompanionCampfireAudio.forget();
+            if (recordingProvider != null) {
+                MicrophoneRecorder.stop();
+                recordingProvider = null;
+            }
         }
         CompanionVoiceAudio.tick();
         CompanionCampfireAudio.tick();
@@ -173,15 +178,23 @@ public final class AICompanionClient {
         boolean pushToTalkDown = gameplay && PUSH_TO_TALK.isDown();
         if (pushToTalkDown && !wasPushToTalkDown) {
             CompanionAmbientClient.conversationActivity();
-            if (OpenRouterConfig.INWORLD_API_KEY.get().trim().isEmpty()) {
-                minecraft.gui.setOverlayMessage(Component.literal("Добавь ключ Inworld в настройках мода для голосового чата"), false);
+            SpeechProvider provider = OpenRouterConfig.SPEECH_PROVIDER.get();
+            if (OpenRouterConfig.speechKey(provider).get().isBlank()) {
+                minecraft.gui.setOverlayMessage(Component.literal(
+                        "Добавь ключ " + provider.displayName() + " в настройках мода для голосового чата"), false);
             } else {
+                recordingProvider = provider;
                 MicrophoneRecorder.start();
-                minecraft.gui.setOverlayMessage(Component.literal("Запись... отпусти V, чтобы отправить"), false);
+                minecraft.gui.setOverlayMessage(Component.literal("Запись... отпусти клавишу микрофона, чтобы отправить"), false);
             }
-        } else if (!pushToTalkDown && wasPushToTalkDown) {
+        } else if (!pushToTalkDown && recordingProvider != null) {
+            SpeechProvider provider = recordingProvider;
+            recordingProvider = null;
             var recording = MicrophoneRecorder.stop();
-            if (gameplay) CompanionChatScreen.processVoiceInBackground(recording.thenCompose(InworldSttClient::transcribe));
+            if (gameplay) {
+                String key = OpenRouterConfig.speechKey(provider).get().trim();
+                CompanionChatScreen.processVoiceInBackground(recording.thenCompose(audio -> CompanionSpeech.transcribe(audio, provider, key)));
+            }
         }
         wasPushToTalkDown = pushToTalkDown;
 

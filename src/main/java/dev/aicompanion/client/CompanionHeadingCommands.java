@@ -22,7 +22,7 @@ final class CompanionHeadingCommands {
             + "|(?:брось|бросай|кинь|кидай|запусти)\\s+око(?:\\s+края)?)[\\s,.!]*(?:пожалуйста)?[\\s.!]*");
     private static final Map<String, String> TARGETS = Map.ofEntries(Map.entry("деревн", "village"), Map.entry("вод", "water"),
             Map.entry("озер", "water"), Map.entry("рек", "water"), Map.entry("мор", "water"), Map.entry("лес", "forest"),
-            Map.entry("деревь", "forest"), Map.entry("животн", "animals"), Map.entry("коров", "cow"), Map.entry("свин", "pig"),
+            Map.entry("деревь", "forest"), Map.entry("джунгл", "jungle"), Map.entry("животн", "animals"), Map.entry("коров", "cow"), Map.entry("свин", "pig"),
             Map.entry("овц", "sheep"), Map.entry("овец", "sheep"), Map.entry("кур", "chicken"), Map.entry("кролик", "rabbit"));
 
     private CompanionHeadingCommands() { }

@@ -1,5 +1,7 @@
 package dev.aicompanion;
 
+import dev.aicompanion.client.SpeechProvider;
+import dev.aicompanion.entity.CompanionPet;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 /** Client-local settings for the OpenRouter connection and companion personality. */
@@ -14,6 +16,22 @@ public final class OpenRouterConfig {
             .comment("Maximum independent resource-search and roaming distance, in loaded chunks.")
             .defineInRange("searchRadius", 64, 16, 128);
     public static final ModConfigSpec.BooleanValue AUTONOMOUS_SPEECH = BUILDER.define("autonomousSpeech", true);
+    public static final ModConfigSpec.BooleanValue FISHING_INVITATIONS = BUILDER
+            .comment("Let Oleg invite the player to fish in quiet moments near water.")
+            .define("fishingInvitations", true);
+    public static final ModConfigSpec.IntValue FISHING_INVITE_MINUTES = BUILDER
+            .comment("Minimum active minutes between fishing invitations. A random delay up to the same duration is added.")
+            .defineInRange("fishingInviteMinutes", 20, 5, 60);
+    public static final ModConfigSpec.IntValue FISHING_LEISURE_MINUTES = BUILDER
+            .comment("Minimum minutes between short fishing trips in autonomy mode. 0 disables trips.")
+            .defineInRange("fishingLeisureMinutes", 20, 0, 60);
+    public static final ModConfigSpec.BooleanValue PET_CAT = BUILDER.define("petCat", true);
+    public static final ModConfigSpec.BooleanValue PET_DOG = BUILDER.define("petDog", true);
+    public static final ModConfigSpec.BooleanValue PET_PARROT = BUILDER.define("petParrot", true);
+    public static final ModConfigSpec.IntValue PET_SEARCH_RADIUS = BUILDER
+            .comment("How far Oleg looks for stray cats, wild wolves and parrots in loaded chunks, in blocks.")
+            .defineInRange("catSearchRadius", CompanionPet.DEFAULT_SEARCH_RADIUS,
+                    CompanionPet.MIN_SEARCH_RADIUS, CompanionPet.MAX_SEARCH_RADIUS);
     public static final ModConfigSpec.BooleanValue JOKES = BUILDER
             .comment("Occasional short local jokes in quiet moments, without a model request.")
             .define("jokes", true);
@@ -43,11 +61,11 @@ public final class OpenRouterConfig {
             .define("diagnosticLogging", true);
     public static final ModConfigSpec.IntValue VOICE_DISTANCE = BUILDER.defineInRange("voiceDistance", 32, 8, 64);
     public static final ModConfigSpec.BooleanValue WINDOWS_VOICE = BUILDER
-            .comment("Without an Inworld key, speak with a Russian voice installed in Windows (nothing is sent anywhere).")
+            .comment("Without a key for the selected speech provider, speak with an installed Russian Windows voice.")
             .define("windowsVoice", true);
 
     public static final ModConfigSpec.BooleanValue MACOS_VOICE = BUILDER
-            .comment("Without an Inworld key, speak using an installed Russian macOS voice. No network or voice downloads.")
+            .comment("Without a key for the selected speech provider, speak with an installed Russian macOS voice.")
             .define("macosVoice", true);
 
     public static final ModConfigSpec.ConfigValue<String> API_KEY = BUILDER
@@ -83,8 +101,13 @@ public final class OpenRouterConfig {
             .translation("config.aicompanion.top_p")
             .define("topP", "");
 
+    public static final ModConfigSpec.EnumValue<SpeechProvider> SPEECH_PROVIDER = BUILDER
+            .comment("Cloud provider for microphone transcription and voice synthesis.")
+            .translation("config.aicompanion.speech_provider")
+            .defineEnum("speechProvider", SpeechProvider.INWORLD);
+
     public static final ModConfigSpec.ConfigValue<String> INWORLD_API_KEY = BUILDER
-            .comment("Inworld Basic credential copied from the Inworld portal. Leave blank to use an installed local Russian voice on Windows (windowsVoice) or macOS (macosVoice).")
+            .comment("Inworld Basic credential copied from the Inworld portal.")
             .translation("config.aicompanion.inworld_api_key")
             .define("inworldApiKey", "");
 
@@ -92,6 +115,30 @@ public final class OpenRouterConfig {
             .comment("Inworld voice ID used for the companion's speech.")
             .translation("config.aicompanion.inworld_voice_id")
             .define("inworldVoiceId", "Ashley");
+
+    public static final ModConfigSpec.ConfigValue<String> ELEVENLABS_API_KEY = BUILDER
+            .comment("Your ElevenLabs API key. Stored locally in the Minecraft config folder.")
+            .translation("config.aicompanion.elevenlabs_api_key")
+            .define("elevenLabsApiKey", "");
+
+    public static final ModConfigSpec.ConfigValue<String> ELEVENLABS_VOICE_ID = BUILDER
+            .comment("ElevenLabs voice ID used for the companion's speech.")
+            .translation("config.aicompanion.elevenlabs_voice_id")
+            .define("elevenLabsVoiceId", "");
+
+    public static ModConfigSpec.ConfigValue<String> speechKey(SpeechProvider provider) {
+        return switch (provider) {
+            case INWORLD -> INWORLD_API_KEY;
+            case ELEVENLABS -> ELEVENLABS_API_KEY;
+        };
+    }
+
+    public static ModConfigSpec.ConfigValue<String> speechVoiceId(SpeechProvider provider) {
+        return switch (provider) {
+            case INWORLD -> INWORLD_VOICE_ID;
+            case ELEVENLABS -> ELEVENLABS_VOICE_ID;
+        };
+    }
 
     public static final ModConfigSpec.ConfigValue<String> PERSONALITY = BUILDER
             .comment("Additional personality preferences. Shared character directions also apply to existing saved settings.")
@@ -161,6 +208,16 @@ public final class OpenRouterConfig {
             .comment("A shut wooden fence gate on his route is opened, walked through and shut behind him, as a door; a gate a redstone signal decides is left alone. Off: a shut gate is a fence to him, as it was, and he goes round it.")
             .translation("config.aicompanion.fence_gates")
             .define("fenceGates", true);
+
+    /** Whether three zombies after him (two when he is hurt) are met from a column of blocks out of his bag. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue HIGH_GROUND = BUILDER
+            .comment("Against three zombies after him (two when he is hurt) he lays two or three blocks from his bag under his feet, strikes from above and takes the blocks back after the fight. Off: he fights them on the ground.")
+            .translation("config.aicompanion.high_ground")
+            .define("highGround", true);
+    public static final ModConfigSpec.BooleanValue LANDSCAPE_UNDERSTANDING = BUILDER
+            .comment("Survey terrain and remember visible caves and ore along the way. Off: pause observations, recall and guidance without clearing the saved places.")
+            .translation("config.aicompanion.landscape_understanding")
+            .define("landscapeUnderstanding", true);
 
     public static final ModConfigSpec.BooleanValue LONG_TERM_MEMORY = BUILDER
             .comment("Let the companion remember facts, promises and recent talk between sessions, adapt his character and raise topics of his own. Stored in the world save.")

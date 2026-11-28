@@ -30,6 +30,7 @@ public final class CompanionPreferences {
         int radius = OpenRouterConfig.SEARCH_RADIUS.get();
         boolean chunks = OpenRouterConfig.CHUNK_LOADING.get(), speech = OpenRouterConfig.AUTONOMOUS_SPEECH.get();
         int murmurInterval = OpenRouterConfig.MURMUR_INTERVAL_PERCENT.get();
+        int leisureFishing = OpenRouterConfig.FISHING_LEISURE_MINUTES.get();
         boolean conversationAvailable = CompanionAmbientClient.availableForObservation();
         boolean longTerm = OpenRouterConfig.LONG_TERM_MEMORY.get();
         CompanionMemoryFlow.bind(server, playerId, longTerm);
@@ -53,7 +54,12 @@ public final class CompanionPreferences {
             if (companion != null) {
                 companion.setCompanionName(name); companion.setSearchRadius(radius); companion.setLifestyle(chunks, speech);
                 companion.setMurmurIntervalPercent(murmurInterval);
+                companion.setPetEnabled(dev.aicompanion.entity.CompanionPet.CAT, OpenRouterConfig.PET_CAT.get());
+                companion.setPetEnabled(dev.aicompanion.entity.CompanionPet.DOG, OpenRouterConfig.PET_DOG.get());
+                companion.setPetEnabled(dev.aicompanion.entity.CompanionPet.PARROT, OpenRouterConfig.PET_PARROT.get());
+                companion.setPetSearchRadius(OpenRouterConfig.PET_SEARCH_RADIUS.get());
                 companion.setConversationAvailable(conversationAvailable);
+                companion.autonomy().configureFishing(leisureFishing);
                 companion.setDeathRecovery(OpenRouterConfig.DEATH_RECOVERY.get());
                 companion.setBoatRide(OpenRouterConfig.BOAT_RIDE.get());
                 companion.setGuardByPlayer(OpenRouterConfig.GUARD_NEAREST_TO_PLAYER.get());
@@ -65,13 +71,15 @@ public final class CompanionPreferences {
                 companion.setPlaysByTheFire(OpenRouterConfig.PLAYS_BY_THE_FIRE.get());
                 companion.setReplantSaplings(OpenRouterConfig.REPLANT_SAPLINGS.get());
                 companion.setRightToolForBlock(OpenRouterConfig.RIGHT_TOOL_FOR_BLOCK.get());
+                CompanionEvents.setLandscapeUnderstanding(companion, OpenRouterConfig.LANDSCAPE_UNDERSTANDING.get());
                 companion.setFenceGates(OpenRouterConfig.FENCE_GATES.get());
+                companion.setHighGround(OpenRouterConfig.HIGH_GROUND.get());
                 companion.setDeathRecoveryLimits(OpenRouterConfig.DEATH_RECOVERY_ATTEMPTS.get(), OpenRouterConfig.DEATH_RECOVERY_DEATHS.get());
                 String remote = companion.getName().getString() + " находится на " + companion.blockPosition().toShortString()
                         + ", измерение=" + companion.level().dimension().location() + ", занят=" + companion.isGatheringTask()
                         + ", охрана=" + companion.isProtecting() + ", сумка=" + companion.getStoredItemsForAi()
                         + ", экипировка=" + companion.getEquipmentForAi() + ", текущая активность=" + companion.getActivityForAi()
-                        + ", память о местах=" + companion.getPlacesForAi() + ", исторический отчёт=" + companion.getLastTaskResult();
+                        + ", знакомые постройки и замеченные по дороге находки=" + companion.getPlacesForAi() + ", исторический отчёт=" + companion.getLastTaskResult();
                 String traders = companion.getTradersForAi();
                 client.execute(() -> { if (client.level == clientWorld) GameContext.setRemoteState(clientWorld, remote, traders); });
             }

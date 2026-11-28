@@ -5,9 +5,12 @@ import com.google.gson.JsonObject;
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.client.CompanionLocalCommands;
 import dev.aicompanion.client.CompanionPlanCodec;
+import dev.aicompanion.client.CompanionPlanRequirements;
+import dev.aicompanion.client.CompanionWorkCommands;
 import dev.aicompanion.entity.CompanionActionResult;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
+import dev.aicompanion.entity.CompanionPet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -28,6 +31,119 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 public final class CompanionCourseTests {
     /** He starts here (relative), heading east along z = LINE. */
     private static final int START_X = 20, LINE = 64;
+
+    @GameTest(template = "large_search", timeoutTicks = 500, skyAccess = true, batch = "cat_village_confirmation")
+    public static void waitsForConsentBeforeLeadingToLookForVillage(GameTestHelper h) {
+        var companion = arena(h, null);
+        var owner = owner(h, companion);
+        String command = CompanionLocalCommands.route("Олег, пойдём ката искать", "Олег");
+        h.assertTrue(command != null, "The spoken request fell through to the model");
+        var action = CompanionLocalCommands.action(command);
+        h.assertTrue(action.type().equals("tame_cat") && action.item().equals("village"), "The request did not ask about a village trip");
+        var start = companion.position();
+        long[] refused = {0};
+        h.assertTrue(CompanionEvents.executeAction(owner, action.type(), action.item(), action.count()).success(), "Could not propose a trip");
+        h.startSequence()
+                .thenWaitUntil(() -> h.assertTrue(companion.petQuestion(CompanionPet.CAT) > 0 && companion.autonomyLine().contains("Пойдём?"),
+                        "Did not ask for consent to look for a village"))
+                .thenIdle(35)
+                .thenExecute(() -> {
+                    h.assertTrue(companion.position().distanceToSqr(start) < .1, "Started walking before the player answered");
+                    refused[0] = companion.petQuestion(CompanionPet.CAT);
+                    CompanionEvents.answerPetQuestion(owner, companion.getUUID(), CompanionPet.CAT, refused[0],
+                            CompanionWorkCommands.petTripAnswer("Не, не надо", "Олег"));
+                    h.assertTrue(!companion.hasActiveWorkOrder() && companion.petQuestion(CompanionPet.CAT) == 0, "A refusal left the proposal active");
+                    h.assertTrue(companion.getLastTaskResult().equals("Ладно, останемся здесь."), "Did not acknowledge the refusal");
+                }).thenIdle(20)
+                .thenExecute(() -> {
+                    h.assertTrue(companion.position().distanceToSqr(start) < .1, "Started walking after the player declined");
+                    var model = CompanionPlanCodec.decode(message("{\"action\":\"walk_heading\",\"item\":\"north:village\"}"));
+                    var proposal = CompanionPlanRequirements.apply("А может, сходим вместе поискать себе кошку?", model).actions().getFirst();
+                    h.assertTrue(CompanionEvents.executeAction(owner, proposal.type(), proposal.item(), proposal.count()).success(), "Could not propose another trip");
+                }).thenWaitUntil(() -> h.assertTrue(companion.petQuestion(CompanionPet.CAT) > refused[0]
+                        && companion.autonomyLine().contains("на север"), "No new question about the model's direction"))
+                .thenExecute(() -> {
+                    long question = companion.petQuestion(CompanionPet.CAT);
+                    h.assertTrue(!CompanionEvents.executeAction(owner, "walk_heading", "south:village", 0).success(),
+                            "A walk command bypassed the unanswered proposal");
+                    CompanionEvents.answerPetQuestion(owner, companion.getUUID(), CompanionPet.CAT, refused[0], "go");
+                    h.assertTrue(companion.petQuestion(CompanionPet.CAT) == question, "A stale answer accepted the new proposal");
+                    CompanionEvents.answerPetQuestion(owner, companion.getUUID(), CompanionPet.CAT, question, "clarify");
+                    h.assertTrue(companion.petQuestion(CompanionPet.CAT) == question && companion.autonomyLine().contains("Пока не знаю, где деревня"),
+                            "An unclear reply started the walk or was given an invented location");
+                    CompanionEvents.answerPetQuestion(owner, companion.getUUID(), CompanionPet.CAT, question,
+                            CompanionWorkCommands.petTripAnswer("Да, пойдём", "Олег"));
+                    h.assertTrue(companion.petQuestion(CompanionPet.CAT) == 0 && companion.activeWorkId() == question,
+                            "Consent did not continue the same work");
+                }).thenWaitUntil(() -> h.assertTrue(companion.getZ() < start.z - 5, "Did not lead north after consent: " + companion.getLastTaskResult()))
+                .thenExecute(companion::stopGatheringForPlayer)
+                .thenSucceed();
+    }
+
+    @GameTest(template = "large_search", timeoutTicks = 1000, skyAccess = true, batch = "cat_search_after_village_arrival")
+    public static void keepsSearchingForCatOnArrivalAndAnnouncesWhatHeSpots(GameTestHelper h) {
+        var companion = arena(h, null);
+        var owner = owner(h, companion);
+        var villager = h.spawn(EntityType.VILLAGER, START_X + 12, 2, LINE + 34);
+        villager.setNoAi(true);
+        h.onEachTick(() -> owner.teleportTo(companion.getX() - 2, companion.getY(), companion.getZ()));
+        var result = CompanionEvents.executeAction(owner, "tame_cat", "village", 1);
+        h.assertTrue(result.status() == CompanionActionResult.Status.ACCEPTED, result.message());
+        long id = companion.activeWorkId();
+        h.startSequence().thenWaitUntil(() -> h.assertTrue(companion.petQuestion(CompanionPet.CAT) == id, "Did not ask about going to the village"))
+                .thenExecute(() -> CompanionEvents.answerPetQuestion(owner, companion.getUUID(), CompanionPet.CAT, id, "go"))
+                .thenWaitUntil(() -> {
+                    h.assertTrue(companion.activeWorkId() == id && companion.hasActiveWorkOrder(), "Finding a village ended the pet order");
+                    h.assertTrue(companion.autonomyLine().contains("мы в деревне") && companion.autonomyLine().contains("искать кота"),
+                            "Did not invite the player to look for a cat in the village");
+                }).thenExecute(() -> {
+                    h.assertTrue(companion.distanceToSqr(villager) <= 64, "Announced arrival while still far from the village");
+                    h.assertTrue(companion.autonomyLine().contains("найдёшь, скажи"), "Did not invite the player to report a sighting");
+                    h.spawn(EntityType.CAT, at(h, companion).offset(3, 0, 0)).setNoAi(true);
+                }).thenWaitUntil(() -> h.assertTrue(companion.autonomyLine().contains("сам нашёл бездомную кошку"), "Did not report the cat he spotted"))
+                .thenExecute(() -> h.assertTrue(companion.activeWorkId() == id && companion.autonomyLine().contains("сырой трески или лосося"),
+                        "Did not continue the same order with the fish question"))
+                .thenSucceed();
+    }
+
+    @GameTest(template = "large_search", timeoutTicks = 1000, skyAccess = true, batch = "dog_search_after_village_arrival")
+    public static void verifiesPlayersWolfSightingAfterArrivingAtVillage(GameTestHelper h) {
+        var companion = arena(h, null);
+        var owner = owner(h, companion);
+        h.spawn(EntityType.VILLAGER, START_X, 2, LINE + 34).setNoAi(true);
+        h.onEachTick(() -> owner.teleportTo(companion.getX() - 2, companion.getY(), companion.getZ()));
+        var command = CompanionLocalCommands.route("Пойдём пса искать", "Олег");
+        h.assertTrue(command != null, "Did not understand the invitation to look for a dog");
+        var action = CompanionLocalCommands.action(command);
+        h.assertTrue(action.type().equals("tame_dog") && action.item().equals("village"), "Requested the wrong pet or did not use a village trip");
+        var model = CompanionPlanCodec.decode(message("{\"action\":\"walk_heading\",\"item\":\"south:village\"}"));
+        var proposal = CompanionPlanRequirements.apply("А может, сходим поищем себе собаку?", model).actions().getFirst();
+        h.assertTrue(proposal.type().equals("tame_dog") && proposal.item().equals("village:south"), "The model's heading did not become a dog search proposal");
+        var result = CompanionEvents.executeAction(owner, action.type(), action.item(), action.count());
+        h.assertTrue(result.status() == CompanionActionResult.Status.ACCEPTED, result.message());
+        long id = companion.activeWorkId();
+        h.startSequence().thenWaitUntil(() -> h.assertTrue(companion.petQuestion(CompanionPet.DOG) == id, "Did not ask about going to the village"))
+                .thenExecute(() -> CompanionEvents.answerPetQuestion(owner, companion.getUUID(), CompanionPet.DOG, id, "go"))
+                .thenWaitUntil(() -> h.assertTrue(companion.petQuestionMode() == CompanionPet.Question.HABITAT_SEARCH
+                        && companion.petQuestion(CompanionPet.DOG) == id && companion.autonomyLine().contains("искать собаку здесь"),
+                        "Did not invite the player to look for the dog"))
+                .thenExecute(() -> {
+                    String reported = CompanionWorkCommands.petSighting("Олег, я нашёл волка!", CompanionPet.DOG, "Олег");
+                    h.assertTrue(reported.equals("found") && CompanionWorkCommands.petSighting("Не нашёл", CompanionPet.DOG, "Олег").isEmpty(),
+                            "Confused a real sighting and a negative reply");
+                    var petPos = at(h, companion).offset(3, 0, 0);
+                    var tamed = h.spawn(EntityType.WOLF, petPos);
+                    tamed.setNoAi(true);
+                    tamed.setTame(true, true);
+                    CompanionEvents.answerPetQuestion(owner, companion.getUUID(), CompanionPet.DOG, id, reported);
+                    h.assertTrue(companion.petQuestionMode() == CompanionPet.Question.HABITAT_SEARCH
+                            && companion.autonomyLine().contains("Покажи, где"), "A sighting without an eligible animal ended the search");
+                    h.spawn(EntityType.WOLF, petPos.offset(0, 0, 2)).setNoAi(true);
+                    CompanionEvents.answerPetQuestion(owner, companion.getUUID(), CompanionPet.DOG, id, reported);
+                    h.assertTrue(companion.activeWorkId() == id && companion.autonomyLine().contains("Ага, вижу волка!")
+                            && companion.autonomyLine().contains("есть кости"), "Did not acknowledge the player's sighting and ask for bait");
+                }).thenSucceed();
+    }
 
     @GameTest(template = "large_search", timeoutTicks = 1600, skyAccess = true)
     public static void walksTheBlocksAskedAndHoldsTheLine(GameTestHelper h) {

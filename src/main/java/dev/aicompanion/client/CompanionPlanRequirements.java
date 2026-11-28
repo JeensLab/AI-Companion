@@ -1,20 +1,29 @@
 package dev.aicompanion.client;
 
 import dev.aicompanion.entity.CompanionContainers;
+import dev.aicompanion.entity.CompanionCourse;
+import dev.aicompanion.entity.CompanionPet;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 /** Preserve explicit placement constraints even when a provider omits fields or whole conjuncts.
  * Only a positive placement imperative enables supplementation; questions and negations never do. */
 public final class CompanionPlanRequirements {
+    private static final Pattern CAT_WORD = Pattern.compile("(?U)\\b(?:кот(?:а|у|ом|е|ы|ов)?|ката|котик\\p{L}*|котен\\p{L}*|котят\\p{L}*|кошк\\p{L}*|кошеч\\p{L}*)\\b");
+    private static final Pattern DOG_WORD = Pattern.compile("(?U)\\b(?:пес|пс[аеуы]|псом|собак\\p{L}*|собач\\p{L}*|волк\\p{L}*|волч\\p{L}*|щен\\p{L}*)\\b");
+    private static final Pattern PARROT_WORD = Pattern.compile("(?U)\\b(?:попуга[йяюе]\\p{L}*|птичк[ауи]|птиц[ау])\\b");
+    private static final Pattern LOOK_FOR_PET = Pattern.compile("(?U)\\b(?:искать|поискать|поищем|ищем|найдем|найти|найди|завести|приручить|приручи)\\b");
+    private static final Pattern JOINT_SEARCH = Pattern.compile("(?U)\\b(?:пойдем|пошли|идем|погнали|сходим|поищем|давай(?:те)?(?:-ка)? (?:искать|поискать))\\b");
     private CompanionPlanRequirements() { }
 
     public static CompanionReply apply(String request, CompanionReply decoded) {
         // A long goal is the whole plan: the wording of the request adds no step beside it.
         if (decoded.actions().stream().anyMatch(step -> step.type().equals("pursue_goal"))) return decoded;
         String text = request.toLowerCase(Locale.ROOT).replace('ё', 'е');
+        decoded = protectPetTrip(text, decoded);
         decoded = recipientsAndScope(text, decoded);
         decoded = smeltEverything(text, decoded);
         decoded = harvestEverything(text, decoded);
@@ -54,6 +63,38 @@ public final class CompanionPlanRequirements {
         if (result.equals(decoded.actions())) return decoded;
         return result.isEmpty() ? decoded : new CompanionReply(CompanionDialogue.acknowledge(result, decoded.repeat()), List.copyOf(result), decoded.repeat());
     }
+
+    private static CompanionReply protectPetTrip(String text, CompanionReply decoded) {
+        var steps = decoded.actions();
+        var tame = steps.stream().filter(step -> CompanionPet.forTamingAction(step.type()) != null).findFirst().orElse(null);
+        CompanionPet kind;
+        if (tame != null) kind = CompanionPet.forTamingAction(tame.type());
+        else if (CAT_WORD.matcher(text).find()) kind = CompanionPet.CAT;
+        else if (DOG_WORD.matcher(text).find()) kind = CompanionPet.DOG;
+        else if (PARROT_WORD.matcher(text).find() && LOOK_FOR_PET.matcher(text).find()) kind = CompanionPet.PARROT;
+        else return decoded;
+        var walk = steps.stream().filter(step -> step.type().equals("walk_heading")).findFirst().orElse(null);
+        if (walk == null && (tame == null || CompanionCourse.petSearchCourse(tame.item(), kind) != null || !JOINT_SEARCH.matcher(text).find()))
+            return decoded;
+
+        // A model-selected compass heading is an offer. Only the server's pending question can turn it into a walk.
+        String proposal = kind.habitat;
+        if (walk != null) {
+            String withHeading = proposal + ":" + walk.item().split(":", 2)[0];
+            if (CompanionCourse.petSearchCourse(withHeading, kind) != null) proposal = withHeading;
+        }
+        String petAction = "tame_" + kind.id;
+        var result = new ArrayList<PlannedAction>();
+        boolean placed = false;
+        for (var step : steps) {
+            if (step.type().equals("walk_heading") || step.type().equals(petAction)) {
+                if (!placed) result.add(new PlannedAction(petAction, 0, 1, proposal));
+                placed = true;
+            } else result.add(step);
+        }
+        return new CompanionReply(CompanionDialogue.acknowledge(result), List.copyOf(result));
+    }
+
     private static final String TOOL = ".*_(pickaxe|axe|shovel|sword|hoe|helmet|chestplate|leggings|boots)";
 
     /**
@@ -160,7 +201,7 @@ public final class CompanionPlanRequirements {
     }
 
     /** Steps that carry no count of their own, so a number in the request can only mean the gathering. */
-    private static final java.util.Set<String> COUNTLESS = java.util.Set.of("set_home", "follow", "come", "wait", "store_items", "sort_chests", "stop", "protect", "stop_protect", "remember_place", "go_to_place", "campfire_song");
+    private static final java.util.Set<String> COUNTLESS = java.util.Set.of("set_home", "follow", "come", "wait", "store_items", "sort_chests", "stop", "protect", "stop_protect", "remember_place", "go_to_place", "survey_terrain", "recall_landmark", "guide_landmark", "campfire_song");
     static final int DEFAULT_ORE = 4;
     static final int DEFAULT_GAME = 3;
     /** Unnumbered food/hunting requests make a larger, bounded food run. */

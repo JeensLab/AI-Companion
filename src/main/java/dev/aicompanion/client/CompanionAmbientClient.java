@@ -5,12 +5,17 @@ import net.minecraft.client.Minecraft;
 import java.util.UUID;
 import dev.aicompanion.CompanionConversation;
 import dev.aicompanion.CompanionConversation.Delivery;
+import dev.aicompanion.CompanionFishingInvitation;
+import dev.aicompanion.entity.CompanionFishing;
 
 /** Nearby comments. Background requests cannot execute actions or interrupt a conversation. */
 final class CompanionAmbientClient {
     private static Object world;
     private static UUID companion;
     private static final CompanionConversation conversation = new CompanionConversation();
+    private static final CompanionFishingInvitation fishing = new CompanionFishingInvitation();
+    private static UUID fishingSpeaker;
+    private static long fishingGeneration;
     private static final dev.aicompanion.CompanionJokes jokes = new dev.aicompanion.CompanionJokes();
     private static boolean pending;
     private static int transcriptions;
@@ -25,9 +30,11 @@ final class CompanionAmbientClient {
     private static boolean busy() { return pending || transcriptions > 0 || AICompanionClient.recordingSpeech() || OpenRouterClient.isBusy(); }
     static void playerMessage(String text) { conversation.playerMessage(now(), jitter()); CompanionJokeFiles.playerMessage(text); }
     static void replyDelivered(String text) {
+        fishing.cancel();
         conversation.delivered(text, now(), jitter()); CompanionPreferences.speechExpression(text);
     }
     static void initiativeDelivered(String text) {
+        fishing.cancel();
         conversation.initiativeDelivered(text, now(), jitter()); CompanionPreferences.speechExpression(text);
     }
     static boolean availableForObservation() {
@@ -44,7 +51,7 @@ final class CompanionAmbientClient {
     }
     private static Object lineWorld;
     /** The level must not outlive the world the player left. */
-    static void forgetWorld() { world = null; lineWorld = null; }
+    static void forgetWorld() { world = null; lineWorld = null; fishing.reset(); fishingSpeaker = null; }
     private static UUID lineCompanion;
     private static int lineSerial;
     /** His lines about deeds of his own, shown and voiced once each; old ones are not replayed after entering the world. */
@@ -59,7 +66,10 @@ final class CompanionAmbientClient {
         lineSerial = serial;
         String text = speaker.autonomyLine();
         if (text.isBlank() || client.level.getGameTime() - speaker.autonomyLineTime() > 200) return;
-        CompanionChatScreen.autonomyLine(text);
+        if (speaker.isPetLine()) {
+            // A question about the pet's bait can arrive while the acknowledgement is still playing.
+            CompanionChatScreen.petReport(text, !client.isPaused() && CompanionVoiceAudio.audible(speaker));
+        } else CompanionChatScreen.autonomyLine(text);
     }
     private static net.minecraft.world.phys.Vec3 lastSpot;
     private static long sampledAt, travelUntil, idleSince;
@@ -145,16 +155,50 @@ final class CompanionAmbientClient {
         var client = Minecraft.getInstance();
         return !CompanionJokeFiles.loading() && OpenRouterConfig.JOKES.get() && OpenRouterConfig.AUTONOMOUS_SPEECH.get()
                 && client.player != null && !client.isPaused() && client.screen == null
-                && conversation.ready(now()) && !busy() && !InworldTtsClient.isSpeaking() && safe(speaker)
+                && conversation.ready(now()) && !busy() && !CompanionSpeech.isSpeaking() && safe(speaker)
                 && !speaker.isGatheringTask() && !speaker.isVisiblyBusy() && !speaker.fighting()
                 && (OpenRouterConfig.SHORT_MURMURS.get() || CompanionVoiceAudio.audible(speaker));
     }
     static void updateJokeFiles() { CompanionJokeFiles.tick(jokes); }
+
+    static void resetFishingInvitations() { fishing.reset(); fishingSpeaker = null; }
+
+    static CompanionFishingInvitation.Answer fishingAnswer(String text) {
+        var client = Minecraft.getInstance();
+        var speaker = CompanionVoiceAudio.speaker();
+        if (client.level != world || speaker == null || !speaker.getUUID().equals(fishingSpeaker)
+                || fishingGeneration != CompanionActionExecutor.currentPlanGeneration()) fishing.cancel();
+        fishingSpeaker = null;
+        return fishing.answer(text, now());
+    }
+
+    static boolean offerFishing(String text) {
+        var speaker = CompanionVoiceAudio.speaker();
+        if (speaker == null || Minecraft.getInstance().level != world) return false;
+        CompanionChatScreen.autonomousReply(text, dev.aicompanion.CompanionDiagnostics.newTrace(), CompanionVoiceAudio.audible(speaker));
+        fishing.offered(now(), OpenRouterConfig.FISHING_INVITE_MINUTES.get(), java.util.concurrent.ThreadLocalRandom.current().nextInt());
+        fishingSpeaker = speaker.getUUID();
+        fishingGeneration = CompanionActionExecutor.currentPlanGeneration();
+        return true;
+    }
+
+    private static boolean inviteFishing(dev.aicompanion.entity.CompanionEntity speaker) {
+        if (!OpenRouterConfig.FISHING_INVITATIONS.get() || now() % 20 != 0
+                || !fishing.due(now(), OpenRouterConfig.FISHING_INVITE_MINUTES.get(), java.util.concurrent.ThreadLocalRandom.current().nextInt())
+                || !conversation.ready(now()) || !conversation.canAskQuestion() || busy() || CompanionSpeech.isSpeaking()
+                || speaker.distanceToSqr(Minecraft.getInstance().player) > 12 * 12 || !safe(speaker)
+                || speaker.isVisiblyBusy() || speaker.isGatheringTask() || speaker.fighting()) return false;
+        fishing.checked(now());
+        return CompanionFishing.waterNearby(speaker.level(), speaker.blockPosition())
+                && offerFishing("Эх, сейчас бы порыбачить. Составишь компанию?");
+    }
+
     static void tick() {
         var client = Minecraft.getInstance();
         if (client.level != world) {
             world = client.level; companion = null; pending = false; lastSpot = null; travelUntil = 0; idleSince = now();
             conversation.reset(now(), jitter());
+            resetFishingInvitations();
             jokes.reset(now(), java.util.concurrent.ThreadLocalRandom.current().nextInt());
             jokes.reloadBank(java.util.List.of());
             CompanionJokeFiles.reset(client.level != null);
@@ -182,6 +226,7 @@ final class CompanionAmbientClient {
         boolean urgentNow = conversation.urgentPending(now()) != 0 || fresh && CompanionConversation.isUrgent(speaker.socialObservation());
         if (urgentNow && !CompanionVoiceAudio.audible(speaker)) return;
         if (!fresh && conversation.urgentPending() == 0) {
+            if (inviteFishing(speaker)) return;
             if (tellJoke(speaker, scene)) return;
             // A topic needs the model to go on talking, and the memory of the player to know which topics he has raised.
             if (conversation.topicReady(now(), scene) && !busy() && safe(speaker) && OpenRouterConfig.LONG_TERM_MEMORY.get()

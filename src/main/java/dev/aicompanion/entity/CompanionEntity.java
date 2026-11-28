@@ -16,7 +16,9 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.animal.Parrot;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.PathfinderMob;
@@ -82,6 +84,16 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private static final EntityDataAccessor<Boolean> DATA_AUTONOMY = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
     private static final EntityDataAccessor<String> DATA_SAY = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<Integer> DATA_SAY_SERIAL = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Boolean> DATA_PET_LINE = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
+    static final EntityDataAccessor<Optional<BlockPos>> DATA_SHOULDER_RECORD = SynchedEntityData.defineId(
+            CompanionEntity.class, EntityDataSerializers.OPTIONAL_BLOCK_POS);
+    private static final EntityDataAccessor<Boolean> DATA_CAT_PRESENT = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Boolean> DATA_DOG_PRESENT = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Boolean> DATA_PARROT_PRESENT = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Long> DATA_CAT_QUESTION = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.LONG);
+    private static final EntityDataAccessor<Long> DATA_DOG_QUESTION = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.LONG);
+    private static final EntityDataAccessor<Long> DATA_PARROT_QUESTION = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.LONG);
+    private static final EntityDataAccessor<Integer> DATA_PET_QUESTION_MODE = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Long> DATA_SAY_TIME = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.LONG);
     static final EntityDataAccessor<Integer> DATA_EXPRESSION = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
     static final EntityDataAccessor<Boolean> DATA_SOCIAL_SAFE = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
@@ -108,6 +120,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     static final float GAZE_TURN_YAW = 30.0F;
     static final float GAZE_TURN_PITCH = 30.0F;
     UUID ownerId;
+    // Existing saves use 1 for the fish and bones kit. Version 2 also includes parrot seeds.
     boolean following = true;
     boolean protecting;
     boolean roaming;
@@ -126,6 +139,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     int inventoryViewers;
     final NonNullList<ItemStack> companionInventory = NonNullList.withSize(27, ItemStack.EMPTY);
     final CompanionPillar temporaryPillar = new CompanionPillar(this);
+    final CompanionTreeDescent treeDescent = new CompanionTreeDescent(this);
     final CompanionWork work = new CompanionWork(this);
     private final CompanionFurnaceBatches batches = new CompanionFurnaceBatches(this);
     final CompanionGathering gathering = new CompanionGathering(this);
@@ -156,6 +170,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private boolean rightToolOn = true;
     /** Whether a shut wooden fence gate on his route is opened, walked through and shut behind him (idea BDGLW, #105). */
     private boolean fenceGatesOn = true;
+    boolean highGroundOn = true; // a crowd of zombies is met from a column of his blocks (CompanionHighGround; the player's setting, not saved)
     /** Whether «подбери» looks at the ground first, and how far around him (the player's setting, not saved). */
     private boolean pickUpNearby = true;
     private int pickUpRadius = 16;
@@ -193,6 +208,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionDiagnosticState diagnostics = new CompanionDiagnosticState(this);
     private final CompanionEntityNbt nbt = new CompanionEntityNbt(this);
     final CompanionPlaces places = new CompanionPlaces(this);
+    public dev.aicompanion.terrain.LandmarkMemory landmarks() { return places.landmarks; }
     private final CompanionTraders traders = new CompanionTraders();
     public CompanionTraders traders() { return traders; }
     final CompanionDeeds deeds = new CompanionDeeds();
@@ -261,9 +277,40 @@ public final class CompanionEntity extends PathfinderMob implements Container {
 
     /** Not as the work status where it would replace the result of the last order (the status then keeps it, like CompanionRecovery). */
     void autonomySay(String text, boolean asStatus) {
+        entityData.set(DATA_PET_LINE, false);
         entityData.set(DATA_SAY, text); entityData.set(DATA_SAY_SERIAL, entityData.get(DATA_SAY_SERIAL) + 1); entityData.set(DATA_SAY_TIME, level().getGameTime());
         gazeTalk();
         if (asStatus) workStatus(text);
+    }
+    void petSay(String text) { autonomySay(text, false); entityData.set(DATA_PET_LINE, true); }
+    public boolean isPetLine() { return entityData.get(DATA_PET_LINE); }
+    void petQuestion(CompanionPet kind, long workId) { petQuestion(kind, workId, CompanionPet.Question.BAIT); }
+    void petQuestion(CompanionPet kind, long workId, CompanionPet.Question question) {
+        entityData.set(petQuestionData(kind), workId);
+        entityData.set(DATA_PET_QUESTION_MODE, question.ordinal());
+    }
+    public long petQuestion(CompanionPet kind) { return entityData.get(petQuestionData(kind)); }
+    public CompanionPet.Question petQuestionMode() { return CompanionPet.Question.values()[entityData.get(DATA_PET_QUESTION_MODE)]; }
+    public boolean awaitsPetSearchPermission() { return petQuestionMode() == CompanionPet.Question.BAIT_PERMISSION; }
+    private static EntityDataAccessor<Long> petQuestionData(CompanionPet kind) {
+        return switch (kind) {
+            case CAT -> DATA_CAT_QUESTION;
+            case DOG -> DATA_DOG_QUESTION;
+            case PARROT -> DATA_PARROT_QUESTION;
+        };
+    }
+    void petPresent(CompanionPet kind, boolean present) { entityData.set(petPresentData(kind), present); }
+    public boolean hasPet(CompanionPet kind) { return entityData.get(petPresentData(kind)); }
+    private static EntityDataAccessor<Boolean> petPresentData(CompanionPet kind) {
+        return switch (kind) {
+            case CAT -> DATA_CAT_PRESENT;
+            case DOG -> DATA_DOG_PRESENT;
+            case PARROT -> DATA_PARROT_PRESENT;
+        };
+    }
+    public void setPetEnabled(CompanionPet kind, boolean enabled) { work.pet(kind).setEnabled(enabled); }
+    public void setPetSearchRadius(int radius) {
+        for (var kind : CompanionPet.values()) work.pet(kind).setSearchRadius(radius);
     }
     public String autonomyLine() { return entityData.get(DATA_SAY); }
     public int autonomyLineSerial() { return entityData.get(DATA_SAY_SERIAL); }
@@ -397,15 +444,19 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER_BORDER, 0.0F);
         // The cell over powder snow is floor to the game (its trap for mobs): he sinks there and freezes, so it is never his way.
         setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DANGER_POWDER_SNOW, -1.0F);
+        // Ahead of the goals at 0 that hold the move flag (the creeper guard, breath, the dragon's breath): lava is the one thing none of them may keep him in.
+        this.goalSelector.addGoal(-1, new CompanionLavaExit(this));
         this.goalSelector.addGoal(0, new CompanionSwimming.WadingFloatGoal(this));
         this.goalSelector.addGoal(0, new net.minecraft.world.entity.ai.goal.OpenDoorGoal(this, true));
         this.goalSelector.addGoal(0, this.gateGoal);
         this.goalSelector.addGoal(0, new CompanionCreeperGuard.GuardGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverSupportsGoal(this));
+        this.goalSelector.addGoal(1, treeDescent);
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverRouteGoal(this));
         this.goalSelector.addGoal(1, new CompanionWaterBucket.FetchGoal(this));
         this.goalSelector.addGoal(1, new CompanionBoatClutch.BreakGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverBelongingsGoal(this));
+        this.goalSelector.addGoal(1, new CompanionHighGround(this));
         this.goalSelector.addGoal(0, new CompanionEntityGoals.BreatheGoal(this));
         this.goalSelector.addGoal(0, new CompanionEntityGoals.DragonBreathGoal(this));
         this.goalSelector.addGoal(2, new CompanionArchery.BowAttackGoal(this));
@@ -442,7 +493,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.targetSelector.addGoal(1, new CompanionCombat.OwnerDefenseGoal(this));
         this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, net.minecraft.world.entity.Mob.class, 10,
                 true, false, target -> protecting ? (!guardByPlayer || work.isHunting()) && combat.isThreateningOwner(target) : combat.comesForOwner(target)));
-        this.targetSelector.addGoal(2, new CompanionGuardWatch(this));
+        this.targetSelector.addGoal(2, combat.guardWatch);
         // Who flies is out of the blade's reach: only with a bow (ghasts, phantoms).
         this.targetSelector.addGoal(2, new CompanionArchery.FlierTargetGoal(this));
     }
@@ -507,9 +558,40 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         builder.define(DATA_ACTION, 0); builder.define(DATA_ACTION_UNTIL, 0L); builder.define(DATA_ACTION_ITEM, ItemStack.EMPTY);
         builder.define(DATA_SOCIAL, ""); builder.define(DATA_SOCIAL_SERIAL, 0); builder.define(DATA_SOCIAL_TIME, 0L);
         builder.define(DATA_AUTONOMY, false); builder.define(DATA_SAY, ""); builder.define(DATA_SAY_SERIAL, 0); builder.define(DATA_SAY_TIME, 0L);
+        builder.define(DATA_PET_LINE, false);
+        builder.define(DATA_SHOULDER_RECORD, Optional.empty());
+        builder.define(DATA_CAT_PRESENT, false); builder.define(DATA_CAT_QUESTION, 0L);
+        builder.define(DATA_DOG_PRESENT, false); builder.define(DATA_DOG_QUESTION, 0L);
+        builder.define(DATA_PARROT_PRESENT, false); builder.define(DATA_PARROT_QUESTION, 0L);
+        builder.define(DATA_PET_QUESTION_MODE, CompanionPet.Question.BAIT.ordinal());
         builder.define(DATA_EXPRESSION, 0); builder.define(DATA_SOCIAL_SAFE, false); builder.define(DATA_FIGHTING, false);
         builder.define(DATA_CAMPFIRE, CompanionCampfire.STANDING); builder.define(DATA_CAMPFIRE_TUNE, "");
         builder.define(DATA_CAMPFIRE_TUNE_START, 0);
+    }
+
+    @Override public LivingEntity getControllingPassenger() {
+        return getFirstPassenger() instanceof Parrot ? null : super.getControllingPassenger();
+    }
+
+    @Override protected Vec3 getPassengerAttachmentPoint(Entity passenger, EntityDimensions dimensions, float scale) {
+        return passenger instanceof Parrot ? CompanionParrotShoulder.offset(this, scale)
+                : super.getPassengerAttachmentPoint(passenger, dimensions, scale);
+    }
+
+    @Override public Vec3 getDismountLocationForPassenger(LivingEntity passenger) {
+        Vec3 safe = passenger instanceof Parrot bird ? CompanionParrotShoulder.safeDismount(this, bird) : null;
+        return safe != null ? safe : super.getDismountLocationForPassenger(passenger);
+    }
+
+    @Override protected void positionRider(Entity passenger, Entity.MoveFunction move) {
+        BlockPos previous = passenger.blockPosition();
+        super.positionRider(passenger, move);
+        if (passenger instanceof Parrot bird) CompanionParrotShoulder.positioned(this, bird, previous);
+    }
+
+    @Override protected void removePassenger(Entity passenger) {
+        super.removePassenger(passenger);
+        if (passenger instanceof Parrot bird && !level().isClientSide) CompanionParrotShoulder.dismounted(this, bird);
     }
 
     public static void createAttributes(net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent event) {
@@ -572,10 +654,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     }
     private void setFollowing(boolean following, boolean keepHarvest) {
         woodBreaking.reset(); dirtBreaking.reset();
-        if (!keepHarvest) loot.cancel();
         recovery.cancel(); movementIntent = null;
         supportSoilTask = false;
-        work.cancel();
+        work.cancel(); // first: its end lets the held stone fall, and the pickup stopped below must not take it up again
+        if (!keepHarvest) loot.cancel();
         temporaryPillar.requestCleanup();
         roaming = false;
         entityData.set(DATA_ROAMING, false);
@@ -712,6 +794,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether a shut wooden fence gate on his route is opened, walked through and shut behind him (the player can turn it off in the settings). */
     public boolean fenceGates() { return fenceGatesOn; }
     public void setFenceGates(boolean on) { fenceGatesOn = on; }
+    public void setHighGround(boolean on) { highGroundOn = on; }
     /** A shut gate in the cell he stands in, opened before the game's movement control reads its 1.5-high shape as a step. */
     boolean openGateUnder() { return gateGoal.openUnder(); }
     /** Whether «подбери» takes what lies on the ground around him, and how far the scan goes (the player's setting). */
@@ -1112,7 +1195,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         work.course.watch();
         loot.tickNearby();
         if (level() instanceof ServerLevel serverLevel) playersThings.tick(serverLevel);
-        recovery.observe();
+        recovery.observe(); gathering.watchWork();
         work.watchChase();
         social.updateExpression();
         social.tick();
@@ -1154,9 +1237,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         }
         autonomy.tick();
         diagnostics.tick();
-        if (tickCount % 100 == 0) { places.discoverHome(); refreshPlaces(); refreshTraders(); }
+        places.tick();
         if (tickCount % 20 == 0) {
             if (level() instanceof ServerLevel serverLevel) { batches.tick(serverLevel); entityData.set(DATA_FURNACES, batches.forAi()); entityData.set(DATA_GOAL, CompanionAgendaView.line(this)); }
+            for (var kind : CompanionPet.values()) petPresent(kind, CompanionPetBonds.get(level().getServer(), kind).pet(this) != null);
             activityMoved = previousActivityPosition != null && position().distanceToSqr(previousActivityPosition) > .01;
             previousActivityPosition = position(); entityData.set(DATA_ACTIVITY, getActivityForAi());
         }
@@ -1209,7 +1293,6 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         gateGoal.shutBehind();
         super.remove(reason);
     }
-
 
     /** Food in the bag heals, like a player who eats: nothing is conjured, the food is eaten (review 22.10: he never healed). */
     int satiety;
@@ -1328,6 +1411,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** A last guard: whatever goal picked them, the player and his pets are never a target. */
     @Override public void setTarget(LivingEntity target) {
         if (target != null && !level().isClientSide && (target instanceof Player || target instanceof CompanionEntity
+                || CompanionPetBonds.belongsTo(this, target)
                 || ownerId != null && target instanceof net.minecraft.world.entity.OwnableEntity pet && ownerId.equals(pet.getOwnerUUID()))) target = null;
         super.setTarget(target);
     }

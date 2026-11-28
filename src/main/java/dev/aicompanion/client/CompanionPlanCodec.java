@@ -4,6 +4,8 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import dev.aicompanion.entity.CompanionCourse;
+import dev.aicompanion.entity.CompanionPet;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,7 +19,13 @@ public final class CompanionPlanCodec {
     public static final int MAX_REPEAT = 100;
     public static final int WOOD_STEP = 16;
     public static final Set<String> ACTIONS = Set.of("follow", "wait", "come", "protect", "stop_protect", "wander", "stop", "enter_portal", "open_end_portal",
-            "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "scout_traders", "trade_items", "farm_crops", "harvest_crops", "use_bone_meal", "obtain_item", "pursue_goal", "walk_heading", "set_home", "build_portal", "build_cobble_gen", "build_golem", "pick_up", "remember_place", "go_to_place", "repair_item", "disenchant_item", "compost_items", "campfire_song", "fish", "break_block");
+            "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "scout_traders", "trade_items", "farm_crops", "harvest_crops", "use_bone_meal", "obtain_item", "pursue_goal", "walk_heading", "survey_terrain", "recall_landmark", "guide_landmark", "set_home", "build_portal", "build_cobble_gen", "build_golem", "pick_up", "remember_place", "go_to_place", "repair_item", "disenchant_item", "compost_items", "campfire_song", "fish", "break_block",
+            "tame_cat", "cat_status", "find_cat", "sit_cat", "follow_cat",
+            "tame_dog", "dog_status", "find_dog", "sit_dog", "follow_dog",
+            "tame_parrot", "parrot_status", "find_parrot", "sit_parrot", "follow_parrot", "pet_location");
+    private static final Set<String> PET_ORDERS = Set.of("tame_cat", "cat_status", "find_cat", "sit_cat", "follow_cat",
+            "tame_dog", "dog_status", "find_dog", "sit_dog", "follow_dog",
+            "tame_parrot", "parrot_status", "find_parrot", "sit_parrot", "follow_parrot");
     /** Flint is dug out of gravel, which drops it rarely: one step asks for at most this much. */
     static final String FLINT = "minecraft:flint";
     static final int FLINT_STEP = 8;
@@ -260,7 +268,16 @@ public final class CompanionPlanCodec {
                     // «give» is a true or false and nothing else: a string or a number spoils the plan.
                     if (step.has("give") && !(step.get("give").isJsonPrimitive() && step.get("give").getAsJsonPrimitive().isBoolean())) throw invalid();
                 }
+                if (PET_ORDERS.contains(type)) {
+                    var tame = CompanionPet.forTamingAction(type);
+                    boolean trip = tame != null && CompanionCourse.petSearchCourse(item, tame) != null;
+                    if (count != 1 || !item.isEmpty() && !(type.startsWith("sit_") && item.equals("home")) && !trip) throw invalid();
+                }
+                if ("pet_location".equals(type) && (count != 1 || !"all".equals(item) && CompanionPet.byId(item) == null)) throw invalid();
                 String slot = step.has("slot") ? step.get("slot").getAsString() : "auto";
+                if ("survey_terrain".equals(type) && (count != 1 || !slot.equals("auto") || !dev.aicompanion.terrain.TerrainSurvey.TOPICS.contains(item))) throw invalid();
+                if (("recall_landmark".equals(type) || "guide_landmark".equals(type)) &&
+                        (count != 1 || !slot.equals("auto") || !dev.aicompanion.terrain.LandmarkMemory.validQuery(item))) throw invalid();
                 if (!Set.of("auto", "mainhand", "offhand", "head", "chest", "legs", "feet").contains(slot)) throw invalid();
                 // «…и отдай мне»: break_block carries it in the slot, the field the step has no other use for.
                 // ponytail: a boolean of PlannedAction when a second step wants one; until then the slot spares a record change in every constructor call.
