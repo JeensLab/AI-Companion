@@ -7,10 +7,14 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BedPart;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.phys.AABB;
 
 import java.util.ArrayList;
@@ -18,6 +22,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 /**
  * break_block: the standing block of this kind nearest to the player, within {@link #RADIUS} blocks of him, walked to and broken
@@ -54,9 +59,18 @@ final class CompanionBreakBlock {
         var player = c.getOwnerPlayer();
         if (!(c.level() instanceof ServerLevel level) || player == null) return CompanionActionResult.failed("Не вижу тебя рядом, ломать не буду.");
         String name = block.getName().getString();
-        // The block under the player's feet is never the one: it would take the floor out from under him.
-        BlockPos found = nearest(level, player.blockPosition(), block, player.blockPosition().below());
-        if (found == null) return CompanionActionResult.failed("Рядом с тобой нет «" + name + "» (ищу в " + RADIUS + " блоках от тебя).");
+        // What the player stands on or in is never the one (a chest, a slab and a block edge too): it would take the floor out from under him.
+        Set<BlockPos> under = new HashSet<>();
+        BlockPos.betweenClosedStream(player.getBoundingBox().move(0, -0.1, 0)).forEach(cell -> under.add(cell.immutable()));
+        under.add(player.getOnPos());
+        // A furnace that holds his own parked smelt is not his to break either.
+        BlockPos found = nearest(level, player.blockPosition(), block, cell -> under.contains(cell) || c.batches().reserved(level, cell));
+        if (found == null) {
+            boolean smelting = nearest(level, player.blockPosition(), block, under::contains) != null;
+            return CompanionActionResult.failed(smelting ? "«" + name + "» рядом только та, в которой у меня расплав в ожидании: её не трогаю."
+                    : "Рядом с тобой нет «" + name + "» (ищу в " + RADIUS + " блоках от тебя).");
+        }
+        found = lootHalf(level, found, block);
         BlockState state = level.getBlockState(found);
         if (state.getDestroySpeed(level, found) < 0 || block instanceof LiquidBlock)
             return CompanionActionResult.failed("«" + name + "» не сломать: он неразрушим.");
@@ -175,16 +189,25 @@ final class CompanionBreakBlock {
         return total;
     }
 
+    /** A bed drops from its head and a door from its lower half only: the half that carries the loot is the one broken. */
+    private static BlockPos lootHalf(ServerLevel level, BlockPos at, Block kind) {
+        BlockState state = level.getBlockState(at);
+        BlockPos other = at;
+        if (state.hasProperty(BedBlock.PART) && state.getValue(BedBlock.PART) == BedPart.FOOT) other = at.relative(state.getValue(BedBlock.FACING));
+        else if (state.hasProperty(BlockStateProperties.DOUBLE_BLOCK_HALF) && state.getValue(BlockStateProperties.DOUBLE_BLOCK_HALF) == DoubleBlockHalf.UPPER) other = at.below();
+        return level.getBlockState(other).is(kind) ? other : at;
+    }
+
     static void add(List<ItemStack> into, ItemStack stack) {
         for (ItemStack have : into) if (ItemStack.isSameItemSameComponents(have, stack)) { have.grow(stack.getCount()); return; }
         into.add(stack.copy());
     }
 
     /**
-     * The nearest block of this kind to {@code center} within {@link #RADIUS}, or null; {@code except} is never it.
+     * The nearest block of this kind to {@code center} within {@link #RADIUS}, or null; a cell {@code skip} says yes to is never it.
      * ponytail: a plain scan of the 33-block cube, once per order; a palette skip by section (CompanionObsidian.nearest) when it shows in a profile.
      */
-    static BlockPos nearest(ServerLevel level, BlockPos center, Block kind, BlockPos except) {
+    static BlockPos nearest(ServerLevel level, BlockPos center, Block kind, Predicate<BlockPos> skip) {
         BlockPos best = null;
         int bestDistance = Integer.MAX_VALUE;
         BlockPos.MutableBlockPos cell = new BlockPos.MutableBlockPos();
@@ -195,7 +218,7 @@ final class CompanionBreakBlock {
                 int distance = dx * dx + dy * dy + dz * dz;
                 if (distance > RADIUS * RADIUS || distance >= bestDistance) continue;
                 cell.set(center.getX() + dx, y, center.getZ() + dz);
-                if (cell.equals(except) || !level.hasChunkAt(cell) || !level.getBlockState(cell).is(kind)) continue;
+                if (!level.hasChunkAt(cell) || !level.getBlockState(cell).is(kind) || skip.test(cell)) continue;
                 best = cell.immutable(); bestDistance = distance;
             }
         }

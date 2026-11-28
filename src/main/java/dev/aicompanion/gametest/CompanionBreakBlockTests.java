@@ -168,13 +168,14 @@ public final class CompanionBreakBlockTests {
         var inside = (net.minecraft.world.Container) h.getLevel().getBlockEntity(chest);
         inside.setItem(0, new ItemStack(Items.COBBLESTONE, 5));
         inside.setItem(1, new ItemStack(Items.STICK, 3));
-        // Someone beside the chest takes the stone the moment it spills.
-        h.onEachTick(() -> h.getLevel().getEntitiesOfClass(ItemEntity.class, h.getBounds().inflate(2), found -> found.getItem().is(Items.COBBLESTONE)).forEach(ItemEntity::discard));
+        // Someone beside the chest takes the stone the very moment it spills: the stone never joins the world (no race with his pickup).
+        Thief.area = h.getBounds().inflate(2); Thief.taken = Items.COBBLESTONE;
         var plan = say(h, companion, "разбей сундук и отдай мне", "break-taken");
         h.succeedWhen(() -> {
             h.assertTrue(plan.isDone() && !plan.isCompletedExceptionally(), "The plan is still running: " + companion.getLastTaskResult());
             h.assertTrue(atPlayer(h, player, Items.CHEST) == 1 && atPlayer(h, player, Items.STICK) == 3, "Not given what he got: " + plan.join().report());
             h.assertTrue(plan.join().report().contains("кто-то другой") && !plan.join().report().contains("подобрал только"), "Not said honestly: " + plan.join().report());
+            Thief.taken = null;
         });
     }
 
@@ -191,6 +192,68 @@ public final class CompanionBreakBlockTests {
             h.assertTrue(plan.isDone() && !plan.isCompletedExceptionally(), "The plan is still running: " + companion.getLastTaskResult());
             h.assertTrue(h.getLevel().getBlockState(under).is(Blocks.FURNACE), "The block under the player was broken");
             h.assertTrue(h.getLevel().getBlockState(far).isAir(), "The other furnace still stands");
+        });
+    }
+
+    @GameTest(template = "large_search", timeoutTicks = 900)
+    public static void aBedIsBrokenFromItsFootToo(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        // The foot (x 12) is the half nearest the player; only the head (x 13) carries the bed's loot.
+        BlockPos foot = h.absolutePos(new BlockPos(12, 1, 8)), head = h.absolutePos(new BlockPos(13, 1, 8));
+        var bed = Blocks.RED_BED.defaultBlockState().setValue(net.minecraft.world.level.block.BedBlock.FACING, net.minecraft.core.Direction.EAST);
+        h.getLevel().setBlock(head, bed.setValue(net.minecraft.world.level.block.BedBlock.PART, net.minecraft.world.level.block.state.properties.BedPart.HEAD), 2);
+        h.getLevel().setBlock(foot, bed.setValue(net.minecraft.world.level.block.BedBlock.PART, net.minecraft.world.level.block.state.properties.BedPart.FOOT), 2);
+        var started = CompanionEvents.executeAction(player(h, companion), "break_block", "minecraft:red_bed", 1);
+        h.assertTrue(started.success(), "Refused: " + started.message());
+        h.succeedWhen(() -> {
+            h.assertTrue(!companion.isWorking() && companion.didLastTaskSucceed(), "Not done: " + companion.getLastTaskResult());
+            h.assertTrue(!h.getLevel().getBlockState(foot).is(Blocks.RED_BED) && !h.getLevel().getBlockState(head).is(Blocks.RED_BED), "The bed still stands");
+            h.assertTrue(stored(companion, Items.RED_BED) == 1, "The bed is not in his bag: " + stored(companion, Items.RED_BED));
+        });
+    }
+
+    @GameTest(template = "large_search", timeoutTicks = 900)
+    public static void theChestThePlayerStandsOnIsNeverBroken(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        ServerPlayer player = player(h, companion);
+        BlockPos under = h.absolutePos(new BlockPos(5, 1, 8)), far = h.absolutePos(new BlockPos(12, 1, 8));
+        h.getLevel().setBlockAndUpdate(under, Blocks.CHEST.defaultBlockState());
+        h.getLevel().setBlockAndUpdate(far, Blocks.CHEST.defaultBlockState());
+        // A chest is lower than a block: he stands in its cell, not above it.
+        player.teleportTo(under.getX() + .5, under.getY() + .875, under.getZ() + .5);
+        var plan = say(h, companion, "сломай сундук", "break-stood-on");
+        h.succeedWhen(() -> {
+            h.assertTrue(plan.isDone() && !plan.isCompletedExceptionally(), "The plan is still running: " + companion.getLastTaskResult());
+            h.assertTrue(h.getLevel().getBlockState(under).is(Blocks.CHEST), "The chest under the player was broken");
+            h.assertTrue(h.getLevel().getBlockState(far).isAir(), "The other chest still stands");
+        });
+    }
+
+    @GameTest(template = "tall_tree", batch = "multitask_break_parked", timeoutTicks = 3600)
+    public static void aFurnaceHoldingHisParkedSmeltIsNotTheOneBroken(GameTestHelper h) {
+        CompanionEntity companion = CompanionMultitaskSupport.setup(h);
+        // The parked smelt's furnace is the one nearer the player; the other one is farther.
+        BlockPos parked = new BlockPos(19, 1, 16), other = new BlockPos(10, 1, 24);
+        h.setBlock(parked, Blocks.FURNACE);
+        h.setBlock(other, Blocks.FURNACE);
+        companion.setItem(0, new ItemStack(Items.BEEF, 4)); companion.setItem(1, new ItemStack(Items.COAL, 2)); companion.setItem(2, new ItemStack(Items.STONE_PICKAXE));
+        var link = CompanionMultitaskSupport.link(h, companion);
+        link.submit(List.of(new dev.aicompanion.client.PlannedAction("smelt_items", 0, 4, "minecraft:beef")), "gametest-break-parked", () -> false);
+        boolean[] started = {false};
+        h.succeedWhen(() -> {
+            if (!started[0]) {
+                h.assertTrue(CompanionMultitaskSupport.status(link, "smelt_items") == dev.aicompanion.client.CompanionTaskQueue.Status.WAITING, "Not parked yet: " + companion.getLastTaskResult());
+                h.assertTrue(!companion.batches().summaries().isEmpty(), "No batch");
+                var result = CompanionEvents.executeAction(CompanionMultitaskSupport.owner(h, companion), "break_block", "minecraft:furnace", 1);
+                h.assertTrue(result.success(), "Refused: " + result.message());
+                started[0] = true;
+            }
+            h.assertTrue(!companion.isWorking(), "Still breaking: " + companion.workPhase());
+            h.assertTrue(h.getBlockState(parked).is(Blocks.FURNACE), "The furnace of the parked smelt was broken");
+            h.assertTrue(h.getBlockState(other).isAir(), "The other furnace still stands: " + companion.getLastTaskResult());
+            link.close();
         });
     }
 
@@ -304,6 +367,19 @@ public final class CompanionBreakBlockTests {
         String fetch = CompanionLocalCommands.route("принеси верстак", "Олег", RU);
         h.assertTrue(fetch == null || !fetch.contains("break_block"), "принеси верстак -> " + fetch);
         h.succeed();
+    }
+
+    /** Takes an item as it spills in the area of one test: it is never added to the world. */
+    @net.neoforged.fml.common.EventBusSubscriber(modid = AICompanionMod.MOD_ID)
+    public static final class Thief {
+        static volatile Item taken;
+        static volatile net.minecraft.world.phys.AABB area;
+
+        @net.neoforged.bus.api.SubscribeEvent
+        public static void join(net.neoforged.neoforge.event.entity.EntityJoinLevelEvent event) {
+            Item item = taken;
+            if (item != null && event.getEntity() instanceof ItemEntity drop && drop.getItem().is(item) && area != null && area.contains(drop.position())) event.setCanceled(true);
+        }
     }
 
     private static boolean rejected(String json) {
