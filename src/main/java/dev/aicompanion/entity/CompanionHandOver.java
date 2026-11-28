@@ -26,8 +26,31 @@ final class CompanionHandOver {
 
     CompanionHandOver(CompanionWork w) { this.w = w; this.climb = new CompanionClimbToPlayer(w); }
 
+    /** The requested item of a break_block order with «отдай»: the hand-over gives the stacks of {@link #bundle}, not one item. */
+    static final String BUNDLE = "break_block";
+    /** What the broken block gave, each stack (item and components) as many as he got: handed over by {@link #BUNDLE} only, set by the break. */
+    java.util.List<ItemStack> bundle;
+    /** A word on the end of the answer of a bundle: what someone else took first. */
+    String note = "";
+
+    private boolean bundled() { return bundle != null && BUNDLE.equals(w.requestedItem); }
+
+    /** The stack of the bundle this one is (same item and components) with some left to give, else null: his own other stack of the item is not it. */
+    private ItemStack templateOf(ItemStack stack) {
+        for (ItemStack template : bundle) if (template.getCount() > 0 && ItemStack.isSameItemSameComponents(template, stack)) return template;
+        return null;
+    }
+
+    /** «Печь ×1, Камень ×5»: the stacks in words. */
+    static String list(java.util.List<ItemStack> stacks) {
+        StringBuilder text = new StringBuilder();
+        for (ItemStack stack : stacks) text.append(text.length() == 0 ? "" : ", ").append("«").append(stack.getHoverName().getString()).append("» ×").append(stack.getCount());
+        return text.toString();
+    }
+
     private boolean giftMatches(ItemStack stack) {
         if (stack.isEmpty()) return false;
+        if (bundled()) return templateOf(stack) != null;
         if (w.owner.goals().ownsWork(w.taskId) && !CompanionGoals.usable(stack)) return false;
         if ("logs".equals(w.requestedItem)) return stack.is(ItemTags.LOGS);
         return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals(w.requestedItem);
@@ -41,10 +64,18 @@ final class CompanionHandOver {
     int reserved(ItemStack stack) {
         if (w.job != CompanionWork.Job.GIVE) return 0;
         int left = w.requestedCount, size = w.owner.getContainerSize();
+        // A bundle keeps each kind's own share, as handOver gives it: the first stack does not keep the whole count.
+        java.util.Map<ItemStack, Integer> share = new java.util.IdentityHashMap<>();
         for (int index = 0; index <= size && left > 0; index++) {
             ItemStack held = index == size ? w.owner.getMainHandItem() : w.owner.getItem(index);
             if (!giftMatches(held)) continue;
             int take = Math.min(left, held.getCount());
+            if (bundled()) {
+                ItemStack template = templateOf(held);
+                int rest = share.getOrDefault(template, template.getCount());
+                take = Math.min(take, rest);
+                share.put(template, rest - take);
+            }
             if (held == stack) return take;
             left -= take;
         }
@@ -136,12 +167,13 @@ final class CompanionHandOver {
         w.owner.getNavigation().stop();
         int left = Math.min(w.requestedCount, carried), given = 0;
         ItemStack shown = ItemStack.EMPTY;
+        java.util.List<ItemStack> tossed = new java.util.ArrayList<>();
         // Give from the bag first; the tool in his own hand goes only if nothing else is left.
         for (int index = 0; index <= w.owner.getContainerSize() && left > 0; index++) {
             int slot = index == w.owner.getContainerSize() ? -1 : index;
             ItemStack stack = slot < 0 ? w.owner.getMainHandItem() : w.owner.getItem(slot);
             if (!giftMatches(stack)) continue;
-            ItemStack gift = stack.split(Math.min(left, stack.getCount()));
+            ItemStack gift = stack.split(Math.min(Math.min(left, stack.getCount()), bundled() ? templateOf(stack).getCount() : Integer.MAX_VALUE));
             if (slot < 0 && stack.isEmpty()) w.owner.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, ItemStack.EMPTY);
             var operation = w.owner.goals().prepareGift(w.taskId, gift);
             shown = gift.copyWithCount(1);
@@ -159,13 +191,15 @@ final class CompanionHandOver {
                 w.finish(false, "Не удалось бросить предмет. Он остался у меня."); return;
             }
             left -= gift.getCount(); given += gift.getCount();
+            CompanionBreakBlock.add(tossed, gift);
+            if (bundled()) templateOf(gift).shrink(gift.getCount());
             w.owner.goals().giftSpawned(operation, entity.getUUID());
         }
         w.owner.setChanged();
         w.owner.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
         w.owner.animateAction(3, player.blockPosition(), shown);
         level.playSound(null, w.owner.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.NEUTRAL, .4F, .8F);
-        w.finish(CompanionActionResult.ok("Бросил тебе " + given + " «" + shown.getHoverName().getString() + "» — подбери у ног.")
+        w.finish(CompanionActionResult.ok(bundled() ? "Бросил тебе " + list(tossed) + " — подбери у ног." + note : "Бросил тебе " + given + " «" + shown.getHoverName().getString() + "» — подбери у ног.")
                 .withEvidence(new CompanionActionResult.Evidence(w.taskId, "give_items", w.requestedItem, given, player.getUUID(),
                         w.owner.goals().ownsWork(w.taskId) ? w.owner.goals().operation() : null, w.owner.goals().ownsWork(w.taskId) ? w.owner.goals().giftEntity() : null)));
     }

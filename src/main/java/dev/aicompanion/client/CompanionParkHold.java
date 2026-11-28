@@ -65,7 +65,7 @@ public final class CompanionParkHold {
                  "take_items", "sort_chests", "build_house", "build_portal", "open_end_portal", "build_cobble_gen", "give_wood", "equip_item", "unequip_item", "hunt_mobs",
                  // Actions that never need a furnace product, so they do not wait for a parked batch: a place to walk to or a word
                  // to save, a crop taken by hand, a grindstone or a composter, a rod cast, the goal bookkeeping.
-                 "harvest_crops", "farm_crops", "use_bone_meal", "pick_up", "build_pen", "breed_animals", "scout_traders", "trade_items", "pursue_goal", "autonomy",
+                 "harvest_crops", "farm_crops", "use_bone_meal", "pick_up", "break_block", "build_pen", "breed_animals", "scout_traders", "trade_items", "pursue_goal", "autonomy",
                  "goal_status", "goal_cancel", "goal_defer", "goal_resume",
                  "repair_item", "disenchant_item", "compost_items", "go_to_place", "remember_place", "fish",
                  "tame_cat", "cat_status", "find_cat", "sit_cat", "follow_cat", "tame_dog", "dog_status", "find_dog", "sit_dog", "follow_dog",

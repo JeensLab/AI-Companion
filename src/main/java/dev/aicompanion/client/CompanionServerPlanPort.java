@@ -97,7 +97,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     public long ownedWorkId() { return ownedWorkId; }
 
     /** Whether a step of this kind is waited for by its own work id (the plan must not report it before the walk ends). */
-    public static boolean tracksWork(String action) { return TRACKED_WORK.contains(action) || "fish".equals(action) || "open_end_portal".equals(action); }
+    public static boolean tracksWork(String action) { return TRACKED_WORK.contains(action) || "fish".equals(action) || "break_block".equals(action) || "open_end_portal".equals(action); }
 
     @Override public void progress(java.util.List<PlannedAction> plan, int index) { this.plan = List.copyOf(plan); progress.accept(plan, index); }
 

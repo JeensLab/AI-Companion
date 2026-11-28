@@ -10,7 +10,7 @@ final class CompanionWorkText {
             case CRAFT -> "крафт";
             case PICKAXE, ORE_PICK, SHOVEL -> "подготовка инструмента";
             case WOOD, WOOD_DONE -> "заготовка дерева";
-            case MINE, DIGGING, ORE, OBSIDIAN, BLOCK -> "добыча";
+            case MINE, DIGGING, ORE, OBSIDIAN, BLOCK, BREAK -> "добыча";
             case STORE, CLOSE, PACK, SORT -> "работа с вещами";
             case BUILD, PEN, PORTAL, COBBLE, GOLEM -> "строительство";
             case RETURN, EXIT -> "возвращение";
@@ -66,6 +66,7 @@ final class CompanionWorkText {
             case WATER -> "набор воды в ведро";
             case OBSIDIAN -> work.obsidian.jobName();
             case BLOCK -> work.picking.jobName();
+            case BREAK -> work.breakBlock.jobName();
             case PORTAL -> work.endPortal.active() ? work.endPortal.jobName() : work.portal.jobName();
             case COBBLE_GEN -> work.cobbleGen.jobName();
             case GOLEM -> work.golem.jobName();

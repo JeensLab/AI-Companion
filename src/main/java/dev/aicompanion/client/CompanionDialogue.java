@@ -83,6 +83,7 @@ public final class CompanionDialogue {
             case "equip_item" -> "Сейчас возьму.";
             case "unequip_item" -> "Ага, уберу.";
             case "place_block" -> "Поставлю вот тут.";
+            case "break_block" -> "Ага, сейчас сломаю.";
             case "survey_terrain" -> "Осмотрюсь.";
             case "guide_landmark" -> "Проверю, смогу ли провести.";
             case "wander" -> "Ладно, прогуляюсь. Я недалеко.";
@@ -220,6 +221,7 @@ public final class CompanionDialogue {
             case "strip_log" -> "обтесать топором: «" + itemName(action.item()) + "» (" + action.count() + " шт.)";
             case "craft_item" -> "сделать «" + itemName(action.item()) + "»";
             case "place_block" -> "поставить «" + itemName(action.item()) + "»";
+            case "break_block" -> "сломать «" + itemName(action.item()) + "»" + ("give".equals(action.slot()) ? " и отдать тебе" : "");
             case "equip_item" -> "взять «" + itemName(action.item()) + "»";
             case "unequip_item" -> "убрать предмет из руки";
             case "store_items" -> "сложить вещи " + CompanionContainers.into(action.location());

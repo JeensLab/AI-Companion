@@ -34,8 +34,8 @@ public final class CompanionWork {
     private dev.aicompanion.terrain.TerrainSurvey survey;
     private CompanionLandmarkGuide guide;
 
-    enum Job { GUIDE, SURVEY, STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, SCOUT, TRADE, FARM, COURSE, WATER, OBSIDIAN, PORTAL, COBBLE_GEN, GOLEM, PICK_UP, PLACE, GRIND, COMPOST, BLOCK, CHORE, ERRAND, PET }
-    enum Phase { GUIDE, SURVEY, CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, SCOUT, TRADE, FARM, COURSE, WATER, OBSIDIAN, PORTAL, COBBLE, GOLEM, PICKUP, PLACE, GRIND, COMPOST, BLOCK, DROPS, CHORE, ERRAND, PET }
+    enum Job { GUIDE, SURVEY, STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, SCOUT, TRADE, FARM, COURSE, WATER, OBSIDIAN, PORTAL, COBBLE_GEN, GOLEM, PICK_UP, PLACE, GRIND, COMPOST, BLOCK, CHORE, ERRAND, PET, BREAK }
+    enum Phase { GUIDE, SURVEY, CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, SCOUT, TRADE, FARM, COURSE, WATER, OBSIDIAN, PORTAL, COBBLE, GOLEM, PICKUP, PLACE, GRIND, COMPOST, BLOCK, DROPS, CHORE, ERRAND, PET, BREAK }
     final CompanionEntity owner;
     final CompanionWorkItems items = new CompanionWorkItems(this);
     final CompanionHunting hunting = new CompanionHunting(this);
@@ -72,6 +72,8 @@ public final class CompanionWork {
     final CompanionEndPortal endPortal = new CompanionEndPortal(this);
     /** gather_block: what a block gives when broken, found, walked to and picked. */
     final CompanionPicking picking = new CompanionPicking(this);
+    /** break_block: the standing block nearest to the player, broken and picked up, and with «отдай» given. */
+    final CompanionBreakBlock breakBlock = new CompanionBreakBlock(this);
     /** hunt_drop: what a monster drops, fought for and picked up. */
     final CompanionMobDrops drops = new CompanionMobDrops(this);
     /** shear_sheep, milk_animal, collect_eggs, strip_log, harvest_hive, scoop_mob, scoop_block, fish: what a tool in hand gets. */
@@ -518,6 +520,7 @@ public final class CompanionWork {
             case "walk_heading" -> { var refusal = beginCourse(item, count); if (refusal != null) return refusal; }
             case "fill_bucket" -> { CompanionActionResult refusal = owner.waterFill.begin(count, CompanionEvents.goalDispatching()); if (refusal != null) return refusal; job = Job.WATER; phase = Phase.WATER; }
             case "gather_block" -> { CompanionActionResult refusal = picking.begin(item, count); if (refusal != null) return refusal; job = Job.BLOCK; phase = Phase.BLOCK; }
+            case "break_block", "break_give" -> { CompanionActionResult refusal = breakBlock.begin(item, "break_give".equals(action)); if (refusal != null) return refusal; job = Job.BREAK; phase = Phase.BREAK; }
             case "mine_obsidian" -> { CompanionActionResult refusal = obsidian.begin(count); if (refusal != null) return refusal; job = Job.OBSIDIAN; phase = Phase.OBSIDIAN; }
             case "build_cobble_gen" -> { CompanionActionResult refusal = cobbleGen.begin(item); if (refusal != null) return refusal; job = Job.COBBLE_GEN; phase = Phase.COBBLE; }
             case "build_golem" -> { CompanionActionResult refusal = golem.begin(item); if (refusal != null) return refusal; job = Job.GOLEM; phase = Phase.GOLEM; }
@@ -653,7 +656,7 @@ public final class CompanionWork {
             afterWood = Phase.WOOD_DONE; woodBeforeRequest = owner.collectedLogs(); owner.startGatheringLogsForWork(count);
         }
         if ("collect_smelt".equals(action)) return CompanionActionResult.accepted(owner.batches().restore(item, this, level));
-        return CompanionActionResult.accepted(job == Job.ERRAND ? owner.errand.announce() : job == Job.CHORE && chores.fishes() ? "Пойду порыбачу." : job == Job.COURSE ? "Веду " + CompanionCourse.where(item) + "." : job == Job.STORE ? "Сейчас сложу вещи." : job == Job.PLACE_CHEST ? "Поставлю блок." : startNote + "Сейчас подготовлюсь.");
+        return CompanionActionResult.accepted(job == Job.ERRAND ? owner.errand.announce() : job == Job.CHORE && chores.fishes() ? "Пойду порыбачу." : job == Job.COURSE ? "Веду " + CompanionCourse.where(item) + "." : job == Job.STORE ? "Сейчас сложу вещи." : job == Job.PLACE_CHEST ? "Поставлю блок." : job == Job.BREAK ? "Сейчас сломаю." : startNote + "Сейчас подготовлюсь.");
     }
 
     /** Handing the smelt to a batch is no finish: nothing credited, noted, packed or journalled as a failure. */
@@ -763,6 +766,7 @@ public final class CompanionWork {
             case WATER -> owner.waterFill.orderTick(level);
             case OBSIDIAN -> obsidian.tick(level);
             case BLOCK -> picking.tick(level);
+            case BREAK -> breakBlock.tick(level);
             case PORTAL -> { if (endPortal.active()) endPortal.tick(level); else portal.tick(level); }
             case COBBLE -> cobbleGen.tick(level);
             case GOLEM -> golem.tick(level);

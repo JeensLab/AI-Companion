@@ -102,6 +102,43 @@ public final class CompanionWorkCommands {
         return "companion work compost_items " + number(put.group(1)) + " " + group;
     }
 
+    private static final Pattern BREAK = Pattern.compile("(?U)^(?:сломай|разбей|разломай)(?:-?ка)?\\s+(.+)$");
+    /** «…и отдай мне», «, дай его мне»: the block is to be handed over after. */
+    private static final Pattern BREAK_GIVE = Pattern.compile("(?U)^(.*?)[,\\s]+(?:и\\s+)?(?:отдай|дай|передай|подай)(?:\\s+(?:мне|нам|его|ее|её|их|это|все|всё))*$");
+    private static final Pattern BREAK_FILLER = Pattern.compile("(?U)\\b(?:вон|ту|тот|эту|этот|ближайш\\p{L}*|стоящ\\p{L}*|рядом|тут|здесь|пожалуйста|мне|нам|себе)\\b");
+    private static final Pattern BREAK_NOUN = Pattern.compile("(?U)\\p{L}+(?: \\p{L}+){0,2}");
+    private static final java.util.Set<String> MANY = java.util.Set.of("один", "одну", "одна", "одно", "два", "две", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять", "десять",
+            "пару", "пара", "несколько", "много", "все", "всё", "каждую", "каждый");
+    private static final java.util.Set<String> PREPOSITIONS = java.util.Set.of("в", "во", "из", "на", "с", "со", "к", "по", "для", "под", "за", "от", "до", "и");
+
+    /**
+     * «Сломай печку», «разбей верстак и отдай мне», «разбей бочку и дай мне» (BRKBK): the block the name says (by the game's names, as
+     * «подбери»), broken where it stands: "companion work break_block 1 minecraft:furnace", with " give" when it is to be handed over.
+     * Null for anything else, which is the model's: a number («две печки»), a place («в сундук»), a name no block answers to. The other
+     * phrases with these verbs («разбей огород», «убери вещи в сундук») are read before this, in {@link #parse}.
+     */
+    public static String breakBlock(String text, String name, java.util.function.Function<net.minecraft.world.item.Item, String> names) {
+        var verb = BREAK.matcher(plain(text, name).replaceAll("\\s+", " "));
+        if (!verb.matches()) return null;
+        String rest = verb.group(1).trim();
+        var give = BREAK_GIVE.matcher(rest);
+        boolean toPlayer = give.matches();
+        if (toPlayer) rest = give.group(1).trim();
+        // One block: a number, «все», «пару» leave it to the model. (CompanionNumbers is no help here: it reads «верстак» as a stack.)
+        if (rest.matches("(?U).*\\d.*") || java.util.Arrays.stream(rest.split(" ")).anyMatch(MANY::contains)) return null;
+        String noun = BREAK_FILLER.matcher(rest).replaceAll(" ").replaceAll("\\s+", " ").trim().replaceAll("(?U)\\bпечк\\p{L}*", "печь");
+        if (!BREAK_NOUN.matcher(noun).matches() || java.util.Arrays.stream(noun.split(" ")).anyMatch(PREPOSITIONS::contains)) return null;
+        // Only a name that is the block's own: «кровать», «дверь», «доски» name many blocks, and which one is the model's to ask about.
+        var found = dev.aicompanion.entity.CompanionItemLookup.resolve(noun, names);
+        if (found.isEmpty()) return null;
+        String exact = names.apply(found.getFirst()).toLowerCase(Locale.ROOT).replace('ё', 'е');
+        if (!exact.equals(noun) && !(exact.length() == noun.length() && exact.startsWith(noun.substring(0, noun.length() - 1)))) return null;
+        String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(found.getFirst()).toString();
+        var key = net.minecraft.resources.ResourceLocation.parse(id);
+        if (!net.minecraft.core.registries.BuiltInRegistries.BLOCK.containsKey(key) || key.getPath().equals("air")) return null;
+        return "companion work break_block 1 " + id + (toPlayer ? " give" : "");
+    }
+
     /** The number said, «all» when none; -1 for one the order cannot carry (a «0» is no order of one, over a stack goes to the model). */
     private static int number(String said) {
         if (said == null) return PlannedAction.ALL_CARRIED;

@@ -460,6 +460,8 @@ public final class CompanionEvents {
             case "pick_up" -> companion.pickUpNearby(item, count);
             case "farm_crops", "harvest_crops", "use_bone_meal" -> companion.startWork(action, item, count);
             case "verify_item" -> companion.carriedCheck(item, count);
+            // «Сломай печку [и отдай мне]»: the block standing nearest to the player; the slot says whether it is then given (CompanionBreakBlock).
+            case "break_block" -> companion.startWork("give".equals(slot) ? "break_give" : "break_block", item, 1);
             // «Почини кирку»: two alike folded where he stands, as in the crafting grid; no walk, so no work.
             case "repair_item" -> CompanionGrinding.repair(companion, item);
             // «Будь самостоятельным» / «хватит, просто будь рядом»: a local command of the player, never a step of the model's plan.
