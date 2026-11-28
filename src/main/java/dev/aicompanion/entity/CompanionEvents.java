@@ -396,6 +396,8 @@ public final class CompanionEvents {
             case "collect_smelt" -> companion.startWork("collect_smelt", item, 1);
             case "mine_ore" -> companion.startWork("mine_ore", item, count);
             case "hunt_animals" -> companion.startWork("hunt_animals", item, count);
+            // «Сломай печку [и отдай мне]»: the block standing nearest to the player; the slot says whether it is then given (CompanionBreakBlock).
+            case "break_block" -> companion.startWork("give".equals(slot) ? "break_give" : "break_block", item, 1);
             // «Подбери»: what lies on the ground, taken by walking to it; nothing near falls back to the usual work.
             case "pick_up" -> companion.pickUpNearby(item, count);
             case "farm_crops", "harvest_crops", "use_bone_meal" -> companion.startWork(action, item, count);
