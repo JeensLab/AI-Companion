@@ -25,10 +25,10 @@ public final class CompanionPlanRequirements {
 
     /** The same, by the names the game shows for its items (or a stand-in for the language in a test). */
     public static CompanionReply apply(String request, CompanionReply decoded, java.util.function.Function<net.minecraft.world.item.Item, String> names) {
-        // An order the model answered with words only says so in the log, before any step is looked for (owner, 24.11).
-        orderWithoutStep("", request, decoded, names);
         // The same order is the engine's own work, never only a sentence (owner, 27.11).
         decoded = obtainAfterWords(request, decoded, names);
+        // An order still answered with words only says so in the log, after the step it could have got is looked for (owner, 24.11).
+        orderWithoutStep("", request, decoded, names);
         // A long goal is the whole plan: the wording of the request adds no step beside it.
         if (decoded.actions().stream().anyMatch(step -> step.type().equals("pursue_goal"))) return decoded;
         String text = request.toLowerCase(Locale.ROOT).replace('ё', 'е');

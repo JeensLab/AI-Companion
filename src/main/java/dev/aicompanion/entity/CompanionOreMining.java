@@ -106,11 +106,11 @@ final class CompanionOreMining {
         }
         if (++w.ironMines > 2) { w.finish(false, "Для " + tool + " нужно ещё " + missing + " железных слитков, а железной руды больше не набрал. Вещи у меня."); return; }
         if (w.job == CompanionWork.Job.ORE && w.goalOre == null) {
-            w.goalOre = w.ore; w.goalOreWanted = w.oreWanted; w.goalOreMined = w.oreMined; w.goalOreDropsBefore = w.oreDropsBefore; w.goalOreExit = w.oreExit;
+            w.goalOre = w.ore; w.goalOreWanted = w.oreWanted; w.goalOreMined = w.oreMined; w.goalOreExit = w.oreExit;
         }
         w.ore = CompanionOre.Kind.IRON; w.oreWanted = missing; w.oreMined = w.oreFound = w.oreUnreachable = w.orePickaxeAttempts = 0;
         w.oreDone = w.oreChoosing = w.oreLootRetried = false; w.oreLootWait = 0; w.oreSearch = null; w.oreCandidates = null; w.oreRejected.clear(); w.oreOffFoot.clear(); w.oreNoTunnel.clear(); w.oreTunnel.clear(); w.oreExit = null;
-        w.oreDropsBefore = w.items.countCarried(Items.RAW_IRON);
+        w.owner.beginObtain(w.dropId());
         w.ironPrep = true; w.phase = CompanionWork.Phase.ORE_PICK; w.resetTarget();
         w.owner.workStatus("Для " + tool + " нужно " + w.ironNeeded + " железных слитков. Иду за железной рудой.");
     }
@@ -119,7 +119,7 @@ final class CompanionOreMining {
     void ironStageDone() {
         w.ironPrep = false;
         if (w.goalOre != null) {
-            w.ore = w.goalOre; w.oreWanted = w.goalOreWanted; w.oreMined = w.goalOreMined; w.oreDropsBefore = w.goalOreDropsBefore;
+            w.ore = w.goalOre; w.oreWanted = w.goalOreWanted; w.oreMined = w.goalOreMined;
             w.oreFound = w.oreUnreachable = w.orePickaxeAttempts = 0; w.oreDone = w.oreChoosing = w.oreLootRetried = false; w.oreLootWait = 0;
             w.oreSearch = null; w.oreCandidates = null; w.oreRejected.clear(); w.oreOffFoot.clear(); w.oreNoTunnel.clear(); w.oreTunnel.clear(); w.oreExit = w.goalOreExit; w.goalOre = null;
         }
@@ -148,7 +148,7 @@ final class CompanionOreMining {
         // for it, bounded, so it ends with the drop in the bag rather than «выпавшее не достал» while the pickup is still walking
         // to it (the owner, 27.11: the drop fell below the column, the column stood, and the order stood with it). A drop the
         // pickup gave up is no pending loot, so an unreachable one costs no wait.
-        if (w.oreGained() < w.oreWanted && w.owner.hasPendingLoot() && w.oreLootWait++ < CompanionPickUp.ORDER_TICKS) return;
+        if (w.owner.obtainGathered(w.dropId()) < w.oreWanted && w.owner.hasPendingLoot() && w.oreLootWait++ < CompanionPickUp.ORDER_TICKS) return;
         climbOutOfOre(level);
     }
 
@@ -162,7 +162,7 @@ final class CompanionOreMining {
         if (w.owner.temporaryPillar.isRecovering() || w.owner.temporaryBridge.isRecovering()) return;
         // The bag answers, not the blocks broken: the drop it gained in the promise met is the order done (the owner, 26.11:
         // the ore mined, its drop picked up, and «с этим пока не справился»).
-        if (w.oreDone || w.oreMined >= w.oreWanted || (!w.ironPrep && w.oreGained() >= w.oreWanted)) { finishMine(level); return; }
+        if (w.oreDone || w.oreMined >= w.oreWanted || (w.ironPrep ? 0 : w.owner.obtainGathered(w.dropId())) >= w.oreWanted) { finishMine(level); return; }
         // The way's own climb is ticked every tick of its arc, the jump included: a body in the air is no reason to skip it.
         if (!w.owner.onGround() && !w.owner.isInWater()
                 && !w.owner.temporaryPillar.isWayActive() && !w.owner.temporaryBridge.isActive()) return;
@@ -482,7 +482,11 @@ final class CompanionOreMining {
         unreachable(w.target); rejectOre();
     }
 
-    /** Back up the own stairs before reporting, like after stone: in legs when the way is longer than one search. A pit with no walk out of it gets a stair dug up. */
+    /**
+     * The one way out of the mine before it reports: back up his own tunnel (a stair dug up when no walk leads out of a pit) —
+     * {@link #stairUp} adds its cells to that same tunnel and he walks it. A column of {@link CompanionReach} is the way TO a
+     * block, not a second exit: it comes down with its soil, and the tunnel is what leaves the pit.
+     */
     private void climbOutOfOre(ServerLevel level) {
         if (!pitKnown()) return;
         BlockPos exit = exitCell();
@@ -578,7 +582,7 @@ final class CompanionOreMining {
     private void finishOre() {
         BlockPos exit = exitCell();
         w.route.legsEnd(exit == null || w.owner.getY() >= exit.getY() - .5); w.route.abandon();
-        int gained = Math.max(0, w.items.countCarried(w.ore.drop) - w.oreDropsBefore);
+        int gained = w.owner.obtainGathered(w.dropId());
         int have = w.oreHeld();
         String got = "«" + w.ore.oreName + "»: в сумке прибавилось " + gained + " «" + CompanionWork.itemName(w.ore.drop) + "».";
         String below = exit != null && w.owner.getY() < exit.getY() - .5

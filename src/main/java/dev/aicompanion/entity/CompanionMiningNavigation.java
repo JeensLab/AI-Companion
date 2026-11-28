@@ -253,9 +253,10 @@ final class CompanionMiningNavigation {
     /**
      * The height his feet stand at in this cell, or {@link #NO_STAND} when no body fits there. The game's own walk stands a body
      * on the collision top of what is under it (WalkNodeEvaluator.getFloorLevel), so a cell is a stand wherever a player walks:
-     * on the ground, on a stair's top step, on a slab, on a path or a farm bed, in a ladder's or a vine's own cell, and on a
-     * half-height step inside the cell itself (a bottom slab, a carpet). An existing staircase, slab or ladder is a way like the
-     * ground is — the reach answer, the route and the pickup all ask this one rule.
+     * on the ground, on a stair's top step, on a bottom slab, on a path or a farm bed, in a ladder's or a vine's own cell, and on
+     * the half step a bottom slab or a farm bed makes inside its cell. A cell of a partial shape the route has no node in — an
+     * azalea's plate, a berry bush, a layer of snow, a carpet — is no stand, and neither is the cell over a half-high floor: the
+     * walk would jam there (CompanionPartialBlockTests), and {@link CompanionFootwork#stands} refuses the same cells.
      */
     static double standHeight(CompanionEntity owner, BlockPos pos) {
         var level = owner.level();
@@ -265,24 +266,30 @@ final class CompanionMiningNavigation {
         BlockState own = level.getBlockState(pos);
         double ownTop = own.getCollisionShape(level, pos).max(Direction.Axis.Y);
         if (ownTop > 0 && ownTop < 1) {
-            // A step inside the cell itself: a bottom slab, a stair's lower half, a carpet, a path — he stands on its top.
+            // A step inside the cell: one the body takes without a jump (a bottom slab, a carpet, a layer of snow) or the
+            // ground's own surface (a farm bed). A berry bush's 0.8 and an azalea's full plate are no step of the walk — he
+            // jams against them or has to jump, as {@link CompanionFootwork#stands} finds too.
+            if (ownTop > .6D && !own.is(Blocks.FARMLAND)) return NO_STAND;
             feet = pos.getY() + ownTop;
         } else if (ownTop == 0 && own.is(BlockTags.CLIMBABLE)) {
             // A ladder or a vine: he stands in its own cell, nothing solid in it.
             feet = pos.getY();
         } else {
-            // The floor under the cell: a full block, a stair, a top slab, a path, a farm bed — its top is the floor he stands on.
+            // The floor under the cell: a full block, a stair's full-height half, a path, a farm bed — its top is its cell's top.
             BlockState floor = level.getBlockState(pos.below());
             if (floor.isFaceSturdy(level, pos.below(), Direction.UP)) feet = pos.getY();
             else if (!floor.is(BlockTags.LEAVES) && !floor.is(BlockTags.LOGS)) {
                 double top = floor.getCollisionShape(level, pos.below()).max(Direction.Axis.Y);
-                if (top <= 0) return NO_STAND;
-                feet = pos.getY() - 1 + Math.min(top, 1.0);
+                // A half-high floor (a bottom slab, a layer of snow, a farm bed) is no floor for the cell over it: its own cell
+                // is the stand the walk stands him in.
+                if (top < .99D) return NO_STAND;
+                feet = pos.getY();
             } else return NO_STAND;
         }
         AABB body = new AABB(pos.getX() + .2, feet, pos.getZ() + .2, pos.getX() + .8, feet + owner.getBbHeight(), pos.getZ() + .8);
         return level.noCollision(owner, body) ? feet : NO_STAND;
     }
+
 
     /** A cell he can stand in and work from: the floor sturdy, room for the body, his head in the air; his feet may be in water, not in lava. */
     static boolean standable(CompanionEntity owner, BlockPos pos) {
@@ -320,7 +327,7 @@ final class CompanionMiningNavigation {
      * that promises a cell promises a pickup.
      */
     static boolean touchesCell(CompanionEntity owner, Vec3 at, BlockPos cell) {
-        return owner.getBoundingBox().move(at.subtract(owner.position())).inflate(1, .5, 1).intersects(new AABB(cell));
+        return owner.loot.touches(at, new AABB(cell));
     }
 
     static void walk(CompanionEntity owner, Path path) { walk(owner, path, 1D); }

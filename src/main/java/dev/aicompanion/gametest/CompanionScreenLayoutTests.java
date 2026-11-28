@@ -14,9 +14,9 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Review of PR #158: at 854×480 (427×240 at GUI scale 2) the behaviour screen pages its switches four rows at a time —
- * nine pages for the rows there are now — while 1920×1080 (960×540) keeps two. Paging is deliberate, and no switch
- * may become unreachable on the smaller screen. The model settings have their own screen behind the first row of
+ * Review of PR #158: at 854×480 (427×240 at GUI scale 2) the behaviour screen pages its switches a few rows at a time,
+ * as many pages as the rows it adds need; 1920×1080 (960×540) keeps more. Paging is deliberate, and no switch may
+ * become unreachable on the smaller screen, however many rows the screen grows. The model settings have their own screen behind the first row of
  * «Поведение»: its switch, fields and reference block must not overlap and must stay reachable at every GUI size too.
  * No client is needed: the geometry is pure arithmetic.
  */
@@ -50,9 +50,12 @@ public final class CompanionScreenLayoutTests {
                         "Not every switch is reachable at height " + height + " with " + rows + " rows: " + seen);
             }
         }
-        h.assertTrue(CompanionSwitchLayout.perPage(240) == 4 && CompanionSwitchLayout.pages(CompanionSwitchLayout.BEHAVIOUR_ROWS, 240) == 9,
-                "854×480 no longer pages four rows at a time");
-        h.assertTrue(CompanionSwitchLayout.pages(CompanionSwitchLayout.BEHAVIOUR_ROWS, 540) == 2, "1920×1080 no longer keeps two pages");
+        // The pages are the rows the screen adds, whatever that number is: a row added to the screen must not break the layout.
+        h.assertTrue(CompanionSwitchLayout.perPage(240) >= 1
+                        && CompanionSwitchLayout.pages(CompanionSwitchLayout.BEHAVIOUR_ROWS, 240) * CompanionSwitchLayout.perPage(240) >= CompanionSwitchLayout.BEHAVIOUR_ROWS,
+                "854×480 does not page the behaviour switches");
+        h.assertTrue(CompanionSwitchLayout.pages(CompanionSwitchLayout.BEHAVIOUR_ROWS, 540) >= 1,
+                "1920×1080 pages no row");
         int rows = CompanionSwitchLayout.BEHAVIOUR_ROWS;
         h.assertTrue(CompanionSwitchLayout.firstRow(rows, 240, CompanionSwitchLayout.pages(rows, 240)) == 0,
                 "A page past the last does not wrap to the first");

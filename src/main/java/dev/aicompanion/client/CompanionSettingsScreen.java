@@ -97,10 +97,12 @@ public final class CompanionSettingsScreen extends Screen {
 
         companionName = addRowField(0, left, fieldWidth / 2 - 8, "Имя компаньона", OpenRouterConfig.COMPANION_NAME.get(), false);
         companionName.setMaxLength(24);
+        // Read only: the one editor of the search distance is the row of «Поведение», beside «Строить себе путь», whose
+        // reach it is; here it is shown as the setting the rest of the screen works with, never typed a second time.
         searchRadius = addRowField(0, left + fieldWidth / 2 + 8, fieldWidth / 2 - 8, "Дальность поиска",
                 Integer.toString(OpenRouterConfig.SEARCH_RADIUS.get()), false);
-        searchRadius.setMaxLength(3);
-        searchRadius.setFilter(value -> value.matches("\\d{0,3}"));
+        searchRadius.setEditable(false);
+        searchRadius.setTooltip(Tooltip.create(Component.literal("Меняется на экране «Поведение», рядом со «Строить себе путь».")));
         openRouterKey = addRowField(1, left, fieldWidth - 70, "Ключ API", OpenRouterConfig.API_KEY.get(), true);
         openRouterKey.setHint(Component.literal("OpenRouter или https-сервер; локальному не нужен").withStyle(ChatFormatting.GRAY));
         addRowToggle(1, left + fieldWidth - 66, true);
@@ -208,10 +210,6 @@ public final class CompanionSettingsScreen extends Screen {
     private void saveAndClose() {
         OpenRouterConfig.COMPANION_NAME.set(CompanionIdentity.cleanName(companionName.getValue()));
         OpenRouterConfig.COMPANION_NAME.save();
-        int radius;
-        try { radius = Integer.parseInt(searchRadius.getValue()); } catch (NumberFormatException ignored) { radius = 64; }
-        OpenRouterConfig.SEARCH_RADIUS.set(Math.max(16, Math.min(MAX_RADIUS, radius)));
-        OpenRouterConfig.SEARCH_RADIUS.save();
         CompanionPreferences.sync();
         OpenRouterConfig.API_KEY.set(openRouterKey.getValue().trim());
         OpenRouterConfig.API_KEY.save();

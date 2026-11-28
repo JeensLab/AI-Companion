@@ -248,7 +248,7 @@ final class CompanionErrand {
     private String gathered() {
         if (c.work.job == CompanionWork.Job.BLOCK) return c.work.picking.progress();
         if (c.work.job == CompanionWork.Job.ORE)
-            return "в сумке прибавилось " + Math.max(0, c.work.items.countCarried(c.work.ore.drop) - c.work.oreDropsBefore) + " «" + CompanionWork.itemName(c.work.ore.drop) + "».";
+            return "в сумке прибавилось " + c.obtainGathered(c.work.dropId()) + " «" + CompanionWork.itemName(c.work.ore.drop) + "».";
         return "ничего не добыто.";
     }
 

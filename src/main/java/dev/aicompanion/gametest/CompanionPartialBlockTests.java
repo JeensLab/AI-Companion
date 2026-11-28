@@ -72,6 +72,25 @@ public final class CompanionPartialBlockTests {
         });
     }
 
+    /**
+     * The same wall with the gap shut, and a stair where the slab was: a stair's full-height half is a top he steps onto, as the
+     * slab's half is — the way over it is found. What a sill is, then, is a shape a body steps onto; an azalea's plate (its full
+     * cell, a stem under it) is not, and both files' rows say so.
+     */
+    @GameTest(template = "empty", timeoutTicks = TIMEOUT, batch = "partial_block")
+    public static void countsAStairTopSillAsAWay(GameTestHelper h) {
+        room(h, false);
+        h.setBlock(new BlockPos(GATE_X, FLOOR, WALL_Z), Blocks.OAK_STAIRS);
+        for (int y = FEET; y <= FEET + 3; y++) h.setBlock(new BlockPos(GATE_X, y, WALL_Z), Blocks.AIR);
+        CompanionEntity c = rig(h);
+        BlockPos goal = h.absolutePos(new BlockPos(GATE_X, FEET, WALL_Z + 2));
+        h.succeedWhen(() -> {
+            Path path = c.getNavigation().createPath(goal, 1);
+            h.assertTrue(path != null, "The search has not answered yet");
+            h.assertTrue(path.canReach(), "No way over the stair's top: " + path.getNodeCount() + " nodes");
+        });
+    }
+
     private static void room(GameTestHelper h, boolean sideGap) {
         for (int x = 0; x < SIZE; x++) for (int z = 0; z < SIZE; z++) for (int y = 0; y <= FEET + 4; y++) {
             boolean shell = x == 0 || z == 0 || x == SIZE - 1 || z == SIZE - 1 || y == 0 || y == FEET + 4;

@@ -37,9 +37,10 @@ import java.util.function.Function;
  * свободного места»; and the task line said sixteen ore blocks while the report said «накопал только 3 из 10».
  *
  * <p>Every row here is the player's own phrase through his own router and proves one rule: a drop below his feet while his own column
- * stands is taken from the ground at once (no half-minute wait), and a drop the player took holds nothing; a close block a column or a
- * floor reaches is no refusal over a walk that did not prove its miss; his own blocks are no obstruction for a way; and the ore order
- * says one number — the promise — on the task line, in the work and in the report.
+ * stands is taken from the ground at once (no half-minute wait); a close block a column or a floor reaches is no refusal over a walk
+ * that did not prove its miss; his own blocks are no obstruction for a way; and the ore order says one number — the promise — on the
+ * task line, in the work and in the report. A drop the player took holds nothing: that row is the drop lying waiting of
+ * CompanionWayFootTests, the owner's own scene, one row of the same rule.
  */
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
@@ -156,53 +157,6 @@ public final class CompanionGoldStallTests {
         });
     }
 
-    /**
-     * The same column and the same drop below it, but the player takes the drop himself, as the owner does: a drop that is no longer
-     * his is no reason to stand on the column — the work goes on to the other two ores at once, and the column comes down with its
-     * soil in the bag. Nothing waits for the drop the player carried off.
-     */
-    @GameTest(template = "way_wide", timeoutTicks = 2400)
-    public static void theDropThePlayerTookDoesNotHoldTheWork(GameTestHelper h) {
-        flat(h, Blocks.STONE);
-        BlockPos high = new BlockPos(HOME_X + 3, FEET + 7, HOME_Z);
-        h.setBlock(high, Blocks.GOLD_ORE);
-        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
-            if (dx == 0 && dz == 0) continue;
-            h.setBlock(new BlockPos(HOME_X + 3 + dx, GROUND, HOME_Z + dz), Blocks.AIR);
-        }
-        h.setBlock(new BlockPos(HOME_X - 12, FEET + 1, HOME_Z - 12), Blocks.GOLD_ORE);
-        h.setBlock(new BlockPos(HOME_X - 13, FEET + 1, HOME_Z + 11), Blocks.GOLD_ORE);
-        CompanionEntity c = spawn(h, HOME_X, FEET, HOME_Z);
-        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
-        c.setItem(1, new ItemStack(Items.DIRT, 16));
-        var owner = (net.minecraft.server.level.ServerPlayer) h.getLevel().getPlayerByUUID(c.getOwnerId());
-        long[] tookAt = {-1}, nextAt = {-1};
-        int[] bagWhenTook = {0};
-        h.onEachTick(() -> {
-            if (tookAt[0] >= 0) {
-                if (nextAt[0] < 0 && count(c, Items.RAW_GOLD) > bagWhenTook[0]) nextAt[0] = h.getTick();
-                return;
-            }
-            ItemEntity drop = goldBelow(h, c);
-            if (drop == null || drop.hasPickUpDelay()) return;
-            owner.teleportTo(drop.getX(), drop.getY(), drop.getZ());
-            drop.playerTouch(owner);
-            tookAt[0] = h.getTick(); bagWhenTook[0] = count(c, Items.RAW_GOLD);
-        });
-        var future = say(h, c, "добудь золота");
-        h.succeedWhen(() -> {
-            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
-            String report = future.join().report();
-            h.assertTrue(tookAt[0] >= 0, "The player never took the drop below the column: " + report);
-            h.assertTrue(owner.getInventory().countItem(Items.RAW_GOLD) >= 1, "The drop is not in the player's bag: "
-                    + owner.getInventory().countItem(Items.RAW_GOLD));
-            h.assertTrue(nextAt[0] >= 0 && nextAt[0] - tookAt[0] <= 300, "The work waited on the drop the player took: "
-                    + (nextAt[0] < 0 ? "no next ore" : (nextAt[0] - tookAt[0]) + " ticks") + " " + report);
-            h.assertTrue(count(c, Items.RAW_GOLD) == 2, "The two ores left were not mined: " + count(c, Items.RAW_GOLD) + " " + report);
-            h.assertTrue(c.getTemporarySupportCount() == 0 && !c.isRecoveringSupports(), "His column still stands: " + c.getTemporarySupportCount());
-            h.assertTrue(count(c, Items.DIRT) == 16, "The soil of the column is not back in the bag: " + count(c, Items.DIRT));
-        });
-    }
 
     /**
      * His own column of four stands under him (his own soil, taken up), and the next ore hangs six over his feet in a one-cell

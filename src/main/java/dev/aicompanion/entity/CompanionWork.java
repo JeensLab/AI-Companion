@@ -201,7 +201,7 @@ public final class CompanionWork {
     /** mine_ore: one kind, counted in ore blocks broken; the drop gained is reported from the bag. */
     public static final int MAX_ORE = 16;
     CompanionOre.Kind ore;
-    int oreWanted, oreMined, oreDropsBefore, oreFound, oreUnreachable, orePickaxeAttempts;
+    int oreWanted, oreMined, oreFound, oreUnreachable, orePickaxeAttempts;
     boolean oreDone, oreChoosing, oreLootRetried, stoneLootRetried;
     /** Ticks the finished mine waited for its own drop to reach the bag: bounded, so a drop it cannot get ends the order honestly. */
     int oreLootWait;
@@ -233,8 +233,6 @@ public final class CompanionWork {
     public static int orePromise(int count, int held, int onGround, int available) {
         return Math.max(1, Math.min(count, held + onGround + available));
     }
-    /** What the order has brought: the drop gained in the bag since it began, not what it held before. */
-    int oreGained() { return ore == null ? 0 : Math.max(0, items.countCarried(ore.drop) - oreDropsBefore); }
     CompanionOre.Search oreSearch;
     List<BlockPos> oreCandidates;
     final Set<BlockPos> oreRejected = new HashSet<>();
@@ -276,7 +274,7 @@ public final class CompanionWork {
     int ironToolCount;
     boolean ironPrep;
     CompanionOre.Kind goalOre;
-    int goalOreWanted, goalOreMined, goalOreDropsBefore;
+    int goalOreWanted, goalOreMined;
     BlockPos goalOreExit;
     /** Where the work goes on after stone was mined for something else (a pickaxe, a furnace). */
     Phase afterStone;
@@ -723,7 +721,7 @@ public final class CompanionWork {
         oreMined = oreFound = oreUnreachable = orePickaxeAttempts = 0; oreDone = oreChoosing = oreLootRetried = false; oreLootWait = 0;
         oreSearch = null; oreCandidates = null; oreRejected.clear(); oreTunnel.clear(); oreExit = null;
         if (job == Job.ORE) {
-            oreDropsBefore = items.countCarried(ore.drop);
+            owner.beginObtain(dropId());
             // A second vein must not turn the first descent into the next job's surface.
             oreExit = owner.autonomy().running() ? owner.autonomy().center() : null;
         }
@@ -900,7 +898,7 @@ public final class CompanionWork {
     }
     /** Whether the mine has come to its own finish: its promise is met in the blocks broken or in the bag (mineOre's own first line). */
     private boolean orePromiseMet() {
-        return job == Job.ORE && (oreDone || oreMined >= oreWanted || !ironPrep && oreGained() >= oreWanted);
+        return job == Job.ORE && (oreDone || oreMined >= oreWanted || !ironPrep && owner.obtainGathered(dropId()) >= oreWanted);
     }
     /** What the work has to show: the bag and hands item by item, and its own counters. */
     private long progressSignature() {
@@ -1077,7 +1075,7 @@ public final class CompanionWork {
         return true;
     }
 
-    static String itemName(net.minecraft.world.item.Item item) { return new ItemStack(item).getHoverName().getString(); }
+    static String itemName(net.minecraft.world.item.Item item) { return CompanionItemLookup.GAME_NAMES.apply(item); }
     static String itemName(String id) {
         var key = ResourceLocation.tryParse(id);
         return key == null || !BuiltInRegistries.ITEM.containsKey(key) ? id : itemName(BuiltInRegistries.ITEM.get(key));

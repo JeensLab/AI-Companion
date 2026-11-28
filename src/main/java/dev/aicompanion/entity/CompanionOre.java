@@ -171,13 +171,11 @@ public final class CompanionOre {
 
     /** Incremental search of loaded sections for one kind of ore around the start, nearest first; exposed ore is cheaper. */
     public static final class Search {
-        private record Section(int cx, int cz, int index) { }
         private final Kind kind;
         private final BlockPos origin;
         private final int radius;
         private final int minY;
-        private final int maxY;
-        private final Deque<Section> pending = new ArrayDeque<>();
+        private final Deque<CompanionSectionScan.Section> pending = new ArrayDeque<>();
         private final List<BlockPos> found = new ArrayList<>();
 
         public Search(ServerLevel level, BlockPos origin, int radius, Kind kind) {
@@ -185,33 +183,14 @@ public final class CompanionOre {
             // The same box the general search uses (CompanionWaySearch): sixty-four across and sixty-four up and down, cut by the
             // player's own search radius. The old forty-eight across and sixteen above refused ore he could see (the owner, 27.11).
             this.radius = Math.clamp(Math.min(radius, CompanionWaySearch.RADIUS), 8, CompanionWaySearch.RADIUS);
-            int depth = CompanionWaySearch.DEPTH;
-            minY = Math.max(level.getMinBuildHeight(), origin.getY() - depth);
-            maxY = Math.min(level.getMaxBuildHeight() - 1, origin.getY() + depth);
-            for (int cx = (origin.getX() - this.radius) >> 4; cx <= (origin.getX() + this.radius) >> 4; cx++)
-                for (int cz = (origin.getZ() - this.radius) >> 4; cz <= (origin.getZ() + this.radius) >> 4; cz++) {
-                    var chunk = level.getChunkSource().getChunkNow(cx, cz);
-                    if (chunk == null) continue;
-                    for (int index = level.getSectionIndex(minY); index <= level.getSectionIndex(maxY); index++) {
-                        var section = chunk.getSection(index);
-                        if (!section.hasOnlyAir() && section.maybeHas(kind::is)) pending.add(new Section(cx, cz, index));
-                    }
-                }
+            this.minY = Math.max(level.getMinBuildHeight(), origin.getY() - CompanionWaySearch.DEPTH);
+            pending.addAll(CompanionSectionScan.sections(level, this.origin, this.radius, CompanionWaySearch.DEPTH, kind::is));
         }
 
         boolean scan(ServerLevel level) {
             for (int budget = 0; budget < 4 && !pending.isEmpty(); budget++) {
-                Section next = pending.removeFirst();
-                var chunk = level.getChunkSource().getChunkNow(next.cx, next.cz);
-                if (chunk == null) continue;
-                var section = chunk.getSection(next.index);
-                int bottom = level.getSectionYFromSectionIndex(next.index) << 4;
-                for (int y = Math.max(minY, bottom); y <= Math.min(maxY, bottom + 15); y++) for (int x = 0; x < 16; x++) for (int z = 0; z < 16; z++) {
-                    if (!kind.is(section.getBlockState(x, y & 15, z))) continue;
-                    BlockPos pos = new BlockPos((next.cx << 4) + x, y, (next.cz << 4) + z);
-                    long dx = pos.getX() - origin.getX(), dz = pos.getZ() - origin.getZ();
-                    if (dx * dx + dz * dz <= (long) radius * radius) found.add(pos);
-                }
+                CompanionSectionScan.Section next = pending.removeFirst();
+                found.addAll(CompanionSectionScan.cells(level, next, origin, radius, CompanionWaySearch.DEPTH, kind::is));
             }
             return pending.isEmpty();
         }

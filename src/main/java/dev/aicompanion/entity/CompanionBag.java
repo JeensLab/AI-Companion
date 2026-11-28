@@ -164,18 +164,22 @@ final class CompanionBag {
      * it brings, never what was there before it (the owner, 28.11: a gate of the order before is no answer for «добудь калитку»
      * again, and gold of the earlier blocks is no answer for the gold block still standing on his staircase).
      */
-    private String obtainItem = "";
-    private int obtainBaseline;
+    private final java.util.Map<String, Integer> obtainBaselines = new java.util.HashMap<>();
 
-    /** A new obtain_item order begins: the bag as it is now is its starting point, not its result. */
+    /**
+     * A new order for this item begins — obtain_item, an ore order, any chain of them: the bag as it is now is that item's
+     * starting point, never its result. One baseline per item, so a mine inside an obtain order counts the ore by its own
+     * baseline and the ordered item by its own.
+     */
     public void beginObtain(String item) {
-        obtainItem = item == null ? "" : item;
-        obtainBaseline = obtainItem.startsWith("#") ? groupCarried(obtainItem) : carriedCount(obtainItem);
+        String id = item == null ? "" : item;
+        obtainBaselines.put(id, id.startsWith("#") ? groupCarried(id) : carriedCount(id));
     }
 
-    /** What the running obtain_item order itself brought: the bag now, less what it held when the order began. */
+    /** What the running order for this item itself brought: the bag now, less what it held when the order began. */
     public int obtainGathered(String item) {
-        return Math.max(0, carriedCount(item) - obtainBaseline);
+        String id = item == null ? "" : item;
+        return Math.max(0, carriedCount(id) - obtainBaselines.getOrDefault(id, 0));
     }
 
     /** What the bag holds of a kind («#minecraft:fence_gates»): every member of the game's own tag, counted together. */

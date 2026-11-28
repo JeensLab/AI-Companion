@@ -754,8 +754,11 @@ final class CompanionLoot {
      * in a ravine wall lay two blocks over his feet and was «out of reach» for a rule of a block and a half). The box is that
      * of a body standing at {@code at}; a full block between them leaves no overlap, as for the player.
      */
-    boolean touches(Vec3 at, ItemEntity item) {
-        return owner.getBoundingBox().move(at.subtract(owner.position())).inflate(1, .5, 1).intersects(item.getBoundingBox());
+    boolean touches(Vec3 at, ItemEntity item) { return touches(at, item.getBoundingBox()); }
+
+    /** The same box against a cell: a way that promises a cell promises a pickup ({@link CompanionMiningNavigation#touchesCell}). */
+    boolean touches(Vec3 at, AABB box) {
+        return owner.getBoundingBox().move(at.subtract(owner.position())).inflate(1, .5, 1).intersects(box);
     }
     int collectedLogs() { return collectedLogs; }
     int collectedStone() { return collectedStone; }

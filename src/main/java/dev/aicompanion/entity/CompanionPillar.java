@@ -194,6 +194,10 @@ public final class CompanionPillar {
         way = limit > LEAF_SUPPORTS;
         // The stand of a fight is not a column for a tree or a leaf: it waits for the goal that raised it to take it down.
         if (stand) return Outcome.WORKING;
+        // A fight wins over a climb: a foe he has taken as his target has his feet and his blows, and the column waits where it
+        // stands — no jump into its reach, no watchdog of the climb. The same foot goes on with it once the fight is over, so the
+        // climb is not cancelled and no second column is planned (the owner, 28.11: «драка важнее, потом доделает»).
+        if (way && !cellWay && owner.getTarget() != null && owner.getTarget().isAlive()) return Outcome.WORKING;
         if (!level.hasChunkAt(block) || (wood ? !level.getBlockState(block).is(BlockTags.LOGS) : !cellWay && level.getBlockState(block).isAir())) return Outcome.FAILED;
         if (reached(block)) {
             if (jumpCell == null && owner.onGround()) return Outcome.READY;

@@ -212,33 +212,18 @@ final class CompanionWaySearch {
     private static List<BlockPos> scan(CompanionEntity c, ServerLevel level, Map<Block, Integer> gives, Mine mine,
                                        int radius, int depth, Tally tally) {
         BlockPos center = c.blockPosition();
-        int minY = Math.max(level.getMinBuildHeight(), center.getY() - depth);
-        int maxY = Math.min(level.getMaxBuildHeight() - 1, center.getY() + depth);
-        long far = (long) radius * radius;
         Predicate<BlockState> kind = state -> gives.containsKey(state.getBlock());
         List<BlockPos> found = new ArrayList<>();
-        for (int cx = (center.getX() - radius) >> 4; cx <= (center.getX() + radius) >> 4; cx++)
-            for (int cz = (center.getZ() - radius) >> 4; cz <= (center.getZ() + radius) >> 4; cz++)
-                for (int index = level.getSectionIndex(minY); index <= level.getSectionIndex(maxY); index++) {
-                    var chunk = level.getChunkSource().getChunkNow(cx, cz);
-                    if (chunk == null) continue;
-                    var section = chunk.getSection(index);
-                    if (section.hasOnlyAir() || !section.maybeHas(kind)) continue;
-                    int bottom = level.getSectionYFromSectionIndex(index) << 4;
-                    for (int y = Math.max(minY, bottom); y <= Math.min(maxY, bottom + 15); y++) for (int x = 0; x < 16; x++) for (int z = 0; z < 16; z++) {
-                        if (!kind.test(section.getBlockState(x, y & 15, z))) continue;
-                        BlockPos cell = new BlockPos((cx << 4) + x, y, (cz << 4) + z);
-                        long dx = cell.getX() - center.getX(), dz = cell.getZ() - center.getZ();
-                        if (dx * dx + dz * dz > far || Math.abs(cell.getY() - center.getY()) > depth) continue;
-                        tally.cells++;
-                        if (!c.errand.within(cell)) { tally.kept(ERRAND); continue; }
-                        String why = mine.why(cell);
-                        if (why != null) { tally.kept(why); continue; }
-                        // His own build, and the order named it: taken, and counted so the line says so.
-                        if (mine.own(cell)) tally.own++;
-                        found.add(cell.immutable());
-                    }
-                }
+        for (CompanionSectionScan.Section section : CompanionSectionScan.sections(level, center, radius, depth, kind))
+            for (BlockPos cell : CompanionSectionScan.cells(level, section, center, radius, depth, kind)) {
+                tally.cells++;
+                if (!c.errand.within(cell)) { tally.kept(ERRAND); continue; }
+                String why = mine.why(cell);
+                if (why != null) { tally.kept(why); continue; }
+                // His own build, and the order named it: taken, and counted so the line says so.
+                if (mine.own(cell)) tally.own++;
+                found.add(cell);
+            }
         return found;
     }
 
