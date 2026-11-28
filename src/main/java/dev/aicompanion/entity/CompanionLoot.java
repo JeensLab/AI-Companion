@@ -644,7 +644,7 @@ final class CompanionLoot {
     private static final int LEAVES_PER_DROP = 6;
     /** Where a leaf in the way is broken from: within reach and sight, off its own cell. */
     private static final CompanionRoute.Need LEAF_STAND = new CompanionRoute.Need(3.5, false, true, false);
-        /** Leaves that grew on a tree; those a player set (persistent) are his, not in the way. */
+    /** Leaves that grew on a tree; those a player set (persistent) are his, not in the way. */
     private static boolean naturalLeaves(net.minecraft.world.level.block.state.BlockState state) {
         return state.is(net.minecraft.tags.BlockTags.LEAVES) && state.hasProperty(net.minecraft.world.level.block.LeavesBlock.PERSISTENT)
                 && !state.getValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT);

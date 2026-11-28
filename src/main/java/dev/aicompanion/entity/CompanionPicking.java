@@ -67,8 +67,7 @@ final class CompanionPicking {
     private static final double LAST_STEP_REACH = 9.0D;
     /** Blocks of water over a block on the bed he dives for: half his breath down and up again, as the dive for a foe. */
     private static final int DEEP = 10;
-    /** A player's reach, from the eyes to the middle of the block. */
-            /** How far from a leaf a cell he works it from may be: a crown keeps its own short column (CompanionLeaves). */
+    /** How far from a leaf a cell he works it from may be: a crown keeps its own short column (CompanionLeaves). */
     private static final double LEAF_REACH = 3.5;
     /** Ticks over the block, down and up for air, before it is passed over. */
     private static final int DIVE = 900;
@@ -559,8 +558,8 @@ final class CompanionPicking {
         if (stand) return true;
         if (!c.temporaryPillar.buildCells(pos).isEmpty()) return true;
         if (dugSoil && !c.temporaryPillar.buildCellsWithAnySoil(pos).isEmpty()) return true;
-        // A block no stand cell and no short column reaches: the one reach answer's way up, which may take sixteen steps
-        // (PATH7: a pumpkin hanging ten blocks above was never taken). A leaf crown keeps its short column (CompanionLeaves).
+        // A block no stand cell and no short column reaches: the one reach answer's way up, as far as the player's own search
+        // distance (PATH7: a pumpkin hanging ten blocks above was never taken). A leaf crown keeps its short column (CompanionLeaves).
         return !level.getBlockState(pos).is(BlockTags.LEAVES)
                 && CompanionReach.how(c, level, pos, CompanionReach.WORK_REACH, true, dugSoil, c.temporaryPillar.waySpan()).up();
     }
