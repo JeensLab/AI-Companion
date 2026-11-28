@@ -21,7 +21,7 @@ import java.util.EnumSet;
  */
 final class CompanionWaterExit extends Goal {
     private static final int STEP_DOWN = 3, REPLAN_EVERY = 10, TREADING_TICKS = 60, PATIENCE = 20 * 8, REST = 20 * 10, NO_BANK_REST = 20;
-    private static final double DRIFT = 2, REACHED = .4;
+    private static final double DRIFT = 2, REACHED = .4, DIVE = .08;
 
     private final CompanionEntity c;
     private BlockPos target;
@@ -91,6 +91,9 @@ final class CompanionWaterExit extends Goal {
         if (target == null) return;
         c.getMoveControl().setWantedPosition(target.getX() + .5, target.getY(), target.getZ() + .5, 1.0);
         CompanionLavaExit.jumpToBank(c, target, CompanionLavaExit.JUMP_EVERY);
+        // At the top of a fall the float holds him over the opening with his head against the lip of it: he sinks to it, as a player does
+        // with Shift (LivingEntity.goDownInWater), while he is pushing against that lip.
+        if (c.horizontalCollision && target.getY() < c.getY() - .5) c.setDeltaMovement(c.getDeltaMovement().add(0, -DIVE, 0));
     }
 
     /** Deep enough to float, in water that falls. */

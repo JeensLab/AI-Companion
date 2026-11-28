@@ -352,25 +352,6 @@ public final class CompanionSwimTests {
 
     private static String where(GameTestHelper h, CompanionEntity c) { return c.blockPosition().subtract(h.absolutePos(BlockPos.ZERO)).toShortString(); }
 
-    /** The foot of a shut shaft with a niche beside it, and the owner out of reach: he gets out to the niche and loses neither health nor all his air. */
-    @GameTest(template = "tall_tree", timeoutTicks = 400)
-    public static void inAColumnOfFallingWaterWithAirOneStepAwayHeGetsOutAndDoesNotDrown(GameTestHelper h) {
-        foot(h);
-        still(h);
-        CompanionEntity oleg = spawn(h, 12, 1, 16);
-        called(h, oleg);
-        float[] lowestHealth = {oleg.getMaxHealth()};
-        int[] lowestAir = {oleg.getAirSupply()};
-        h.onEachTick(() -> {
-            lowestHealth[0] = Math.min(lowestHealth[0], oleg.getHealth());
-            lowestAir[0] = Math.min(lowestAir[0], oleg.getAirSupply());
-        });
-        h.succeedWhen(() -> {
-            h.assertTrue(!oleg.isInWater() && oleg.onGround(), "Still in the water at " + where(h, oleg));
-            h.assertTrue(lowestHealth[0] >= oleg.getMaxHealth() && lowestAir[0] > 0, "Drowned: health " + lowestHealth[0] + ", air " + lowestAir[0]);
-        });
-    }
-
     /**
      * The foot of a low fall (water over a lip a block up, falling water to his neck, the shaft shut above), a niche beside it and ore
      * in the wall at the height of his head, with a wooden pickaxe: a swing of 68 ticks. A swing that goes on is not treading water,
@@ -526,6 +507,43 @@ public final class CompanionSwimTests {
             h.assertTrue(left[0], "The way out of the fall never had the turn");
             h.assertTrue(held[0] <= 8, "Held the move for " + held[0] + " ticks on his feet in the shallow water, he is at " + where(h, oleg));
             h.succeed();
+        });
+    }
+
+    /**
+     * The scene of the game: a column of falling water fed from a source at its top (a side feed, not cleared: the water falls as it does
+     * in the game), a stone lip over the opening toward the plateau (the gap is three blocks, y 12 to 14), and the owner eight blocks
+     * away on the plateau. He floats up the column to its top, where his head is under the lip and he cannot step out, and the order
+     * finds no route: the way out takes him down to the opening and out, and he loses neither health nor all his air.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 700)
+    public static void inAColumnOfFallingWaterWithAirOneStepAwayHeGetsOutAndDoesNotDrown(GameTestHelper h) {
+        for (int x = 8; x <= 24; x++) for (int z = 12; z <= 20; z++) for (int y = 1; y <= 17; y++) h.setBlock(new BlockPos(x, y, z), y <= 11 ? Blocks.STONE : Blocks.AIR);
+        for (int y = 1; y <= 16; y++) h.setBlock(new BlockPos(12, y, 16), Blocks.AIR);
+        for (int y = 12; y <= 16; y++) {
+            h.setBlock(new BlockPos(11, y, 16), Blocks.STONE);
+            h.setBlock(new BlockPos(12, y, 15), Blocks.STONE);
+            h.setBlock(new BlockPos(12, y, 17), Blocks.STONE);
+        }
+        for (int y = 15; y <= 16; y++) h.setBlock(new BlockPos(13, y, 16), Blocks.STONE);
+        h.setBlock(new BlockPos(10, 15, 16), Blocks.STONE);
+        h.setBlock(new BlockPos(11, 15, 15), Blocks.STONE);
+        h.setBlock(new BlockPos(11, 15, 17), Blocks.STONE);
+        h.setBlock(new BlockPos(11, 15, 16), Blocks.WATER);
+        h.runAfterDelay(120, () -> {
+            CompanionEntity oleg = spawn(h, 12, 7, 16);
+            var owner = player(h, oleg);
+            var at = h.absoluteVec(new Vec3(20.5, 12, 16.5));
+            owner.teleportTo(at.x, at.y, at.z);
+            h.assertTrue(CompanionEvents.executeAction(owner, "come", "", 1).success(), "The order was not accepted");
+            float[] lowestHealth = {oleg.getMaxHealth()};
+            int[] lowestAir = {oleg.getAirSupply()};
+            h.succeedWhen(() -> {
+                lowestHealth[0] = Math.min(lowestHealth[0], oleg.getHealth());
+                lowestAir[0] = Math.min(lowestAir[0], oleg.getAirSupply());
+                h.assertTrue(!oleg.isInWater() && oleg.onGround(), "Still in the water at " + where(h, oleg) + ", y " + (oleg.getY() - h.absoluteVec(Vec3.ZERO).y));
+                h.assertTrue(lowestHealth[0] >= oleg.getMaxHealth() && lowestAir[0] > 0, "Drowned: health " + lowestHealth[0] + ", air " + lowestAir[0]);
+            });
         });
     }
 }
