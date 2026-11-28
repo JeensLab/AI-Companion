@@ -82,7 +82,7 @@ public final class GameContext {
                         + ", последний использованный сундук=" + companions.getFirst().getStorageForAi()
                         + dev.aicompanion.entity.CompanionContainers.nearbyLine(minecraft.level, companions.getFirst().blockPosition(),
                                 dev.aicompanion.OpenRouterConfig.SEARCH_RADIUS.get(), dev.aicompanion.OpenRouterConfig.OTHER_CONTAINERS.get())
-                        + ", память о местах=" + companions.getFirst().getPlacesForAi()
+                        + ", знакомые постройки и замеченные по дороге находки=" + companions.getFirst().getPlacesForAi()
                         + (companions.getFirst().getFurnacesForAi().isEmpty() ? "" : ", его печи=" + companions.getFirst().getFurnacesForAi())
                         + (companions.getFirst().getGoalForAi().isEmpty() ? "" : ", " + companions.getFirst().getGoalForAi())
                         + ", установленный верстак рядом=" + companions.getFirst().hasCraftingTableNearby()

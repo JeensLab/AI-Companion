@@ -176,6 +176,10 @@ public final class OpenRouterConfig {
             .comment("Against three zombies after him (two when he is hurt) he lays two or three blocks from his bag under his feet, strikes from above and takes the blocks back after the fight. Off: he fights them on the ground.")
             .translation("config.aicompanion.high_ground")
             .define("highGround", true);
+    public static final ModConfigSpec.BooleanValue LANDSCAPE_UNDERSTANDING = BUILDER
+            .comment("Survey terrain and remember visible caves and ore along the way. Off: pause observations, recall and guidance without clearing the saved places.")
+            .translation("config.aicompanion.landscape_understanding")
+            .define("landscapeUnderstanding", true);
 
     public static final ModConfigSpec.BooleanValue LONG_TERM_MEMORY = BUILDER
             .comment("Let the companion remember facts, promises and recent talk between sessions, adapt his character and raise topics of his own. Stored in the world save.")

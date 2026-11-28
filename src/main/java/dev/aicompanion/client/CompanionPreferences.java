@@ -67,6 +67,7 @@ public final class CompanionPreferences {
                 companion.setPlaysByTheFire(OpenRouterConfig.PLAYS_BY_THE_FIRE.get());
                 companion.setReplantSaplings(OpenRouterConfig.REPLANT_SAPLINGS.get());
                 companion.setRightToolForBlock(OpenRouterConfig.RIGHT_TOOL_FOR_BLOCK.get());
+                CompanionEvents.setLandscapeUnderstanding(companion, OpenRouterConfig.LANDSCAPE_UNDERSTANDING.get());
                 companion.setFenceGates(OpenRouterConfig.FENCE_GATES.get());
                 companion.setHighGround(OpenRouterConfig.HIGH_GROUND.get());
                 companion.setDeathRecoveryLimits(OpenRouterConfig.DEATH_RECOVERY_ATTEMPTS.get(), OpenRouterConfig.DEATH_RECOVERY_DEATHS.get());
@@ -74,7 +75,7 @@ public final class CompanionPreferences {
                         + ", измерение=" + companion.level().dimension().location() + ", занят=" + companion.isGatheringTask()
                         + ", охрана=" + companion.isProtecting() + ", сумка=" + companion.getStoredItemsForAi()
                         + ", экипировка=" + companion.getEquipmentForAi() + ", текущая активность=" + companion.getActivityForAi()
-                        + ", память о местах=" + companion.getPlacesForAi() + ", исторический отчёт=" + companion.getLastTaskResult();
+                        + ", знакомые постройки и замеченные по дороге находки=" + companion.getPlacesForAi() + ", исторический отчёт=" + companion.getLastTaskResult();
                 String traders = companion.getTradersForAi();
                 client.execute(() -> { if (client.level == clientWorld) GameContext.setRemoteState(clientWorld, remote, traders); });
             }

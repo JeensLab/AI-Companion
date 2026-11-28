@@ -3,6 +3,7 @@ package dev.aicompanion.entity;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.terrain.LandmarkMemory;
 import net.minecraft.commands.Commands;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -285,6 +286,23 @@ public final class CompanionEvents {
             dev.aicompanion.CompanionDiagnostics.event(trace, "server_rejected", "reason", "companion_unloaded_or_other_dimension");
             return CompanionActionResult.failed("Компаньон не загружен рядом с тобой.");
         }
+        if (!companion.places.landscapeUnderstanding()
+                && ("survey_terrain".equals(action) || "recall_landmark".equals(action) || "guide_landmark".equals(action)))
+            return CompanionActionResult.blocked(CompanionPlaces.LANDSCAPE_DISABLED);
+        if ("survey_terrain".equals(action)) {
+            if (count != 1 || !"near_player".equals(location) || !dev.aicompanion.terrain.TerrainSurvey.TOPICS.contains(item))
+                return CompanionActionResult.failed("Не понял, что осмотреть.");
+            return companion.work.surveyTerrain(item);
+        }
+        LandmarkMemory.Entry landmark = null;
+        if ("recall_landmark".equals(action) || "guide_landmark".equals(action)) {
+            if (count != 1 || !"auto".equals(slot) || !"near_player".equals(location) || !LandmarkMemory.validQuery(item))
+                return CompanionActionResult.failed("Не понял, какую находку ты имеешь в виду.");
+            landmark = companion.landmarks().recall(companion.level().dimension().location().toString(), item);
+            if ("recall_landmark".equals(action))
+                return CompanionActionResult.ok(landmark == null ? LandmarkMemory.missingHint(item) : landmark.descriptionFrom(companion.blockPosition()));
+            if (landmark == null) return CompanionActionResult.blocked(LandmarkMemory.missingHint(item));
+        }
         // An order of the player comes before the walk back for his own things too: the walk gives way and waits (CompanionDeathTrip).
         // An order of his own (a goal step, a deed), naming the home and asking about a goal are not orders.
         if (!autonomousDispatch && !goalDispatch && !action.equals("set_home") && !action.equals("remember_place") && !action.equals("goal_status")
@@ -366,8 +384,9 @@ public final class CompanionEvents {
             // «Иди к колодцу»: a real walk to the named marker by the normal path, or the honest reason it cannot happen.
             case "go_to_place" -> companion.goToPlace(item);
             case "follow" -> { companion.setFollowing(true); yield CompanionActionResult.ok("Следую за тобой."); }
+            case "guide_landmark" -> companion.work.guideLandmark(landmark);
             case "wait" -> { companion.setFollowing(false); yield CompanionActionResult.ok("Остановился и жду."); }
-            case "wander" -> { companion.startRoaming(); yield CompanionActionResult.ok("Осмотрюсь вокруг."); }
+            case "wander" -> { companion.startRoaming(); yield CompanionActionResult.ok("Немного прогуляюсь."); }
             case "open_end_portal" -> companion.startWork(action, item, count, location);
             case "enter_portal" -> companion.portals.enter((ServerLevel) companion.level());
             case "stop" -> { companion.stopGatheringForPlayer(); yield CompanionActionResult.ok(wasPlaying ? "Ладно, убираю гитару." : "Ладно, остановился."); }
@@ -465,6 +484,10 @@ public final class CompanionEvents {
     public static void onBlockPlaced(net.neoforged.neoforge.event.level.BlockEvent.EntityPlaceEvent event) {
         if (event.getEntity() instanceof ServerPlayer player && !(player instanceof net.neoforged.neoforge.common.util.FakePlayer) && event.getLevel() instanceof ServerLevel level)
             CompanionPlayerBuilds.get(level.getServer()).record(player.getUUID(), level, event.getPos(), event.getPlacedBlock());
+    }
+
+    public static void setLandscapeUnderstanding(CompanionEntity companion, boolean enabled) {
+        companion.places.setLandscapeUnderstanding(enabled);
     }
 
     public static CompanionEntity getOwnedCompanion(ServerPlayer player) {

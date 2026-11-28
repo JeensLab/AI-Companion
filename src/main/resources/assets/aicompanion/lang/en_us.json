@@ -27,6 +27,7 @@
   "config.aicompanion.inworld_api_key": "Inworld Basic credential",
   "config.aicompanion.inworld_voice_id": "Inworld voice ID",
   "config.aicompanion.long_term_memory": "Long-term memory",
+  "config.aicompanion.landscape_understanding": "Landscape understanding",
   "config.aicompanion.short_murmurs": "Short idle remarks",
   "config.aicompanion.murmur_interval_percent": "Pause between remarks, %",
   "config.aicompanion.boat_ride": "Ride in the player's boat",

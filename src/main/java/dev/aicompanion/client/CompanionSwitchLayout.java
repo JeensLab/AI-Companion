@@ -9,7 +9,7 @@ package dev.aicompanion.client;
 public final class CompanionSwitchLayout {
     public static final int ROW_WIDTH = 300, ROW_HEIGHT = 20, ROW_STEP = 30, HIGHEST_ROW = 64, NOTE_FROM_BOTTOM = 64, PAGED_STEP = 24;
     /** The rows the behaviour screen adds: the model entry first, then the gameplay switches. */
-    public static final int MODEL_ENTRY_ROW = 0, BEHAVIOUR_ROWS = 20;
+    public static final int MODEL_ENTRY_ROW = 0, BEHAVIOUR_ROWS = 21;
     /** The label of that first row: it opens the model screen, and the screen is not loaded where a GameTest runs. */
     public static final String MODEL_ENTRY_LABEL = "Модель и ответы…";
 

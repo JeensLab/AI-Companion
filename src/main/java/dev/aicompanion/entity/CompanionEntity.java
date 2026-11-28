@@ -195,6 +195,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionDiagnosticState diagnostics = new CompanionDiagnosticState(this);
     private final CompanionEntityNbt nbt = new CompanionEntityNbt(this);
     final CompanionPlaces places = new CompanionPlaces(this);
+    public dev.aicompanion.terrain.LandmarkMemory landmarks() { return places.landmarks; }
     private final CompanionTraders traders = new CompanionTraders();
     public CompanionTraders traders() { return traders; }
     final CompanionDeeds deeds = new CompanionDeeds();
@@ -1161,7 +1162,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         }
         autonomy.tick();
         diagnostics.tick();
-        if (tickCount % 100 == 0) { places.discoverHome(); refreshPlaces(); refreshTraders(); }
+        places.tick();
         if (tickCount % 20 == 0) {
             if (level() instanceof ServerLevel serverLevel) { batches.tick(serverLevel); entityData.set(DATA_FURNACES, batches.forAi()); entityData.set(DATA_GOAL, CompanionAgendaView.line(this)); }
             activityMoved = previousActivityPosition != null && position().distanceToSqr(previousActivityPosition) > .01;
@@ -1216,7 +1217,6 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         gateGoal.shutBehind();
         super.remove(reason);
     }
-
 
     /** Food in the bag heals, like a player who eats: nothing is conjured, the food is eaten (review 22.10: he never healed). */
     int satiety;

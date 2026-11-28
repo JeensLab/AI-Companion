@@ -147,8 +147,31 @@ public final class CompanionChatScreen extends Screen {
         }
         CompanionDiagnostics.event(trace, "message_route", "route", "local_parser", "command", command);
         List<PlannedAction> actions = CompanionLocalCommands.actions(command);
+        if (actions.size() == 1 && "recall_landmark".equals(actions.getFirst().type())) {
+            readLandmark(actions.getFirst(), trace);
+            return;
+        }
         if ("build_house".equals(actions.getFirst().type())) addVoiceReply(CompanionDialogue.acknowledge(actions), trace, "local_acknowledgement");
         runLocalActions(actions, trace);
+    }
+
+    private static void readLandmark(PlannedAction action, String trace) {
+        var client = Minecraft.getInstance();
+        var server = client.getSingleplayerServer();
+        if (server == null || client.player == null || client.level == null) return;
+        var playerId = client.player.getUUID();
+        var world = client.level;
+        server.execute(() -> {
+            var player = server.getPlayerList().getPlayer(playerId);
+            if (player == null) return;
+            var result = dev.aicompanion.entity.CompanionEvents.executeAction(player, action.type(), action.item(), action.count(), action.slot(), trace, action.location());
+            client.execute(() -> {
+                if (client.level == world) {
+                    OpenRouterClient.recordSpokenLine(result.message());
+                    addVoiceReply(result.message(), trace, action.type());
+                }
+            });
+        });
     }
 
     private static void runLocalActions(List<PlannedAction> actions, String trace) {
