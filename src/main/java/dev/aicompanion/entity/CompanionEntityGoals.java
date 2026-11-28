@@ -175,18 +175,26 @@ final class CompanionEntityGoals {
                 return false;
             }
             owner = serverLevel.getServer().getPlayerList().getPlayer(companion.ownerId);
+            if (owner == null || owner.level() != companion.level()) return false;
+            double distance = companion.distanceToSqr(owner);
+            double stopDistance = companion.protecting ? 6.25 : 16;
+            if (distance <= stopDistance) resumeAfterTreeDescent = false;
             // Near him again (the following ends at four blocks, or was interrupted before): the next time he is out of reach is a new occasion to say so.
-            if (owner != null && owner.level() == companion.level() && companion.distanceToSqr(owner) <= 16) toldAbout = null;
+            if (distance <= 16) toldAbout = null;
             // The player in a boat with a seat for him: over to it from any distance, till he is in (CompanionBoatRide).
-            return owner != null && owner.level() == companion.level()
-                    && (companion.distanceToSqr(owner) > (companion.protecting ? 16 : 64) || companion.boatRide.boatToJoin(owner) != null);
+            return distance > (companion.protecting ? 16 : 64) || companion.boatRide.boatToJoin(owner) != null
+                    || companion.treeDescent.abovePlayerOnTree(owner)
+                    || resumeAfterTreeDescent;
         }
+
+        @Override public void start() { resumeAfterTreeDescent = false; }
 
         @Override
         public boolean canContinueToUse() {
             return !companion.autonomy.staysAtWork() && (companion.following || companion.protecting) && companion.inventoryViewers == 0 && owner != null && owner.isAlive()
-                    && owner.level() == companion.level() && (companion.distanceToSqr(owner) > (companion.protecting ? 6.25 : 16.0D) || companion.onClimbable() && !companion.onGround()
-                    || companion.boatRide.boatToJoin(owner) != null);
+                    && owner.level() == companion.level() && (companion.distanceToSqr(owner) > (companion.protecting ? 6.25 : 16.0D)
+                    || companion.onClimbable() && !companion.onGround() || companion.boatRide.boatToJoin(owner) != null
+                    || companion.treeDescent.abovePlayerOnTree(owner));
         }
 
         @Override
@@ -232,6 +240,11 @@ final class CompanionEntityGoals {
                 companion.getNavigation().stop();
                 // The breath walls the way off only while it lasts: tried again in two seconds, without a word.
                 if (edge || companion.dragonBreath.onTheWay(owner.blockPosition())) { retryAt = companion.level().getGameTime() + 40; return; }
+                if (companion.treeDescent.request(owner)) {
+                    // Finish the original walk even if the landing puts him inside its ordinary start radius.
+                    resumeAfterTreeDescent = true;
+                    return;
+                }
                 waitingFor = owner.blockPosition();
                 // Told only where the route search sees there is no way, once per place of the player; a stuck walk is the
                 // self-rescue's, silently (not «no way»), and is tried anew in a few seconds.
@@ -261,6 +274,7 @@ final class CompanionEntityGoals {
             companion.getNavigation().stop();
         }
         private boolean travelling;
+        private boolean resumeAfterTreeDescent;
         // Where the player stood when he was told there is no way: kept while the goal is interrupted (self-rescue, pickup, fight, inventory).
         private BlockPos toldAbout;
         private long toldAt;

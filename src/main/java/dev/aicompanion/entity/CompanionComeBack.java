@@ -38,7 +38,10 @@ final class CompanionComeBack {
             var step = w.route.follow(player.blockPosition(), 2);
             if (step == CompanionTravel.Step.WALKING) { if (!w.owner.travel().searchOnly()) w.orderProgressPosition = null; return; }
             w.owner.travel().reset();
-            if (step == CompanionTravel.Step.FAILED) { comeFailedAt = w.owner.blockPosition(); comeFailedTime = level.getGameTime(); }
+            if (step == CompanionTravel.Step.FAILED) {
+                if (w.owner.treeDescent.request(player)) { w.orderProgressPosition = null; return; }
+                comeFailedAt = w.owner.blockPosition(); comeFailedTime = level.getGameTime();
+            }
         }
         if (w.orderHasStalled(level, 240)) {
             // No way at all is told as such; «застрял» is for a way that exists and that he could not get on along.

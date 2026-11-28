@@ -126,6 +126,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     int inventoryViewers;
     final NonNullList<ItemStack> companionInventory = NonNullList.withSize(27, ItemStack.EMPTY);
     final CompanionPillar temporaryPillar = new CompanionPillar(this);
+    final CompanionTreeDescent treeDescent = new CompanionTreeDescent(this);
     final CompanionWork work = new CompanionWork(this);
     private final CompanionFurnaceBatches batches = new CompanionFurnaceBatches(this);
     final CompanionGathering gathering = new CompanionGathering(this);
@@ -405,6 +406,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(0, this.gateGoal);
         this.goalSelector.addGoal(0, new CompanionCreeperGuard.GuardGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverSupportsGoal(this));
+        this.goalSelector.addGoal(1, treeDescent);
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverRouteGoal(this));
         this.goalSelector.addGoal(1, new CompanionWaterBucket.FetchGoal(this));
         this.goalSelector.addGoal(1, new CompanionBoatClutch.BreakGoal(this));
