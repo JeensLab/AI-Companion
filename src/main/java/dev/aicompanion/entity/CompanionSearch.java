@@ -173,13 +173,13 @@ final class CompanionSearch {
         return trimmed(partial, at, false);
     }
 
-    /** The path from the cell of it nearest to {@code at} (within three blocks); the whole path if there is none and {@code keep}, else null. */
+    /** The path from the cell of it nearest to {@code at} (within three blocks; of a cell the path has twice, the later one); the whole path if there is none and {@code keep}, else null. */
     private static Path trimmed(Found path, Vec3 at, boolean keep) {
         int best = -1; double least = 9;
         for (int i = 0; i < path.getNodeCount(); i++) {
             Node node = path.getNode(i);
             double dx = node.x + .5 - at.x, dy = node.y - at.y, dz = node.z + .5 - at.z, d = dx * dx + dy * dy + dz * dz;
-            if (d < least) { least = d; best = i; }
+            if (d <= least) { least = d; best = i; }
         }
         if (best <= 0) return best == 0 || keep ? path : null;
         List<Node> nodes = new ArrayList<>(path.getNodeCount() - best);

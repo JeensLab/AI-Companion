@@ -686,8 +686,7 @@ public final class CompanionWork {
 
     public void tick() {
         if (!(owner.level() instanceof ServerLevel level) || job == null) return;
-        if (level.getGameTime() > deadline) { finish(CompanionActionResult.timeout("Не успел закончить работу. Остановился, вещи у меня.")); return; }
-        if (stalled()) return;
+        if (owner.gathering.workEnded(level)) return;
         if (job != Job.HOUSE && owner.actionAnimation() != 0) return;
         // Breaking does not wait for the last drop: the next block goes while the drop is still on its way to him, and the
         // pickup settles after the breaking. Waiting per block is what made a crown one block at a time.
@@ -705,8 +704,8 @@ public final class CompanionWork {
                 // A full bag is said as it is, not as «no wood».
                 if (CompanionEntity.FULL_BAG_FOR_LOGS.equals(owner.getLastTaskResult())) { finish(false, CompanionEntity.FULL_BAG_FOR_LOGS); return; }
                 if (job == Job.DIRT) { crafting.startDigging(); return; }
-                if (job == Job.WOOD && CompanionWoodKind.of(requestedItem) != null) { finish(false, owner.getLastTaskResult()); return; }
-                finish(false, "Не нашёл доступного дерева для подготовки. Вещи сохранил." + (job == Job.HOUSE ? " Начатый дом можно достроить позже." : "")); return;
+                if (job == Job.WOOD && CompanionWoodKind.of(requestedItem) != null) { finish(owner.gathering.woodEnd(true, owner.getLastTaskResult())); return; }
+                finish(owner.gathering.woodEnd(job == Job.WOOD, (owner.gathering.noTreeFound ? "Не нашёл доступного дерева для подготовки. Вещи сохранил." : "Не хватило доступного дерева для подготовки. Вещи сохранил.") + (job == Job.HOUSE ? " Начатый дом можно достроить позже." : ""))); return;
             }
             phase = afterWood; resetTarget();
         }
@@ -759,7 +758,7 @@ public final class CompanionWork {
      * True when the work was stopped: a minute and a half on the same spot (within two blocks), with the same bag and
      * counters and no new status. Waiting at a loaded furnace is checked by its product instead.
      */
-    private boolean stalled() {
+    boolean stalled() {
         if (phase == Phase.COOK || awaitingHouse() != null || building() != null && building().waitingForRoom()) { stallTicks = 0; return false; }
         long signature = progressSignature();
         boolean news = stallSeen.size() < 256 && stallSeen.add(phase + "|" + owner.getLastTaskResult());

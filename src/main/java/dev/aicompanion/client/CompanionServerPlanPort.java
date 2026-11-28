@@ -10,6 +10,7 @@ import dev.aicompanion.entity.CompanionEvents;
 import dev.aicompanion.entity.CompanionFurnaceBatches;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
@@ -45,6 +46,8 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     private final CompanionTaskQueue.Task task;
     private final CompanionParkLink link;
     private long ownedWorkId;
+    /** The work of a goal's collection that stands by its furnace to the end instead of parking again. Server thread only. */
+    private long standByWork;
     /** Server tick at which the companion was first missing in a row; -1 while he is there. Written by the queue's tick only. */
     private long missingSince = -1;
     /** Server tick at which the companion was first seen halted in a row; -1 while he is not. Written by the queue's tick only. */
@@ -191,7 +194,23 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
         });
     }
 
-    @Override public CompletableFuture<Attempt> run(PlannedAction action) {
+    /**
+     * A goal's smelt of what his own furnace is already cooking does not set down another furnace: the parked batch cancelled the step,
+     * the stage started again, and the new smelt would only duplicate it. He goes to that furnace and stands by it until it is done.
+     */
+    @Override public CompletableFuture<Attempt> run(PlannedAction planned) {
+        if (!goal || !"smelt_items".equals(planned.type())) return dispatchStep(planned, false);
+        return onServer(player -> {
+            CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
+            return companion != null && companion.level() instanceof ServerLevel level ? companion.batches().cookingFor(level, planned.item()) : -1L;
+        }).thenCompose(batch -> {
+            if (batch < 0) return dispatchStep(planned, false);
+            CompanionDiagnostics.event(trace, "own_batch_awaited", "batch", batch, "item", planned.item());
+            return dispatchStep(new PlannedAction("collect_smelt", 0, 1, String.valueOf(batch)), true);
+        });
+    }
+
+    private CompletableFuture<Attempt> dispatchStep(PlannedAction action, boolean standBy) {
         return onServer(player -> {
             if (cancelled()) return new Dispatch(CompanionActionResult.cancelled("План отменён."), 0, 0);
             CompanionEntity before = CompanionEvents.getOwnedCompanion(player);
@@ -211,7 +230,8 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             dispatched = true;
             long work = companion == null ? 0 : companion.activeWorkId();
             if (result.success() && work != previousWork) ownedWorkId = work;
-            if (parkable() && work > 0 && result.success() && work != previousWork && PARKABLE_WORK.contains(action.type())) markParkable(companion, work);
+            if (standBy && result.success() && work != previousWork) standByWork = work;
+            else if (parkable() && work > 0 && result.success() && work != previousWork && PARKABLE_WORK.contains(action.type())) markParkable(companion, work);
             return new Dispatch(result, result.success() && work != previousWork ? work : 0, player.level().getGameTime());
         }).thenCompose(dispatch -> {
             CompanionActionResult result = dispatch.result();
@@ -383,7 +403,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             if (companion == null && server.getTickCount() - absentSince < ABSENT_TICKS) return (CompanionActionResult) null;
             if (companion == null) return CompanionActionResult.failed("Компаньон выгружен из мира.");
             absentSince = -1;
-            if (parkable() && companion.activeWorkId() == workId) markParkable(companion, workId);
+            if (parkable() && workId != standByWork && companion.activeWorkId() == workId) markParkable(companion, workId);
             CompanionActionResult result = companion.workResult(workId);
             if (result != null) {
                 if (result.status() == CompanionActionResult.Status.PARKED) parkedSeen(result);

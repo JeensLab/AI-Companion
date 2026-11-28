@@ -1114,7 +1114,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         work.course.watch();
         loot.tickNearby();
         if (level() instanceof ServerLevel serverLevel) playersThings.tick(serverLevel);
-        recovery.observe();
+        recovery.observe(); gathering.watchWork();
         work.watchChase();
         social.updateExpression();
         social.tick();

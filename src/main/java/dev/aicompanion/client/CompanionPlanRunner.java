@@ -2,6 +2,7 @@ package dev.aicompanion.client;
 
 import dev.aicompanion.CompanionDiagnostics;
 import dev.aicompanion.entity.CompanionActionResult;
+import dev.aicompanion.entity.CompanionWoodKind;
 import dev.aicompanion.entity.CompanionActionResult.Status;
 
 import java.util.ArrayList;
@@ -133,6 +134,10 @@ public final class CompanionPlanRunner {
                 run.obtain = action; run.obtainEnd = index + 1;
                 return giveUpObtain(run, index, expansion.refusal());
             }
+            if (run.noTree != null && expansion.steps().stream().anyMatch(step -> "gather_wood".equals(step.type()) && noTreeFor(run, step))) {
+                run.obtain = action; run.obtainEnd = index + 1;
+                return giveUpObtain(run, index, run.noTree);
+            }
             run.plan.remove(index);
             run.plan.addAll(index, expansion.steps());
             run.obtain = action; run.obtainEnd = index + expansion.steps().size(); run.obtainSteps = 0; run.noGain = 0; run.noGainFailure = null;
@@ -243,6 +248,12 @@ public final class CompanionPlanRunner {
             }
             // A blocked step of an obtain chain gives up only this part; the rest of the plan goes on.
             if (inObtain && "blocked".equals(verdict.reason())) return giveUpObtain(run, index, result.message());
+            if (inObtain && "gather_wood".equals(action.type()) && result.status() == Status.NO_TREE) {
+                run.noTree = result.message();
+                var kind = CompanionWoodKind.of(action.item());
+                if (kind == null) run.noTreeAny = true; else run.noTreeKinds.add(kind);
+                return giveUpObtain(run, index, result.message());
+            }
             // A step of an obtain chain that did not succeed is planned around, even a partial gather the plan would go on after:
             // the stop comes only if the new plan is the same as before the step (nothing was gained).
             if (inObtain && !result.success() && verdict.decision() != Decision.RETRY && !"cancelled".equals(verdict.reason())) {
@@ -436,6 +447,11 @@ public final class CompanionPlanRunner {
                 : "не успел вовремя, добираю оставшиеся " + verdict.retry().count() + ".";
     }
 
+    /** Whether a wood step is one a search already found no tree for: any step after a search for no species in particular, else only a step for that species. */
+    private static boolean noTreeFor(Run run, PlannedAction step) {
+        return run.noTreeAny || run.noTreeKinds.contains(CompanionWoodKind.of(step.item()));
+    }
+
     private static Verdict stop(String reason) { return new Verdict(Decision.STOP, null, reason); }
 
     /** A smelt step that parked: its attempt, and the report slot kept so the report stays in the order of the plan. */
@@ -460,6 +476,11 @@ public final class CompanionPlanRunner {
         int obtainEnd, obtainSteps, noGain;
         /** The last failure message among the no-gain steps in a row, if any of them failed. */
         String noGainFailure;
+        /** The message of a wood search that found no tree (status NO_TREE: not a chance to repeat, the same for every part that needs wood): later parts that need wood give up with it at once. */
+        String noTree;
+        /** Whether the search for wood of no species in particular found none (then no wood step runs), else the species it found none of (only their steps give up). */
+        boolean noTreeAny;
+        final java.util.Set<CompanionWoodKind> noTreeKinds = java.util.EnumSet.noneOf(CompanionWoodKind.class);
         boolean replan;
         /** The parked batch that is still cooking while the next independent steps run. */
         Pending pending;
