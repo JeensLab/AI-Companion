@@ -160,9 +160,9 @@ final class CompanionBag {
     }
 
     /**
-     * The item of the obtain_item order running now and how many of it the bag held when it began: the order counts only what
-     * it brings, never what was there before it (the owner, 28.11: a gate of the order before is no answer for «добудь калитку»
-     * again, and gold of the earlier blocks is no answer for the gold block still standing on his staircase).
+     * What the bag held of each item when its order began: the order counts only what it brings, never what was there before
+     * it (the owner, 28.11: a gate of the order before is no answer for «добудь калитку» again, and gold of the earlier blocks
+     * is no answer for the gold block still standing on his staircase).
      */
     private final java.util.Map<String, Integer> obtainBaselines = new java.util.HashMap<>();
 
