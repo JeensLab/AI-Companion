@@ -75,38 +75,36 @@ public final class CompanionWayReachMatrixTests {
     }
 
     /**
-     * The owner's portal corner (28.11): a gold block four blocks across and one up behind the frame's edge, the only cells
-     * he can stand in four blocks from it. A player takes it from where he stands and walks to the drop after it — no column,
-     * no climb. At 3.5 no cell of his reached it, and the work raised a column (or refused a block in plain sight).
+     * The owner's portal corner (28.11): a gold block four blocks from the only cell he can stand in — his own — and one
+     * above the drop that falls at his feet. A player takes it from where he stands, no column and no climb. At 3.5 no cell
+     * of his reached it, so the work raised a column under it (the «jumping» the owner saw).
      */
     @GameTest(template = "way_wide", timeoutTicks = 8000)
-    public static void aBlockFourAcrossAndOneUpIsTakenFromWhereHeStands(GameTestHelper h) {
+    public static void aBlockAtAPlayersReachIsTakenFromWhereHeStands(GameTestHelper h) {
         flat(h);
         CompanionEntity c = spawn(h);
-        // The frame's edge between him and the block: panes are no floor a body stands on, so no cell of the edge is a stand.
-        for (int dx = 1; dx <= 3; dx++) for (int dz = -1; dz <= 1; dz++)
-            place(h, c, new BlockPos(HOME + dx, FEET, HOME + dz), Blocks.GLASS_PANE);
-        place(h, c, new BlockPos(HOME + 4, FEET, HOME - 1), Blocks.GLASS_PANE);
-        place(h, c, new BlockPos(HOME + 4, FEET, HOME + 1), Blocks.GLASS_PANE);
-        BlockPos pedestal = new BlockPos(HOME + 4, FEET, HOME);
-        h.setBlock(pedestal, Blocks.STONE);
-        BlockPos target = new BlockPos(HOME + 4, FEET + 1, HOME);
+        BlockPos target = new BlockPos(HOME, FEET + 4, HOME);
         place(h, c, target, Blocks.GOLD_BLOCK);
+        h.assertBlockPresent(Blocks.AIR, target.below());
         c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
         c.setItem(1, new ItemStack(Items.DIRT, 64));
         c.setItem(2, new ItemStack(Items.CRAFTING_TABLE));
-        int[] most = {0};
-        h.onEachTick(() -> most[0] = Math.max(most[0], c.getTemporarySupportCount()));
+        int[] most = {0}, high = {0};
+        h.onEachTick(() -> {
+            most[0] = Math.max(most[0], c.getTemporarySupportCount());
+            high[0] = Math.max(high[0], c.blockPosition().getY() - FEET);
+        });
         var future = say(h, c, "добудь золотой блок");
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Still running: " + c.getLastTaskResult());
             String report = future.join().report();
-            h.assertTrue(count(c, Items.GOLD_BLOCK) >= 1, "The gold block four across and one up is not in the bag: " + report);
+            h.assertTrue(count(c, Items.GOLD_BLOCK) >= 1, "The gold block four blocks up is not in the bag: " + report);
             h.assertBlockPresent(Blocks.AIR, target);
             h.assertTrue(most[0] == 0, "A column was raised for a block a player reaches from the ground: " + most[0]);
-            String at = h.absolutePos(target).toShortString();
-            h.assertTrue(journal(c, "block_taken").stream().anyMatch(line -> line.contains(at)),
-                    "No block_taken line names the gold block at " + at + ": " + journal(c, "block_taken"));
+            h.assertTrue(high[0] == 0, "He climbed for a block a player takes from where he stands: " + high[0]);
+            String where = h.absolutePos(target).toShortString();
+            h.assertTrue(journal(c, "block_taken").stream().anyMatch(line -> line.contains(where)),
+                    "No block_taken line names the gold block at " + where + ": " + journal(c, "block_taken"));
             h.assertTrue(journal(c, "way_search").stream().anyMatch(line -> line.contains("minecraft:gold_block") && line.contains("\"shape\":\"walk\"")),
                     "The search did not answer with the walk: " + journal(c, "way_search"));
         });
