@@ -512,6 +512,8 @@ final class CompanionHouse {
         if (needsStation && !tableNearby && workbench != null && level.hasChunkAt(workbench) && level.getBlockState(workbench).is(Blocks.CRAFTING_TABLE)) {
             Step station = new Step(workbench, Blocks.CRAFTING_TABLE.defaultBlockState(), 0);
             Path returnPath = route(level, station);
+            // No cells left this tick: a wait, not a bench he cannot get to (a new one would be set down beside it).
+            if (returnPath == null && routeBusy) return Result.working();
             if (returnPath != null && returnPath.canReach()) {
                 owner.work.route.walk(returnPath);
                 owner.workStatus("Вернусь к верстаку подготовить материалы для дома.");
@@ -667,6 +669,8 @@ final class CompanionHouse {
         for (int y = 0; y <= 1; y++) for (int dx = -4; dx <= 4; dx++) for (int dz = -4; dz <= 4; dz++) {
             BlockPos pos = new BlockPos(step.pos.getX() + dx, base.getY() + y, step.pos.getZ() + dz);
             if (!template && step.door() && pos.getZ() >= base.getZ()) continue;
+            // A bench is used from its reach (CompanionPlacement.reaches), not from a spot only in sight: that one ends the walk short of it for good.
+            if (step.state().is(Blocks.CRAFTING_TABLE) && Vec3.atBottomCenterOf(pos).distanceToSqr(step.pos.getCenter()) > 3.2 * 3.2) continue;
             if (!level.hasChunkAt(pos) || !level.hasChunkAt(pos.below()) || !level.getFluidState(pos).isEmpty() || !level.getFluidState(pos.above()).isEmpty()) continue;
             if (!level.getBlockState(pos.below()).isFaceSturdy(level, pos.below(), Direction.UP)) continue;
             AABB body = new AABB(pos.getX() + .2, pos.getY(), pos.getZ() + .2, pos.getX() + .8, pos.getY() + owner.getBbHeight(), pos.getZ() + .8);
