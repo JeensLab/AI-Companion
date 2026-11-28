@@ -171,6 +171,12 @@ public final class OpenRouterConfig {
             .translation("config.aicompanion.fence_gates")
             .define("fenceGates", true);
 
+    /** Whether three zombies after him (two when he is hurt) are met from a column of blocks out of his bag. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue HIGH_GROUND = BUILDER
+            .comment("Against three zombies after him (two when he is hurt) he lays two or three blocks from his bag under his feet, strikes from above and takes the blocks back after the fight. Off: he fights them on the ground.")
+            .translation("config.aicompanion.high_ground")
+            .define("highGround", true);
+
     public static final ModConfigSpec.BooleanValue LONG_TERM_MEMORY = BUILDER
             .comment("Let the companion remember facts, promises and recent talk between sessions, adapt his character and raise topics of his own. Stored in the world save.")
             .translation("config.aicompanion.long_term_memory")

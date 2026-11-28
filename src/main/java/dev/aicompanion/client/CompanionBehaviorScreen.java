@@ -111,6 +111,11 @@ final class CompanionBehaviorScreen extends Screen {
             b.setMessage(gateLabel()); CompanionPreferences.sync();
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                 "Закрытая деревянная калитка на пути: открывает, проходит и закрывает за собой, как дверь. Калитку под сигналом редстоуна не трогает. Выключено: закрытая калитка для него забор, идёт в обход."))).build());
+        addRenderableWidget(Button.builder(highGroundLabel(), b -> {
+            OpenRouterConfig.HIGH_GROUND.set(!OpenRouterConfig.HIGH_GROUND.get()); OpenRouterConfig.HIGH_GROUND.save();
+            b.setMessage(highGroundLabel()); CompanionPreferences.sync();
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "На него идут трое зомби (двое, если он ранен): кладёт под себя два-три блока из сумки, бьёт сверху и после боя забирает блоки. Выключено: дерётся на земле."))).build());
         addRenderableWidget(Button.builder(pickUpLabel(), b -> {
             OpenRouterConfig.PICK_UP_NEARBY.set(!OpenRouterConfig.PICK_UP_NEARBY.get()); OpenRouterConfig.PICK_UP_NEARBY.save();
             b.setMessage(pickUpLabel()); CompanionPreferences.sync();
@@ -191,6 +196,7 @@ final class CompanionBehaviorScreen extends Screen {
     private static Component replantLabel() { return Component.literal("Саженцы на месте срубленных деревьев: " + (OpenRouterConfig.REPLANT_SAPLINGS.get() ? "вкл." : "выкл.")); }
     private static Component boatClutchLabel() { return Component.literal("Лодка при падении: " + (OpenRouterConfig.BOAT_CLUTCH.get() ? "вкл." : "выкл.")); }
     private static Component gateLabel() { return Component.literal("Калитки по пути: " + (OpenRouterConfig.FENCE_GATES.get() ? "вкл." : "выкл.")); }
+    private static Component highGroundLabel() { return Component.literal("Столбик против толпы зомби: " + (OpenRouterConfig.HIGH_GROUND.get() ? "вкл." : "выкл.")); }
     private static Component campfireLabel() { return Component.literal("Олег играет у костра: " + (OpenRouterConfig.PLAYS_BY_THE_FIRE.get() ? "вкл." : "выкл.")); }
     private static Component urgentLabel() { return Component.literal("Срочный приказ откладывает работу: " + (OpenRouterConfig.URGENT_ORDER.get() ? "вкл." : "выкл.")); }
     private static Component boatRideLabel() { return Component.literal("Лодка с игроком: " + (OpenRouterConfig.BOAT_RIDE.get() ? "вкл." : "выкл.")); }

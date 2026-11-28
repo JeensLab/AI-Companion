@@ -156,6 +156,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private boolean rightToolOn = true;
     /** Whether a shut wooden fence gate on his route is opened, walked through and shut behind him (idea BDGLW, #105). */
     private boolean fenceGatesOn = true;
+    boolean highGroundOn = true; // a crowd of zombies is met from a column of his blocks (CompanionHighGround; the player's setting, not saved)
     /** Whether «подбери» looks at the ground first, and how far around him (the player's setting, not saved). */
     private boolean pickUpNearby = true;
     private int pickUpRadius = 16;
@@ -715,6 +716,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether a shut wooden fence gate on his route is opened, walked through and shut behind him (the player can turn it off in the settings). */
     public boolean fenceGates() { return fenceGatesOn; }
     public void setFenceGates(boolean on) { fenceGatesOn = on; }
+    public void setHighGround(boolean on) { highGroundOn = on; }
     /** A shut gate in the cell he stands in, opened before the game's movement control reads its 1.5-high shape as a step. */
     boolean openGateUnder() { return gateGoal.openUnder(); }
     /** Whether «подбери» takes what lies on the ground around him, and how far the scan goes (the player's setting). */

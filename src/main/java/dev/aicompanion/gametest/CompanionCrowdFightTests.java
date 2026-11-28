@@ -188,6 +188,30 @@ public final class CompanionCrowdFightTests {
     }
 
     /**
+     * With the switch «Столбик против толпы зомби» off, a crowd of three at his corner is fought from the ground: no block goes under
+     * his feet and none leaves his bag, and the first of them is dead in time. Without the check of the switch the column goes up.
+     */
+    @GameTest(template = "empty", timeoutTicks = TIMEOUT)
+    public static void switchedOffTheCrowdIsFoughtFromTheGround(GameTestHelper h) {
+        CompanionEntity c = armed(h, CORNER, CORNER);
+        c.setHighGround(false);
+        corner(h);
+        int stone = count(c, Items.COBBLESTONE);
+        List<Zombie> zombies = new ArrayList<>();
+        for (int k = 0; k < LEAST_CROWD; k++) zombies.add(zombie(h, CORNER + CROWD[k][0], CORNER + CROWD[k][1]));
+        for (Zombie zombie : zombies) zombie.getAttribute(Attributes.ATTACK_DAMAGE).setBaseValue(WEAK_BLOW);
+        long begun = h.getTick();
+        h.onEachTick(() -> {
+            target(zombies, c);
+            long alive = zombies.stream().filter(Zombie::isAlive).count();
+            String trace = " | zombies alive " + alive + ", health " + c.getHealth() + ", he at " + at(h, c) + ", supports " + c.getTemporarySupportCount();
+            h.assertTrue(c.getTemporarySupportCount() == 0 && count(c, Items.COBBLESTONE) == stone, "A column went up with the switch off" + trace);
+            h.assertTrue(h.getTick() - begun < FIRST_KILL_TICKS, "None of the crowd was killed in time" + trace);
+            if (alive < zombies.size()) h.succeed();
+        });
+    }
+
+    /**
      * Already hurt, two zombies are a crowd for him: the column is raised, two blocks under a roof of four cells, and beside the corner
      * he stands in, where the roof hangs a cell lower over him.
      */

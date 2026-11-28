@@ -116,7 +116,7 @@ final class CompanionHighGround extends Goal {
     }
 
     @Override public boolean canUse() {
-        if (c.tickCount % COUNT_EVERY != 0 || c.inventoryViewers != 0 || !c.onGround() || c.temporaryPillar.isRecovering() || !(c.level() instanceof ServerLevel level)) return false;
+        if (!c.highGroundOn || c.tickCount % COUNT_EVERY != 0 || c.inventoryViewers != 0 || !c.onGround() || c.temporaryPillar.isRecovering() || !(c.level() instanceof ServerLevel level)) return false;
         if (c.temporaryPillar.leftStanding()) { settle(); return false; }
         if (c.tickCount < retryAt || c.temporaryPillar.isActive() || CompanionGuardWatch.watching(c) || shotAt(level)) return false;
         int after = 0, touching = 0, close = 0;
